@@ -1,0 +1,26 @@
+
+
+defaults {
+ color: "blue"
+ hair: "wavy"
+ faves: ["x", "y", "z"]
+}
+
+text := run("ls -l")
+
+# die := die + 1
+
+echo("Fun times! Here's the output of ls:")
+echo(text)
+
+ctr := 0
+
+for i from 1 to 5 {
+  echo(string(i));  ctr := ctr + 1
+}
+
+for i from 5 to 1 {
+  echo(string(i));  ctr := ctr + 1
+}
+
+echo("I ran the counter " + string(ctr) + " times.")

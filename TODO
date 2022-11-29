@@ -1,0 +1,31 @@
+# This needs to migrate to github issues.
+
+# P0: Before going back to SAMI
+- Basic debugging (array indexing is broken)
+- string literals still need to be converted to values properly (in treecheck)
+- Make sure sections are right in ST layout
+- Do all the built-in bits and checking vs. schema
+- String interpolations
+- Integrate into SAMI
+- Build a SAMI config file
+
+# P1: Before going public
+- What happens w/ bad indexing?
+- Should we only allow assigning to ATTRS once?  At least per-file.
+- Cleanup error handling massively, including error messages and what
+  context gets oututted.
+- Add tuples
+- Get all the Nim 2.0 flags on you should have on.
+
+# P2: Later is fine. Add these issues to the repo to track, when time.
+- member (.) access
+- Add in <<END as an option for long strings
+- Move strings to resources
+- Standalone binary to output JSON
+- Read in JSON files too
+- Hot reloading
+- TOML bindings
+- What to do w/ null?
+- Check dict literals for duplicate entries.  Right now they get squashed.
+- Make == and != work on dicts and lists
+- Make + and - work for lists and dicts.
