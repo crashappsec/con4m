@@ -5,9 +5,11 @@ import box
 import parse
 import treecheck
 
-
 import options
 import tables
+
+when (NimMajor, NimMinor) >= (1, 7):
+  {.warning[CastSizes]:off.}
 
 const breakMsg = "b"
 const continueMsg = "c"
@@ -33,8 +35,10 @@ template binaryOpWork(typeWeAreOping: typedesc,
   let
     v1 = unbox[typeWeAreOping](node.children[0].value)
     v2 = unbox[typeWeAreOping](node.children[1].value)
+    
+  var ret: returnType = cast[returnType](op(v1, v2))
 
-  node.value = box(cast[returnType](op(v1, v2)))
+  node.value = box(ret)
 
 proc modFunc(a, b: int): int {.inline.} =
   a mod b
@@ -329,19 +333,14 @@ proc evalTree*(node: Con4mNode) {.inline.} =
 
 # Once this is all working, this should instead return the symbol table.
 
-import typerepr
 proc loadConfig*(filename: string): bool =
   let tree = parse(filename)
 
   if tree == nil:
     return false
+
   tree.checktree()
-
-
-  echo $(tree)
-
-
   tree.evalTree()
-
+  
   return true
 

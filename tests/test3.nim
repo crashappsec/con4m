@@ -8,5 +8,5 @@ test "hello, world":
   addDefaultBuiltins()
 
   discard loadConfig(conffile)
-
+  
   check true

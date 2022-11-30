@@ -2,7 +2,6 @@ import options
 import streams
 import strformat
 import logging
-import system
 
 import con4m_types
 import lex

@@ -11,14 +11,18 @@ import options
 
 when defined(posix):
   import posix
-
+  
+when (NimMajor, NimMinor) >= (1, 7):
+  {.warning[CastSizes]:off.}
+  
 var builtins = initTable[string, seq[BuiltInInfo]]()
 
 proc builtinIToS*(args: seq[Box]): Option[Box] =
   let i = unbox[int](args[0])
   var s = $(i)
+  var b = box(s)
 
-  return some(box(s))
+  return some(b)
 
 # This was necessary to get it to work before boxing; check it before deleting.
 # proc builtinIToS*(args: seq[Any]): Any =
@@ -37,9 +41,8 @@ proc builtinIToF*(args: seq[Box]): Option[Box] =
   return some(box(f))
 
 proc builtinFToS*(args: seq[Box]): Option[Box] =
-  let
-    f = unbox[float](args[0])
-    s = $(f)
+  let f = unbox[float](args[0])
+  var s = $(f)
 
   return some(box(s))
 
@@ -67,6 +70,7 @@ when defined(posix):
     ## once the command returns, but in a multi-threaded program,
     ## this might be worth noting, since threads at startup time
     ## are more likely to need permissions.
+
     var
       cmd = unbox[string](args[0])
     let
@@ -98,7 +102,7 @@ else:
     let
       (output, exitCode) = execCmdEx(cmd)
       exitAsStr = $(exitCode)
-
+      
     return some(box("{exitAsStr}:{output}".fmt()))
 
 proc newBuiltIn*(name: string, fn: BuiltInFn, tinfo: string) =
@@ -145,6 +149,7 @@ proc sCall*(name: string, a1: seq[Box], tinfo: Con4mType): Option[Box] =
   raise newException(ValueError, "Signature not found")
 
 proc sCall*(name: string, a1: seq[Box], tinfo: string = ""): Option[Box] =
+
   if tinfo == "":
     assert builtins[name].len() == 1
     return builtins[name][0].fn(a1)

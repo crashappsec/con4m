@@ -46,8 +46,8 @@ type
 
   Box* = object
     case kind*: Con4mTypeKind
-    of TypeString: s*: string
     of TypeBool: b*: bool
+    of TypeString: s*: string
     of TypeInt: i*: int
     of TypeFloat: f*: float
     of TypeList, TypeDict: p*: pointer

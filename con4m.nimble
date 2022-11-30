@@ -6,8 +6,6 @@ description   = "A generic configuration file format that allows for lightweight
 license       = "Apache-2.0"
 srcDir        = "src"
 
-
 # Dependencies
-
 requires "nim >= 1.6.8"
 requires "unicodedb >= 0.11.1"

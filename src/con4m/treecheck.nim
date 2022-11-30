@@ -145,7 +145,8 @@ proc checkNode(node: Con4mNode) =
     case node.getTokenType()
     of TTStringLit:
       node.typeInfo = stringType
-      node.value = box(node.getTokenText())
+      var s = node.getTokenText()
+      node.value = box(s)
     of TTIntLit:
       node.typeInfo = intType
       try:

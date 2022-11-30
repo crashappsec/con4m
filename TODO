@@ -15,10 +15,11 @@
 - Cleanup error handling massively, including error messages and what
   context gets oututted.
 - Add tuples
-- Get all the Nim 2.0 flags on you should have on.
+- Get all the Nim 2.0 flags on you should have on, including strictdefs, strong
+  nil and strictfuncs.
 
 # P2: Later is fine. Add these issues to the repo to track, when time.
-- member (.) access
+- member (.) access, maybe
 - Add in <<END as an option for long strings
 - Move strings to resources
 - Standalone binary to output JSON
@@ -29,3 +30,8 @@
 - Check dict literals for duplicate entries.  Right now they get squashed.
 - Make == and != work on dicts and lists
 - Make + and - work for lists and dicts.
+- Curses UI for config management
+- The ability to add code callbacks
+- Flag handling
+- Ability to embed and dump configs
+
