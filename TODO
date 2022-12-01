@@ -34,4 +34,8 @@
 - The ability to add code callbacks
 - Flag handling
 - Ability to embed and dump configs
-
+- Make it easy to provide a default configuration (for when the user
+  doesn't provide one, and for providing defaults for keys they can
+  optionally exclude) in the language, and to have that configuration
+  lifted into the binary at compile time, so that it doesn't need to
+  be carried as a separate file.
