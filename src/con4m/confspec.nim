@@ -1,10 +1,14 @@
-import sugar
 import options
 import tables
 import strutils
+import unicode
+import strformat
 
 import con4m_types
 import unicodeident
+import st
+import typecheck
+import typerepr
 
 
 proc addGlobalAttr*(spec: ConfigSpec,
@@ -89,12 +93,13 @@ type ValidState = enum
     Invalid, ValidData, PathMatch
 
 proc checkOneSectionSpec(spec: string, stack: seq[string]): ValidState =
-  parts = spec.split('.')
+  let parts = spec.split('.')
+  
   if parts.len() < stack.len(): return Invalid
 
-  for i in stack.len():
-    if spec[i] == "*": continue
-    if cmpRunesIgnoreCase(spec[i], stack[i]) != 0:
+  for i in 0 ..< stack.len():
+    if parts[i] == "*": continue  # Wait this makes no sense.
+    if cmpRunesIgnoreCase(parts[i], stack[i]) != 0:
       return Invalid
 
   if stack.len() == parts.len():
@@ -114,24 +119,84 @@ proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
     case spec.checkOneSectionSpec(stack)
     of Invalid: continue
     of ValidData: return true
-    of PathMatch: if not thisScopeContainsData: return true
+    of PathMatch:
+      if not thisScopeContainsData:
+        return true
   
 
 proc validateAttr(ctx: ConfigState,
+                  stack: seq[string],
                   entry: STEntry,
                   fields: FieldAttrs,
-                  stack: seq[string],
                   customOk: bool) =
   # 1. If not customOk, does the field name exist in the list of okay fields?
-  # 2. Does the type in the symbol table match what was spec'd?
-  # 3. If there's a validator callback, call it!
-  # 4. Are we supposed to lock this field now that it's set? If so, do it.
-  # 5. Mark in the state that this field has been seen.
-  discard
-
-  # TODO: prevent writing to a locked field.
-
+  # 2. Is there actually a value set?  If not, no actual problem here.
+  # 3. Does the type in the symbol table match what was spec'd?
+  # 4. If there's a validator callback, call it!
+  # 5. Are we supposed to lock this field now that it's set? If so, do it.
   
+  let
+    symbol = stack[^1]
+
+  if not customOk and not fields.contains(symbol):
+    ctx.errors.add("{stack.join(\".\")} is a custom key in a section ".fmt() &
+                   "that does not accept custom keys.")
+    return
+
+  if entry.value.isNone():
+    # This can happen when code isn't evaluated, for instance due to a
+    # conditional. In such a case, the attribute never got set. It's not
+    # an error condition, but we also don't want to end up marking the
+    # symbol as having been seen.
+    return
+    
+  let
+    box = entry.value.get()
+    spec = fields[symbol]
+    t1 = entry.tInfo
+    t2 = spec.attrType.toCon4mType()
+    unified = unify(t1, t2)
+
+  if unified.isBottom():
+    ctx.errors.add("The value of {stack.join(\".\")} is not of the right ".fmt() &
+                   "({$(t1)} vs {$(t2)})".fmt())
+    return
+
+  if spec.validator.isSome():
+    let f = spec.validator.get()
+    if not f(stack, box):
+      ctx.errors.add("{stack.join(\".\")} didn't pass its validation check")
+      return
+
+  if spec.lockOnWrite:
+    entry.locked = true
+
+
+proc requiredFieldCheck(ctx: ConFigState,
+                        scope: Con4mScope,
+                        symbol: string,
+                        attrs: FieldAttrs) =
+  for key, specEntry in attrs:
+    if not specEntry.required:
+      continue
+    if symbol in scope.entries:
+      let entry = scope.entries[symbol]
+      if entry.value.isSome():
+        continue
+      else:
+        if specEntry.defaultVal.isSome():
+          entry.value = specEntry.defaultVal
+        else:
+          ctx.errors.add("Required symbol {key} not found".fmt())
+          continue
+    else:
+      if specEntry.defaultVal.isNone():
+        ctx.errors.add("Required symbol {key} not found".fmt())
+        continue
+      else:
+        let opt = scope.addEntry(symbol, -1, specEntry.attrType.toCon4mType())
+  
+                        
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
                    stack: seq[string],
@@ -145,17 +210,17 @@ proc validateScope(ctx: ConfigState,
   # there's only one name on the stack), make sure there's a section
   # spec.
   if stack.len() == 1:
-    if not sname in ctx.spec.secSpecs:
+    if not ctx.spec.secSpecs.contains(sname):
       ctx.errors.add("Invalid top-level section in config: {sname}")
       return
 
   let
     spec = ctx.spec.secSpecs[sname]
-    customOk = ctx.spec.customAttrs
+    customOk = spec.customAttrs
 
   if not okayToBeHere(spec.requiredSubsections, stack, scope) and
      not okayToBeHere(spec.allowedSubsections, stack, scope):
-    ctx.errors.add("Invalid section: {stack.join(".")}")
+    ctx.errors.add("Invalid section: {stack.join(\".\")}".fmt())
     return
 
   for key, entry in scope.entries:
@@ -164,14 +229,18 @@ proc validateScope(ctx: ConfigState,
     
     if entry.subscope.isSome():
       let secState = SectionState()
-      myState.stateObjs[key] = secState
+      myState.substateObjs[key] = secState
       ctx.validateScope(entry.subscope.get(), pushed, secState)
     else:
       ctx.validateAttr(pushed, entry, spec.predefinedAttrs, customOk)
-    
+
+    # Next check required fields.
+    # Add a default value in, if need be.
+    requiredFieldCheck(ctx, scope, stack[^1], spec.predefinedAttrs)
+        
                     
-proc validateConfig*(scope: Con4mScope, specs: ConfigSpec): ConfigState =
-  var state = ConfigState(st: scope, spec: specs)
+proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
+  result = ConfigState(st: scope, spec: spec)
 
   # First, we walk through scopes that have actually appeared, and
   # compare what we see in those scopes vs. what we expected.
@@ -182,33 +251,30 @@ proc validateConfig*(scope: Con4mScope, specs: ConfigSpec): ConfigState =
   for key, entry in scope.entries:
     if entry.subscope.isSome():
       let secState = SectionState()
-      state.stateObjs[key] = secState
-      state.validateScope(entry.subscope.get(), @[key], secState)
+      result.stateObjs[key] = secState
+      result.validateScope(entry.subscope.get(), @[key], secState)
     else:
-      state.validateAttr(@[key], entry, spec.globalAttrs)
+      result.validateAttr(@[key],
+                          entry,
+                          spec.globalAttrs,
+                          spec.customTopLevelOk)
+      
+    # Next, check required fields.
+    requiredFieldCheck(result, scope, key, spec.globalAttrs)
 
-  # Next, 
-    
-    
-  
+  # Then check for missing required sections.
+  for cmd, spec in spec.secSpecs:
+    for targetSection in spec.requiredSubsections:
+      if targetSection.contains("*"):
+        result.errors.add("Required section spec cannot contain " &
+                          "wildcards (spec {targetSection})")
+        continue
+      let parts = targetSection.split(".")
+      if dottedLookup(scope, parts).isNone():
+         result.errors.add("Required section not provided: {targetSection}")
 
-dumpTree:
-  import option
- 
-  type
-    CfgSamiKeySection = ref object
-      subkey: Option[string]
-      `type`: string
-      required: bool
-     
-    CfgMyConfig = ref object
-      samiKey: CfgSamiKeySection
+# TODO: stack-configs
 
-  let allowedKeysSamiKey = @["*"]
-  let allowedSubKeysSamiKey = @["string", "binary"]
-  var lockedKeysSamiKey = @[]
-  var onceAttrsSamiKey = @[]
-  sectionSpecs["SamiKey"] = Spec     
 
 
 

@@ -62,6 +62,9 @@ proc evalNode(node: Con4mNode) =
       scope = node.getAttrScope()
       entry = scope.lookup(name).get()
 
+    if entry.locked:
+      raise newException(ValueError, "Attempt to assign to a read-only field")
+      
     node.value = node.children[1].value
     entry.value = some(node.value)
   of NodeVarAssign:
@@ -101,7 +104,10 @@ proc evalNode(node: Con4mNode) =
     else:
       incr = -1
 
-
+    # Do this at runtime, just to ensure this works in all cases.
+    # Particularly, we might serialize this info, and if it gets
+    # editable, we still need this locked to prevent infinite loops.
+    entry.locked = true
     while i != (stop + incr):
       entry.value = some(box(i))
       i = i + incr

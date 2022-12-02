@@ -59,7 +59,7 @@ type
     subscope*: Option[Con4mScope]
     defLocs*: seq[int]
     useLocs*: seq[int] # TODO?
-    locked*: bool # TODO
+    locked*: bool
 
   Con4mScope* = ref object
     parent*: Option[Con4mScope]
@@ -84,7 +84,7 @@ type
     fn*: BuiltInFn
     tinfo*: Con4mType
 
-  FieldValidator* = (string, seq[string], string, Box) -> bool
+  FieldValidator* = (seq[string], Box) -> bool
   
   AttrSpec* = ref object
     doc*: string
@@ -107,10 +107,12 @@ type
     builtins*: OrderedTable[string, seq[BuiltInInfo]]
     secSpecs*: OrderedTable[string, SectionSpec]
     globalAttrs*: FieldAttrs
+    customTopLevelOk*: bool
 
   SectionState* = ref object
     isLocked*: bool   # If it can be overwritten later; TODO-- not in API yet.
     substateObjs*: OrderedTable[string, SectionState]
+    beenSeen*: bool
 
   ConfigState* = ref object
     stateObjs*: OrderedTable[string, SectionState]

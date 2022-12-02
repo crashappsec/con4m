@@ -53,6 +53,10 @@ proc addEntry*(scope: Con4mScope,
   scope.entries[name] = e
   return some(e)
 
+# This version of symbol lookup is meant to be used when evaluating a
+# non-dotted variable in a local scope. If a variable is not found in
+# one scope, then we check the parent scope, and we don't give up
+# until we get to the root scope and the item is still missing.
 proc lookup*(scope: Con4mScope, name: string, scopeOk: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
     if not scopeOk and scope.entries[name].subscope.isSome():
@@ -62,6 +66,30 @@ proc lookup*(scope: Con4mScope, name: string, scopeOk: bool = false): Option[STE
     return some(scope.entries[name])
   if scope.parent.isSome():
     return scope.parent.get().lookup(name, scopeOk)
+
+# This version of symbol lookup is meant for dotted notation, when we
+# are essentially doing object access.  But, we don't have objects,
+# we have attribute scopes that can be nested.
+proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
+  if dotted.len() == 0:
+    return
+  
+  let
+    name = dotted[0]
+    rest = dotted[1 .. ^1]
+
+  if not (name in scope.entries):
+    return
+  let entry = scope.entries[name]
+
+  if rest.len() == 0:
+    return some(entry)
+
+  if not entry.subscope.isSome():
+    return
+
+  return dottedLookup(entry.subscope.get(), rest)
+    
 
 # This does NOT accept generics, as we don't support them across the
 # call boundary. Except it currently does, for my own testing.

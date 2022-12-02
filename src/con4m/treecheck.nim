@@ -136,6 +136,10 @@ proc checkNode(node: Con4mNode) =
       let
         entry = existing.get()
         t = unify(tinfo, entry.tinfo)
+
+      if entry.locked:
+        typeError("Cannot assign to loop index variables.")
+        
       if t.isBottom():
         typeError("Type of value assigned conflicts with the exiting type")
       else:
@@ -156,9 +160,10 @@ proc checkNode(node: Con4mNode) =
       scope = node.getVarScope()
       name = node.children[0].getTokenText()
       loc = node.getLineNo()
+      entry = scope.addEntry(name, loc, intType).get()
 
-    discard scope.addEntry(name, loc, intType)
-
+    entry.locked = true
+    
     for i in 1 ..< node.children.len():
       node.children[i].checkNode()
   of NodeSimpLit:
