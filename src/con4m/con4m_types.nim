@@ -58,11 +58,12 @@ type
     value*: Option[Box]
     subscope*: Option[Con4mScope]
     defLocs*: seq[int]
-    useLocs*: seq[int]
+    useLocs*: seq[int] # TODO?
+    locked*: bool # TODO
 
   Con4mScope* = ref object
     parent*: Option[Con4mScope]
-    entries*: Table[string, STEntry]
+    entries*: OrderedTable[string, STEntry]
 
   CurScopes* = object
     vars*: Con4mScope
@@ -83,6 +84,41 @@ type
     fn*: BuiltInFn
     tinfo*: Con4mType
 
+  FieldValidator* = (string, seq[string], string, Box) -> bool
+  
+  AttrSpec* = ref object
+    doc*: string
+    attrType*: string
+    validator*: Option[FieldValidator]
+    defaultVal*: Option[Box]
+    lockOnWrite*: bool
+    required*: bool
+
+  FieldAttrs* = OrderedTable[string, AttrSpec]
+  
+  SectionSpec* = ref object
+    requiredSubsections*: seq[string]
+    allowedSubsections*: seq[string]
+    predefinedAttrs*: FieldAttrs
+    customAttrs*: bool
+    doc*: string
+
+  ConfigSpec* = ref object
+    builtins*: OrderedTable[string, seq[BuiltInInfo]]
+    secSpecs*: OrderedTable[string, SectionSpec]
+    globalAttrs*: FieldAttrs
+
+  SectionState* = ref object
+    isLocked*: bool   # If it can be overwritten later; TODO-- not in API yet.
+    substateObjs*: OrderedTable[string, SectionState]
+
+  ConfigState* = ref object
+    stateObjs*: OrderedTable[string, SectionState]
+    st*: Con4mScope
+    spec*: ConfigSpec
+    errors*: seq[string]
+    
+
 let stringType* = Con4mType(kind: TypeString)
 let boolType* = Con4mType(kind: TypeBool)
 let intType* = Con4mType(kind: TypeInt)
@@ -91,3 +127,5 @@ let bottomType* = Con4mType(kind: TypeBottom)
 
 template unreachable*() =
   doAssert(false, "Reached code the programmer thought was unreachable :(")
+
+  

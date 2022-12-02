@@ -53,11 +53,15 @@ proc addEntry*(scope: Con4mScope,
   scope.entries[name] = e
   return some(e)
 
-proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
+proc lookup*(scope: Con4mScope, name: string, scopeOk: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
+    if not scopeOk and scope.entries[name].subscope.isSome():
+      raise newException(ValueError, "Attempting to look up attribute that " &
+                                     "refers to a section -- " & name)
+
     return some(scope.entries[name])
   if scope.parent.isSome():
-    return scope.parent.get().lookup(name)
+    return scope.parent.get().lookup(name, scopeOk)
 
 # This does NOT accept generics, as we don't support them across the
 # call boundary. Except it currently does, for my own testing.

@@ -65,6 +65,26 @@ proc checkNode(node: Con4mNode) =
   of NodeBreak, NodeContinue:
     discard
   of NodeSection:
+    var scopes = node.scopes.get()
+    var scope = scopes.attrs
+
+    for kid in node.children[0 ..< ^1]:
+      let
+        secname = kid.getTokenText()
+        maybeEntry = scope.lookup(secname, scopeOk=true)
+      if maybeEntry.isSome():
+        let entry = maybeEntry.get()
+        if not entry.subscope.isSome():
+          parseError("Section declaration conflicted with a variable from another section")
+        scope = entry.subscope.get()
+      else:
+        let
+          loc = node.getLineNo()
+          entry = scope.addEntry(secname, loc, subscope = true)
+          
+    scopes.attrs = scope
+    node.scopes = some(scopes)
+
     node.children[^1].checkNode()
   of NodeAttrAssign:
     if node.children[0].kind != NodeIdentifier:

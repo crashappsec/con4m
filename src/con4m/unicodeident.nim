@@ -57,6 +57,21 @@ proc isIdContinue*(r: Rune): bool =
 
   return false
 
+proc isValidId*(s: string): bool =
+  if s.len() == 0:
+    return false
+
+  let l = s.runeLenAt(0)
+  
+  if not s.runeAt(0).isIdStart():
+    return false
+
+  for rune in s[l .. ^1].runes():
+    if not rune.isIdContinue():
+      return false
+
+  return true
+
 proc readRune*(s: Stream): Rune =
   var str = newString(4)
   let c = s.readChar()

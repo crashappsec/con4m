@@ -331,16 +331,16 @@ proc evalNode(node: Con4mNode) =
 proc evalTree*(node: Con4mNode) {.inline.} =
   node.evalNode()
 
-# Once this is all working, this should instead return the symbol table.
-
-proc loadConfig*(filename: string): bool =
+proc evalConfig*(filename: string): Option[Con4mScope] =
   let tree = parse(filename)
 
   if tree == nil:
-    return false
+    return
 
   tree.checktree()
   tree.evalTree()
+
+  let scopes = tree.scopes.get()
   
-  return true
+  return some(scopes.attrs)
 

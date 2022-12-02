@@ -39,3 +39,4 @@
   optionally exclude) in the language, and to have that configuration
   lifted into the binary at compile time, so that it doesn't need to
   be carried as a separate file.
+- Mutation of iterator variables needs to be disallowed.

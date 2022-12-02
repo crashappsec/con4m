@@ -68,7 +68,7 @@ defaults {
       enabled: false
     }
 
-    source "command" {
+    source "cmd" {
       enabled: true
       priority: 100 # Only if the others fail
       command: env()[REPO_COMMAND]
@@ -79,7 +79,7 @@ defaults {
     enabled: true
     required: true
 
-    plugin "command" {
+    plugin "cmd" {
       command: "/usr/bin/createsbom ${artifact}"
       force: true # cannot do --disable-sbom
       error: "abort"
@@ -91,7 +91,7 @@ defaults {
     }
   }
 
-  custom = { 
+  other = { 
    "XLOCAL_USER": run("uname -a"),
    "XFRAUD" : "false"
   }

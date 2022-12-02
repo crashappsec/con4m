@@ -149,7 +149,6 @@ proc sCall*(name: string, a1: seq[Box], tinfo: Con4mType): Option[Box] =
   raise newException(ValueError, "Signature not found")
 
 proc sCall*(name: string, a1: seq[Box], tinfo: string = ""): Option[Box] =
-
   if tinfo == "":
     assert builtins[name].len() == 1
     return builtins[name][0].fn(a1)
@@ -161,7 +160,6 @@ proc sCall*(name: string, a1: seq[Box], tinfo: string = ""): Option[Box] =
       return bi.fn(a1)
 
     raise newException(ValueError, "Signature not found")
-
 
 when isMainModule:
   addDefaultBuiltins()

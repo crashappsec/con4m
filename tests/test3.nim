@@ -7,6 +7,6 @@ test "hello, world":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
   addDefaultBuiltins()
 
-  discard loadConfig(conffile)
-  
+  let cfg = evalConfig(conffile)
+
   check true

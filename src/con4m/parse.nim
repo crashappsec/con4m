@@ -440,7 +440,8 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       return
 
 proc section(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeSection, typeInfo: bottomType)
+  result = Con4mNode(kind: NodeSection, typeInfo: bottomType,
+                     token: some(ctx.curTok()))
 
   result.children.add(Con4mNode(kind: NodeIdentifier,
                                token: some(ctx.consume())))
