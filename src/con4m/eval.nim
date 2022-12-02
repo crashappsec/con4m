@@ -343,7 +343,7 @@ proc evalConfig*(filename: string): Option[Con4mScope] =
   if tree == nil:
     return
 
-  tree.checktree()
+  tree.checkTree()
   tree.evalTree()
 
   let scopes = tree.scopes.get()

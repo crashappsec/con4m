@@ -118,12 +118,46 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     let subitem = item.`$`(i + 2)
     result = indentTemplate.fmt()
 
-proc `$`*(scope: Con4mScope): string =
-  for k, v in scope.entries:
+proc `$`*(scope: Con4mScope, indent: int): string =
+  result = " ".repeat(indent)
+
+  for k, v in scope.entries.mpairs():
+    if v.subscope.isSome(): continue
     let s = $(v.tInfo)
     result = "{result}{k}: {s}\n".fmt()
 
-  if scope.parent.isSome():
-    let parent = scope.parent.get()
-    result = "{result}\n--------------\nPrevious Scope:\n--------------\n".fmt()
-    result = "{result}{$parent}".fmt()
+  for k, v in scope.entries.mpairs():
+    if v.subscope.isNone(): continue
+    let subscope = v.subscope.get()
+    result = result & "[subscope {k}]:\n".fmt()
+    let s = `$`(subscope, indent + 2)
+    
+    result = result & s
+    
+proc `$`*(scope: Con4mScope, goDown=true): string =
+
+  if not goDown:
+    for k, v in scope.entries:
+      let s = $(v.tInfo)
+      result = "{result}{k}: {s}\n".fmt()
+
+    if scope.parent.isSome():
+      let parent = scope.parent.get()
+      result = "{result}\n--------------\nPrevious Scope:\n".fmt()
+      result = "{result}--------------\n".fmt()
+      result = "{result}{$parent}".fmt()
+
+  else:
+    return `$`(scope, 0)
+
+  
+
+
+
+
+
+
+
+
+
+

@@ -11,6 +11,9 @@ import typecheck
 import typerepr
 
 
+proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
+  return ConfigSpec(customTopLevelOk: customTopLevelOk)
+
 proc addGlobalAttr*(spec: ConfigSpec,
                     name: string,
                     con4mType: string,
@@ -129,6 +132,9 @@ proc validateAttr(ctx: ConfigState,
                   entry: STEntry,
                   fields: FieldAttrs,
                   customOk: bool) =
+
+
+  echo "enter validateAttr, stack = ", $stack  
   # 1. If not customOk, does the field name exist in the list of okay fields?
   # 2. Is there actually a value set?  If not, no actual problem here.
   # 3. Does the type in the symbol table match what was spec'd?
@@ -176,6 +182,7 @@ proc requiredFieldCheck(ctx: ConFigState,
                         scope: Con4mScope,
                         symbol: string,
                         attrs: FieldAttrs) =
+
   for key, specEntry in attrs:
     if not specEntry.required:
       continue
@@ -205,6 +212,11 @@ proc validateScope(ctx: ConfigState,
     
   myState.beenSeen = true
 
+  echo "enter validateScope, stack = ", $stack
+
+  echo "here is the ST for this scope:"
+  echo $(scope)
+  
   # Top-level sections MUST be pre-specified when validation is
   # invoked.  So when we're looking at a top-level section (ie, when
   # there's only one name on the stack), make sure there's a section
@@ -247,6 +259,10 @@ proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
   #
   # Then, we go back through the spec for scopes, and see what, 
   # if anything, was required, but is missing.
+
+  echo "In the root scope."
+  echo "here is the ST for this scope:"
+  echo $(scope)
   
   for key, entry in scope.entries:
     if entry.subscope.isSome():
@@ -273,6 +289,8 @@ proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
       if dottedLookup(scope, parts).isNone():
          result.errors.add("Required section not provided: {targetSection}")
 
+
+         
 # TODO: stack-configs
 
 

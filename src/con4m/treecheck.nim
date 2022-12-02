@@ -81,6 +81,7 @@ proc checkNode(node: Con4mNode) =
         let
           loc = node.getLineNo()
           entry = scope.addEntry(secname, loc, subscope = true)
+        scope = entry.get().subscope.get()
           
     scopes.attrs = scope
     node.scopes = some(scopes)
@@ -429,7 +430,6 @@ proc checkTree*(node: Con4mNode) =
   node.scopes = some(newRootScope())
   for item in node.children:
     item.checkNode()
-
 
 when isMainModule:
   proc tT(s: string): Con4mType =

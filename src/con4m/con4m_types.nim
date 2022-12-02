@@ -119,7 +119,6 @@ type
     st*: Con4mScope
     spec*: ConfigSpec
     errors*: seq[string]
-    
 
 let stringType* = Con4mType(kind: TypeString)
 let boolType* = Con4mType(kind: TypeBool)

@@ -574,7 +574,7 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
       msg = getCurrentExceptionMsg()
     error("{filename}:{tok.lineNo}:{tok.lineOffset}: (tok = {$tok})\n{msg}".fmt())
 
-proc parse*(s: Stream, filename: string): Con4mNode =
+proc parse*(s: Stream, filename: string = ""): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
   ## implementation on tokens, which kicks off the actual parsing.
 
@@ -608,3 +608,4 @@ proc parse*(filename: string): Con4mNode =
       result = s.parse(filename)
     finally:
       s.close()
+      
