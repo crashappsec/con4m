@@ -68,13 +68,12 @@ proc checkNode(node: Con4mNode) =
     let
       scopes = node.scopes.get()
       tinfo  = intType
-    echo "Enum!"
     for i, kid in node.children:
       let
         name = node.children[i].getTokenText()      
         loc  = node.getLineNo()
 
-      if scopes.attrs.lookup(name).isSome():
+      if scopes.attrs.lookupAttr(name).isSome():
         parseError("Enum Value {name} conflicts w/ a toplevel attr".fmt())
       if scopes.vars.lookup(name).isSome():
         parseError("Enum Value {name} conflicts w/ an existing variable".fmt())
@@ -86,25 +85,29 @@ proc checkNode(node: Con4mNode) =
   of NodeSection:
     var scopes = node.scopes.get()
     var scope = scopes.attrs
+    var entry: STEntry
+    var scopename = "<root>"
 
     for kid in node.children[0 ..< ^1]:
       let
         secname = kid.getTokenText()
-        maybeEntry = scope.lookup(secname, scopeOk=true)
+        maybeEntry = scope.lookupAttr(secname, scopeOk=true)
+      scopename = scopename & "." & secname
       if maybeEntry.isSome():
-        let entry = maybeEntry.get()
+        entry = maybeEntry.get()
         if not entry.subscope.isSome():
-          parseError("Section declaration conflicted with a variable from another section")
-        scope = entry.subscope.get()
+          parseError("Section declaration conflicted with a variable " &
+                     "from another section")
       else:
-        let
-          loc = node.getLineNo()
-          entry = scope.addEntry(secname, loc, subscope = true)
-        scope = entry.get().subscope.get()
+        entry = scope.addEntry(secname, node.getLineNo(), subscope = true).get()
+        scope = entry.subscope.get()
+        
+      scope = entry.subscope.get()
+      scopes.attrs = scope
           
     scopes.attrs = scope
     node.scopes = some(scopes)
-
+    
     node.children[^1].checkNode()
   of NodeAttrAssign:
     if node.children[0].kind != NodeIdentifier:
@@ -117,10 +120,10 @@ proc checkNode(node: Con4mNode) =
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
 
-    if scopes.vars.lookup(name).isSome():
+    if scopes.vars.lookupAttr(name).isSome():
       parseError("Attribute {name} conflicts with existing user variable".fmt())
 
-    let existing = scopes.attrs.lookup(name)
+    let existing = scopes.attrs.lookupAttr(name)
 
     if not existing.isSome():
       discard scopes.attrs.addEntry(name, loc, tinfo)
@@ -145,7 +148,7 @@ proc checkNode(node: Con4mNode) =
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
 
-    if scopes.attrs.lookup(name).isSome():
+    if scopes.attrs.lookupAttr(name).isSome():
       parseError("Variable {name} conflicts with existing attribute".fmt())
 
     let existing = scopes.vars.lookup(name)
@@ -308,7 +311,6 @@ proc checkNode(node: Con4mNode) =
       else:
         parseError("Dict indicies can only be strings or ints")
     else:
-      echo $node
       parseError("Currently only support indexing on dicts and lists")
   of NodeCall:
     node.children[1].checkNode()
@@ -435,7 +437,7 @@ proc checkNode(node: Con4mNode) =
     let
       scopes = node.getBothScopes()
       name = node.getTokenText()
-      attrEntry = scopes.attrs.lookup(name)
+      attrEntry = scopes.attrs.lookupAttr(name)
       varEntry = scopes.vars.lookup(name)
 
     if attrEntry.isNone() and varEntry.isNone():

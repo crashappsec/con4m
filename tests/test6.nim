@@ -9,7 +9,7 @@ good_ids: [12]
 
 
 defaults {
-  test: 12
+  test: true
 }
 
 item {
@@ -20,10 +20,18 @@ item "okay" {
   foo: 2
   bar: 2
 }
+"""
 
-item "not okay" bar {
-  foo: 3
-  boz: 3
+const nextconffile = """
+good_ids: [1,2,3]
+
+defaults {
+  test: bar
+}
+
+item "okay" {
+   foo: 4
+   boz: 4
 }
 
 """
@@ -54,11 +62,10 @@ test "hello, world":
   
   let st = scopes.attrs
 
-  let ctx = newConfigState(st, spec)
+  let config = newConfigState(st, spec)
+  check config.validateConfig()
 
-  check not ctx.validateConfig()
-
-  for item in ctx.errors:
+  for item in config.errors:
     echo item
 
-  check len(ctx.errors) == 2
+  check len(config.errors) == 0

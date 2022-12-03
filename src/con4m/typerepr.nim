@@ -131,21 +131,21 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     result = indentTemplate.fmt()
 
 proc `$`*(scope: Con4mScope, indent: int): string =
-  result = " ".repeat(indent)
+  let pad = " ".repeat(indent + 2)
 
   for k, v in scope.entries.mpairs():
     if v.subscope.isSome(): continue
     let s = $(v.tInfo)
-    result = "{result}{k}: {s}".fmt()
+    result = "{result}{pad}{k}: {s}".fmt()
     if v.value.isSome():
-      result = "{result} {$(v.value)}\n".fmt()
+      result = "{result} {$(v.value.get())}\n".fmt()
     else:
       result = "{result}\n".fmt()
 
   for k, v in scope.entries.mpairs():
     if v.subscope.isNone(): continue
     let subscope = v.subscope.get()
-    result = result & "[subscope {k}]:\n".fmt()
+    result = result & "{pad[0 .. ^2]}[subscope {k}]:\n".fmt()
     let s = `$`(subscope, indent + 2)
     
     result = result & s

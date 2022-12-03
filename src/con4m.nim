@@ -20,5 +20,5 @@ import con4m/box
 export box
 import con4m/eval
 export eval
-import con4m/confspec
-export confspec
+import con4m/state
+export state

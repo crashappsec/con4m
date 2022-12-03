@@ -187,11 +187,7 @@ proc requiredFieldCheck(ctx: ConFigState,
                         attrs: FieldAttrs,
                         scopeName: string) =
 
-  let
-    containsSs = scope.containsSubscopes()
-    containsF = scope.containsFields()
-  
-  if containsSs and not containsF:
+  if scope.containsSubscopes() and not scope.containsFields():
     return
     
   for key, specEntry in attrs:
@@ -230,12 +226,12 @@ proc validateScope(ctx: ConfigState,
   # there's only one name on the stack), make sure there's a section
   # spec.
   if stack.len() == 1:
-    if not ctx.spec.secSpecs.contains(sname):
+    if not ctx.spec.get().secSpecs.contains(sname):
       ctx.errors.add("Invalid top-level section in config: {sname}")
       return
 
   let
-    spec = ctx.spec.secSpecs[sname]
+    spec = ctx.spec.get().secSpecs[sname]
     customOk = spec.customAttrs
 
   if len(stack) > 1 and
@@ -259,9 +255,63 @@ proc validateScope(ctx: ConfigState,
   # Add a default value in, if need be.
   requiredFieldCheck(ctx, scope, spec.predefinedAttrs, stack.join("."))
         
-                    
+
+proc validateConfig*(config: ConfigState): bool =
+  let
+    scope = config.st
+    optSpec = config.spec
+
+  if optSpec.isNone():
+    raise newException(ValueError,
+                       "Attempting to validate a configuration against " &
+                       "a specification, but no specification has been set " &
+                       "for this config.")
+  let spec = optSpec.get()
+    
+  requiredFieldCheck(config,
+                     config.st,
+                     config.spec.get().globalAttrs,
+                     "<global>")
+  #Check required fields for the global scope, adding in defaults if
+  #needed.
+  requiredFieldCheck(config, scope, spec.globalAttrs, "<global>")
+  
+  # We walk through scopes that have actually appeared, and
+  # compare what we see in those scopes vs. what we expected.
+  
+  for key, entry in scope.entries:
+    if entry.subscope.isSome():
+      let secState = SectionState()
+      config.stateObjs[key] = secState
+      config.validateScope(entry.subscope.get(), @[key], secState)
+    else:
+      config.validateAttr(@[key],
+                          entry,
+                          spec.globalAttrs,
+                          spec.customTopLevelOk)      
+    
+  # Then check for missing required sections.
+  for cmd, spec in spec.secSpecs:
+    for targetSection in spec.requiredSubsections:
+      if targetSection.contains("*"):
+        config.errors.add("Required section spec cannot contain " &
+                          "wildcards (spec {targetSection})")
+        continue
+      let parts = targetSection.split(".")
+      if dottedLookup(scope, parts).isNone():
+         config.errors.add("Required section not provided: {targetSection}")
+
+  if config.errors.len() == 0:
+    return true
+
+proc newConfigState*(scope: Con4mScope, spec: ConfigSpec = nil): ConfigState =
+  if spec != nil:
+    return ConfigState(st: scope, spec: some(spec))
+  else:
+    return ConfigState(st: scope)
+  
 proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
-  result = ConfigState(st: scope, spec: spec)
+  result = newConfigState(scope, spec)
 
   #Check required fields for the global scope, adding in defaults if
   #needed.
@@ -293,55 +343,41 @@ proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
          result.errors.add("Required section not provided: {targetSection}")
 
 
-         
+           
 # TODO: stack-configs
+proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
+  let
+    parts = field.split('.')
+    optEntry = state.st.dottedLookup(parts)
 
+  if optEntry.isNone():
+    return
 
+  return optEntry.get().value
 
+proc getSections*(state: ConfigState, field: string = "") : seq[string] =
+  var scope: Con4mScope
+  
+  if field == "":
+    scope = state.st
+  else:
+    let
+      parts = field.split(".")
+      optEntry = state.st.dottedLookup(partS)
+
+    if optEntry.isNone():
+      return
+    let entry = optEntry.get()
+    if entry.subscope.isNone():
+      return
+    scope = entry.subscope.get()
+
+  for k, v in scope.entries:
+    if v.subscope.isSome():
+      result.add(k)
+  
 
 #[
-type
-  Con4mSpec = ref object
-    nil
-
-  CfgSection = ref object
-    nil
-
-
-template addSection(self: Con4mCfg,
-                    name: string,
-                    docstring: "",
-                    allowedKeys: seq[string] = @["*"],
-                    allowedSubKeys: seq[string] = @[],
-                    minSubkeys = 0,
-                    maxSubkeys = 1, # -1 for unrestricted
-                    customAttrs: bool = false) : CfgSection =
-    discard
-
-template addAttr(self: CfgSection,
-                 name: string,
-                 keyType: typedesc): CfgAttr =
-    discard
-
-template setDefault(self: CfgAttr, value: untyped) =
-  discard
-
-template setDescription(self: CfgAttr, desc: string) =
-  discard
-
-template setLockOnWrite(self: CfgAttr, value: bool) =
-  discard
-
-template setRequired(self: CfgAttr, value: bool) =
-  discard
-                 
-proc addHiddenAttr(self: CfgSection,
-                   name: string,
-                   keyType: typedesc) =
-  discard
-
-
-  
 var spec = Con4mSpec()
 
 var keySection = spec.addSection("key", allowedSubKeys = @["string", "binary"])

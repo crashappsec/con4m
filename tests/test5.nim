@@ -9,7 +9,7 @@ good_ids: [12]
 
 
 defaults {
-  test: 12
+  test: true
 }
 
 item {
@@ -21,10 +21,6 @@ item "okay" {
   bar: 2
 }
 
-item "not okay" bar {
-  foo: 3
-  boz: 3
-}
 
 """
 
@@ -50,15 +46,17 @@ test "hello, world":
   tree.checkTree()
   tree.evalTree()
 
-  let scopes = tree.scopes.get()
-  
-  let st = scopes.attrs
-
-  let ctx = newConfigState(st, spec)
-
-  check not ctx.validateConfig()
+  let
+    scopes = tree.scopes.get()
+    st = scopes.attrs
+    ctx = newConfigState(st, spec)
+    
+  check ctx.validateConfig()
 
   for item in ctx.errors:
     echo item
 
-  check len(ctx.errors) == 2
+  check unbox[int](ctx.getConfigVar("item.okay.foo").get()) == 2
+
+  for item in ctx.getSections():
+    echo ctx.getSections(item)

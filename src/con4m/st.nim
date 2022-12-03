@@ -57,15 +57,28 @@ proc addEntry*(scope: Con4mScope,
 # non-dotted variable in a local scope. If a variable is not found in
 # one scope, then we check the parent scope, and we don't give up
 # until we get to the root scope and the item is still missing.
-proc lookup*(scope: Con4mScope, name: string, scopeOk: bool = false): Option[STEntry] =
+proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
+  if scope.entries.contains(name):
+    if scope.entries[name].subscope.isSome():
+      raise newException(ValueError, "Attempting to look up attribute that " &
+                                     "refers to a section -- " & name)
+
+    return some(scope.entries[name])
+  if scope.parent.isSome():
+    return scope.parent.get().lookup(name)
+
+# This version of symbol lookup checks for an attribute in the local scope,
+# i.e., without dot notation.  This does NOT inherit from previous scopes,
+# they only do local or dot notation.    
+proc lookupAttr*(scope: Con4mScope,
+                 name: string,
+                 scopeOk: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
     if not scopeOk and scope.entries[name].subscope.isSome():
       raise newException(ValueError, "Attempting to look up attribute that " &
                                      "refers to a section -- " & name)
 
     return some(scope.entries[name])
-  if scope.parent.isSome():
-    return scope.parent.get().lookup(name, scopeOk)
 
 # This version of symbol lookup is meant for dotted notation, when we
 # are essentially doing object access.  But, we don't have objects,

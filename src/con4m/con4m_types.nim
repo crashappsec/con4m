@@ -110,14 +110,14 @@ type
     customTopLevelOk*: bool
 
   SectionState* = ref object
-    isLocked*: bool   # If it can be overwritten later; TODO-- not in API yet.
+    isLocked*: bool
     substateObjs*: OrderedTable[string, SectionState]
     beenSeen*: bool
 
   ConfigState* = ref object
     stateObjs*: OrderedTable[string, SectionState]
     st*: Con4mScope
-    spec*: ConfigSpec
+    spec*: Option[ConfigSpec]
     errors*: seq[string]
 
 let stringType* = Con4mType(kind: TypeString)

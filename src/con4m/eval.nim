@@ -64,9 +64,10 @@ proc evalNode(node: Con4mNode) =
 
     if entry.locked:
       raise newException(ValueError, "Attempt to assign to a read-only field")
-      
+
     node.value = node.children[1].value
     entry.value = some(node.value)
+    
   of NodeVarAssign:
     node.children[1].evalNode()
     let
