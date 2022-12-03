@@ -96,10 +96,22 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeDictLit: fmtNt("DictLit")
   of NodeKVPair: fmtNt("KVPair")
   of NodeListLit: fmtNt("ListLit")
+  of NodeEnum: fmtNt("Enum")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))
   of NodeIdentifier: fmtT("Identifier")
+
+proc `$`*(self: Box): string =
+  case self.kind
+  of TypeBool: return $(self.b)
+  of TypeString: return self.s
+  of TypeInt: return $(self.i)
+  of TypeFloat: return $(self.f)
+  of TypeList: return "some list"
+  of TypeDict: return "some dict"
+  of TypeProc: return "some proc"
+  else: unreachable
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   const
@@ -124,7 +136,11 @@ proc `$`*(scope: Con4mScope, indent: int): string =
   for k, v in scope.entries.mpairs():
     if v.subscope.isSome(): continue
     let s = $(v.tInfo)
-    result = "{result}{k}: {s}\n".fmt()
+    result = "{result}{k}: {s}".fmt()
+    if v.value.isSome():
+      result = "{result} {$(v.value)}\n".fmt()
+    else:
+      result = "{result}\n".fmt()
 
   for k, v in scope.entries.mpairs():
     if v.subscope.isNone(): continue
@@ -150,14 +166,21 @@ proc `$`*(scope: Con4mScope, goDown=true): string =
   else:
     return `$`(scope, 0)
 
+proc `$`*(spec: AttrSpec): string =
+  result = "type: {spec.attrType}, required:".fmt()
+  if spec.required:
+    result = "{result} true, default:".fmt()
+  else:
+    result = "{result} false, default:".fmt()
+  if spec.defaultVal.isSome():
+    result = "{result} {`$`(spec.defaultVal.get())}".fmt()
+  else:
+    result = "{result} none".fmt()
+
+proc `$`*(attrs: FieldAttrs): string =
+  var s: seq[string]
+
+  for k, v in attrs:
+    s.add("  {k} : {`$`(v)}".fmt())
   
-
-
-
-
-
-
-
-
-
-
+  return s.join("\n  ")

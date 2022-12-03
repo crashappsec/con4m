@@ -47,7 +47,7 @@ proc evalNode(node: Con4mNode) =
   case node.kind
   of NodeBody, NodeElse, NodeActuals:
     node.evalKids()
-  of NodeSimpLit: # Values were all assigned when we checked the tree.
+  of NodeSimpLit, NodeEnum: # Values were all assigned when we checked the tree.
     return
   of NodeBreak:
     raise newException(ValueError, breakMsg)

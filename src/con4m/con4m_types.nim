@@ -10,7 +10,7 @@ type
     TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma, TtPeriod,
     TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
-    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue,
+    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtEnum,
     TtIdentifier, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
@@ -24,7 +24,7 @@ type
     NodeUnary, NodeNot, NodeMember, NodeIndex, NodeActuals, NodeCall,
     NodeDictLit, NodeKVPair, NodeListLit, NodeOr, NodeAnd, NodeNe, NodeCmp,
     NodeGte, NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul,
-    NodeDiv, NodeIdentifier
+    NodeDiv, NodeEnum, NodeIdentifier
 
   Con4mTypeKind* = enum
     TypeString, TypeBool, TypeInt, TypeFloat, TypeList, TypeDict, TypeProc,

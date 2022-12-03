@@ -64,6 +64,25 @@ proc checkNode(node: Con4mNode) =
     node.checkKids()
   of NodeBreak, NodeContinue:
     discard
+  of NodeEnum:
+    let
+      scopes = node.scopes.get()
+      tinfo  = intType
+    echo "Enum!"
+    for i, kid in node.children:
+      let
+        name = node.children[i].getTokenText()      
+        loc  = node.getLineNo()
+
+      if scopes.attrs.lookup(name).isSome():
+        parseError("Enum Value {name} conflicts w/ a toplevel attr".fmt())
+      if scopes.vars.lookup(name).isSome():
+        parseError("Enum Value {name} conflicts w/ an existing variable".fmt())
+      let entry = scopes.vars.addEntry(name, loc, tinfo).get()
+
+      entry.value  = some(box(i))
+      entry.locked = true
+        
   of NodeSection:
     var scopes = node.scopes.get()
     var scope = scopes.attrs

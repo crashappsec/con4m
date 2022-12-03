@@ -10,7 +10,6 @@
 - Build a SAMI config file
 
 # P1: Before going public
-- Enumerated types
 - The ability to add code callbacks / non-recursive procedures
 - member (.) access (needed for callbacks to be usable)
 - What happens w/ bad indexing?

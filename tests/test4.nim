@@ -12,6 +12,10 @@ defaults {
   test: 12
 }
 
+item {
+  foo: 100
+}
+
 item "okay" {
   foo: 100
 }
@@ -51,4 +55,4 @@ test "hello, world":
   for item in state.errors:
     echo item
 
-  check len(state.errors) == 1
+  check len(state.errors) == 2
