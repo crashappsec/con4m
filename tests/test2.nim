@@ -5,7 +5,7 @@ import options
 
 test "manual inspection":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
+  
   var s = """
 
 defaults {
@@ -116,9 +116,9 @@ defaults {
   if node != nil:
     echo "Parse was successful!"
 
-  checkTree(node)
+  discard checkTree(node)
   echo(node)
-  let scopes = node.children[1].scopes.get()
+  let scopes = node.scopes.get()
 
   echo "Attrs for test scope: "
   echo $(scopes.attrs)

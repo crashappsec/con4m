@@ -11,12 +11,13 @@ import box
 import typerepr
 import typecheck
 import builtins
+import state
 
-proc checkNode(node: Con4mNode)
+proc checkNode(node: Con4mNode, s: ConfigState)
 
-proc checkKids(node: Con4mNode) {.inline.} =
+proc checkKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
-    item.checkNode()
+    item.checkNode(s)
 
 template typeError(msg: string) =
   raise newException(ValueError, msg)
@@ -134,13 +135,13 @@ proc getLineNo(node: Con4mNode): int {.inline.} =
 
   return token.lineNo
 
-proc checkNode(node: Con4mNode) =
+proc checkNode(node: Con4mNode, s: ConfigState) =
   if node.scopes.isNone():
     node.scopes = node.parent.get().scopes
 
   case node.kind
   of NodeBody:
-    node.checkKids()
+    node.checkKids(s)
   of NodeBreak, NodeContinue:
     discard
   of NodeEnum:
@@ -169,7 +170,7 @@ proc checkNode(node: Con4mNode) =
 
     for kid in node.children[0 ..< ^1]:
       if kid.kind == NodeSimpLit:
-        kid.checkNode()
+        kid.checkNode(s)
       let
         secname = kid.getTokenText()
         maybeEntry = scope.lookupAttr(secname, scopeOk=true)
@@ -189,12 +190,12 @@ proc checkNode(node: Con4mNode) =
     scopes.attrs = scope
     node.scopes = some(scopes)
     
-    node.children[^1].checkNode()
+    node.children[^1].checkNode(s)
   of NodeAttrAssign:
     if node.children[0].kind != NodeIdentifier:
       parseError("Dot assignments for attributes currently not supported.")
 
-    node.children[1].checkNode()
+    node.children[1].checkNode(s)
     let
       name = node.children[0].getTokenText()
       loc = node.getLineNo()
@@ -222,7 +223,7 @@ proc checkNode(node: Con4mNode) =
     if node.children[0].kind != NodeIdentifier:
       parseError("Dot assignments for variables currently not supported.")
 
-    node.children[1].checkNode()
+    node.children[1].checkNode(s)
     let
       name = node.children[0].getTokenText()
       loc = node.getLineNo()
@@ -251,10 +252,10 @@ proc checkNode(node: Con4mNode) =
         entry.defLocs.add(loc)
   of NodeIfStmt, NodeElse:
     pushVarScope()
-    node.checkKids()
+    node.checkKids(s)
   of NodeConditional:
     pushVarScope()
-    node.checkKids()
+    node.checkKids(s)
     if isBottom(node.children[0], boolType):
       typeError("If conditional must evaluate to a boolean")
     node.typeInfo = boolType # Unneeded.
@@ -269,7 +270,7 @@ proc checkNode(node: Con4mNode) =
     entry.locked = true
     
     for i in 1 ..< node.children.len():
-      node.children[i].checkNode()
+      node.children[i].checkNode(s)
   of NodeSimpLit:
     case node.getTokenType()
     of TTStringLit:
@@ -362,22 +363,22 @@ proc checkNode(node: Con4mNode) =
     else:
       unreachable
   of NodeUnary:
-    node.checkKids()
+    node.checkKids(s)
     let t = node.children[0].typeInfo
     case t.kind
     of TypeInt, TypeFloat: node.typeInfo = t
     else:
       typeError("Unary operator only works on numeric types")
   of NodeNot:
-    node.checkKids()
+    node.checkKids(s)
     if node.children[0].isBottom():
       typeError("There's nothing to 'not' here")
     node.typeInfo = boolType
   of NodeMember:
-    node.checkKids()
+    node.checkKids(s)
     typeError("Member access is currently not supported.")
   of NodeIndex:
-    node.checkKids()
+    node.checkKids(s)
     case node.children[0].typeInfo.kind
     of TypeList:
       if isBottom(node.children[1], intType):
@@ -395,17 +396,17 @@ proc checkNode(node: Con4mNode) =
     else:
       parseError("Currently only support indexing on dicts and lists")
   of NodeCall:
-    node.children[1].checkNode()
+    node.children[1].checkNode(s)
 
     if node.children[0].kind != NodeIdentifier:
       parseError("Data objects cannot currently have methods.")
 
     let
       fname = node.children[0].getTokenText()
-      builtinOpt = getBuiltinBySig(fname, node.children[1].typeInfo)
+      builtinOpt = s.getBuiltinBySig(fname, node.children[1].typeInfo)
 
     if builtinOpt.isNone():
-      if fname.isBuiltin():
+      if s.isBuiltin(fname):
         typeError("No signature with that type found.")
       else:
         typeError("Function {fname} doesn't exist".fmt())
@@ -416,14 +417,14 @@ proc checkNode(node: Con4mNode) =
     node.typeInfo = builtin.tInfo.retType
   of NodeActuals:
     var t: seq[Con4mType]
-    node.checkKids()
+    node.checkKids(s)
 
     for item in node.children:
       t.add(item.typeInfo)
 
     node.typeInfo = newProcType(t, newTypeVar())
   of NodeDictLit:
-    node.checkKids()
+    node.checkKids(s)
     var ct = newTypeVar()
     for item in node.children:
       ct = unify(ct, item.typeinfo)
@@ -431,13 +432,13 @@ proc checkNode(node: Con4mNode) =
         typeError("Dict items must all be the same type.")
     node.typeInfo = ct
   of NodeKVPair:
-    node.checkKids()
+    node.checkKids(s)
     if node.children[0].isBottom() or node.children[1].isBottom():
       typeError("Invalid type for dictionary keypair")
     node.typeInfo = newDictType(node.children[0].typeInfo,
                                 node.children[1].typeInfo)
   of NodeListLit:
-    node.checkKids()
+    node.checkKids(s)
     var ct = newTypeVar()
     for item in node.children:
       ct = unify(ct, item.typeinfo)
@@ -445,13 +446,13 @@ proc checkNode(node: Con4mNode) =
         typeError("List items must all be the same type")
     node.typeInfo = newListType(ct)
   of NodeOr, NodeAnd:
-    node.checkKids()
+    node.checkKids(s)
     if isBottom(node.children[0], boolType) or
        isBottom(node.children[1], boolType):
       typeError("Each side of || and && expressions must eval to a bool")
     node.typeinfo = boolType
   of NodeNe, NodeCmp:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
 
     case t.kind
@@ -462,7 +463,7 @@ proc checkNode(node: Con4mNode) =
     else:
       typeError("== and != currently do not work on lists or dicts")
   of NodeGte, NodeLte, NodeGt, NodeLt:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
 
     case t.kind
@@ -473,7 +474,7 @@ proc checkNode(node: Con4mNode) =
     else:
       typeError("Comparison ops only work on numbers and strings")
   of NodePlus:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
@@ -483,7 +484,7 @@ proc checkNode(node: Con4mNode) =
     else:
       typeError("Invalid type for bianry operator")
   of NodeMinus, NodeMul:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
@@ -493,7 +494,7 @@ proc checkNode(node: Con4mNode) =
     else:
       typeError("Invalid type for bianry operator")
   of NodeMod:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
@@ -503,7 +504,7 @@ proc checkNode(node: Con4mNode) =
     else:
       typeError("Invalid type for bianry operator")
   of NodeDiv:
-    node.checkKids()
+    node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
@@ -529,10 +530,16 @@ proc checkNode(node: Con4mNode) =
 
     node.typeInfo = ent.tinfo
 
-proc checkTree*(node: Con4mNode) =
-  node.scopes = some(newRootScope())
+proc checkTree*(node: Con4mNode, s: ConfigState) =
   for item in node.children:
-    item.checkNode()
+    item.checkNode(s)
+
+proc checkTree*(node: Con4mNode): ConfigState =
+  node.scopes = some(newRootScope())
+  
+  result = newConfigState(node.scopes.get().attrs)
+
+  node.checkTree(result)
 
 when isMainModule:
   proc tT(s: string): Con4mType =

@@ -22,3 +22,5 @@ import con4m/eval
 export eval
 import con4m/state
 export state
+import con4m/con4m_types
+export con4m_types

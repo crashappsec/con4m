@@ -14,11 +14,11 @@ when (NimMajor, NimMinor) >= (1, 7):
 const breakMsg = "b"
 const continueMsg = "c"
 
-proc evalNode(node: Con4mNode)
+proc evalNode(node: Con4mNode, s: ConfigState)
 
-proc evalKids(node: Con4mNode) {.inline.} =
+proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
-    item.evalNode()
+    item.evalNode(s)
 
 template cmpWork(typeWeAreComparing: typedesc, op: untyped) =
   let
@@ -43,10 +43,10 @@ template binaryOpWork(typeWeAreOping: typedesc,
 proc modFunc(a, b: int): int {.inline.} =
   a mod b
 
-proc evalNode(node: Con4mNode) =
+proc evalNode(node: Con4mNode, s: ConfigState) =
   case node.kind
   of NodeBody, NodeElse, NodeActuals:
-    node.evalKids()
+    node.evalKids(s)
   of NodeSimpLit, NodeEnum: # Values were all assigned when we checked the tree.
     return
   of NodeBreak:
@@ -54,9 +54,9 @@ proc evalNode(node: Con4mNode) =
   of NodeContinue:
     raise newException(ValueError, continueMsg)
   of NodeSection:
-    node.children[^1].evalNode()
+    node.children[^1].evalNode(s)
   of NodeAttrAssign:
-    node.children[1].evalNode()
+    node.children[1].evalNode(s)
     let
       name = node.children[0].getTokenText()
       scope = node.getAttrScope()
@@ -69,7 +69,7 @@ proc evalNode(node: Con4mNode) =
     entry.value = some(node.value)
     
   of NodeVarAssign:
-    node.children[1].evalNode()
+    node.children[1].evalNode(s)
     let
       name = node.children[0].getTokenText()
       scope = node.getVarScope()
@@ -79,11 +79,11 @@ proc evalNode(node: Con4mNode) =
     entry.value = some(node.value)
   of NodeIfStmt:
     for n in node.children:
-      n.evalNode()
+      n.evalNode(s)
       if unbox[bool](n.value):
         return
   of NodeConditional:
-    node.evalKids()
+    node.evalKids(s)
     node.value = node.children[0].value
   of NodeFor:
     let
@@ -93,8 +93,8 @@ proc evalNode(node: Con4mNode) =
       entry = scope.lookup(name).get()
       incr, start, stop, i: int
 
-    node.children[1].evalNode()
-    node.children[2].evalNode()
+    node.children[1].evalNode(s)
+    node.children[2].evalNode(s)
 
     start = unbox[int](node.children[1].value)
     stop = unbox[int](node.children[2].value)
@@ -113,7 +113,7 @@ proc evalNode(node: Con4mNode) =
       entry.value = some(box(i))
       i = i + incr
       try:
-        node.children[3].evalNode()
+        node.children[3].evalNode(s)
       except ValueError:
         case getCurrentExceptionMsg()
         of breakMsg:
@@ -125,7 +125,7 @@ proc evalNode(node: Con4mNode) =
         else:
           raise
   of NodeUnary:
-    node.evalKids()
+    node.evalKids(s)
 
     let
       sign = node.getTokenText()
@@ -143,7 +143,7 @@ proc evalNode(node: Con4mNode) =
     else:
       unreachable
   of NodeNot:
-    node.evalKids()
+    node.evalKids(s)
 
     let bx = node.children[0].value
 
@@ -151,7 +151,7 @@ proc evalNode(node: Con4mNode) =
   of NodeMember:
     unreachable
   of NodeIndex:
-    node.evalKids()
+    node.evalKids(s)
     let
       containerBox = node.children[0].value
       indexBox = node.children[1].value
@@ -186,7 +186,7 @@ proc evalNode(node: Con4mNode) =
       unreachable
 
   of NodeCall:
-    node.children[1].evalNode()
+    node.children[1].evalNode(s)
     let
       fname = node.children[0].getTokenText()
       funcSig = node.children[1].typeInfo
@@ -196,7 +196,7 @@ proc evalNode(node: Con4mNode) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    let ret = sCall(fname, args, funcSig)
+    let ret = s.sCall(fname, args, funcSig)
 
     if ret.isSome():
       node.value = ret.get()
@@ -212,9 +212,9 @@ proc evalNode(node: Con4mNode) =
       var lit = newTable[int, Box]()
       node.value = boxDict[int, Box](lit)
 
-    node.evalKids()
+    node.evalKids(s)
   of NodeKVPair:
-    node.evalKids()
+    node.evalKids(s)
     let
       boxedKey = node.children[0].value
       boxedValue = node.children[1].value
@@ -231,7 +231,7 @@ proc evalNode(node: Con4mNode) =
         k = unbox[int](boxedKey)
       dict[k] = boxedValue
   of NodeListLit:
-    node.evalKids()
+    node.evalKids(s)
     var l: seq[Box]
 
     for item in node.children:
@@ -239,19 +239,19 @@ proc evalNode(node: Con4mNode) =
 
     node.value = box[Box](l)
   of NodeOr:
-    node.children[0].evalNode()
+    node.children[0].evalNode(s)
     node.value = node.children[0].value
     if not unbox[bool](node.value):
-      node.children[1].evalNode()
+      node.children[1].evalNode(s)
       node.value = node.children[1].value
   of NodeAnd:
-    node.children[0].evalNode()
+    node.children[0].evalNode(s)
     node.value = node.children[0].value
     if unbox[bool](node.value):
-      node.children[1].evalNode()
+      node.children[1].evalNode(s)
       node.value = node.children[1].value
   of NodeNe:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `!=`)
     of TypeFloat: cmpWork(float, `!=`)
@@ -259,7 +259,7 @@ proc evalNode(node: Con4mNode) =
     of TypeString: cmpWork(string, `!=`)
     else: unreachable
   of NodeCmp:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `==`)
     of TypeFloat: cmpWork(float, `==`)
@@ -267,59 +267,59 @@ proc evalNode(node: Con4mNode) =
     of TypeString: cmpWork(string, `==`)
     else: unreachable
   of NodeGte:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `>=`)
     of TypeFloat: cmpWork(float, `>=`)
     of TypeString: cmpWork(string, `>=`)
     else: unreachable
   of NodeLte:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `<=`)
     of TypeFloat: cmpWork(float, `<=`)
     of TypeString: cmpWork(string, `<=`)
     else: unreachable
   of NodeGt:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `>`)
     of TypeFloat: cmpWork(float, `>`)
     of TypeString: cmpWork(string, `>`)
     else: unreachable
   of NodeLt:
-    node.evalKids()
+    node.evalKids(s)
     case node.children[0].typeInfo.kind
     of TypeInt: cmpWork(int, `<`)
     of TypeFloat: cmpWork(float, `<`)
     of TypeString: cmpWork(string, `<`)
     else: unreachable
   of NodePlus:
-    node.evalKids()
+    node.evalKids(s)
     case node.typeInfo.kind
     of TypeInt: binaryOpWork(int, int, `+`)
     of TypeFloat: binaryOpWork(float, float, `+`)
     of TypeString: binaryOpWork(string, string, `&`)
     else: unreachable
   of NodeMinus:
-    node.evalKids()
+    node.evalKids(s)
     case node.typeInfo.kind
     of TypeInt: binaryOpWork(int, int, `-`)
     of TypeFloat: binaryOpWork(float, float, `-`)
     else: unreachable
   of NodeMod:
-    node.evalKids()
+    node.evalKids(s)
     case node.typeInfo.kind
     of TypeInt: binaryOpWork(int, int, modFunc)
     else: unreachable
   of NodeMul:
-    node.evalKids()
+    node.evalKids(s)
     case node.typeInfo.kind
     of TypeInt: binaryOpWork(int, int, `*`)
     of TypeFloat: binaryOpWork(float, float, `*`)
     else: unreachable
   of NodeDiv:
-    node.evalKids()
+    node.evalKids(s)
     case node.typeInfo.kind
     of TypeInt: binaryOpWork(int, float, `/`)
     of TypeFloat: binaryOpWork(float, float, `/`)
@@ -335,19 +335,19 @@ proc evalNode(node: Con4mNode) =
 
     node.value = optVal.get()
 
-proc evalTree*(node: Con4mNode) {.inline.} =
-  node.evalNode()
+proc evalTree*(node: Con4mNode, s: ConfigState) {.inline.} =
+  node.evalNode(s)
 
-proc evalConfig*(filename: string): Option[Con4mScope] =
+proc evalConfig*(filename: string): (ConfigState, Option[Con4mScope]) =
   let tree = parse(filename)
 
   if tree == nil:
     return
 
-  tree.checkTree()
-  tree.evalTree()
+  let state = tree.checkTree()
+  tree.evalTree(state)
 
   let scopes = tree.scopes.get()
   
-  return some(scopes.attrs)
+  return (state, some(scopes.attrs))
 

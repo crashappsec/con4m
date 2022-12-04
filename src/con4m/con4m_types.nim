@@ -123,6 +123,7 @@ type
     st*: Con4mScope
     spec*: Option[ConfigSpec]
     errors*: seq[string]
+    builtins*: Table[string, seq[BuiltInInfo]]
 
 let stringType* = Con4mType(kind: TypeString)
 let boolType* = Con4mType(kind: TypeBool)

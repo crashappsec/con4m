@@ -189,7 +189,6 @@ key "SBOMS" {
 
 test "samiconf":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
 
   var spec = newConfigSpec()
   var
@@ -230,18 +229,14 @@ test "samiconf":
   discard sectKey.addAttr("codec", "bool", required = false)
   discard sectKey.addAttr("docstring", "string", required = false)
 
-  let tree = parse(newStringStream(conffile))
+  let
+    tree = parse(newStringStream(conffile))
 
   check tree != nil
 
-  tree.checkTree()
-  tree.evalTree()
-
-  let scopes = tree.scopes.get()
-  
-  let st = scopes.attrs
-
-  let ctx = newConfigState(st, spec)
+  let ctx = tree.checkTree()
+  tree.evalTree(ctx)
+  ctx.addSpec(spec)
 
   check ctx.validateConfig()
 

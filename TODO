@@ -1,9 +1,6 @@
 # This needs to migrate to github issues.
 
 # P0: Need for current sami work
-- Get the function call table into the context object instead of global
-- string literals still need to be converted to values properly (in treecheck).
-  Currently they're just raw.
 - Ability to load a stacked configuration file.
 - String interpolations (This is nim-side only).
 - Integrate into SAMI

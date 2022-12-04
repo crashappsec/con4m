@@ -1,6 +1,5 @@
 import unittest, logging
 import con4m
-import options
 import streams
 
 const conffile = """
@@ -38,7 +37,6 @@ item "okay" {
 
 test "hello, world":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
 
   var spec = newConfigSpec()
   discard spec.addGlobalAttr("good_ids", "[int]")
@@ -51,21 +49,17 @@ test "hello, world":
   discard itemSection.addAttr("bar", "int", required = false)
   discard itemSection.addAttr("boz", "int", required = false)    
 
-  let tree = parse(newStringStream(conffile))
-
+  let
+    tree = parse(newStringStream(conffile))
+    
   check tree != nil
 
-  tree.checkTree()
-  tree.evalTree()
+  let ctx = tree.checkTree()
+  tree.evalTree(ctx)
+  ctx.addSpec(spec)
+  check ctx.validateConfig()
 
-  let scopes = tree.scopes.get()
-  
-  let st = scopes.attrs
-
-  let config = newConfigState(st, spec)
-  check config.validateConfig()
-
-  for item in config.errors:
+  for item in ctx.errors:
     echo item
 
-  check len(config.errors) == 0
+  check len(ctx.errors) == 0

@@ -4,7 +4,6 @@ import con4m
 
 test "manual inspection":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
   let s = """
 
 defaults {
@@ -110,7 +109,7 @@ defaults {
   if node != nil:
     echo "Parse was successful!"
 
-  checkTree(node)
+  discard checkTree(node)
   echo $(node)
 
   check node != nil # Why does this SEGV when node is nil??

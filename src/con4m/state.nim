@@ -9,6 +9,7 @@ import unicodeident
 import st
 import typecheck
 import typerepr
+import builtins
 
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
@@ -304,14 +305,18 @@ proc validateConfig*(config: ConfigState): bool =
   if config.errors.len() == 0:
     return true
 
-proc newConfigState*(scope: Con4mScope, spec: ConfigSpec = nil): ConfigState =
+proc newConfigState*(scope: Con4mScope,
+                     spec: ConfigSpec = nil,
+                     addBuiltins: bool = true
+                    ): ConfigState =
+
   if spec != nil:
-    return ConfigState(st: scope, spec: some(spec))
+    result = ConfigState(st: scope, spec: some(spec))
   else:
-    return ConfigState(st: scope)
+    result = ConfigState(st: scope)
 
-
-
+  if addBuiltins:
+    result.addDefaultBuiltins()    
            
 # TODO: stack-configs
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
@@ -344,6 +349,9 @@ proc getSections*(state: ConfigState, field: string = "") : seq[string] =
   for k, v in scope.entries:
     if v.subscope.isSome():
       result.add(k)
+
+proc addSpec*(s: ConfigState, spec: ConfigSpec) =
+  s.spec = some(spec)
   
 
 #[

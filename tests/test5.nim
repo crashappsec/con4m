@@ -26,7 +26,6 @@ item "okay" {
 
 test "hello, world":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
 
   var spec = newConfigSpec()
   discard spec.addGlobalAttr("good_ids", "[int]")
@@ -39,18 +38,15 @@ test "hello, world":
   discard itemSection.addAttr("bar", "int", required = false)
   discard itemSection.addAttr("boz", "int", required = false)    
 
-  let tree = parse(newStringStream(conffile))
+  let
+    tree = parse(newStringStream(conffile))
 
   check tree != nil
 
-  tree.checkTree()
-  tree.evalTree()
-
-  let
-    scopes = tree.scopes.get()
-    st = scopes.attrs
-    ctx = newConfigState(st, spec)
-    
+  let ctx = tree.checkTree()
+  tree.evalTree(ctx)
+  ctx.addSpec(spec)
+  
   check ctx.validateConfig()
 
   for item in ctx.errors:
