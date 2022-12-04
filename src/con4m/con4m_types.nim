@@ -48,14 +48,13 @@ type
       varNum*: int
     else: discard
 
-  Box* = object
+  Box* = ref object
     case kind*: Con4mTypeKind
     of TypeBool: b*: bool
     of TypeString: s*: string
     of TypeInt: i*: int
     of TypeFloat: f*: float
-    of TypeList, TypeDict: p*: pointer
-    else: nil
+    else: p*: pointer
 
   STEntry* = ref object
     tInfo*: Con4mType

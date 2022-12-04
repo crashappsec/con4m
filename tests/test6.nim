@@ -39,15 +39,15 @@ test "hello, world":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
 
   var spec = newConfigSpec()
-  discard spec.addGlobalAttr("good_ids", "[int]")
-  discard spec.addGlobalAttr("fart", "bool", required = false)
+  spec.addGlobalAttr("good_ids", "[int]")
+  spec.addGlobalAttr("fart", "bool", required = false)
   var defaultSection = spec.addSection("defaults")
-  discard defaultSection.addAttr("test", "bool")
+  defaultSection.addAttr("test", "bool")
 
   var itemSection = spec.addSection("item", validSubSecs = @["*"])
-  discard itemSection.addAttr("foo", "int")
-  discard itemSection.addAttr("bar", "int", required = false)
-  discard itemSection.addAttr("boz", "int", required = false)    
+  itemSection.addAttr("foo", "int")
+  itemSection.addAttr("bar", "int", required = false)
+  itemSection.addAttr("boz", "int", required = false)    
 
   let
     tree = parse(newStringStream(conffile))

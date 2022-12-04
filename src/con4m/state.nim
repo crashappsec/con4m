@@ -22,7 +22,7 @@ proc addGlobalAttr*(spec: ConfigSpec,
                     required: bool = true,
                     lockOnWrite: bool = false,
                     v: FieldValidator = nil,
-                    doc: string = ""): AttrSpec =
+                    doc: string = "") =
   
   if spec.globalAttrs.contains(name):
     raise newException(ValueError, "Global attribute already has a spec")
@@ -32,14 +32,14 @@ proc addGlobalAttr*(spec: ConfigSpec,
 
   let validator: Option[FieldValidator] = if v != nil: some(v)
                                           else: none(FieldValidator)
-  result = AttrSpec(doc: doc,
-                    attrType: con4mType, # TODO, make this an actual type
-                    defaultVal: default,
-                    lockOnWrite: lockOnWrite,
-                    required: required,
-                    validator: validator)
+  let attr = AttrSpec(doc: doc,
+                      attrType: con4mType, # TODO, make this an actual type
+                      defaultVal: default,
+                      lockOnWrite: lockOnWrite,
+                      required: required,
+                      validator: validator)
 
-  spec.globalAttrs[name] = result
+  spec.globalAttrs[name] = attr
                                     
 proc addSection*(spec: ConfigSpec,
                  name: string,
@@ -67,7 +67,7 @@ proc addAttr*(section: SectionSpec,
               required: bool = true,
               lockOnWrite: bool = false,
               v: FieldValidator = nil,
-              doc: string = ""): AttrSpec =
+              doc: string = "") =
   
   if section.predefinedAttrs.contains(name):
     raise newException(ValueError, "Attribute already has a spec")
@@ -77,14 +77,14 @@ proc addAttr*(section: SectionSpec,
 
   let validator: Option[FieldValidator] = if v != nil: some(v)
                                           else: none(FieldValidator)
-  result = AttrSpec(doc: doc,
-                    attrType: con4mType, # TODO, make this an actual type
-                    defaultVal: default,
-                    lockOnWrite: lockOnWrite,
-                    required: required,
-                    validator: validator)
+  let attr = AttrSpec(doc: doc,
+                      attrType: con4mType, # TODO, make this an actual type
+                      defaultVal: default,
+                      lockOnWrite: lockOnWrite,
+                      required: required,
+                      validator: validator)
 
-  section.predefinedAttrs[name] = result
+  section.predefinedAttrs[name] = attr
 
 proc containsFields(scope: Con4mScope): bool =
   for n, e in scope.entries:
@@ -189,11 +189,10 @@ proc requiredFieldCheck(ctx: ConFigState,
                         scopeName: string) =
 
   if scope.containsSubscopes() and not scope.containsFields():
-    return
-    
+    if scopeName != "<global>":
+      return
+
   for key, specEntry in attrs:
-    if not specEntry.required:
-      continue
     if scope.entries.contains(key):
       let entry = scope.entries[key]
       if entry.value.isSome():
@@ -202,17 +201,21 @@ proc requiredFieldCheck(ctx: ConFigState,
         if specEntry.defaultVal.isSome():
           entry.value = specEntry.defaultVal
         else:
-          ctx.errors.add("In {scopeName}: Required symbol {key} not found".fmt())
+          if specEntry.required:
+            ctx.errors.add("In {scopeName}: Required symbol {key}".fmt() &
+              "not found")
           continue
     else:
       if specEntry.defaultVal.isNone():
-        ctx.errors.add("In {scopeName}: Required symbol {key} not found".fmt())
+        if specEntry.required:
+          ctx.errors.add("In {scopeName}: Required symbol {key} not found".fmt())
         continue
       else:
         let
           opt = scope.addEntry(key, -1, specEntry.attrType.toCon4mType())
           entry = opt.get()
         entry.value = specEntry.defaultVal
+        scope.entries[key] = entry
                         
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
@@ -269,10 +272,6 @@ proc validateConfig*(config: ConfigState): bool =
                        "for this config.")
   let spec = optSpec.get()
     
-  requiredFieldCheck(config,
-                     config.st,
-                     config.spec.get().globalAttrs,
-                     "<global>")
   #Check required fields for the global scope, adding in defaults if
   #needed.
   requiredFieldCheck(config, scope, spec.globalAttrs, "<global>")
@@ -349,6 +348,28 @@ proc getSections*(state: ConfigState, field: string = "") : seq[string] =
   for k, v in scope.entries:
     if v.subscope.isSome():
       result.add(k)
+
+type Con4mSectInfo = seq[(string, Con4mScope)]
+
+proc walkSTForSects(path: string, scope: Con4mScope, s: var Con4mSectInfo) =
+  if scope.containsFields():
+    s.add((path, scope))
+    
+  for n, e in scope.entries:
+    if e.subscope.isNone(): continue
+    walkSTForSects(path & "." & n, e.subscope.get(), s)
+                       
+proc getAllSectSTs*(ctx: ConfigState): OrderedTableRef[string, Con4mSectInfo] =
+  result = newOrderedTable[string, Con4mSectInfo]()
+  
+  for k, entry in ctx.st.entries:
+    if entry.subscope.isNone():
+      continue
+    var s: Con4mSectInfo
+
+    s = newSeq[(string, Con4mScope)]()
+    walkSTForSects(k, entry.subscope.get(), s)
+    result[k] = s 
 
 proc addSpec*(s: ConfigState, spec: ConfigSpec) =
   s.spec = some(spec)

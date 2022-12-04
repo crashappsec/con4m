@@ -2,12 +2,16 @@ import unittest, logging
 import con4m
 import options
 import streams
+import tables
+import strutils
 
 
 const conffile = """
 
 sami_version := "0.2.0"
 ascii_magic  := "dadfedabbadabbed"
+
+#color: true
 
 key "_MAGIC" json {
     required: true
@@ -187,47 +191,389 @@ key "SBOMS" {
 }
 """
 
+import macros
+
+dumpTree:
+  var spec = newConfigSpec()
+  spec.addGlobalAttr("config_path",
+                     "[string]",
+                     some(box(defaultCfgPathSpec)))
+  spec.addGlobalAttr("config_filename", "string",
+                     some(box("sami.conf")))
+  spec.addGlobalAttr("color", "bool", some(box(false)))
+  spec.addGlobalAttr("log_level", "string", some(box("warn")))
+  spec.addGlobalAttr("dry_run", "bool", some(box(false)))
+  spec.addGlobalAttr("artifact_search_path", "[string]",
+                     some(box(defaultArtPathSpec)))
+  spec.addGlobalAttr("recursive", "bool", some(box(true)))
+  spec.addGlobalAttr("output_dir", "string", some(box(".")))
+  spec.addGlobalAttr("output_file",
+                     "string",
+                     some(box("sami-extractions.json")))
+
+  var sectKey = spec.addSection("key", validSubSecs =
+    @["*", "*.json", "*.binary"])
+
+  sectKey.addAttr("required", "bool", some(box(false)))
+  sectKey.addAttr("missing_action", "string", some(box("warn")))
+  sectKey.addAttr("system", "bool", some(box(false)))
+  sectKey.addAttr("squash", "bool", some(box(true)))
+  sectKey.addAttr("standard", "bool", some(box(false)))
+  sectKey.addAttr("must_force", "bool", some(box(false)))
+  sectKey.addAttr("plugin_ok", "bool", some(box(true)))
+  sectKey.addAttr("skip", "bool", some(box(false)))
+  sectKey.addAttr("priority", "int", required = false)
+  sectKey.addAttr("since", "string", required = false)
+  sectKey.addAttr("type", "string")
+  sectKey.addAttr("value", "`type", required = false) # validator
+  sectKey.addAttr("codec", "bool", some(box(false)))
+  sectKey.addAttr("docstring", "string", required = false)
+
+  proc loadSamiConfig(ctx: ConfigState): SamiConf =
+    result = SamiConf()
+
+    var tmpBox: Box
+
+    tmpBox = ctx.getConfigVar("config_path").get()
+  
+    let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
+    var config_path_seq_str: seq[string] = @[]
+
+    for item in config_path_box_seq_str:
+      config_path_seq_str.add(unbox[string](item))
+
+    result.config_path = config_path_seq_str
+
+    tmpBox = ctx.getConfigVar("config_filename").get()
+    result.config_filename = unbox[string](tmpBox)
+  
+    tmpBox = ctx.getConfigVar("color").get()
+    result.color = unbox[bool](tmpBox)
+  
+    tmpBox = ctx.getConfigVar("log_level").get()
+    result.log_level = unbox[string](tmpBox)
+  
+    tmpBox = ctx.getConfigVar("dry_run").get()
+    result.dry_run  = unbox[bool](tmpBox)
+
+    tmpBox = ctx.getConfigVar("artifact_search_path").get()
+  
+    let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
+    var artifact_search_path_seq_str: seq[string] = @[]
+
+    for item in artifact_search_path_box_seq_str:
+      artifact_search_path_seq_str.add(unbox[string](item))
+    
+    result.artifact_search_path = artifact_search_path_seq_str
+
+    tmpBox = ctx.getConfigVar("recursive").get()
+    result.recursive = unbox[bool](tmpBox)
+
+    tmpBox = ctx.getConfigVar("output_dir").get()
+    result.output_dir = unbox[string](tmpBox)
+
+    tmpBox = ctx.getConfigVar("output_file").get()
+    result.output_file = unbox[string](tmpBox)
+
+    let sectionInfo = ctx.getAllSectSTs()
+
+    for (k, v) in sectionInfo["key"]:
+      var stEntry: STEntry
+      var entryOpt: Option[STEntry]
+    
+      let sectionKey = k.split(".")[1 .. ^1].join(".")
+      var sectionData = SamiKeySection()
+      result.key[sectionKey] = sectionData
+
+      stEntry = v.lookupAttr("required").get()
+      tmpBox = stEntry.value.get()
+      sectionData.required = unbox[bool](tmpBox)
+
+      stEntry = v.lookupAttr("missing_action").get()
+      tmpBox = stEntry.value.get()
+      sectionData.missing_action = unbox[string](tmpBox)
+
+      stEntry = v.lookupAttr("system").get()
+      tmpBox = stEntry.value.get()
+      sectionData.system = unbox[bool](tmpBox)
+
+      stEntry = v.lookupAttr("squash").get()
+      tmpBox = stEntry.value.get()
+      sectionData.squash = unbox[bool](tmpBox)
+    
+      stEntry = v.lookupAttr("standard").get()
+      tmpBox = stEntry.value.get()
+      sectionData.standard = unbox[bool](tmpBox)
+
+      stEntry = v.lookupAttr("must_force").get()
+      tmpBox = stEntry.value.get()
+      sectionData.must_force = unbox[bool](tmpBox)
+
+      stEntry = v.lookupAttr("plugin_ok").get()
+      tmpBox = stEntry.value.get()
+      sectionData.plugin_ok = unbox[bool](tmpBox)
+
+      stEntry = v.lookupAttr("skip").get()
+      tmpBox = stEntry.value.get()
+      sectionData.skip = unbox[bool](tmpBox)
+
+      entryOpt = v.lookupAttr("priority")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.priority = some(unbox[int](tmpBox))
+    
+      entryOpt = v.lookupAttr("since")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.since = some(unbox[string](tmpBox))
+
+      stEntry = v.lookupAttr("type").get()
+      tmpBox = stEntry.value.get()
+      sectionData.`type` = unbox[string](tmpBox)
+
+      entryOpt = v.lookupAttr("value")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.value = some(unbox[Box](tmpBox))
+
+      stEntry = v.lookupAttr("codec").get()
+      tmpBox = stEntry.value.get()
+      sectionData.codec = unbox[bool](tmpBox)
+    
+      entryOpt = v.lookupAttr("docstring")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.docstring = some(unbox[string](tmpBox))  
+
+    # Note that "user-supplied bits need to be here somewhere too.
+    # If there's a 'default value', then it doesn't get an option type,
+    # even if it's not required.
+
+dumpTree:
+  let spec = newConfig(Sami):
+    globalAttr(config_path, seq[string], @[".", "~"])
+    globalAttr(config_filename, string, "sami.conf")
+    globalAttr(color, bool, false)
+    globalAttr(log_level, string, "warn")
+    globalAttr(dry_run, string, false)
+    globalAttr(artifact_search_path, seq[string], @["."])
+    globalAttr(recursive, bool, true)
+    globalAttr(output_dir, string, ".")
+    globalAttr(output_file, string, "sami-extractions.json")
+
+    section("key", @["*", "*.json", "*.binary"]):
+      localAttr("required", bool, false)
+      localAttr("missing_action", string, "warn")
+      localAttr("system", bool, false)
+      localAttr("squash", bool, true)
+      localAttr("standard", bool, false)
+      localAttr("must_force", bool, false)
+      localAttr("plugin_ok", bool, true)
+      localAttr("skip", bool, false)
+      localAttr("priority", int, required = false)
+      localAttr("since", string, required = false)
+      localAttr("type", string, required = true)
+      localAttr("value", Box, required = false)
+      localAttr("codec", bool, false)
+      localAttr("docstring", string, required = false)
+
+# End of tree dumping
+        
+type
+  SamiKeySection = ref object
+    required: bool
+    missing_action: string
+    system: bool
+    squash: bool
+    standard: bool
+    must_force: bool
+    plugin_ok: bool
+    skip: bool
+    priority: Option[int]
+    since: Option[string]
+    `type`: string
+    value: Option[Box]
+    codec: bool
+    docstring: Option[string]
+      
+  SamiConf = ref object
+    config_path: seq[string]
+    config_filename: string
+    color: bool
+    log_level: string
+    dry_run: bool
+    artifact_search_path: seq[string]
+    recursive: bool
+    output_dir: string
+    output_file: string
+    # If key can't have subsections, there would be no table
+    key: OrderedTable[string, SamiKeySection]
+
+proc loadSamiConfig(ctx: ConfigState): SamiConf =
+  result = SamiConf()
+
+  var tmpBox: Box
+
+  tmpBox = ctx.getConfigVar("config_path").get()
+  
+  let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
+  var config_path_seq_str: seq[string] = @[]
+
+  for item in config_path_box_seq_str:
+    config_path_seq_str.add(unbox[string](item))
+
+  result.config_path = config_path_seq_str
+
+  tmpBox = ctx.getConfigVar("config_filename").get()
+  result.config_filename = unbox[string](tmpBox)
+  
+  tmpBox = ctx.getConfigVar("color").get()
+  result.color = unbox[bool](tmpBox)
+  
+  tmpBox = ctx.getConfigVar("log_level").get()
+  result.log_level = unbox[string](tmpBox)
+  
+  tmpBox = ctx.getConfigVar("dry_run").get()
+  result.dry_run  = unbox[bool](tmpBox)
+
+  tmpBox = ctx.getConfigVar("artifact_search_path").get()
+  
+  let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
+  var artifact_search_path_seq_str: seq[string] = @[]
+
+  for item in artifact_search_path_box_seq_str:
+    artifact_search_path_seq_str.add(unbox[string](item))
+    
+  result.artifact_search_path = artifact_search_path_seq_str
+
+  tmpBox = ctx.getConfigVar("recursive").get()
+  result.recursive = unbox[bool](tmpBox)
+
+  tmpBox = ctx.getConfigVar("output_dir").get()
+  result.output_dir = unbox[string](tmpBox)
+
+  tmpBox = ctx.getConfigVar("output_file").get()
+  result.output_file = unbox[string](tmpBox)
+
+  let sectionInfo = ctx.getAllSectSTs()
+
+  for (k, v) in sectionInfo["key"]:
+    var stEntry: STEntry
+    var entryOpt: Option[STEntry]
+    
+    let sectionKey = k.split(".")[1 .. ^1].join(".")
+    var sectionData = SamiKeySection()
+    result.key[sectionKey] = sectionData
+
+    stEntry = v.lookupAttr("required").get()
+    tmpBox = stEntry.value.get()
+    sectionData.required = unbox[bool](tmpBox)
+
+    stEntry = v.lookupAttr("missing_action").get()
+    tmpBox = stEntry.value.get()
+    sectionData.missing_action = unbox[string](tmpBox)
+
+    stEntry = v.lookupAttr("system").get()
+    tmpBox = stEntry.value.get()
+    sectionData.system = unbox[bool](tmpBox)
+
+    stEntry = v.lookupAttr("squash").get()
+    tmpBox = stEntry.value.get()
+    sectionData.squash = unbox[bool](tmpBox)
+    
+    stEntry = v.lookupAttr("standard").get()
+    tmpBox = stEntry.value.get()
+    sectionData.standard = unbox[bool](tmpBox)
+
+    stEntry = v.lookupAttr("must_force").get()
+    tmpBox = stEntry.value.get()
+    sectionData.must_force = unbox[bool](tmpBox)
+
+    stEntry = v.lookupAttr("plugin_ok").get()
+    tmpBox = stEntry.value.get()
+    sectionData.plugin_ok = unbox[bool](tmpBox)
+
+    stEntry = v.lookupAttr("skip").get()
+    tmpBox = stEntry.value.get()
+    sectionData.skip = unbox[bool](tmpBox)
+
+    entryOpt = v.lookupAttr("priority")
+    if entryOpt.isSome():
+      stEntry = entryOpt.get()
+      tmpBox = stEntry.value.get()
+      sectionData.priority = some(unbox[int](tmpBox))
+    
+    entryOpt = v.lookupAttr("since")
+    if entryOpt.isSome():
+      stEntry = entryOpt.get()
+      tmpBox = stEntry.value.get()
+      sectionData.since = some(unbox[string](tmpBox))
+
+    stEntry = v.lookupAttr("type").get()
+    tmpBox = stEntry.value.get()
+    sectionData.`type` = unbox[string](tmpBox)
+
+    entryOpt = v.lookupAttr("value")
+    if entryOpt.isSome():
+      stEntry = entryOpt.get()
+      tmpBox = stEntry.value.get()
+      sectionData.value = some(unbox[Box](tmpBox))
+
+    stEntry = v.lookupAttr("codec").get()
+    tmpBox = stEntry.value.get()
+    sectionData.codec = unbox[bool](tmpBox)
+    
+    entryOpt = v.lookupAttr("docstring")
+    if entryOpt.isSome():
+      stEntry = entryOpt.get()
+      tmpBox = stEntry.value.get()
+      sectionData.docstring = some(unbox[string](tmpBox))
+
 test "samiconf":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
 
   var spec = newConfigSpec()
   var
-    defaultCfgPathSpec = @[".", "~"]
-    defaultArtPathSpec = @["."]
+    defaultCfgPathSpec = @[box("."), box("~")]
+    defaultArtPathSpec = @[box(".")]
 
-  discard spec.addGlobalAttr("config_path",
-                             "[string]",
-                             some(box(defaultCfgPathSpec)))
-  discard spec.addGlobalAttr("config_filename", "string",
-                             some(box("sami.conf")))
-  discard spec.addGlobalAttr("color", "bool", some(box(false)))
-  discard spec.addGlobalAttr("log_level", "string", some(box("warn")))
-  discard spec.addGlobalAttr("dry_run", "string", some(box(false)))
-  discard spec.addGlobalAttr("artifact_search_path", "[string]",
-                             some(box(defaultArtPathSpec)))
-  discard spec.addGlobalAttr("recursive", "bool", some(box(true)))
-  discard spec.addGlobalAttr("output_dir", "string", some(box(".")))
-  discard spec.addGlobalAttr("output_file",
-                             "string",
-                             some(box("sami-extractions.json")))
-
+  spec.addGlobalAttr("config_path",
+                     "[string]",
+                     some(box(defaultCfgPathSpec)))
+  spec.addGlobalAttr("config_filename", "string",
+                     some(box("sami.conf")))
+  spec.addGlobalAttr("color", "bool", some(box(false)))
+  spec.addGlobalAttr("log_level", "string", some(box("warn")))
+  spec.addGlobalAttr("dry_run", "string", some(box(false)))
+  spec.addGlobalAttr("artifact_search_path", "[string]",
+                     some(box(defaultArtPathSpec)))
+  spec.addGlobalAttr("recursive", "bool", some(box(true)))
+  spec.addGlobalAttr("output_dir", "string", some(box(".")))
+  spec.addGlobalAttr("output_file",
+                     "string",
+                     some(box("sami-extractions.json")))
+  
   var sectKey = spec.addSection("key", validSubSecs =
     @["*", "*.json", "*.binary"])
-
-  discard sectKey.addAttr("required", "bool", some(box(false)))
-  discard sectKey.addAttr("missing_action", "string", some(box("warn")))
-  discard sectKey.addAttr("system", "bool", some(box(false)))
-  discard sectKey.addAttr("squash", "bool", some(box(true)))
-  discard sectKey.addAttr("standard", "bool", some(box(false)))
-  discard sectKey.addAttr("must_force", "bool", some(box(false)))
-  discard sectKey.addAttr("plugin_ok", "bool", some(box(true)))
-  discard sectKey.addAttr("skip", "bool", some(box(false)))
-  discard sectKey.addAttr("priority", "int", required = false)
-  discard sectKey.addAttr("since", "string", required = false)
-  discard sectKey.addAttr("type", "string", required = true)
-  discard sectKey.addAttr("value", "`x", required = false)
-  discard sectKey.addAttr("codec", "bool", required = false)
-  discard sectKey.addAttr("docstring", "string", required = false)
+  
+  sectKey.addAttr("required", "bool", some(box(false)))
+  sectKey.addAttr("missing_action", "string", some(box("warn")))
+  sectKey.addAttr("system", "bool", some(box(false)))
+  sectKey.addAttr("squash", "bool", some(box(true)))
+  sectKey.addAttr("standard", "bool", some(box(false)))
+  sectKey.addAttr("must_force", "bool", some(box(false)))
+  sectKey.addAttr("plugin_ok", "bool", some(box(true)))
+  sectKey.addAttr("skip", "bool", some(box(false)))
+  sectKey.addAttr("priority", "int", required = false)
+  sectKey.addAttr("since", "string", required = false)
+  sectKey.addAttr("type", "string", required = true)
+  sectKey.addAttr("value", "`x", required = false)
+  sectKey.addAttr("codec", "bool", some(box(false)))
+  sectKey.addAttr("docstring", "string", required = false)
 
   let
     tree = parse(newStringStream(conffile))
@@ -240,4 +586,36 @@ test "samiconf":
 
   check ctx.validateConfig()
 
-  echo $ctx.st
+  var conf = ctx.loadSamiConfig()
+
+  echo "log level: ", conf.log_level
+  echo "artifact path: ", conf.artifact_search_path
+  echo "config file path: ", conf.config_path
+  for key, item in conf.key:
+    echo "Section: ", key
+    echo "  Required: ", item.required
+    echo "  Missing action: ", item.missing_action
+    echo "  System: ", item.system
+    echo "  Squash: ", item.squash
+    echo "  Standard: ", item.standard
+    echo "  Must force: ", item.must_force
+    echo "  Plugin OK: ", item.plugin_ok
+    echo "  Skip: ", item.skip
+    if item.priority.isSome():
+      echo "  Priority: ", item.priority.get()
+    else:
+      echo "  Priority: <none>"
+    if item.since.isSome():
+      echo "  Since: ", item.since.get()
+    else:
+      echo "  Since: <none>"
+    echo "  Type: ", item.`type`
+    echo "  Codec: ", item.codec
+    if item.docstring.isSome():
+      echo "  Docstring: ", item.docstring.get()
+    else:
+      echo "  Docstring: <none>"
+
+
+#    value: Option[Box]
+
