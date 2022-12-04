@@ -18,6 +18,7 @@ when false:
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
+    of TtStringLit: return tok.unescaped
     of TtWhiteSpace: return "~ws~"
     of TtNewLine: return "~nl~"
     of TtSof: return "~sof~"

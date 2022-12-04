@@ -17,9 +17,12 @@ proc box*(value: int): Box =
 proc box*(value: float): Box =
   return Box(kind: TypeFloat, f: value)
 
-proc boxList*[T](value: var seq[T]): Box =
+proc box*[T](value: var seq[T]): Box =
   return Box(kind: TypeList, p: cast[pointer](addr(value)))
 
+proc box*[T](value: var TableRef[T, Box]): Box =
+  return Box(kind: TypeDict, p: cast[pointer](addr(value)))
+  
 proc boxDict*[K, V](value: var TableRef[K, V]): Box =
   return Box(kind: TypeDict, p: cast[pointer](addr(value)))
 

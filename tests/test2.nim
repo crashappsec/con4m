@@ -42,14 +42,14 @@ defaults {
 
   REPO_ENVVAR := "REPO_URI"
   REPO_COMMAND := "REPO_COMMAND" # E.g., "ask-user What is the name of this repository?"
-  repo_vars := dict(env()[REPO_ENVVAR])   # or system()
+  repo_vars := split(env(REPO_ENVVAR), ":")
 
   repo {
     enabled: true
     defaults {
-      origin: repo_vars["origin"]
-      commitId: repo_vars["commit"]
-      branch: repo_vars["branch"]
+      origin: repo_vars[0]
+      commitId: repo_vars[1]
+      branch: repo_vars[2]
     }
 
     source "github" {

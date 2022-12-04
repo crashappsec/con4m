@@ -8,6 +8,7 @@
 - String interpolations (This is nim-side only).
 - Integrate into SAMI
 - Build a SAMI config file
+- Not shitty API to it.
 
 # P1: Before going public
 - The ability to add code callbacks / non-recursive procedures

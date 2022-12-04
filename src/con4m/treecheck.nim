@@ -2,6 +2,8 @@ import math
 import options
 import strformat
 import strutils
+import unicode
+import streams
 
 import con4m_types
 import st
@@ -40,10 +42,87 @@ proc getAttrScope*(node: Con4mNode): Con4mScope =
 proc getBothScopes*(node: Con4mNode): CurScopes =
   return node.scopes.get()
 
+proc checkStringLit(node: Con4mNode) =
+  let token = node.token.get()
+
+  var
+    flag: bool
+    remaining: int
+    codepoint: int
+    raw: string = newStringOfCap(token.endPos - token.startPos)
+    res: string = newStringOfCap(token.endPos - token.startPos)
+
+  token.stream.setPosition(token.startPos)
+  raw = token.stream.readStr(token.endPos - token.startPos)
+    
+  for r in raw.runes():
+    if remaining > 0:
+      codepoint = codepoint shl 4
+      let o = ord(r)
+      case o
+      of int('0') .. int('9'):
+        codepoint = codepoint and (o - int('0'))
+      of int('a') .. int('f'):
+        codepoint = codepoint and (o - int('a') + 10)
+      of int('A') .. int('F'):
+        codepoint = codepoint and (o - int('A') + 10)
+      else:
+        typeError("Invalid unicode escape in string literal")
+      remaining -= 1
+      if remaining == 0:
+        res.add(Rune(codepoint))
+        codepoint = 0
+    elif flag:
+      case r
+      of Rune('n'):
+        res.add('\n')
+        flag = false
+      of Rune('r'):
+        res.add('\r')
+        flag = false        
+      of Rune('a'):
+        res.add('\a')
+        flag = false        
+      of Rune('b'):
+        res.add('\b')
+        flag = false        
+      of Rune('f'):
+        res.add('\f')
+        flag = false        
+      of Rune('t'):
+        res.add('\t')
+        flag = false        
+      of Rune('\\'):
+        res.add('\\')
+        flag = false
+      of Rune('u'):
+        flag = false
+        remaining = 4
+      of Rune('U'):
+        flag = false
+        remaining = 8
+      else:
+        res.add(r)
+    else:
+      case r
+      of Rune('\\'):
+        flag = true
+      else:
+        res.add(r)
+        
+  if flag or (remaining != 0):
+    typeError("Unterminated escape sequence in string literal")
+
+  token.unescaped = res
+  
 proc getTokenText*(node: Con4mNode): string {.inline.} =
   let token = node.token.get()
 
-  return $(token)
+  case token.kind
+  of TtStringLit:
+    return token.unescaped
+  else:
+    return $(token)
 
 proc getTokenType(node: Con4mNode): Con4mTokenKind {.inline.} =
   let token = node.token.get()
@@ -89,6 +168,8 @@ proc checkNode(node: Con4mNode) =
     var scopename = "<root>"
 
     for kid in node.children[0 ..< ^1]:
+      if kid.kind == NodeSimpLit:
+        kid.checkNode()
       let
         secname = kid.getTokenText()
         maybeEntry = scope.lookupAttr(secname, scopeOk=true)
@@ -193,6 +274,7 @@ proc checkNode(node: Con4mNode) =
     case node.getTokenType()
     of TTStringLit:
       node.typeInfo = stringType
+      node.checkStringLit()
       var s = node.getTokenText()
       node.value = box(s)
     of TTIntLit:

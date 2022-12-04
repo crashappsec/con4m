@@ -309,38 +309,7 @@ proc newConfigState*(scope: Con4mScope, spec: ConfigSpec = nil): ConfigState =
     return ConfigState(st: scope, spec: some(spec))
   else:
     return ConfigState(st: scope)
-  
-proc validateConfig*(scope: Con4mScope, spec: ConfigSpec): ConfigState =
-  result = newConfigState(scope, spec)
 
-  #Check required fields for the global scope, adding in defaults if
-  #needed.
-  requiredFieldCheck(result, scope, spec.globalAttrs, "<global>")
-  
-  # We walk through scopes that have actually appeared, and
-  # compare what we see in those scopes vs. what we expected.
-  
-  for key, entry in scope.entries:
-    if entry.subscope.isSome():
-      let secState = SectionState()
-      result.stateObjs[key] = secState
-      result.validateScope(entry.subscope.get(), @[key], secState)
-    else:
-      result.validateAttr(@[key],
-                          entry,
-                          spec.globalAttrs,
-                          spec.customTopLevelOk)      
-    
-  # Then check for missing required sections.
-  for cmd, spec in spec.secSpecs:
-    for targetSection in spec.requiredSubsections:
-      if targetSection.contains("*"):
-        result.errors.add("Required section spec cannot contain " &
-                          "wildcards (spec {targetSection})")
-        continue
-      let parts = targetSection.split(".")
-      if dottedLookup(scope, parts).isNone():
-         result.errors.add("Required section not provided: {targetSection}")
 
 
            

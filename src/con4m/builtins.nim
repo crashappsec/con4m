@@ -4,9 +4,11 @@ import typecheck
 import st
 import box
 
+import os
 import tables
 import osproc
 import strformat
+import strutils
 import options
 
 when defined(posix):
@@ -24,14 +26,55 @@ proc builtinIToS*(args: seq[Box]): Option[Box] =
 
   return some(b)
 
-# This was necessary to get it to work before boxing; check it before deleting.
-# proc builtinIToS*(args: seq[Any]): Any =
-#   let f = unbox(args[0])
-#   var s = new(string)
+proc builtinBToS*(args: seq[Box]): Option[Box] =
+  let b = unbox[bool](args[0])
+  if b:
+    return some(box("true"))
+  else:
+    return some(box("false"))
 
-#   s[] = $(f)
+proc builtinFToS*(args: seq[Box]): Option[Box] =
+  let f = unbox[float](args[0])
+  var s = $(f)
 
-#   return s.toAny()
+  return some(box(s))
+
+proc builtinItoB*(args: seq[Box]): Option[Box] =
+  let i = unbox[int](args[0])
+  if i != 0:
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinFtoB*(args: seq[Box]): Option[Box] =
+  let f = unbox[float](args[0])
+  if f != 0:
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinStoB*(args: seq[Box]): Option[Box] =
+  let s = unbox[string](args[0])
+  if s != "":
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinLToB*(args: seq[Box]): Option[Box] =
+  let l = unbox[seq[Box]](args[0])
+
+  if len(l) == 0:
+    return some(box(false))
+  else:
+    return some(box(true))
+  
+proc builtinDToB*(args: seq[Box]): Option[Box] =
+  let d = unbox[seq[(Box, Box)]](args[0])
+
+  if len(d) == 0:
+    return some(box(false))
+  else:
+    return some(box(true))
 
 proc builtinIToF*(args: seq[Box]): Option[Box] =
   let
@@ -40,11 +83,25 @@ proc builtinIToF*(args: seq[Box]): Option[Box] =
 
   return some(box(f))
 
-proc builtinFToS*(args: seq[Box]): Option[Box] =
-  let f = unbox[float](args[0])
-  var s = $(f)
+proc builtinFToI*(args: seq[Box]): Option[Box] =
+  let
+    f = unbox[float](args[0])
+    i = int(f)
 
-  return some(box(s))
+  return some(box(i))
+
+proc builtinSplit*(args: seq[Box]): Option[Box] =
+  let
+    big = unbox[string](args[0])
+    small = unbox[string](args[1])
+    l = big.split(small)
+
+  var res: seq[Box]
+
+  for item in l:
+    res.add(box(item))
+
+  return some(box(res))
 
 proc builtinEcho*(args: seq[Box]): Option[Box] =
   var outStr: string
@@ -54,9 +111,83 @@ proc builtinEcho*(args: seq[Box]): Option[Box] =
 
   echo outStr
 
-proc builtinEmpty*(args: seq[Box]): Option[Box] =
-  discard
+proc builtinEnv*(args: seq[Box]): Option[Box] =
+  let arg = unbox[string](args[0])
 
+  return some(box(getEnv(arg)))
+
+proc builtinEnvExists*(args: seq[Box]): Option[Box] =
+  let arg = unbox[string](args[0])
+
+  return some(box(existsEnv(arg)))
+
+proc builtinEnvAll*(args: seq[Box]): Option[Box] =
+  var s: seq[(Box, Box)]
+
+  for (k, v) in envPairs():
+    s.add((box(k), box(v)))
+
+  return some(box(s))
+
+proc builtinStrip*(args: seq[Box]): Option[Box] =
+  let
+    arg = unbox[string](args[0])
+    stripped = arg.strip()
+
+  return some(box(stripped))
+
+proc builtinContainsStrStr*(args: seq[Box]): Option[Box] =
+  let
+    arg1 = unbox[string](args[0])
+    arg2 = unbox[string](args[1])
+    res = arg1.contains(arg2)
+
+  return some(box(res))
+
+proc builtinFindFromStart*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+    sub = unbox[string](args[1])
+    res = s.find(sub)
+
+  return some(box(res))
+
+proc builtinSlice*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+  var
+    startix = unbox[int](args[1])
+    endix = unbox[int](args[2])
+
+  if startix < 0:
+    startix += s.len()
+  if endix < 0:
+    endix += s.len()
+
+  try:
+    return some(box(s[startix .. endix]))
+  except:
+    return some(box(""))
+
+proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+    endix = s.len() - 1
+  var
+    startix = unbox[int](args[1])
+
+
+  if startix < 0:
+    startix += s.len()
+
+  try:
+    return some(box(s[startix .. endix]))
+  except:
+    return some(box(""))
+
+proc builtInAbort*(args: seq[Box]): Option[Box] =
+  quit()
+    
 when defined(posix):
   proc builtinCmd*(args: seq[Box]): Option[Box] =
     ## Essentially calls the posix system() call, except that, a)
@@ -113,16 +244,27 @@ proc newBuiltIn*(name: string, fn: BuiltInFn, tinfo: string) =
     builtins[name].add(b)
 
 proc addDefaultBuiltins*() =
+  newBuiltIn("string", builtinBToS, "(bool) -> string")
   newBuiltIn("string", builtinIToS, "(int) -> string")
   newBuiltIn("string", builtinFToS, "(float) -> string")
+  newBuiltIn("bool", builtinIToB, "(int) -> bool")
+  newBuiltIn("bool", builtinFToB, "(float) -> bool")
+  newBuiltIn("bool", builtinSToB, "(string) -> bool")
+  newBuiltIn("bool", builtinLToB, "([`x]) -> bool")
+  newBuiltIn("bool", builtinDToB, "({`x : `y}) -> bool")
   newBuiltIn("float", builtinItoF, "(int) -> float")
+  newBuiltIn("int", builtinFtoI, "(float) -> int")
+  newBuiltIn("split", builtinSplit, "(string, string) -> [string]")
   newBuiltIn("echo", builtinEcho, "(*string)")
-  # Not implemented yet.
-  newBuiltIn("env", builtinEmpty, "() -> {string : string}")
-  newBuiltIn("strip", builtinEmpty, "(string) -> string")
-  newBuiltIn("contains", builtinEmpty, "(string, string) -> bool")
-  newBuiltIn("dict", builtInEmpty, "(string) -> {string: string}")
-  newBuiltIn("abort", builtInEmpty, "(string)")
+  newBuiltIn("env", builtinEnv, "(string) -> string")
+  newBuiltIn("envExists", builtinEnvExists, "(string) -> bool")
+  newBuiltIn("env", builtinEnvAll, "() -> {string : string}")
+  newBuiltIn("strip", builtinStrip, "(string) -> string")
+  newBuiltIn("contains", builtinContainsStrStr, "(string, string) -> bool")
+  newBuiltIn("find", builtinFindFromStart, "(string, string) -> int")
+  newBuiltIn("slice", builtinSlice, "(string, int, int) -> string")
+  newBuiltIn("slice", builtinSliceToEnd, "(string, int) -> string")
+  newBuiltIn("abort", builtInAbort, "(string)")
   when defined(posix):
     newBuiltIn("run", builtinCmd, "(string) -> string")
 

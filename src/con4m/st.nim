@@ -195,7 +195,7 @@ proc toCon4mType*(s: string): Con4mType =
     raise newException(ValueError, "Incomplete type specification")
 
   if unicode.strip(n).len() != 0:
-    raise newException(ValueError, "Extraneous text after parsed type")
+    raise newException(ValueError, "Extraneous text after parsed type: {n}")
 
   return v
 

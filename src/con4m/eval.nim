@@ -237,7 +237,7 @@ proc evalNode(node: Con4mNode) =
     for item in node.children:
       l.add(item.value)
 
-    node.value = boxList[Box](l)
+    node.value = box[Box](l)
   of NodeOr:
     node.children[0].evalNode()
     node.value = node.children[0].value

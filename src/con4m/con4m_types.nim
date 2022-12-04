@@ -14,7 +14,11 @@ type
     TtIdentifier, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
-    kind*: Con4mTokenKind
+    case kind*: Con4mTokenKind
+    of TtStringLit:
+      unescaped*: string
+    else:
+      nil
     startPos*, endPos*, lineNo*, lineOffset*: int
     stream*: Stream
 
