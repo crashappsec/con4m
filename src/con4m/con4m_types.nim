@@ -54,7 +54,8 @@ type
     of TypeString: s*: string
     of TypeInt: i*: int
     of TypeFloat: f*: float
-    else: p*: pointer
+    else:
+      p*: pointer
 
   STEntry* = ref object
     tInfo*: Con4mType

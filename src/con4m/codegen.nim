@@ -4,6 +4,7 @@ import tables
 import strutils
 import st
 import options
+import state
 
 const
   attrCmd = "attr"
@@ -37,7 +38,15 @@ type
     name: string
     contents: SectContents
     currentSection: SectContents
-    sectionDecls: seq[NimNode]
+    nodeStack: seq[NimNode]
+    specIdent: NimNode
+
+
+proc apply*[T, V](s: openArray[T], f: proc (x: T): V{.closure.}):
+    seq[V] {.inline.} =
+  result = @[]
+  for i in 0 ..< s.len:
+    result.add(f(s[i]))
 
 proc newSectContents(path: string, parent: SectContents = nil): SectContents =
   result = SectContents(fullPath: path)
@@ -413,7 +422,7 @@ proc con4mTypeToNimNodes(t: Con4mType): NimNode =
     return nnkProcTy.newTree(params, newEmptyNode())
 
 
-proc buildOneSection(ctx: MacroState) =
+proc buildDeclsOneSection(ctx: MacroState) =
   var myItems = newNimNode(nnkRecList) # TODO: get line # info in there.
   let thisSection = ctx.currentSection
   let secName = getSectionVarName(thisSection, ctx)
@@ -422,7 +431,7 @@ proc buildOneSection(ctx: MacroState) =
   for name, subsection in thisSection.subsections:
     echo "Found subsection", name
     ctx.currentSection = subsection
-    buildOneSection(ctx)
+    buildDeclsOneSection(ctx)
     ctx.currentSection = thisSection
     let subSecName = getSectionVarName(subsection, ctx)
     myItems.add(nnkIdentDefs.newTree(
@@ -434,7 +443,7 @@ proc buildOneSection(ctx: MacroState) =
       ),
       newEmptyNode()
     )
-      )
+  )
   # Now we can add in attributes.
   for k, v in thisSection.attrs:
     myItems.add(nnkIdentDefs.newTree(
@@ -450,21 +459,155 @@ proc buildOneSection(ctx: MacroState) =
                                         newEmptyNode(),
                                         newEmptyNode(),
                                         myItems
-    )
+                                      )
+                              )
   )
-    )
 
-  ctx.sectionDecls.add(defnode)
+  ctx.nodeStack.add(defnode)
 
 proc buildTypeDecls(ctx: MacroState): NimNode =
   ctx.currentSection = ctx.contents
-  buildOneSection(ctx)
+  buildDeclsOneSection(ctx)
   var defList = newNimNode(nnkTypeSection)
 
-  for item in ctx.sectionDecls:
+  for item in ctx.nodeStack:
     defList.add(item)
 
   return defList
+
+
+def testBox[T](t: Con4mType, v: seq[T]): Box = 
+  
+proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
+  case t.kind
+  of TypeBool, TypeInt, TypeFloat, TypeString:
+    return nnkCall.newTree(newIdentNode("box"), v)
+  of TypeTVar: # Already boxed.
+    return v
+  of TypeProc:
+    error("Con4m does not currently support function pointers.")
+  of TypeList:
+    return nnkCall.newTree(newIdentNode("box"), v)
+  of TypeDict:
+    return nnkCall.newTree(newIdentNode("boxDict"), v)
+  of TypeBottom:
+    error("Cannot box bottom value")
+    
+proc transformValToOptBox(attr: AttrContents): NimNode =
+  if attr.defaultVal == nil:
+    return nnkCall.newTree(newIdentNode("none"), newIdentNode("box"))
+
+  return nnkCall.newTree(newIdentNode("some"),
+                         handleBoxing(attr.typeAsCon4mNative, attr.defaultVal)
+                         )
+
+
+proc buildSectionSpec(ctx: MacroState) =
+
+  # Add r sectKey = spec.addSection("key", validSubSecs = @["*", "*.json", "*.binary"])
+  for attrName, attrContents in ctx.currentSection.attrs:
+    let
+      attrLit  = newStrLit(attrName)
+      typeLit  = newStrLit(attrContents.typeAsCon4mString)
+      boxVal   = transformValToOptBox(attrContents)
+      required = if attrContents.required.isSome():
+                   attrContents.required.get()
+                 else:
+                   true # TODO: merge these defaults with addGlobalAttr
+      loWrite  = if attrContents.lockOnWrite.isSome():
+                   attrContents.lockOnWrite.get()
+                 else:
+                   false
+      doc      = if attrContents.doc.isSome():
+                   attrContents.doc.get()
+                 else:
+                   ""
+      
+      # TODO: add in generating the validator here.             
+      x = quote do:
+        `ctx.specIdent`.addAttr(`attrLit`,
+                                `typeLit`,
+                                default = `boxVal`,
+                                required = `required`,
+                                lockOnWrite = `loWrite`,
+                                doc = `doc`)
+      ctx.nodeStack.add(x)
+
+  for name, secinf in ctx.contents.subsections:
+    ctx.currentSection = secinf
+    buildSectionSpec(ctx)
+
+  for item in ctx.nodeStack:
+    result.add(item)
+                         
+proc buildGlobalSectionSpec(ctx: MacroState): NimNode =
+  result = newNimNode(nnkStatementList)
+  
+  for attrName, attrContents in ctx.contents.attrs:
+    let
+      attrLit  = newStrLit(attrName)
+      typeLit  = newStrLit(attrContents.typeAsCon4mString)
+      boxVal   = transformValToOptBox(attrContents)
+      required = if attrContents.required.isSome():
+                   attrContents.required.get()
+                 else:
+                   true # TODO: merge these defaults with addGlobalAttr
+      loWrite  = if attrContents.lockOnWrite.isSome():
+                   attrContents.lockOnWrite.get()
+                 else:
+                   false
+      doc      = if attrContents.doc.isSome():
+                   attrContents.doc.get()
+                 else:
+                   ""
+      
+      # TODO: add in generating the validator here.             
+      x = quote do:
+        `ctx.specIdent`.addGlobalAttr(`attrLit`,
+                                      `typeLit`,
+                                      default = `boxVal`,
+                                      required = `required`,
+                                      lockOnWrite = `loWrite`,
+                                      doc = `doc`)
+      ctx.nodeStack.add(x)
+
+  for name, secinf in ctx.contents.subsections:
+    ctx.currentSection = secinf
+    buildSectionSpec(ctx)
+
+  for item in ctx.nodeStack:
+    result.add(item)
+      
+  
+proc buildConfigSpec(ctx: MacroState): NimNode =
+  let specVarName = "confSpec" & ctx.name
+  
+  ctx.specIdent   = newIdentNode(specVarName)
+  ctx.nodeStack   = @[]
+
+  result = nnkStatementList.newTree(
+    nnkVarSection.newTree(
+      nnkIdentDefs.newTree(
+        newIdentNode(specVarName),
+        newEmptyNode(),
+        nnkCall.newTree(
+          newIdentNode("newConfigSpec")
+        )
+      )
+    )
+  )
+
+  buildGlobalSectionSpec(ctx)
+
+  for node in ctx.nodeStack:
+    result.add(node)
+
+  # buildLoadingProc(ctx)
+
+  # Return value is the configuration spec
+  result.add(newIdentNode(specVarName))
+  
+    
 
 macro configDef(nameNode: untyped, rest: untyped): untyped =
   var state = parseConfigDef(nameNode, rest)
@@ -545,41 +688,12 @@ dumpAstGen:
   sectKey.addAttr("value", "`type", required = false) # validator
   sectKey.addAttr("codec", "bool", some(box(false)))
   sectKey.addAttr("docstring", "string", required = false)
+
+  
   ]#
 
 #[
 dumpTree:
-  type
-    SamiKeySection = ref object
-      required: bool
-      #[missing_action: string
-      system: bool
-      squash: bool
-      standard: bool
-      must_force: bool
-      plugin_ok: bool
-      skip: bool
-      priority: Option[int]
-      since: Option[string]]#
-      `type`: string
-      value: Option[Box]
-      #codec: bool
-      #docstring: Option[string]
-
-    SamiConf = ref object
-      config_path: seq[string]
-      #[config_filename: string
-      color: bool
-      log_level: string
-      dry_run: bool
-      artifact_search_path: seq[string]
-      recursive: bool
-      output_dir: string
-      output_file: string
-      # If key can't have subsections, there would be no table
-      ]#
-      key: OrderedTable[string, SamiKeySection]
-    ]#
       #[
       proc loadSamiConfig(ctx: ConfigState): SamiConf =
         result = SamiConf()

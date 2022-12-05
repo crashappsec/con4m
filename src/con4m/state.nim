@@ -15,6 +15,8 @@ import builtins
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
   return ConfigSpec(customTopLevelOk: customTopLevelOk)
 
+# TODO: merge these default with buildSectionSpec in codegen, using a
+# const variable.
 proc addGlobalAttr*(spec: ConfigSpec,
                     name: string,
                     con4mType: string,
