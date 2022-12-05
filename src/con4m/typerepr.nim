@@ -44,7 +44,7 @@ proc `$`*(t: Con4mType): string =
   of TypeFloat: return "float"
   of TypeList: return "[{t.itemType}]".fmt()
   of TypeDict: return "{{{t.keyType} : {t.valType}}}".fmt()
-  of TypeTVar: return "`{t.varNum}".fmt()
+  of TypeTVar: return "@{t.varNum}".fmt()
   of TypeBottom: return "⊥"
   of TypeProc:
     if t.params.len() == 0: return "() -> {$(t.retType)}".fmt()
@@ -148,10 +148,10 @@ proc `$`*(scope: Con4mScope, indent: int): string =
     let subscope = v.subscope.get()
     result = result & "{pad[0 .. ^2]}[subscope {k}]:\n".fmt()
     let s = `$`(subscope, indent + 2)
-    
+
     result = result & s
-    
-proc `$`*(scope: Con4mScope, goDown=true): string =
+
+proc `$`*(scope: Con4mScope, goDown = true): string =
 
   if not goDown:
     for k, v in scope.entries:
@@ -183,5 +183,5 @@ proc `$`*(attrs: FieldAttrs): string =
 
   for k, v in attrs:
     s.add("  {k} : {`$`(v)}".fmt())
-  
+
   return s.join("\n  ")

@@ -6,6 +6,7 @@ import strformat
 
 import con4m_types
 
+
 # Symbol tables and scopes, and things that support it.
 # This includes the helper functions for instantiating type objects.
 
@@ -18,8 +19,14 @@ proc newDictType*(keyType, valType: Con4mType): Con4mType =
   return Con4mType(kind: TypeDict, keyType: keyType, valType: valType)
 
 proc newTypeVar*(): Con4mType =
-  tvarNum.inc()
+  tVarNum.inc()
   return Con4mType(kind: TypeTVar, varNum: tVarNum)
+
+# This should only be called when we know that the type variable
+# is going to be unique for the context.  It's mainly meant
+# for compile-time usage.
+proc newTypeVar*(num: int): Con4mType =
+  return Con4mType(kind: TypeTVar, varNum: num)
 
 proc newProcType*(params: seq[Con4mType],
                   retType: Con4mType,
@@ -69,7 +76,7 @@ proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
 
 # This version of symbol lookup checks for an attribute in the local scope,
 # i.e., without dot notation.  This does NOT inherit from previous scopes,
-# they only do local or dot notation.    
+# they only do local or dot notation.
 proc lookupAttr*(scope: Con4mScope,
                  name: string,
                  scopeOk: bool = false): Option[STEntry] =
@@ -86,7 +93,7 @@ proc lookupAttr*(scope: Con4mScope,
 proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
   if dotted.len() == 0:
     return
-  
+
   let
     name = dotted[0]
     rest = dotted[1 .. ^1]
@@ -102,7 +109,6 @@ proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
     return
 
   return dottedLookup(entry.subscope.get(), rest)
-    
 
 # This does NOT accept generics, as we don't support them across the
 # call boundary. Except it currently does, for my own testing.
@@ -113,14 +119,18 @@ proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   var n = unicode.strip(s).toLower()
 
-  if n.startsWith("string"): return (stringType, n["string".len() .. ^1])
-  if n.startsWith("bool"): return(boolType, n["bool".len() .. ^1])
-  if n.startsWith("int"): return (intType, n["int".len() .. ^1])
-  if n.startsWith("float"): return (floatType, n["float".len() .. ^1])
+  if n.startsWith("string"): return (Con4mType(kind: TypeString),
+                                               n["string".len() .. ^1])
+  if n.startsWith("bool"): return(Con4mType(kind: TypeBool),
+                                  n["bool".len() .. ^1])
+  if n.startsWith("int"): return (Con4mType(kind: TypeInt),
+                                  n["int".len() .. ^1])
+  if n.startsWith("float"): return (Con4mType(kind: TypeFloat),
+                                              n["float".len() .. ^1])
 
-  if n[0] == '`':
+  if n[0] == '@':
     let vname = $n[1]
-    if not tv.contains(vname): tv[vname] = newTypeVar()
+    if not tv.contains(vname): tv[vname] = newTypeVar(len(tv))
     return (tv[vname], n[2 .. ^1])
   elif n[0] == '[':
     var (contained, rest) = n[1 .. ^1].toCon4mType(tv)
@@ -172,13 +182,13 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
 
     if n.len() != 0:
       if n[0] != '-':
-        return (newProcType(params, bottomType, va), n)
+        return (newProcType(params, Con4mType(kind: TypeBottom), va), n)
       if (n.len() == 1) or (n[1] != '>'):
         raise newException(ValueError, "Expected > after - for proc return")
       n = unicode.strip(n[2 .. ^1])
       (oneParam, n) = n.toCon4mType(tv)
     else:
-      oneParam = bottomType
+      oneParam = Con4mType(kind: TypeBottom)
 
     return (newProcType(params, oneParam, va), n)
   else:

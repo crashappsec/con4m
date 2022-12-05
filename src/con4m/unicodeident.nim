@@ -62,7 +62,7 @@ proc isValidId*(s: string): bool =
     return false
 
   let l = s.runeLenAt(0)
-  
+
   if not s.runeAt(0).isIdStart():
     return false
 

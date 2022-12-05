@@ -55,7 +55,7 @@ proc checkStringLit(node: Con4mNode) =
 
   token.stream.setPosition(token.startPos)
   raw = token.stream.readStr(token.endPos - token.startPos)
-    
+
   for r in raw.runes():
     if remaining > 0:
       codepoint = codepoint shl 4
@@ -80,19 +80,19 @@ proc checkStringLit(node: Con4mNode) =
         flag = false
       of Rune('r'):
         res.add('\r')
-        flag = false        
+        flag = false
       of Rune('a'):
         res.add('\a')
-        flag = false        
+        flag = false
       of Rune('b'):
         res.add('\b')
-        flag = false        
+        flag = false
       of Rune('f'):
         res.add('\f')
-        flag = false        
+        flag = false
       of Rune('t'):
         res.add('\t')
-        flag = false        
+        flag = false
       of Rune('\\'):
         res.add('\\')
         flag = false
@@ -110,12 +110,12 @@ proc checkStringLit(node: Con4mNode) =
         flag = true
       else:
         res.add(r)
-        
+
   if flag or (remaining != 0):
     typeError("Unterminated escape sequence in string literal")
 
   token.unescaped = res
-  
+
 proc getTokenText*(node: Con4mNode): string {.inline.} =
   let token = node.token.get()
 
@@ -147,11 +147,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeEnum:
     let
       scopes = node.scopes.get()
-      tinfo  = intType
+      tinfo = intType
     for i, kid in node.children:
       let
-        name = node.children[i].getTokenText()      
-        loc  = node.getLineNo()
+        name = node.children[i].getTokenText()
+        loc = node.getLineNo()
 
       if scopes.attrs.lookupAttr(name).isSome():
         parseError("Enum Value {name} conflicts w/ a toplevel attr".fmt())
@@ -159,9 +159,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         parseError("Enum Value {name} conflicts w/ an existing variable".fmt())
       let entry = scopes.vars.addEntry(name, loc, tinfo).get()
 
-      entry.value  = some(box(i))
+      entry.value = some(box(i))
       entry.locked = true
-        
+
   of NodeSection:
     var scopes = node.scopes.get()
     var scope = scopes.attrs
@@ -173,7 +173,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         kid.checkNode(s)
       let
         secname = kid.getTokenText()
-        maybeEntry = scope.lookupAttr(secname, scopeOk=true)
+        maybeEntry = scope.lookupAttr(secname, scopeOk = true)
       scopename = scopename & "." & secname
       if maybeEntry.isSome():
         entry = maybeEntry.get()
@@ -183,13 +183,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       else:
         entry = scope.addEntry(secname, node.getLineNo(), subscope = true).get()
         scope = entry.subscope.get()
-        
+
       scope = entry.subscope.get()
       scopes.attrs = scope
-          
+
     scopes.attrs = scope
     node.scopes = some(scopes)
-    
+
     node.children[^1].checkNode(s)
   of NodeAttrAssign:
     if node.children[0].kind != NodeIdentifier:
@@ -244,7 +244,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       if entry.locked:
         typeError("Cannot assign to loop index variables.")
-        
+
       if t.isBottom():
         typeError("Type of value assigned conflicts with the exiting type")
       else:
@@ -268,7 +268,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       entry = scope.addEntry(name, loc, intType).get()
 
     entry.locked = true
-    
+
     for i in 1 ..< node.children.len():
       node.children[i].checkNode(s)
   of NodeSimpLit:
@@ -536,7 +536,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
 
 proc checkTree*(node: Con4mNode): ConfigState =
   node.scopes = some(newRootScope())
-  
+
   result = newConfigState(node.scopes.get().attrs)
 
   node.checkTree(result)
@@ -554,14 +554,14 @@ when isMainModule:
   echo $("[ string ]".toCon4mType())
   echo $("[[string ]]".toCon4mType())
   echo $("{int : [[string]]}".toCon4mType())
-  echo $("([string], { bool : float }, *int) -> `x".toCon4mType())
-  echo $("[ string ]".tT().unify("`x".tT()))
+  echo $("([string], { bool : float }, *int) -> @x".toCon4mType())
+  echo $("[ string ]".tT().unify("@x".tT()))
   echo $("(int, int, int, *string)".tT())
-  echo $"(int, int, int, *string) -> `x".tT().unify(
+  echo $"(int, int, int, *string) -> @x".tT().unify(
       "(int, int, int, *string)".tT())
-  echo $"(int, int, int, string) -> `x".tT().unify("(int, int, int, string)".tT())
-  echo $"(int, int, int, *string) -> `x".tT().unify(
+  echo $"(int, int, int, string) -> @x".tT().unify("(int, int, int, string)".tT())
+  echo $"(int, int, int, *string) -> @x".tT().unify(
       "(int, int, int, string, string)".tT())
-  echo $"(int, int, int, *bool) -> `x".tT().unify("(int, int, int)".tT())
-  echo $"(int, int, int, *`t) -> `x".tT().unify("(int, int, int, float)".tT())
-  echo $"(int, int, int, *`t) -> `x".tT().unify("(int, int, int)".tT())
+  echo $"(int, int, int, *bool) -> @x".tT().unify("(int, int, int)".tT())
+  echo $"(int, int, int, *@t) -> @x".tT().unify("(int, int, int, float)".tT())
+  echo $"(int, int, int, *@t) -> @x".tT().unify("(int, int, int)".tT())

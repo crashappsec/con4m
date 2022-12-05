@@ -509,7 +509,7 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     if ctx.curTok().kind != TtComma:
       return
     discard ctx.consume()
-    
+
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
   result = Con4mNode(kind: NodeBody, typeInfo: bottomType)
 
@@ -537,7 +537,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       else:
         try:
           result.children.add(ctx.expression())
-        except:          parseError("Expected an assignment, block start or expression", true)
+        except: parseError("Expected an assignment, block start or expression", true)
     of TtIf:
       result.children.add(ctx.ifStmt())
     of TtFor:
@@ -627,4 +627,4 @@ proc parse*(filename: string): Con4mNode =
       result = s.parse(filename)
     finally:
       s.close()
-      
+

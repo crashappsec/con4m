@@ -88,7 +88,7 @@ type
     tinfo*: Con4mType
 
   FieldValidator* = (seq[string], Box) -> bool
-  
+
   AttrSpec* = ref object
     doc*: string
     attrType*: string
@@ -98,7 +98,7 @@ type
     required*: bool
 
   FieldAttrs* = OrderedTable[string, AttrSpec]
-  
+
   SectionSpec* = ref object
     requiredSubsections*: seq[string]
     allowedSubsections*: seq[string]
@@ -124,13 +124,14 @@ type
     errors*: seq[string]
     builtins*: Table[string, seq[BuiltInInfo]]
 
-let stringType* = Con4mType(kind: TypeString)
-let boolType* = Con4mType(kind: TypeBool)
-let intType* = Con4mType(kind: TypeInt)
-let floatType* = Con4mType(kind: TypeFloat)
-let bottomType* = Con4mType(kind: TypeBottom)
+let
+  stringType* = Con4mType(kind: TypeString)
+  boolType* = Con4mType(kind: TypeBool)
+  intType* = Con4mType(kind: TypeInt)
+  floatType* = Con4mType(kind: TypeFloat)
+  bottomType* = Con4mType(kind: TypeBottom)
 
 template unreachable*() =
   doAssert(false, "Reached code the programmer thought was unreachable :(")
 
-  
+

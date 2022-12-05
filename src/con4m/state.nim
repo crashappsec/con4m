@@ -23,7 +23,7 @@ proc addGlobalAttr*(spec: ConfigSpec,
                     lockOnWrite: bool = false,
                     v: FieldValidator = nil,
                     doc: string = "") =
-  
+
   if spec.globalAttrs.contains(name):
     raise newException(ValueError, "Global attribute already has a spec")
 
@@ -34,32 +34,32 @@ proc addGlobalAttr*(spec: ConfigSpec,
                                           else: none(FieldValidator)
   let attr = AttrSpec(doc: doc,
                       attrType: con4mType, # TODO, make this an actual type
-                      defaultVal: default,
-                      lockOnWrite: lockOnWrite,
-                      required: required,
-                      validator: validator)
+    defaultVal: default,
+    lockOnWrite: lockOnWrite,
+    required: required,
+    validator: validator)
 
   spec.globalAttrs[name] = attr
-                                    
+
 proc addSection*(spec: ConfigSpec,
                  name: string,
                  doc: string = "",
                  requiredSubSecs: seq[string] = @[],
-                 validSubSecs: seq[string] = @[],                 
+                 validSubSecs: seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
   if spec.secSpecs.contains(name):
     raise newException(ValueError, "Cannot redefine.")
 
   if not name.isValidId():
     raise newException(ValueError, "Name is not a valid identifier")
-    
+
   result = SectionSpec(doc: doc,
                        requiredSubsections: requiredSubSecs,
                        allowedSubsections: validSubSecs,
                        customAttrs: allowCustomAttrs)
-  
+
   spec.secSpecs[name] = result
-                                    
+
 proc addAttr*(section: SectionSpec,
               name: string,
               con4mType: string,
@@ -68,7 +68,7 @@ proc addAttr*(section: SectionSpec,
               lockOnWrite: bool = false,
               v: FieldValidator = nil,
               doc: string = "") =
-  
+
   if section.predefinedAttrs.contains(name):
     raise newException(ValueError, "Attribute already has a spec")
 
@@ -79,10 +79,10 @@ proc addAttr*(section: SectionSpec,
                                           else: none(FieldValidator)
   let attr = AttrSpec(doc: doc,
                       attrType: con4mType, # TODO, make this an actual type
-                      defaultVal: default,
-                      lockOnWrite: lockOnWrite,
-                      required: required,
-                      validator: validator)
+    defaultVal: default,
+    lockOnWrite: lockOnWrite,
+    required: required,
+    validator: validator)
 
   section.predefinedAttrs[name] = attr
 
@@ -99,16 +99,16 @@ proc containsSubscopes(scope: Con4mScope): bool =
       return true
   return false
 
-type ValidState = enum 
-    Invalid, ValidData, PathMatch
+type ValidState = enum
+  Invalid, ValidData, PathMatch
 
 proc checkOneSectionSpec(spec: string, stack: seq[string]): ValidState =
   let parts = spec.split('.')
-  
+
   if parts.len() < stack.len(): return Invalid
 
   for i in 0 ..< stack.len():
-    if parts[i] == "*": continue  # Wait this makes no sense.
+    if parts[i] == "*": continue # Wait this makes no sense.
     if cmpRunesIgnoreCase(parts[i], stack[i]) != 0:
       return Invalid
 
@@ -132,7 +132,7 @@ proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
       return true
     of PathMatch:
       if not thisScopeContainsData:
-        return true  
+        return true
 
 proc validateAttr(ctx: ConfigState,
                   stack: seq[string],
@@ -146,7 +146,7 @@ proc validateAttr(ctx: ConfigState,
   # 3. Does the type in the symbol table match what was spec'd?
   # 4. If there's a validator callback, call it!
   # 5. Are we supposed to lock this field now that it's set? If so, do it.
-  
+
   let
     symbol = stack[^1]
 
@@ -161,7 +161,7 @@ proc validateAttr(ctx: ConfigState,
     # an error condition, but we also don't want to end up marking the
     # symbol as having been seen.
     return
-    
+
   let
     box = entry.value.get()
     spec = fields[symbol]
@@ -216,13 +216,13 @@ proc requiredFieldCheck(ctx: ConFigState,
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
-                        
+
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
                    stack: seq[string],
                    myState: SectionState) =
   let sname = stack[0]
-    
+
   myState.beenSeen = true
 
   # Top-level sections MUST be pre-specified when validation is
@@ -247,7 +247,7 @@ proc validateScope(ctx: ConfigState,
   for key, entry in scope.entries:
     var pushed = stack
     pushed.add(key)
-    
+
     if entry.subscope.isSome():
       let secState = SectionState()
       myState.subStateObjs[key] = secState
@@ -258,7 +258,7 @@ proc validateScope(ctx: ConfigState,
   # Next check required fields.
   # Add a default value in, if need be.
   requiredFieldCheck(ctx, scope, spec.predefinedAttrs, stack.join("."))
-        
+
 
 proc validateConfig*(config: ConfigState): bool =
   let
@@ -271,14 +271,14 @@ proc validateConfig*(config: ConfigState): bool =
                        "a specification, but no specification has been set " &
                        "for this config.")
   let spec = optSpec.get()
-    
+
   #Check required fields for the global scope, adding in defaults if
   #needed.
   requiredFieldCheck(config, scope, spec.globalAttrs, "<global>")
-  
+
   # We walk through scopes that have actually appeared, and
   # compare what we see in those scopes vs. what we expected.
-  
+
   for key, entry in scope.entries:
     if entry.subscope.isSome():
       let secState = SectionState()
@@ -288,8 +288,8 @@ proc validateConfig*(config: ConfigState): bool =
       config.validateAttr(@[key],
                           entry,
                           spec.globalAttrs,
-                          spec.customTopLevelOk)      
-    
+                          spec.customTopLevelOk)
+
   # Then check for missing required sections.
   for cmd, spec in spec.secSpecs:
     for targetSection in spec.requiredSubsections:
@@ -299,7 +299,7 @@ proc validateConfig*(config: ConfigState): bool =
         continue
       let parts = targetSection.split(".")
       if dottedLookup(scope, parts).isNone():
-         config.errors.add("Required section not provided: {targetSection}")
+        config.errors.add("Required section not provided: {targetSection}")
 
   if config.errors.len() == 0:
     return true
@@ -315,8 +315,8 @@ proc newConfigState*(scope: Con4mScope,
     result = ConfigState(st: scope)
 
   if addBuiltins:
-    result.addDefaultBuiltins()    
-           
+    result.addDefaultBuiltins()
+
 # TODO: stack-configs
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   let
@@ -328,9 +328,9 @@ proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
 
   return optEntry.get().value
 
-proc getSections*(state: ConfigState, field: string = "") : seq[string] =
+proc getSections*(state: ConfigState, field: string = ""): seq[string] =
   var scope: Con4mScope
-  
+
   if field == "":
     scope = state.st
   else:
@@ -354,14 +354,14 @@ type Con4mSectInfo = seq[(string, Con4mScope)]
 proc walkSTForSects(path: string, scope: Con4mScope, s: var Con4mSectInfo) =
   if scope.containsFields():
     s.add((path, scope))
-    
+
   for n, e in scope.entries:
     if e.subscope.isNone(): continue
     walkSTForSects(path & "." & n, e.subscope.get(), s)
-                       
+
 proc getAllSectSTs*(ctx: ConfigState): OrderedTableRef[string, Con4mSectInfo] =
   result = newOrderedTable[string, Con4mSectInfo]()
-  
+
   for k, entry in ctx.st.entries:
     if entry.subscope.isNone():
       continue
@@ -369,11 +369,11 @@ proc getAllSectSTs*(ctx: ConfigState): OrderedTableRef[string, Con4mSectInfo] =
 
     s = newSeq[(string, Con4mScope)]()
     walkSTForSects(k, entry.subscope.get(), s)
-    result[k] = s 
+    result[k] = s
 
 proc addSpec*(s: ConfigState, spec: ConfigSpec) =
   s.spec = some(spec)
-  
+
 
 #[
 var spec = Con4mSpec()

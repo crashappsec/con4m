@@ -13,10 +13,10 @@ import options
 
 when defined(posix):
   import posix
-  
+
 when (NimMajor, NimMinor) >= (1, 7):
-  {.warning[CastSizes]:off.}
-  
+  {.warning[CastSizes]: off.}
+
 proc builtinIToS*(args: seq[Box]): Option[Box] =
   let i = unbox[int](args[0])
   var s = $(i)
@@ -65,7 +65,7 @@ proc builtinLToB*(args: seq[Box]): Option[Box] =
     return some(box(false))
   else:
     return some(box(true))
-  
+
 proc builtinDToB*(args: seq[Box]): Option[Box] =
   let d = unbox[seq[(Box, Box)]](args[0])
 
@@ -185,7 +185,7 @@ proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
 
 proc builtInAbort*(args: seq[Box]): Option[Box] =
   quit()
-    
+
 when defined(posix):
   proc builtinCmd*(args: seq[Box]): Option[Box] =
     ## Essentially calls the posix system() call, except that, a)
@@ -231,7 +231,7 @@ else:
     let
       (output, exitCode) = execCmdEx(cmd)
       exitAsStr = $(exitCode)
-      
+
     return some(box("{exitAsStr}:{output}".fmt()))
 
 proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
@@ -248,8 +248,8 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("bool", builtinIToB, "(int) -> bool")
   s.newBuiltIn("bool", builtinFToB, "(float) -> bool")
   s.newBuiltIn("bool", builtinSToB, "(string) -> bool")
-  s.newBuiltIn("bool", builtinLToB, "([`x]) -> bool")
-  s.newBuiltIn("bool", builtinDToB, "({`x : `y}) -> bool")
+  s.newBuiltIn("bool", builtinLToB, "([@x]) -> bool")
+  s.newBuiltIn("bool", builtinDToB, "({@x : @y}) -> bool")
   s.newBuiltIn("float", builtinItoF, "(int) -> float")
   s.newBuiltIn("int", builtinFtoI, "(float) -> int")
   s.newBuiltIn("split", builtinSplit, "(string, string) -> [string]")

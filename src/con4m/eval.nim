@@ -9,7 +9,7 @@ import options
 import tables
 
 when (NimMajor, NimMinor) >= (1, 7):
-  {.warning[CastSizes]:off.}
+  {.warning[CastSizes]: off.}
 
 const breakMsg = "b"
 const continueMsg = "c"
@@ -35,7 +35,7 @@ template binaryOpWork(typeWeAreOping: typedesc,
   let
     v1 = unbox[typeWeAreOping](node.children[0].value)
     v2 = unbox[typeWeAreOping](node.children[1].value)
-    
+
   var ret: returnType = cast[returnType](op(v1, v2))
 
   node.value = box(ret)
@@ -67,7 +67,7 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
 
     node.value = node.children[1].value
     entry.value = some(node.value)
-    
+
   of NodeVarAssign:
     node.children[1].evalNode(s)
     let
@@ -348,6 +348,6 @@ proc evalConfig*(filename: string): (ConfigState, Option[Con4mScope]) =
   tree.evalTree(state)
 
   let scopes = tree.scopes.get()
-  
+
   return (state, some(scopes.attrs))
 

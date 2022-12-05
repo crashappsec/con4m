@@ -3,14 +3,14 @@ import tables
 import con4m_types
 
 when (NimMajor, NimMinor) > (1, 7):
-  {.warning[CastSizes]:off.}
+  {.warning[CastSizes]: off.}
 
 proc box*(value: bool): Box =
   return Box(kind: TypeBool, b: value)
 
 proc box*(value: string): Box =
   return Box(kind: TypeString, s: value)
-  
+
 proc box*(value: int): Box =
   return Box(kind: TypeInt, i: value)
 
@@ -33,7 +33,7 @@ proc boxList*[T](value: var seq[T]): Box =
       elif T is string:
         res.add(Box(kind: TypeString, s: item))
       elif T is bool:
-        res.add(Box(kind: TypeBool, b: item))        
+        res.add(Box(kind: TypeBool, b: item))
       elif T is float:
         res.add(Box(kind: TypeFloat, f: item))
       elif T is seq:
@@ -43,7 +43,7 @@ proc boxList*[T](value: var seq[T]): Box =
 
 proc box*[T](value: var TableRef[T, Box]): Box =
   return Box(kind: TypeDict, p: cast[pointer](addr(value)))
-  
+
 proc boxDict*[K, V](value: var TableRef[K, V]): Box =
   return Box(kind: TypeDict, p: cast[pointer](addr(value)))
 
@@ -58,7 +58,7 @@ proc unbox*[T](box: Box): T =
       return cast[ptr T](addr(box.s))[]
     else:
       return cast[T](box.s)
-      
+
   else: return cast[ptr T](box.p)[]
 
 when isMainModule:
@@ -68,7 +68,7 @@ when isMainModule:
     cray = @[s, s]
     d = {"foo": 32, "bar": 23}.newTable()
     b1, b2, b3, b4: Box
-    ub, ub2 : seq[Box]
+    ub, ub2: seq[Box]
     tub: seq[string] = @[]
 
 
@@ -80,7 +80,7 @@ when isMainModule:
     tub = unbox[seq[string]](box)
     echo tub
 
-  
+
 
   # This interface is gone, but I wanted to leave the comment for my
   # own reference, as it is one of NIM's biggest gotchas, right here.
