@@ -145,7 +145,7 @@ macro dumpCodeAtRuntime*(x: untyped) : untyped =
   ## when I run the program, show me the code that I am currently generating,
   ## without running the code. Basically, if my macro would return a node N,
   ## I instead return dumpCodeAtRuntime(N).
-    return nnkStmtList.newTree(
+  return nnkStmtList.newTree(
       nnkCall.newTree(
         newIdentNode("echo"),
         toStrLit(x)
@@ -261,21 +261,21 @@ proc getBoolValue(n: NimNode): bool =
 proc lookForConfigCmds(stmt: NimNode, state: MacroState)
 
 proc foundCmdAttr(stmt: NimNode, state: MacroState) =
-## Here begins code for the parsing stage, where we parse the macro code
-## the user wrote.  The user's code at this point is in tree form, so we're
-## looking at tree nodes, and squirelling off information into our `state`
-## variable.  The parse tree itself will eventually get thrown away.
-##  
-## This proc parses the `attr` command.
-##   
-## Arg 0: "attr"
-## Arg 1: Name, Identifier, required.
-## Arg 2: con4m type, can already be as a string literal, required.
-## Arg 3: defaultVal (optional, named: "default = ")
-## Arg 4: required   (optional, named: "required = ")
-## Arg 5: lockOnWrite (optional, named: "lockOnWrite = ")
-## Arg 6: doc (optional, named: "doc = ")
-## Arg 7: TODO: validator (optional, named: "validator = ")
+  ## Here begins code for the parsing stage, where we parse the macro code
+  ## the user wrote.  The user's code at this point is in tree form, so we're
+  ## looking at tree nodes, and squirelling off information into our `state`
+  ## variable.  The parse tree itself will eventually get thrown away.
+  ##  
+  ## This proc parses the `attr` command.
+  ##   
+  ## Arg 0: "attr"
+  ## Arg 1: Name, Identifier, required.
+  ## Arg 2: con4m type, can already be as a string literal, required.
+  ## Arg 3: defaultVal (optional, named: "default = ")
+  ## Arg 4: required   (optional, named: "required = ")
+  ## Arg 5: lockOnWrite (optional, named: "lockOnWrite = ")
+  ## Arg 6: doc (optional, named: "doc = ")
+  ## Arg 7: TODO: validator (optional, named: "validator = ")
   if stmt.len() < 3:
     error("Too few nodes to attr. Requires two positional parameters, one " &
           "for the name, name and the second for the con4m type.")
@@ -349,14 +349,14 @@ proc foundCmdAttr(stmt: NimNode, state: MacroState) =
 
 
 proc foundCmdSection(stmt: NimNode, state: MacroState) =
-## This is the code for walking the tree to parse out a `section` command.
-## Arg 0: "section"
-## Arg 1: section name (ID)
-## Arg 2: allowCustomAttrs: bool (optional, kw)
-## Arg 3: doc: string (optional, kw)
-## Arg 4: requiredSubSections not processed (kw only)
-## Arg 5: allowedSubSections not processed (kw only)
-## Arg 6: attr and subsection commands (must not be empty)
+  ## This is the code for walking the tree to parse out a `section` command.
+  ## Arg 0: "section"
+  ## Arg 1: section name (ID)
+  ## Arg 2: allowCustomAttrs: bool (optional, kw)
+  ## Arg 3: doc: string (optional, kw)
+  ## Arg 4: requiredSubSections not processed (kw only)
+  ## Arg 5: allowedSubSections not processed (kw only)
+  ## Arg 6: attr and subsection commands (must not be empty)
   if stmt.len() < 2:
     error("Too few nodes to section. Requires a name.")
   let
@@ -443,10 +443,10 @@ proc foundCmdSection(stmt: NimNode, state: MacroState) =
   state.currentSection = parentSection
 
 proc lookForConfigCmds(stmt: NimNode, state: MacroState) =
-## Here, we're identifying the config commands, dispatching to one of
-## the functions above us.  If we see anything other than calls to our
-## commands, then we BAIL, because we don't allow the user to intermix
-## other code with our macro.
+  ## Here, we're identifying the config commands, dispatching to one of
+  ## the functions above us.  If we see anything other than calls to our
+  ## commands, then we BAIL, because we don't allow the user to intermix
+  ## other code with our macro.
   case stmt.kind
   of nnkCall, nnkCommand:
     let n = stmt[0]
@@ -464,8 +464,8 @@ proc lookForConfigCmds(stmt: NimNode, state: MacroState) =
           stmt)
 
 proc parseConfigDef(nameNode: NimNode, rest: NimNode): MacroState =
-## This is the entry point for parsing; it sets up the state, and kicks
-## off lookForConfigCommands on each statement in the macro.  
+  ## This is the entry point for parsing; it sets up the state, and kicks
+  ## off lookForConfigCommands on each statement in the macro.  
   nameNode.expectKind(nnkIdent)
   result = MacroState(spec: ConfigSpec(), name: nameNode.strVal)
 
@@ -480,9 +480,9 @@ proc parseConfigDef(nameNode: NimNode, rest: NimNode): MacroState =
     lookForConfigCmds(stmt, result)
 
 proc getSectionVarName(sec: SectContents, ctx: MacroState): string =
-## Now we're entering into the code that supports generating the
-## replacement code.  This is where things can probably start to get
-## confusing.
+  ## Now we're entering into the code that supports generating the
+  ## replacement code.  This is where things can probably start to get
+  ## confusing.
   let cfgName = ctx.name
 
   result = cfgName
@@ -502,12 +502,12 @@ proc getSectionVarName(sec: SectContents, ctx: MacroState): string =
   result = result & "Section"
 
 proc con4mTypeToNimNodes(t: Con4mType): NimNode =
-## Above, we'd gone from a Con4m type to a nim type as a string.  This
-## proc is similar, but instead creates the parse tree nodes we need
-## to insert when we want to declare something to be of the
-## destination type.
-##
-## This is the call that is ACTUALLY useful.  
+  ## Above, we'd gone from a Con4m type to a nim type as a string.  This
+  ## proc is similar, but instead creates the parse tree nodes we need
+  ## to insert when we want to declare something to be of the
+  ## destination type.
+  ##
+  ## This is the call that is ACTUALLY useful.  
   case t.kind
   of TypeBool:
     return newIdentNode("bool")
@@ -780,7 +780,7 @@ proc buildGlobalSectionSpec(ctx: MacroState, slist: NimNode) =
 
     buildSectionSpec(ctx, slist)
 
-proc loadOneAttr(ctx: MacroState, slist: NimNode, varName: String, attrInfo: AttrContents) =
+proc loadOneAttr(ctx: MacroState, slist: NimNode, varName: string, attrInfo: AttrContents) =
   ## TODO-- I am here.  This is going to be code that copies the
   ## individual data fields that the parser is holding, boxed, in
   ## symbol tables, into the data structures we generated.
@@ -795,14 +795,24 @@ proc buildSectionLoader(ctx: MacroState, slist: NimNode) =
     loadOneAttr(ctx, slist, varName, attrInfo)
 
   for secName, contents in section.subsections:
+    discard
     # Save off previous st to st_n
     # set the value of st to subsection's symbol table
     # set the value of the destination section to some variable.
     #   Note: we probably want to add the type name of the destination section to
     #   the static section information.
     # call buildSectionLoader for
-    
 
+## More helper functions for creating symbol names that we'll use.    
+proc getSpecVarName(ctx: MacroState): string =
+  return "confSpec" & ctx.name
+
+proc getConfigTypeName(ctx: MacroState): string =
+  return capitalizeAscii(ctx.name) & "Config"
+
+proc getLoadingProcName(ctx: MacroState): string =
+  return "load" & capitalizeAscii(ctx.name) & "Config"
+  
 proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
   ## This is the wrapper for the loading.
   ## Note that, still not done here is generating the code to:
@@ -822,7 +832,7 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
                 nnkAsgn.newTree(
                   newIdentNode("result"),
                   nnkCall.newTree(
-                    newIdentNode("SamiConf")
+                    newIdentNode("SamiConfig")  # TODO
                   )
                 ),
                 nnkVarSection.newTree(
@@ -844,7 +854,7 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
   ctx.currentSection = ctx.contents
   buildSectionLoader(ctx, stmts)
   slist.add(nnkProcDef.newTree(
-              nnkIdentNode(loadFuncName),
+              newIdentNode(loadFuncName),
               newEmptyNode(),
               newEmptyNode(),
               nnkFormalParams.newTree(
@@ -861,16 +871,6 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
             )
           )
               
-## More helper functions for creating symbol names that we'll use.    
-proc getSpecVarName(ctx: MacroState): string =
-  return "confSpec" & ctx.name
-
-proc getConfigTypeName(ctx: MacroState): string =
-  return capitalizeAscii(ctx.name) & "Config"
-
-proc getLoadingProcName(ctx: MacroState): string =
-  return "load" & capitalizeAscii(ctx.name) & "Config"
-  
 proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   ## This is the function that is responsible for creating the actual
   ## spec.  It basically will call all of the logically different
@@ -899,25 +899,28 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
 
   buildLoadingProc(ctx, slist)
 
-  #echo treerepr(result)
-  #echo toStrLit(result)
+  echo treerepr(slist)
+  #echo toStrLit(slist)
+
+dumptree:
+    x = 7
 
 
 macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
-## While this is technically our top-level macro, it's intended that
-## you instead call configDef(), not this.  That's because we need a
-## kludge to be able to give a good error message if the user tries to
-## instantiate our macro from within a proc (which would be bad,
-## because the procs we generate wouldn't be visible outside that
-## procedure).
-##  
-## The indirection with this macro and the kludge parameter is the only
-## way I've found to detect if we're in a module's scope.
-## We do not want to generate procedures that are nested inside a proc,
-## thus the kludge.
-##
-## Didn't find this one via Google; was thanks to elegantbeef on the
-## Nim discord server (Jason Beetham, beefers331@gmail.com)
+  ## While this is technically our top-level macro, it's intended that
+  ## you instead call configDef(), not this.  That's because we need a
+  ## kludge to be able to give a good error message if the user tries to
+  ## instantiate our macro from within a proc (which would be bad,
+  ## because the procs we generate wouldn't be visible outside that
+  ## procedure).
+  ##  
+  ## The indirection with this macro and the kludge parameter is the only
+  ## way I've found to detect if we're in a module's scope.
+  ## We do not want to generate procedures that are nested inside a proc,
+  ## thus the kludge.
+  ##
+  ## Didn't find this one via Google; was thanks to elegantbeef on the
+  ## Nim discord server (Jason Beetham, beefers331@gmail.com)
   var
     state = parseConfigDef(nameNode, rest)
     owner = kludge.owner
@@ -981,7 +984,7 @@ configDef(Sami):
 dumpAstGen:
 dumpTree:
       proc loadSamiConfig(ctx: ConfigState): SamiConf = 
-        result =  SamiConf()
+        result =  SamiConfig()
 
         var tmpBox: Box
 
