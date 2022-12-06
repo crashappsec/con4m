@@ -22,8 +22,8 @@ proc box*[T](value: var seq[T]): Box =
 
 proc box*[T](value: seq[T]): Box =
   var copy: seq[T] = value
-  
-  return Box(kind: TypeList, p: cast[pointer](addr(copy)))  
+
+  return Box(kind: TypeList, p: cast[pointer](addr(copy)))
 
 proc boxList*[T](value: var seq[T]): Box =
   var res: seq[Box] = newSeq[Box]()

@@ -32,13 +32,13 @@ const
 # max_hosts: 10
 # host localhost {
 #    ip: "127.0.0.1"
-#    port: 5000  
+#    port: 5000
 #  }
 #
 # host "john's server" {
 #    ip: "10.1.100.3"
-#    port: 5000  
-#  
+#    port: 5000
+#
 #  }
 #
 # Once the config file is loaded and validated, the configuration will
@@ -47,7 +47,7 @@ const
 # assert confTest.max_hosts == 10 (or confTest.maxHosts)
 # for name, contents in confTest.host:
 #   echo name
-#   echo contents.ip, ":", contents.port  
+#   echo contents.ip, ":", contents.port
 #
 # The above code prints:
 #
@@ -66,26 +66,26 @@ const
 #
 # 2) The macro generates the code that, at run-time, will create a
 #    specification object of type ConfigSpec, containing the information
-#    provided from the macro.  
+#    provided from the macro.
 #
 # 3) We generate the procedure loadConfTestFromFile, which reads the
 #    config file, and sends it to the config file parser.  Then, if
 #    the parse is successful, the resulting values are compared
 #    against the ConfigSpec. If the config file doesn't validate, we
-#    bail out.  
+#    bail out.
 #
 # 4) Finally, we copy over the parser's data into instances of the
 #    generated data structures, accessible through the confTest
 #    variable.  This allows you to access data easily and quickly,
 #    and, if you want to, discard the extra data loaded in (though
 #    there are reasons to consider keeping it around).
-#  
+#
 # Note that, currently, these macros are not generating code that will
 # properly present keys that were user-added. That is coming.  You can
 # currently access those through the parser's raw output.
 
 
-  
+
 
 # The first two of the below data types are used for keeping track of
 # state while we are generating code to load the config file.
@@ -100,7 +100,7 @@ const
 # time info.
 #
 # The third data structure represents state we pass around across
-# calls at compile time, when generating all this code.  
+# calls at compile time, when generating all this code.
 type
   AttrContents = ref object
     name: string
@@ -140,7 +140,7 @@ proc newSectContents(path: string, parent: SectContents = nil): SectContents =
   result.subSections = newOrderedTable[string, SectContents]()
   result.parent = parent
 
-macro dumpCodeAtRuntime*(x: untyped) : untyped =
+macro dumpCodeAtRuntime*(x: untyped): untyped =
   ## This is a helper function; allows me to make sure the code parses, then
   ## when I run the program, show me the code that I am currently generating,
   ## without running the code. Basically, if my macro would return a node N,
@@ -149,9 +149,9 @@ macro dumpCodeAtRuntime*(x: untyped) : untyped =
       nnkCall.newTree(
         newIdentNode("echo"),
         toStrLit(x)
-      )
     )
-    
+  )
+
 macro dumpAtRuntime*(rest: untyped): untyped =
   ## Same as above, but dumps the parse tree.
   var s = treeRepr(rest)
@@ -265,9 +265,9 @@ proc foundCmdAttr(stmt: NimNode, state: MacroState) =
   ## the user wrote.  The user's code at this point is in tree form, so we're
   ## looking at tree nodes, and squirelling off information into our `state`
   ## variable.  The parse tree itself will eventually get thrown away.
-  ##  
+  ##
   ## This proc parses the `attr` command.
-  ##   
+  ##
   ## Arg 0: "attr"
   ## Arg 1: Name, Identifier, required.
   ## Arg 2: con4m type, can already be as a string literal, required.
@@ -465,7 +465,7 @@ proc lookForConfigCmds(stmt: NimNode, state: MacroState) =
 
 proc parseConfigDef(nameNode: NimNode, rest: NimNode): MacroState =
   ## This is the entry point for parsing; it sets up the state, and kicks
-  ## off lookForConfigCommands on each statement in the macro.  
+  ## off lookForConfigCommands on each statement in the macro.
   nameNode.expectKind(nnkIdent)
   result = MacroState(spec: ConfigSpec(), name: nameNode.strVal)
 
@@ -507,7 +507,7 @@ proc con4mTypeToNimNodes(t: Con4mType): NimNode =
   ## to insert when we want to declare something to be of the
   ## destination type.
   ##
-  ## This is the call that is ACTUALLY useful.  
+  ## This is the call that is ACTUALLY useful.
   case t.kind
   of TypeBool:
     return newIdentNode("bool")
@@ -586,7 +586,7 @@ proc buildDeclsOneSection(ctx: MacroState) =
       newEmptyNode()
       )
       )
-  
+
   # Now we can add in attributes.
   for k, v in thisSection.attrs:
     myItems.add(nnkIdentDefs.newTree(
@@ -602,8 +602,8 @@ proc buildDeclsOneSection(ctx: MacroState) =
                                         newEmptyNode(),
                                         newEmptyNode(),
                                         myItems
-                                      )
-                              )
+    )
+  )
   )
 
   ctx.nodeStack.add(defnode)
@@ -645,7 +645,7 @@ proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
     return nnkCall.newTree(newIdentNode("boxDict"), v)
   of TypeBottom:
     error("Cannot box bottom value")
-    
+
 proc transformValToOptBox(attr: AttrContents): NimNode =
   ## This is a helper that generates the tree nodes needed to wrap a
   ## value in an Option[T].  We use this for default values that
@@ -656,7 +656,7 @@ proc transformValToOptBox(attr: AttrContents): NimNode =
 
   return nnkCall.newTree(newIdentNode("some"),
                          handleBoxing(attr.typeAsCon4mNative, attr.defaultVal)
-                         )
+    )
 
 
 proc optBoolToIdent(b: Option[bool]): NimNode =
@@ -688,14 +688,14 @@ proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
   ##    no defaults were provided.
 
   let
-    curSec         = ctx.currentSection
-    secPath        = split(curSec.fullpath, ".").join("Dot")
+    curSec = ctx.currentSection
+    secPath = split(curSec.fullpath, ".").join("Dot")
     secSpecVarName = newIdentNode("confSec" & ctx.name & secPath)
-    specName       = ctx.parentSpecName
-    secLit         = newLit(ctx.curSecName)
-    doc            = optStrToLit(curSec.doc)
-                       
-    allowed  = if curSec.allowed.isSome():
+    specName = ctx.parentSpecName
+    secLit = newLit(ctx.curSecName)
+    doc = optStrToLit(curSec.doc)
+
+    allowed = if curSec.allowed.isSome():
                  curSec.allowed.get()
                else:
                  nnkPrefix.newTree(newIdentNode("@"), newNimNode(nnkBracket))
@@ -707,7 +707,7 @@ proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
                  newIdentNode("true")
                else:
                  newIdentNode("false")
-                 
+
     # "quote do" fails spectactularly in weird ways if substitutions are
     # dotted values at all.
     n = quote do:
@@ -719,16 +719,16 @@ proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
                    doc = `doc`,
                    allowCustomAttrs = `customOk`)
   slist.add(n)
-  
+
   for attrName, attrContents in curSec.attrs:
     let
-      attrLit  = newLit(attrName)
-      typeLit  = newLit(attrContents.typeAsCon4mString)
-      boxVal   = transformValToOptBox(attrContents)
+      attrLit = newLit(attrName)
+      typeLit = newLit(attrContents.typeAsCon4mString)
+      boxVal = transformValToOptBox(attrContents)
       required = optBoolToIdent(attrContents.required)
-      loWrite  = optBoolToIdent(attrContents.lockOnWrite)
-      doc      = optStrToLit(attrContents.doc)
-      # TODO: add in generating the validator here.             
+      loWrite = optBoolToIdent(attrContents.lockOnWrite)
+      doc = optStrToLit(attrContents.doc)
+      # TODO: add in generating the validator here.
       x = quote do:
         `secSpecVarName`.addAttr(`attrLit`,
                                  `typeLit`,
@@ -736,11 +736,11 @@ proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
                                  required = `required`,
                                  lockOnWrite = `loWrite`,
                                  doc = `doc`)
-                                   
+
     slist.add(x)
 
   let subsections = curSec.subsections
-  
+
   for name, secinf in subsections:
     ctx.curSecName = name
     ctx.currentSection = secinf
@@ -755,23 +755,23 @@ proc buildGlobalSectionSpec(ctx: MacroState, slist: NimNode) =
   ## if I didn't get to all the macro stuff.
   for attrName, attrContents in ctx.contents.attrs:
     let
-      attrLit  = newLit(attrName)
-      typeLit  = newLit(attrContents.typeAsCon4mString)
-      boxVal   = transformValToOptBox(attrContents)
+      attrLit = newLit(attrName)
+      typeLit = newLit(attrContents.typeAsCon4mString)
+      boxVal = transformValToOptBox(attrContents)
       required = optBoolToIdent(attrContents.required)
-      loWrite  = optBoolToIdent(attrContents.lockOnWrite)
-      doc      = optStrToLit(attrContents.doc)
-      specId   = ctx.specIdent
-                   
-      # TODO: add in generating the validator here.             
+      loWrite = optBoolToIdent(attrContents.lockOnWrite)
+      doc = optStrToLit(attrContents.doc)
+      specId = ctx.specIdent
+
+      # TODO: add in generating the validator here.
       x = quote do:
-                   addGlobalAttr(`specId`,
-                                 `attrLit`,
-                                 `typeLit`,
-                                 default = `boxVal`,
-                                required = `required`,
-                                lockOnWrite = `loWrite`,
-                                doc = `doc`)
+        addGlobalAttr(`specId`,
+                      `attrLit`,
+                      `typeLit`,
+                      default = `boxVal`,
+                     required = `required`,
+                     lockOnWrite = `loWrite`,
+                     doc = `doc`)
     slist.add(x)
 
   for name, secinf in ctx.contents.subsections:
@@ -780,15 +780,18 @@ proc buildGlobalSectionSpec(ctx: MacroState, slist: NimNode) =
 
     buildSectionSpec(ctx, slist)
 
-proc loadOneAttr(ctx: MacroState, slist: NimNode, varName: string, attrInfo: AttrContents) =
+proc loadOneAttr(ctx: MacroState,
+                 slist: NimNode,
+                 varName: string,
+                 attrInfo: AttrContents) =
   ## TODO-- I am here.  This is going to be code that copies the
   ## individual data fields that the parser is holding, boxed, in
   ## symbol tables, into the data structures we generated.
   discard
-  
+
 proc buildSectionLoader(ctx: MacroState, slist: NimNode) =
-  ## This is going to generate the code to set up the variable navigation needed,
-  ## and then call loadOneAttr.
+  ## This is going to generate the code to set up the variable
+  ## navigation needed, and then call loadOneAttr.
   let section = ctx.currentSection
 
   for varName, attrInfo in section.attrs:
@@ -799,11 +802,11 @@ proc buildSectionLoader(ctx: MacroState, slist: NimNode) =
     # Save off previous st to st_n
     # set the value of st to subsection's symbol table
     # set the value of the destination section to some variable.
-    #   Note: we probably want to add the type name of the destination section to
+    # Note: we probably want to add the type name of the destination section to
     #   the static section information.
     # call buildSectionLoader for
 
-## More helper functions for creating symbol names that we'll use.    
+## More helper functions for creating symbol names that we'll use.
 proc getSpecVarName(ctx: MacroState): string =
   return "confSpec" & ctx.name
 
@@ -812,7 +815,7 @@ proc getConfigTypeName(ctx: MacroState): string =
 
 proc getLoadingProcName(ctx: MacroState): string =
   return "load" & capitalizeAscii(ctx.name) & "Config"
-  
+
 proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
   ## This is the wrapper for the loading.
   ## Note that, still not done here is generating the code to:
@@ -827,30 +830,30 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
   let
     loadFuncName = getLoadingProcName(ctx)
     confTypeName = getConfigTypeName(ctx)
-  
+
   var stmts = nnkStmtList.newTree(
                 nnkAsgn.newTree(
                   newIdentNode("result"),
                   nnkCall.newTree(
-                    newIdentNode("SamiConfig")  # TODO
-                  )
-                ),
+                    newIdentNode("SamiConfig") # TODO
+    )
+  ),
                 nnkVarSection.newTree(
                   nnkIdentDefs.newTree(
                     newIdentNode("tmpBox"),
                     newIdentNode("Box"),
                     newEmptyNode()
-                  ),
+    ),
                  nnkIdentDefs.newTree(
                    newIdentNode("currentSt"),
                    newEmptyNode(),
                    nnkDotExpr.newTree(
                      newIdentNode("ctx"),
                      newIdentNode("st")
-                     )
-                   )
-                )
-              )
+    )
+  )
+    )
+  )
   ctx.currentSection = ctx.contents
   buildSectionLoader(ctx, stmts)
   slist.add(nnkProcDef.newTree(
@@ -858,27 +861,27 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
               newEmptyNode(),
               newEmptyNode(),
               nnkFormalParams.newTree(
-                newIdentNode(confTypeName),  # Return type
-                nnkIdentDefs.newTree(
-                  newIdentNode("ctx"),
-                  newIdentNode("ConfigState"),
-                  newEmptyNode()
-                  )
-              ),
+                newIdentNode(confTypeName), # Return type
+    nnkIdentDefs.newTree(
+      newIdentNode("ctx"),
+      newIdentNode("ConfigState"),
+      newEmptyNode()
+      )
+  ),
               newEmptyNode(),
               newEmptyNode(),
               stmts
-            )
-          )
-              
+    )
+  )
+
 proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   ## This is the function that is responsible for creating the actual
   ## spec.  It basically will call all of the logically different
   ## code generation pieces, and lump it together into one tree.
   let specVarName = getSpecVarName(ctx)
-  
-  ctx.specIdent      = newIdentNode(specVarName)
-  ctx.nodeStack      = @[]
+
+  ctx.specIdent = newIdentNode(specVarName)
+  ctx.nodeStack = @[]
   ctx.parentSpecName = newIdentNode(specVarName)
 
   slist.add(
@@ -888,13 +891,13 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
                             newEmptyNode(),
                             nnkCall.newTree(
                              newIdentNode("newConfigSpec")
-                            )
-                          )
-                        )
-                      )
+    )
+  )
+    )
+  )
 
-                    
-  
+
+
   buildGlobalSectionSpec(ctx, slist)
 
   buildLoadingProc(ctx, slist)
@@ -903,7 +906,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   #echo toStrLit(slist)
 
 dumptree:
-    x = 7
+  x = 7
 
 
 macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
@@ -913,7 +916,7 @@ macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## instantiate our macro from within a proc (which would be bad,
   ## because the procs we generate wouldn't be visible outside that
   ## procedure).
-  ##  
+  ##
   ## The indirection with this macro and the kludge parameter is the only
   ## way I've found to detect if we're in a module's scope.
   ## We do not want to generate procedures that are nested inside a proc,
@@ -927,13 +930,13 @@ macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
 
   if owner.symKind != nskModule:
     error("Only use this macro in a module scope")
-  
+
   result = newNimNode(nnkStmtList, lineInfoFrom = nameNode)
-  
+
   let typeDecls = buildTypeDecls(state)
- 
+
   result.add(typeDecls)
- 
+
   buildConfigSpec(state, result)
 
 
@@ -979,128 +982,128 @@ configDef(Sami):
 
 
 #[ Below is the code in my current phase of work... I'm trying to generate the below,
-   and get it all working.
+  and get it all working.
 
 dumpAstGen:
 dumpTree:
-      proc loadSamiConfig(ctx: ConfigState): SamiConf = 
-        result =  SamiConfig()
+  proc loadSamiConfig(ctx: ConfigState): SamiConf =
+    result =  SamiConfig()
 
-        var tmpBox: Box
+    var tmpBox: Box
 
-        tmpBox = ctx.getConfigVar("config_path").get()
+    tmpBox = ctx.getConfigVar("config_path").get()
 
-        let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
-        var config_path_seq_str: seq[string] = @[]
+    let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
+    var config_path_seq_str: seq[string] = @[]
 
-        for item in config_path_box_seq_str:
-          config_path_seq_str.add(unbox[string](item))
+    for item in config_path_box_seq_str:
+      config_path_seq_str.add(unbox[string](item))
 
-        result.config_path = config_path_seq_str
+    result.config_path = config_path_seq_str
 
-        tmpBox = ctx.getConfigVar("config_filename").get()
-        result.config_filename = unbox[string](tmpBox)
+    tmpBox = ctx.getConfigVar("config_filename").get()
+    result.config_filename = unbox[string](tmpBox)
 
-        tmpBox = ctx.getConfigVar("color").get()
-        result.color = unbox[bool](tmpBox)
+    tmpBox = ctx.getConfigVar("color").get()
+    result.color = unbox[bool](tmpBox)
 
-        tmpBox = ctx.getConfigVar("log_level").get()
-        result.log_level = unbox[string](tmpBox)
+    tmpBox = ctx.getConfigVar("log_level").get()
+    result.log_level = unbox[string](tmpBox)
 
-        tmpBox = ctx.getConfigVar("dry_run").get()
-        result.dry_run  = unbox[bool](tmpBox)
+    tmpBox = ctx.getConfigVar("dry_run").get()
+    result.dry_run  = unbox[bool](tmpBox)
 
-        tmpBox = ctx.getConfigVar("artifact_search_path").get()
+    tmpBox = ctx.getConfigVar("artifact_search_path").get()
 
-        let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
-        var artifact_search_path_seq_str: seq[string] = @[]
+    let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
+    var artifact_search_path_seq_str: seq[string] = @[]
 
-        for item in artifact_search_path_box_seq_str:
-          artifact_search_path_seq_str.add(unbox[string](item))
+    for item in artifact_search_path_box_seq_str:
+      artifact_search_path_seq_str.add(unbox[string](item))
 
-        result.artifact_search_path = artifact_search_path_seq_str
+    result.artifact_search_path = artifact_search_path_seq_str
 
-        tmpBox = ctx.getConfigVar("recursive").get()
-        result.recursive = unbox[bool](tmpBox)
+    tmpBox = ctx.getConfigVar("recursive").get()
+    result.recursive = unbox[bool](tmpBox)
 
-        tmpBox = ctx.getConfigVar("output_dir").get()
-        result.output_dir = unbox[string](tmpBox)
+    tmpBox = ctx.getConfigVar("output_dir").get()
+    result.output_dir = unbox[string](tmpBox)
 
-        tmpBox = ctx.getConfigVar("output_file").get()
-        result.output_file = unbox[string](tmpBox)
+    tmpBox = ctx.getConfigVar("output_file").get()
+    result.output_file = unbox[string](tmpBox)
 
-        let sectionInfo = ctx.getAllSectSTs()
+    let sectionInfo = ctx.getAllSectSTs()
 
-        for (k, v) in sectionInfo["key"]:
-          var stEntry: STEntry
-          var entryOpt: Option[STEntry]
+    for (k, v) in sectionInfo["key"]:
+      var stEntry: STEntry
+      var entryOpt: Option[STEntry]
 
-          let sectionKey = k.split(".")[1 .. ^1].join(".")
-          var sectionData = SamiKeySection()
-          result.key[sectionKey] = sectionData
+      let sectionKey = k.split(".")[1 .. ^1].join(".")
+      var sectionData = SamiKeySection()
+      result.key[sectionKey] = sectionData
 
-          stEntry = v.lookupAttr("required").get()
-          tmpBox = stEntry.value.get()
-          sectionData.required = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("required").get()
+      tmpBox = stEntry.value.get()
+      sectionData.required = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("missing_action").get()
-          tmpBox = stEntry.value.get()
-          sectionData.missing_action = unbox[string](tmpBox)
+      stEntry = v.lookupAttr("missing_action").get()
+      tmpBox = stEntry.value.get()
+      sectionData.missing_action = unbox[string](tmpBox)
 
-          stEntry = v.lookupAttr("system").get()
-          tmpBox = stEntry.value.get()
-          sectionData.system = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("system").get()
+      tmpBox = stEntry.value.get()
+      sectionData.system = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("squash").get()
-          tmpBox = stEntry.value.get()
-          sectionData.squash = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("squash").get()
+      tmpBox = stEntry.value.get()
+      sectionData.squash = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("standard").get()
-          tmpBox = stEntry.value.get()
-          sectionData.standard = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("standard").get()
+      tmpBox = stEntry.value.get()
+      sectionData.standard = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("must_force").get()
-          tmpBox = stEntry.value.get()
-          sectionData.must_force = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("must_force").get()
+      tmpBox = stEntry.value.get()
+      sectionData.must_force = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("plugin_ok").get()
-          tmpBox = stEntry.value.get()
-          sectionData.plugin_ok = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("plugin_ok").get()
+      tmpBox = stEntry.value.get()
+      sectionData.plugin_ok = unbox[bool](tmpBox)
 
-          stEntry = v.lookupAttr("skip").get()
-          tmpBox = stEntry.value.get()
-          sectionData.skip = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("skip").get()
+      tmpBox = stEntry.value.get()
+      sectionData.skip = unbox[bool](tmpBox)
 
-          entryOpt = v.lookupAttr("priority")
-          if entryOpt.isSome():
-            stEntry = entryOpt.get()
-            tmpBox = stEntry.value.get()
-            sectionData.priority = some(unbox[int](tmpBox))
+      entryOpt = v.lookupAttr("priority")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.priority = some(unbox[int](tmpBox))
 
-          entryOpt = v.lookupAttr("since")
-          if entryOpt.isSome():
-            stEntry = entryOpt.get()
-            tmpBox = stEntry.value.get()
-            sectionData.since = some(unbox[string](tmpBox))
+      entryOpt = v.lookupAttr("since")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.since = some(unbox[string](tmpBox))
 
-          stEntry = v.lookupAttr("type").get()
-          tmpBox = stEntry.value.get()
-          sectionData.`type` = unbox[string](tmpBox)
+      stEntry = v.lookupAttr("type").get()
+      tmpBox = stEntry.value.get()
+      sectionData.`type` = unbox[string](tmpBox)
 
-          entryOpt = v.lookupAttr("value")
-          if entryOpt.isSome():
-            stEntry = entryOpt.get()
-            tmpBox = stEntry.value.get()
-            sectionData.value = some(unbox[Box](tmpBox))
+      entryOpt = v.lookupAttr("value")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.value = some(unbox[Box](tmpBox))
 
-          stEntry = v.lookupAttr("codec").get()
-          tmpBox = stEntry.value.get()
-          sectionData.codec = unbox[bool](tmpBox)
+      stEntry = v.lookupAttr("codec").get()
+      tmpBox = stEntry.value.get()
+      sectionData.codec = unbox[bool](tmpBox)
 
-          entryOpt = v.lookupAttr("docstring")
-          if entryOpt.isSome():
-            stEntry = entryOpt.get()
-            tmpBox = stEntry.value.get()
-            sectionData.docstring = some(unbox[string](tmpBox))
-          ]#
+      entryOpt = v.lookupAttr("docstring")
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        tmpBox = stEntry.value.get()
+        sectionData.docstring = some(unbox[string](tmpBox))
+      ]#
 
