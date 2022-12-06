@@ -511,9 +511,7 @@ proc optStrToLit(s: Option[string]): NimNode =
   else:
     return newLit(s.get())
 
-proc buildSectionSpec(ctx: MacroState): NimNode =
-  result = newNimNode(nnkStmtList)
-  
+proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
   let
     curSec         = ctx.currentSection
     secPath        = split(curSec.fullpath, ".").join("Dot")
@@ -545,7 +543,7 @@ proc buildSectionSpec(ctx: MacroState): NimNode =
                    requiredSubSecs = `required`,
                    doc = `doc`,
                    allowCustomAttrs = `customOk`)
-  result.add(n)
+  slist.add(n)
   
   for attrName, attrContents in curSec.attrs:
     let
@@ -564,7 +562,7 @@ proc buildSectionSpec(ctx: MacroState): NimNode =
                                  lockOnWrite = `loWrite`,
                                  doc = `doc`)
                                    
-    result.add(x)
+    slist.add(x)
 
   let subsections = curSec.subsections
   
@@ -572,14 +570,10 @@ proc buildSectionSpec(ctx: MacroState): NimNode =
     ctx.curSecName = name
     ctx.currentSection = secinf
     ctx.parentSpecName = specName
-    let more = buildSectionSpec(ctx)
+    buildSectionSpec(ctx, slist)
 
-    more.copyChildrenTo(result)
+proc buildGlobalSectionSpec(ctx: MacroState, slist: NimNode) =
 
-proc buildGlobalSectionSpec(ctx: MacroState): NimNode =
-
-  result = newNimNode(nnkStmtList)
-  
   for attrName, attrContents in ctx.contents.attrs:
     let
       attrLit  = newLit(attrName)
@@ -599,25 +593,22 @@ proc buildGlobalSectionSpec(ctx: MacroState): NimNode =
                                 required = `required`,
                                 lockOnWrite = `loWrite`,
                                 doc = `doc`)
-    result.add(x)
+    slist.add(x)
 
   for name, secinf in ctx.contents.subsections:
     ctx.curSecName = name
     ctx.currentSection = secinf
 
-    let more = buildSectionSpec(ctx)
-    more.copyChildrenTo(result)
-
-      
+    buildSectionSpec(ctx, slist)
   
-proc buildConfigSpec(ctx: MacroState): NimNode =
+proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   let specVarName = "confSpec" & ctx.name
   
   ctx.specIdent      = newIdentNode(specVarName)
   ctx.nodeStack      = @[]
   ctx.parentSpecName = newIdentNode(specVarName)
 
-  result = nnkStmtList.newTree(
+  slist.add(
     nnkVarSection.newTree(
                           nnkIdentDefs.newTree(
                             newIdentNode(specVarName),
@@ -631,9 +622,7 @@ proc buildConfigSpec(ctx: MacroState): NimNode =
 
                     
   
-  let more = buildGlobalSectionSpec(ctx)
-
-  more.copyChildrenTo(result)
+  buildGlobalSectionSpec(ctx, slist)
 
   # buildLoadingProc(ctx)
 
@@ -658,14 +647,12 @@ macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
   
   result = newNimNode(nnkStmtList, lineInfoFrom = nameNode)
   
-  let
-    typeDecls = buildTypeDecls(state)
+  let typeDecls = buildTypeDecls(state)
  
   result.add(typeDecls)
  
-  let rest = buildConfigSpec(state)
-  
-  rest.copyChildrenTo(result)
+  buildConfigSpec(state, result)
+
 
 template configDef*(nameNode: untyped, rest: untyped): untyped =
   var kludge = 100
@@ -673,7 +660,7 @@ template configDef*(nameNode: untyped, rest: untyped): untyped =
   when false:
     dumpAtRuntime(cDefActual(kludge, nameNode, rest))
   else:
-    cDefActual(i, nameNode, rest)
+    cDefActual(kludge, nameNode, rest)
     
 configDef(Sami):
   attr(config_path, [string], @[".", "~"])
