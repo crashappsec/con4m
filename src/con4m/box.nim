@@ -20,6 +20,11 @@ proc box*(value: float): Box =
 proc box*[T](value: var seq[T]): Box =
   return Box(kind: TypeList, p: cast[pointer](addr(value)))
 
+proc box*[T](value: seq[T]): Box =
+  var copy: seq[T] = value
+  
+  return Box(kind: TypeList, p: cast[pointer](addr(copy)))  
+
 proc boxList*[T](value: var seq[T]): Box =
   var res: seq[Box] = newSeq[Box]()
 

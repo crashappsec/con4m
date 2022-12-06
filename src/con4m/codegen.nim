@@ -5,6 +5,7 @@ import strutils
 import st
 import options
 import state
+import box
 
 const
   attrCmd = "attr"
@@ -36,11 +37,12 @@ type
   MacroState = ref object
     spec: ConfigSpec
     name: string
+    parentSpecName: NimNode
     contents: SectContents
     currentSection: SectContents
+    curSecName: string
     nodeStack: seq[NimNode]
     specIdent: NimNode
-
 
 proc apply*[T, V](s: openArray[T], f: proc (x: T): V{.closure.}):
     seq[V] {.inline.} =
@@ -54,7 +56,7 @@ proc newSectContents(path: string, parent: SectContents = nil): SectContents =
   result.subSections = newOrderedTable[string, SectContents]()
   result.parent = parent
 
-macro dumpAtRuntime(rest: untyped): untyped =
+macro dumpAtRuntime*(rest: untyped): untyped =
   var s = treeRepr(rest)
 
   result = newNimNode(nnkStmtList, lineInfoFrom = rest)
@@ -239,8 +241,6 @@ proc foundCmdSection(stmt: NimNode, state: MacroState) =
                sectName
              else:
                [parentPath, sectName].join(".")
-
-  echo "Handling section: ", mypath
 
   if parentSection.subsections.contains(sectName):
     error("Duplicate section: " & parentPath, stmt)
@@ -429,7 +429,6 @@ proc buildDeclsOneSection(ctx: MacroState) =
 
   # Section decls go in front of us, so we can reference them.
   for name, subsection in thisSection.subsections:
-    echo "Found subsection", name
     ctx.currentSection = subsection
     buildDeclsOneSection(ctx)
     ctx.currentSection = thisSection
@@ -442,8 +441,9 @@ proc buildDeclsOneSection(ctx: MacroState) =
                      newIdentNode(subSecname)
       ),
       newEmptyNode()
-    )
-  )
+      )
+      )
+  
   # Now we can add in attributes.
   for k, v in thisSection.attrs:
     myItems.add(nnkIdentDefs.newTree(
@@ -475,9 +475,6 @@ proc buildTypeDecls(ctx: MacroState): NimNode =
 
   return defList
 
-
-def testBox[T](t: Con4mType, v: seq[T]): Box = 
-  
 proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   case t.kind
   of TypeBool, TypeInt, TypeFloat, TypeString:
@@ -495,131 +492,189 @@ proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
     
 proc transformValToOptBox(attr: AttrContents): NimNode =
   if attr.defaultVal == nil:
-    return nnkCall.newTree(newIdentNode("none"), newIdentNode("box"))
+    return nnkCall.newTree(newIdentNode("none"), newIdentNode("Box"))
 
   return nnkCall.newTree(newIdentNode("some"),
                          handleBoxing(attr.typeAsCon4mNative, attr.defaultVal)
                          )
 
 
-proc buildSectionSpec(ctx: MacroState) =
+proc optBoolToIdent(b: Option[bool]): NimNode =
+  if b.isNone() or not b.get():
+    return newIdentNode("false")
+  else:
+    return newIdentNode("true")
 
-  # Add r sectKey = spec.addSection("key", validSubSecs = @["*", "*.json", "*.binary"])
-  for attrName, attrContents in ctx.currentSection.attrs:
+proc optStrToLit(s: Option[string]): NimNode =
+  if s.isNone():
+    return newLit("")
+  else:
+    return newLit(s.get())
+
+proc buildSectionSpec(ctx: MacroState): NimNode =
+  result = newNimNode(nnkStmtList)
+  
+  let
+    curSec         = ctx.currentSection
+    secPath        = split(curSec.fullpath, ".").join("Dot")
+    secSpecVarName = newIdentNode("confSec" & ctx.name & secPath)
+    specName       = ctx.parentSpecName
+    secLit         = newLit(ctx.curSecName)
+    doc            = optStrToLit(curSec.doc)
+                       
+    allowed  = if curSec.allowed.isSome():
+                 curSec.allowed.get()
+               else:
+                 nnkPrefix.newTree(newIdentNode("@"), newNimNode(nnkBracket))
+    required = if curSec.required.isSome():
+                 curSec.required.get()
+               else:
+                 nnkPrefix.newTree(newIdentNode("@"), newNimNode(nnkBracket))
+    customOk = if curSec.customAttrsOk:
+                 newIdentNode("true")
+               else:
+                 newIdentNode("false")
+                 
+    # "quote do" fails spectactularly in weird ways if substitutions are
+    # dotted values at all.
+    n = quote do:
+      var `secSpecVarName` =
+        addSection(`specName`,
+                   `secLit`,
+                   validSubSecs = `allowed`,
+                   requiredSubSecs = `required`,
+                   doc = `doc`,
+                   allowCustomAttrs = `customOk`)
+  result.add(n)
+  
+  for attrName, attrContents in curSec.attrs:
     let
-      attrLit  = newStrLit(attrName)
-      typeLit  = newStrLit(attrContents.typeAsCon4mString)
+      attrLit  = newLit(attrName)
+      typeLit  = newLit(attrContents.typeAsCon4mString)
       boxVal   = transformValToOptBox(attrContents)
-      required = if attrContents.required.isSome():
-                   attrContents.required.get()
-                 else:
-                   true # TODO: merge these defaults with addGlobalAttr
-      loWrite  = if attrContents.lockOnWrite.isSome():
-                   attrContents.lockOnWrite.get()
-                 else:
-                   false
-      doc      = if attrContents.doc.isSome():
-                   attrContents.doc.get()
-                 else:
-                   ""
-      
+      required = optBoolToIdent(attrContents.required)
+      loWrite  = optBoolToIdent(attrContents.lockOnWrite)
+      doc      = optStrToLit(attrContents.doc)
       # TODO: add in generating the validator here.             
       x = quote do:
-        `ctx.specIdent`.addAttr(`attrLit`,
-                                `typeLit`,
-                                default = `boxVal`,
-                                required = `required`,
-                                lockOnWrite = `loWrite`,
-                                doc = `doc`)
-      ctx.nodeStack.add(x)
+        `secSpecVarName`.addAttr(`attrLit`,
+                                 `typeLit`,
+                                 default = `boxVal`,
+                                 required = `required`,
+                                 lockOnWrite = `loWrite`,
+                                 doc = `doc`)
+                                   
+    result.add(x)
 
-  for name, secinf in ctx.contents.subsections:
+  let subsections = curSec.subsections
+  
+  for name, secinf in subsections:
+    ctx.curSecName = name
     ctx.currentSection = secinf
-    buildSectionSpec(ctx)
+    ctx.parentSpecName = specName
+    let more = buildSectionSpec(ctx)
 
-  for item in ctx.nodeStack:
-    result.add(item)
-                         
+    more.copyChildrenTo(result)
+
 proc buildGlobalSectionSpec(ctx: MacroState): NimNode =
-  result = newNimNode(nnkStatementList)
+
+  result = newNimNode(nnkStmtList)
   
   for attrName, attrContents in ctx.contents.attrs:
     let
-      attrLit  = newStrLit(attrName)
-      typeLit  = newStrLit(attrContents.typeAsCon4mString)
+      attrLit  = newLit(attrName)
+      typeLit  = newLit(attrContents.typeAsCon4mString)
       boxVal   = transformValToOptBox(attrContents)
-      required = if attrContents.required.isSome():
-                   attrContents.required.get()
-                 else:
-                   true # TODO: merge these defaults with addGlobalAttr
-      loWrite  = if attrContents.lockOnWrite.isSome():
-                   attrContents.lockOnWrite.get()
-                 else:
-                   false
-      doc      = if attrContents.doc.isSome():
-                   attrContents.doc.get()
-                 else:
-                   ""
-      
+      required = optBoolToIdent(attrContents.required)
+      loWrite  = optBoolToIdent(attrContents.lockOnWrite)
+      doc      = optStrToLit(attrContents.doc)
+      specId   = ctx.specIdent
+                   
       # TODO: add in generating the validator here.             
       x = quote do:
-        `ctx.specIdent`.addGlobalAttr(`attrLit`,
-                                      `typeLit`,
-                                      default = `boxVal`,
-                                      required = `required`,
-                                      lockOnWrite = `loWrite`,
-                                      doc = `doc`)
-      ctx.nodeStack.add(x)
+                   addGlobalAttr(`specId`,
+                                 `attrLit`,
+                                 `typeLit`,
+                                 default = `boxVal`,
+                                required = `required`,
+                                lockOnWrite = `loWrite`,
+                                doc = `doc`)
+    result.add(x)
 
   for name, secinf in ctx.contents.subsections:
+    ctx.curSecName = name
     ctx.currentSection = secinf
-    buildSectionSpec(ctx)
 
-  for item in ctx.nodeStack:
-    result.add(item)
+    let more = buildSectionSpec(ctx)
+    more.copyChildrenTo(result)
+
       
   
 proc buildConfigSpec(ctx: MacroState): NimNode =
   let specVarName = "confSpec" & ctx.name
   
-  ctx.specIdent   = newIdentNode(specVarName)
-  ctx.nodeStack   = @[]
+  ctx.specIdent      = newIdentNode(specVarName)
+  ctx.nodeStack      = @[]
+  ctx.parentSpecName = newIdentNode(specVarName)
 
-  result = nnkStatementList.newTree(
+  result = nnkStmtList.newTree(
     nnkVarSection.newTree(
-      nnkIdentDefs.newTree(
-        newIdentNode(specVarName),
-        newEmptyNode(),
-        nnkCall.newTree(
-          newIdentNode("newConfigSpec")
-        )
-      )
-    )
-  )
+                          nnkIdentDefs.newTree(
+                            newIdentNode(specVarName),
+                            newEmptyNode(),
+                            nnkCall.newTree(
+                             newIdentNode("newConfigSpec")
+                            )
+                          )
+                        )
+                      )
 
-  buildGlobalSectionSpec(ctx)
+                    
+  
+  let more = buildGlobalSectionSpec(ctx)
 
-  for node in ctx.nodeStack:
-    result.add(node)
+  more.copyChildrenTo(result)
 
   # buildLoadingProc(ctx)
 
-  # Return value is the configuration spec
-  result.add(newIdentNode(specVarName))
+  #echo treerepr(result)
+  #echo toStrLit(result)
+
+
+# The indirection with this macro and the kludge parameter is the only
+# way I've found to detect if we're in a module's scope.
+# We do not want to generate procedures that are nested inside a proc,
+# thus the kludge.
+#
+# Didn't find this one via Google; was thanks to elegantbeef on the
+# Nim discord server (Jason Beetham, beefers331@gmail.com)
+macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
+  var
+    state = parseConfigDef(nameNode, rest)
+    owner = kludge.owner
+
+  if owner.symKind != nskModule:
+    error("Only use this macro in a module scope")
   
-    
-
-macro configDef(nameNode: untyped, rest: untyped): untyped =
-  var state = parseConfigDef(nameNode, rest)
-  let typeDecls = buildTypeDecls(state)
-
   result = newNimNode(nnkStmtList, lineInfoFrom = nameNode)
+  
+  let
+    typeDecls = buildTypeDecls(state)
+ 
   result.add(typeDecls)
+ 
+  let rest = buildConfigSpec(state)
+  
+  rest.copyChildrenTo(result)
 
-  echo treeRepr(result)
-  echo toStrLit(result)
-  return result
+template configDef*(nameNode: untyped, rest: untyped): untyped =
+  var kludge = 100
 
+  when false:
+    dumpAtRuntime(cDefActual(kludge, nameNode, rest))
+  else:
+    cDefActual(i, nameNode, rest)
+    
 configDef(Sami):
   attr(config_path, [string], @[".", "~"])
   attr(config_filename, string, "sami.conf")
@@ -653,48 +708,7 @@ configDef(Sami):
 
 #[
 dumpAstGen:
-  var spec = newConfigSpec()
-  spec.addGlobalAttr("config_path",
-    "[string]",
-    some(box(defaultCfgPathSpec)))
-  spec.addGlobalAttr("config_filename", "string",
-    some(box("sami.conf")))
-  spec.addGlobalAttr("color", "bool", some(box(false)))
-  spec.addGlobalAttr("log_level", "string", some(box("warn")))
-  spec.addGlobalAttr("dry_run", "bool", some(box(false)))
-  spec.addGlobalAttr("artifact_search_path", "[string]",
-    some(box(defaultArtPathSpec)))
-  spec.addGlobalAttr("recursive", "bool", some(box(true)))
-  spec.addGlobalAttr("output_dir", "string", some(box(".")))
-  spec.addGlobalAttr("output_file",
-    "string",
-    some(box("sami-extractions.json")))
-
-  var sectKey = spec.addSection("key", validSubSecs =
-    @["*", "*.json", "*.binary"])
-
-  sectKey.addAttr("required", "bool", some(box(false)))
-
-  sectKey.addAttr("missing_action", "string", some(box("warn")))
-  sectKey.addAttr("system", "bool", some(box(false)))
-  sectKey.addAttr("squash", "bool", some(box(true)))
-  sectKey.addAttr("standard", "bool", some(box(false)))
-  sectKey.addAttr("must_force", "bool", some(box(false)))
-  sectKey.addAttr("plugin_ok", "bool", some(box(true)))
-  sectKey.addAttr("skip", "bool", some(box(false)))
-  sectKey.addAttr("priority", "int", required = false)
-  sectKey.addAttr("since", "string", required = false)
-  sectKey.addAttr("type", "string")
-  sectKey.addAttr("value", "`type", required = false) # validator
-  sectKey.addAttr("codec", "bool", some(box(false)))
-  sectKey.addAttr("docstring", "string", required = false)
-
-  
-  ]#
-
-#[
 dumpTree:
-      #[
       proc loadSamiConfig(ctx: ConfigState): SamiConf =
         result = SamiConf()
 
