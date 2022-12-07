@@ -8,10 +8,10 @@ import streams
 import con4m_types
 import st
 import box
-import typerepr
+import dollars
 import typecheck
 import builtins
-import state
+import spec
 
 proc checkNode(node: Con4mNode, s: ConfigState)
 

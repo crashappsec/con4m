@@ -8,7 +8,7 @@ import con4m_types
 import unicodeident
 import st
 import typecheck
-import typerepr
+import dollars
 import builtins
 
 

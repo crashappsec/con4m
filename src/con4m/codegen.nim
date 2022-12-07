@@ -4,7 +4,7 @@ import tables
 import strutils
 import st
 import options
-import state
+import spec
 import box
 
 const

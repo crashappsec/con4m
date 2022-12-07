@@ -5,7 +5,7 @@ import logging
 
 import con4m_types
 import lex
-import typerepr
+import dollars
 
 
 # See docs/grammar.md for the grammar.
