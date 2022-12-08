@@ -10,6 +10,7 @@ import osproc
 import strformat
 import strutils
 import options
+import parse # just for fatal()
 
 when defined(posix):
   import posix
@@ -284,18 +285,21 @@ proc isBuiltin*(s: ConfigState, name: string): bool =
 proc sCall*(s: ConfigState,
             name: string,
             a1: seq[Box],
-            tinfo: Con4mType): Option[Box] =
+            tinfo: Con4mType,
+            node: Con4mNode
+           ): Option[Box] =
   let optBi = s.getBuiltinBySig(name, tinfo)
 
   if optBi.isSome():
     let bi = optBi.get()
     return bi.fn(a1)
 
-  raise newException(ValueError, "Signature not found")
+  fatal("Function {name} not found", node)
 
 proc sCall*(s: ConfigState,
             name: string,
             a1: seq[Box],
+            node: Con4mNode,
             tinfo: string = ""): Option[Box] =
   if tinfo == "":
     assert s.builtins[name].len() == 1
@@ -307,4 +311,4 @@ proc sCall*(s: ConfigState,
       let bi = optBi.get()
       return bi.fn(a1)
 
-    raise newException(ValueError, "Signature not found")
+    fatal("Function {name} not found", node)

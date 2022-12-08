@@ -1,3 +1,8 @@
+#[ This module actually walks the tree, directly executing the
+#  operations encoded in it (as opposed to generating code that we would
+#  then run).
+]#
+
 import con4m_types
 import st
 import builtins
@@ -7,6 +12,7 @@ import treecheck
 
 import options
 import tables
+import strformat
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -21,6 +27,9 @@ proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
     item.evalNode(s)
 
 template cmpWork(typeWeAreComparing: typedesc, op: untyped) =
+  ## This just factors out repetitive code to apply standard
+  ## comparison operators like >=.  We unbox, apply the operator, then
+  ## box the result.
   let
     v1 = unbox[typeWeAreComparing](node.children[0].value)
     v2 = unbox[typeWeAreComparing](node.children[1].value)
@@ -32,6 +41,7 @@ template cmpWork(typeWeAreComparing: typedesc, op: untyped) =
 template binaryOpWork(typeWeAreOping: typedesc,
                       returnType: typedesc,
                       op: untyped) =
+  ## Similar thing, but with binary operators like +, -, /, etc.
   let
     v1 = unbox[typeWeAreOping](node.children[0].value)
     v2 = unbox[typeWeAreOping](node.children[1].value)
@@ -40,22 +50,40 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = box(ret)
 
-proc modFunc(a, b: int): int {.inline.} =
-  a mod b
-
 proc evalNode(node: Con4mNode, s: ConfigState) =
+  ## This does the bulk of the work.  Typically, it will descend into
+  ## the tree to evaluate, and then take whatever action is
+  ## apporpriate after, if any.
   case node.kind
   of NodeBody, NodeElse, NodeActuals:
     node.evalKids(s)
-  of NodeSimpLit, NodeEnum: # Values were all assigned when we checked the tree.
+  of NodeSimpLit, NodeEnum:
+    # Values for these were all assigned when we checked the tree, so we
+    # don't have to do anything on this pass.
     return
   of NodeBreak:
+    # We implement `break` and `continue` by having the for loop use a
+    # `try` block. If we want to do either thing, we want to stop
+    # executing the current list of statements in the tree, so be
+    # raise an exception.  The for loop looks at the value, and
+    # decides whether to start another iteration, or bail, based on that
+    # exception message.
     raise newException(ValueError, breakMsg)
   of NodeContinue:
     raise newException(ValueError, continueMsg)
   of NodeSection:
     node.children[^1].evalNode(s)
   of NodeAttrAssign:
+    # We already created scope objects in the tree checking phase.
+    # And, we only allow identifiers on the LHS right now. So we just
+    # have to evaluate the RHS, then try to update the symbol's value
+    # in the symbol table.
+    #
+    # Note that we also allow fields to be "locked", essentially
+    # turned into const-- basically, you should be able to save
+    # attribute state across runs, so that you can layer
+    # configurations. In such a case, an admin's config might specify
+    # not to change a value, which is the idea behind this.
     node.children[1].evalNode(s)
     let
       name = node.children[0].getTokenText()
@@ -63,12 +91,13 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
       entry = scope.lookup(name).get()
 
     if entry.locked:
-      raise newException(ValueError, "Attempt to assign to a read-only field")
+      fatal("Attempt to assign to a read-only field", node)
 
     node.value = node.children[1].value
     entry.value = some(node.value)
 
   of NodeVarAssign:
+    # Variables are specific to the run, so this is a little simpler.
     node.children[1].evalNode(s)
     let
       name = node.children[0].getTokenText()
@@ -78,14 +107,26 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
     node.value = node.children[1].value
     entry.value = some(node.value)
   of NodeIfStmt:
+    # This is the "top-level" node in an IF statement.  The nodes
+    # below it will all be of kind NodeConditional NodeElse.  We march
+    # through them one by one, and stop once a branch evaluates to
+    # true.
     for n in node.children:
       n.evalNode(s)
       if unbox[bool](n.value):
         return
   of NodeConditional:
-    node.evalKids(s)
+    # First, evaluate the conditional expression.  If it's true, then
+    # go ahead and run the body. We don't want to execute branches
+    # where the conditional evaluates to false.
+    node.children[0].evalNode(s)
     node.value = node.children[0].value
+    if unbox[bool](node.value):
+      node.children[1].evalNode(s)
   of NodeFor:
+    # This is pretty straightforward, other than the fact that we use
+    # exceptions to implement `break` / `continue` per the above
+    # comments.
     let
       scope = node.getVarScope()
       name = node.children[0].getTokenText()
@@ -125,6 +166,8 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
         else:
           raise
   of NodeUnary:
+    # The only unary ops we support are + and -, and only on numerics,
+    # so + actually is a noop.
     node.evalKids(s)
 
     let
@@ -149,8 +192,20 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
 
     node.value = box(not unbox[bool](bx))
   of NodeMember:
+    # Unreachable, because I haven't implemented it yet.
     unreachable
   of NodeIndex:
+    # The node on the left's value will resolve to the object we need
+    # to index.  We have to take action based on the type (and w/
+    # dicts we only allow ints and strings as keys currently).
+    #
+    # Eventually, this will need to be two seprate items, one for
+    # looking up values in an expression, and one for handling LHS
+    # indexing (which resolves to a storage address, not a value).
+    #
+    # However, right now, we explicitly are not supporting indexing
+    # on the LHS of an assignment.
+    
     node.evalKids(s)
     let
       containerBox = node.children[0].value
@@ -162,6 +217,8 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
         l = unbox[seq[Box]](containerBox)
         i = unbox[int](indexBox)
 
+      if i >= l.len() or i < 0:
+        fatal("Runtime error in config: array index out of bounds", node)
       node.value = l[i]
     of TypeDict:
       let
@@ -174,18 +231,28 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
         let
           d = unbox[TableRef[int, Box]](containerBox)
           i = unbox[int](indexBox)
+
+        if not d.contains(i):
+          fatal("Runtime error in config: dict key {i} not found.".fmt(), node)
         node.value = d[i]
       of TypeString:
         let
           d = unbox[TableRef[string, Box]](containerBox)
-          i = unbox[string](indexBox)
-        node.value = d[i]
+          s = unbox[string](indexBox)
+
+        if not d.contains(s):
+          fatal("Runtime error in config: dict key {s} not found.".fmt(), node)
+        node.value = d[s]
       else:
         unreachable
     else:
       unreachable
 
   of NodeCall:
+    # Calls are always to built-in functions, at least for now.  So
+    # all we need to is package up the arguments into a sequence, and
+    # then call; we checked for the function's existence already.
+
     node.children[1].evalNode(s)
     let
       fname = node.children[0].getTokenText()
@@ -196,7 +263,7 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    let ret = s.sCall(fname, args, funcSig)
+    let ret = s.sCall(fname, args, funcSig, node.children[0])
 
     if ret.isSome():
       node.value = ret.get()
@@ -310,7 +377,7 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
   of NodeMod:
     node.evalKids(s)
     case node.typeInfo.kind
-    of TypeInt: binaryOpWork(int, int, modFunc)
+    of TypeInt: binaryOpWork(int, int, `mod`)
     else: unreachable
   of NodeMul:
     node.evalKids(s)
@@ -335,19 +402,34 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
 
     node.value = optVal.get()
 
-proc evalTree*(node: Con4mNode, s: ConfigState) {.inline.} =
-  node.evalNode(s)
+proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
+  ## This runs the evaluator on a tree that has already been parsed
+  ## and type-checked.
 
-proc evalConfig*(filename: string): (ConfigState, Option[Con4mScope]) =
-  let tree = parse(filename)
+  let state = node.checkTree()
 
-  if tree == nil:
+  if node == nil:
     return
+  
+  node.evalNode(state)
 
-  let state = tree.checkTree()
-  tree.evalTree(state)
+  return some(state)
 
-  let scopes = tree.scopes.get()
+proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
+  
+  ## Given the config file as a string, this will load and parse the
+  ## file, then execute it, returning both the state object created,
+  ## as well as the top-level symbol table for attributes, both
+  ## assuming the operation was successful.
+  
+  let
+    tree = parse(filename)
+    confOpt = tree.evalTree()
 
-  return (state, some(scopes.attrs))
+  if confOpt.isSome():
+    let
+      state = confOpt.get()
+      scopes = tree.scopes.get()
 
+    return some((state, scopes.attrs))
+   

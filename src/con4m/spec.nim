@@ -231,7 +231,7 @@ proc requiredFieldCheck(ctx: ConFigState,
         continue
       else:
         let
-          opt = scope.addEntry(key, -1, specEntry.attrType.toCon4mType())
+          opt = scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry

@@ -1,5 +1,3 @@
-# Right now, exporting everything for testing.
-
 import con4m/unicodeident
 export unicodeident
 import con4m/lex
@@ -26,3 +24,4 @@ import con4m/con4m_types
 export con4m_types
 import con4m/codegen
 export codegen
+         

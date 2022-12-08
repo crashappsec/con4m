@@ -18,7 +18,6 @@ ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
 	 	  ("else" expression "{" body" "}")?
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
-# whileStmt     ::= "while" expression "{" body "}" removed b/c can't prove temrination
 breakStmt     ::= "break" (";")?
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
@@ -58,4 +57,11 @@ mulExpr       ::= "*" mulExprRHS | divExpr
 mulExprRHS    ::= exprStart (mulExpr)*
 divExpr       ::= "/" divExprRHS | accessExpr 
 divExprRHS    ::= exprStart (divExpr)*
+
+# removed the while statement so that people never end up in an
+#  infinite loop loading their config file.
+
+# whileStmt     ::= "while" expression "{" body "}" 
+
 ```
+

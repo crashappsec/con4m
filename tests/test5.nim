@@ -43,8 +43,10 @@ test "hello, world":
 
   check tree != nil
 
-  let ctx = tree.checkTree()
-  tree.evalTree(ctx)
+  let ctx = tree.evalTree().getOrElse(nil)
+    
+  check ctx != nil
+    
   ctx.addSpec(spec)
   
   check ctx.validateConfig()

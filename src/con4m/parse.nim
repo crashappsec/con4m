@@ -1,12 +1,50 @@
 import options
 import streams
-import strformat
-import logging
+import macros
 
 import con4m_types
 import lex
 import dollars
 
+macro getOrElseActual*(x: untyped, y: untyped): untyped =
+  return quote do:
+    if `x`.isSome():
+      `x`.get()
+    else:
+      `y`
+  
+proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
+  getOrElseActual(x, y)
+
+
+type Con4mError* = object of CatchableError
+  
+proc fatal*(msg: string, token: Con4mToken) =
+
+  if (token == nil):
+    assert false, "Programmer error: token not provided"
+    raise newException(Con4mError,
+                       "Unrecoverable error in configuration file: " & msg)
+
+  if token.lineNo == -1:
+    raise newException(Con4mError, "(in user code): " & msg)
+  else:
+    raise newException(Con4mError, $(token.lineNo) & ":" &
+      $(token.lineOffset) & ":" & msg)
+
+  
+proc fatal*(msg: string, node: Con4mNode = nil) =
+
+  if (node == nil): 
+    raise newException(Con4mError,
+                       "Unrecoverable error in configuration file: " & msg)
+
+  let t = node.token.getOrElse(nil)
+
+  fatal(msg, t)
+
+
+  
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
@@ -56,11 +94,13 @@ proc unconsume(ctx: ParseCtx) =
     ctx.curTokIx.dec()
     if not ctx.curTok().isSkipped(): return
 
-template parseError(msg: string, backup = true) =
+template parseError(msg: string, backup = true) = 
   let info = instantiationInfo()
+  
   if backup: ctx.unconsume()
-  echo "Parse error thrown at ", info.filename, ":", info.line
-  raise newException(ValueError, msg)
+  fatal("Parse error (thrown at " & info.filename & ":" & $(info.line) &
+    "): \n" & msg,
+              ctx.curTok())
 
 # These productions need to be forward referenced.
 # Other expression productions do as well, but that gets done
@@ -161,7 +201,7 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
     try:
       actuals.children.add(ctx.expression())
     except:
-      parseError("Invalid expression for call argument", false)
+      parseError("Invalid expression for call argument after:", false)
 
     case ctx.consume().kind
     of TtRParen:
@@ -511,7 +551,7 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     discard ctx.consume()
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
-  result = Con4mNode(kind: NodeBody, typeInfo: bottomType)
+  result = Con4mNode(kind: NodeBody, typeInfo: bottomType, token: some(ctx.curTok()))
 
   while true:
     case ctx.curTok().kind
@@ -578,20 +618,14 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## and prints out any error message that happened during parsing.
   var ctx = ParseCtx(tokens: tokens, curTokIx: 0)
 
-  if defined(debugTokenStream):
+  when defined(debugTokenStream):
     for i, token in tokens:
       echo i, ": ", $token
 
-  try:
-    result = ctx.body(toplevel = true)
-    if ctx.curTok().kind != TtEof:
-      parseError("EOF, assignment or block expected.", true)
-    result.addParents()
-  except:
-    let
-      tok = ctx.curTok()
-      msg = getCurrentExceptionMsg()
-    error("{filename}:{tok.lineNo}:{tok.lineOffset}: (tok = {$tok})\n{msg}".fmt())
+  result = ctx.body(toplevel = true)
+  if ctx.curTok().kind != TtEof:
+    parseError("EOF, assignment or block expected.", true)
+  result.addParents()
 
 proc parse*(s: Stream, filename: string = ""): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
@@ -612,7 +646,7 @@ proc parse*(s: Stream, filename: string = ""): Con4mNode =
         of ErrorStringLit: "Unterminated string"
         else: "Unknown error" # Shouldn't be possible w/o a lex bug
 
-    error("{filename}:{tok.lineNo}:{tok.lineOffset}: {msg}".fmt())
+    fatal(msg, tok)
     return
 
 proc parse*(filename: string): Con4mNode =
@@ -621,7 +655,8 @@ proc parse*(filename: string): Con4mNode =
   var s = newFileStream(filename, fmRead)
 
   if s == nil:
-    error("{filename}: could not open file (permissions issue?)".fmt())
+    raise newException(Con4mError, filename &
+      ": could not open file (permissions issue?)")
   else:
     try:
       result = s.parse(filename)

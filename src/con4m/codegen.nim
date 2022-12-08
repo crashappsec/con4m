@@ -1132,9 +1132,14 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   ## so you can load a second file on top of it.
   var
     tree = parse(newStringStream(confstr))
-    `ctx nameBase Conf` {.inject.} = tree.checkTree()
+    opt = tree.evalTree()
 
-  tree.evalTree(`ctx nameBase Conf`)
+  if not opt.isSome():
+    echo "Error: invalid configuration file."
+    quit()
+    
+  var `ctx nameBase Conf` {.inject.} = opt.get()
+
   configDef(nameBase, rest)
   `ctx nameBase Conf`.addSpec(`confSpec nameBase`)
   if not `ctx nameBase Conf`.validateConfig():

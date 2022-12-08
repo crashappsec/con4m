@@ -11,6 +11,6 @@ test "hello, world":
     state: ConfigState
     cfg:   Option[Con4mScope]
     
-  (state, cfg) = evalConfig(conffile)
+  let opt = evalConfig(conffile)
 
-  check true
+  check opt.isSome()

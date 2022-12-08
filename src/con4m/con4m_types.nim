@@ -61,8 +61,7 @@ type
     tInfo*: Con4mType
     value*: Option[Box]
     subscope*: Option[Con4mScope]
-    defLocs*: seq[int]
-    useLocs*: seq[int] # TODO?
+    firstDef*: Option[Con4mNode]
     locked*: bool
 
   Con4mScope* = ref object

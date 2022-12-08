@@ -12,18 +12,25 @@ import dollars
 import typecheck
 import builtins
 import spec
+import parse # just for fatal()
+
+## This module is doing three things:
+## 
+## 1) Type-checking the program, using a basic unification algorithm.
+##
+## 2) Putting symbol tables into each node, inserting variables (and
+##    constants) into the proper symbol tables as it goes.
+##
+## 3) Setting values from string literals.  Dict/list literals are 
+##    done at eval time.
+##
+
 
 proc checkNode(node: Con4mNode, s: ConfigState)
 
 proc checkKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
     item.checkNode(s)
-
-template typeError(msg: string) =
-  raise newException(ValueError, msg)
-
-template parseError(msg: string) =
-  raise newException(ValueError, msg)
 
 template pushVarScope() =
   let scopeOpt = node.scopes
@@ -44,6 +51,8 @@ proc getBothScopes*(node: Con4mNode): CurScopes =
   return node.scopes.get()
 
 proc checkStringLit(node: Con4mNode) =
+  # Note that we do NOT accept hex or octal escapes, since
+  # strings theoretically should always be utf-8 only.
   let token = node.token.get()
 
   var
@@ -68,7 +77,7 @@ proc checkStringLit(node: Con4mNode) =
       of int('A') .. int('F'):
         codepoint = codepoint and (o - int('A') + 10)
       else:
-        typeError("Invalid unicode escape in string literal")
+        fatal("Invalid unicode escape in string literal", node)
       remaining -= 1
       if remaining == 0:
         res.add(Rune(codepoint))
@@ -112,11 +121,12 @@ proc checkStringLit(node: Con4mNode) =
         res.add(r)
 
   if flag or (remaining != 0):
-    typeError("Unterminated escape sequence in string literal")
+    fatal("Unterminated escape sequence in string literal", node)
 
   token.unescaped = res
 
 proc getTokenText*(node: Con4mNode): string {.inline.} =
+  # This returns the raw string.
   let token = node.token.get()
 
   case token.kind
@@ -151,16 +161,18 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for i, kid in node.children:
       let
         name = node.children[i].getTokenText()
-        loc = node.getLineNo()
 
       if scopes.attrs.lookupAttr(name).isSome():
-        parseError("Enum Value {name} conflicts w/ a toplevel attr".fmt())
+        fatal("Enum Value {name} conflicts w/ a toplevel attr".fmt(), kid)
       if scopes.vars.lookup(name).isSome():
-        parseError("Enum Value {name} conflicts w/ an existing variable".fmt())
-      let entry = scopes.vars.addEntry(name, loc, tinfo).get()
+        fatal("Enum Value {name} conflicts w/ an existing variable".fmt(), kid)
+      let entry = scopes.vars.addEntry(name, some(kid), tinfo).get()
 
       entry.value = some(box(i))
       entry.locked = true
+      # Setting locked ensures that the user cannot assign to an enum;
+      # it will pass the syntax check, but fail when we look at the
+      # assignment.
 
   of NodeSection:
     var scopes = node.scopes.get()
@@ -178,10 +190,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if maybeEntry.isSome():
         entry = maybeEntry.get()
         if not entry.subscope.isSome():
-          parseError("Section declaration conflicted with a variable " &
-                     "from another section")
+          fatal("Section declaration conflicted with a variable " &
+            "from another section", kid)
       else:
-        entry = scope.addEntry(secname, node.getLineNo(), subscope = true).get()
+        entry = scope.addEntry(secname, some(kid), subscope = true).get()
         scope = entry.subscope.get()
 
       scope = entry.subscope.get()
@@ -193,63 +205,68 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.children[^1].checkNode(s)
   of NodeAttrAssign:
     if node.children[0].kind != NodeIdentifier:
-      parseError("Dot assignments for attributes currently not supported.")
+      fatal("Dot assignments for attributes currently not supported.",
+            node.children[0])
 
     node.children[1].checkNode(s)
     let
       name = node.children[0].getTokenText()
-      loc = node.getLineNo()
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
 
     if scopes.vars.lookupAttr(name).isSome():
-      parseError("Attribute {name} conflicts with existing user variable".fmt())
+      fatal("Attribute {name} conflicts with existing user variable".fmt(),
+            node.children[0]
+      )
 
     let existing = scopes.attrs.lookupAttr(name)
 
     if not existing.isSome():
-      discard scopes.attrs.addEntry(name, loc, tinfo)
+      discard scopes.attrs.addEntry(name, some(node), tinfo)
     else:
       let
         entry = existing.get()
         t = unify(tinfo, entry.tinfo)
       if t.isBottom():
-        typeError("Type of value assigned conflicts with the exiting type")
+        fatal("Type of value assigned conflicts with the exiting type",
+              node.children[1])
       else:
         entry.tinfo = t
-        entry.defLocs.add(loc)
 
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
-      parseError("Dot assignments for variables currently not supported.")
+      fatal("Dot assignments for variables currently not supported.",
+            node.children[0])
 
     node.children[1].checkNode(s)
     let
       name = node.children[0].getTokenText()
-      loc = node.getLineNo()
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
 
     if scopes.attrs.lookupAttr(name).isSome():
-      parseError("Variable {name} conflicts with existing attribute".fmt())
+      fatal("Variable {name} conflicts with existing attribute".fmt(),
+            node.children[0])
 
     let existing = scopes.vars.lookup(name)
 
     if not existing.isSome():
-      discard scopes.vars.addEntry(name, loc, tinfo)
+      discard scopes.vars.addEntry(name, some(node), tinfo)
     else:
       let
         entry = existing.get()
         t = unify(tinfo, entry.tinfo)
 
       if entry.locked:
-        typeError("Cannot assign to loop index variables.")
+        # Could be a loop index, enum, or something a previous
+        # run locked.
+        fatal("You cannot assign to this value.", node.children[0])
 
       if t.isBottom():
-        typeError("Type of value assigned conflicts with the exiting type")
+        fatal("Type of value assigned conflicts with the exiting type",
+              node.children[1])
       else:
         entry.tinfo = t
-        entry.defLocs.add(loc)
   of NodeIfStmt, NodeElse:
     pushVarScope()
     node.checkKids(s)
@@ -257,15 +274,14 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     pushVarScope()
     node.checkKids(s)
     if isBottom(node.children[0], boolType):
-      typeError("If conditional must evaluate to a boolean")
+      fatal("If conditional must evaluate to a boolean", node.children[0])
     node.typeInfo = boolType # Unneeded.
   of NodeFor:
     pushVarScope()
     let
       scope = node.getVarScope()
       name = node.children[0].getTokenText()
-      loc = node.getLineNo()
-      entry = scope.addEntry(name, loc, intType).get()
+      entry = scope.addEntry(name, some(node.children[0]), intType).get()
 
     entry.locked = true
 
@@ -283,7 +299,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       try:
         node.value = box(node.getTokenText().parseInt())
       except:
-        parseError("Number too large for int type.")
+        fatal("Number too large for int type.", node)
     of TTFloatLit:
       node.typeInfo = floatType
 
@@ -327,13 +343,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       try:
         intPartI = intPartS.parseInt()
       except:
-        parseError("Integer piece is too large for an int; use 'e' notation.")
+        fatal("Integer piece is too large for an int; use 'e' notation.", node)
 
       if expPartS != "":
         try:
           expPartI = expPartS.parseInt()
         except:
-          parseError("Exponent piece of float overflows integer type")
+          fatal("Exponent piece of float overflows integer type", node)
 
       # Fow now, we just truncate floating point digits if there are
       # $(high(int)).len() digits or more.
@@ -368,21 +384,21 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     case t.kind
     of TypeInt, TypeFloat: node.typeInfo = t
     else:
-      typeError("Unary operator only works on numeric types")
+      fatal("Unary operator only works on numeric types", node)
   of NodeNot:
     node.checkKids(s)
     if node.children[0].isBottom():
-      typeError("There's nothing to 'not' here")
+      fatal("There's nothing to 'not' here", node)
     node.typeInfo = boolType
   of NodeMember:
     node.checkKids(s)
-    typeError("Member access is currently not supported.")
+    fatal("Member access is currently not supported.", node)
   of NodeIndex:
     node.checkKids(s)
     case node.children[0].typeInfo.kind
     of TypeList:
       if isBottom(node.children[1], intType):
-        parseError("Invalid list index (numbers only)")
+        fatal("Invalid list index (numbers only)", node.children[1])
       node.typeInfo = node.children[0].typeInfo.itemType
     of TypeDict:
       let
@@ -392,14 +408,14 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       of TypeString, TypeInt:
         node.typeInfo = vt
       else:
-        parseError("Dict indicies can only be strings or ints")
+        fatal("Dict indicies can only be strings or ints", node.children[1])
     else:
-      parseError("Currently only support indexing on dicts and lists")
+      fatal("Currently only support indexing on dicts and lists", node)
   of NodeCall:
     node.children[1].checkNode(s)
 
     if node.children[0].kind != NodeIdentifier:
-      parseError("Data objects cannot currently have methods.")
+      fatal("Data objects cannot currently have methods.", node.children[0])
 
     let
       fname = node.children[0].getTokenText()
@@ -407,9 +423,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     if builtinOpt.isNone():
       if s.isBuiltin(fname):
-        typeError("No signature with that type found.")
+        fatal("No signature with that type found.", node.children[0])
       else:
-        typeError("Function {fname} doesn't exist".fmt())
+        fatal("Function {fname} doesn't exist".fmt(), node.children[0])
 
     # Could stash for when we execute, but currently will just
     # look it up on the execute pass.
@@ -429,12 +445,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for item in node.children:
       ct = unify(ct, item.typeinfo)
       if ct.isBottom():
-        typeError("Dict items must all be the same type.")
+        fatal("Dict items must all be the same type.", node)
     node.typeInfo = ct
   of NodeKVPair:
     node.checkKids(s)
     if node.children[0].isBottom() or node.children[1].isBottom():
-      typeError("Invalid type for dictionary keypair")
+      fatal("Invalid type for dictionary keypair", node)
     node.typeInfo = newDictType(node.children[0].typeInfo,
                                 node.children[1].typeInfo)
   of NodeListLit:
@@ -443,13 +459,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for item in node.children:
       ct = unify(ct, item.typeinfo)
       if ct.isBottom():
-        typeError("List items must all be the same type")
+        fatal("List items must all be the same type", node)
     node.typeInfo = newListType(ct)
   of NodeOr, NodeAnd:
     node.checkKids(s)
     if isBottom(node.children[0], boolType) or
        isBottom(node.children[1], boolType):
-      typeError("Each side of || and && expressions must eval to a bool")
+      fatal("Each side of || and && expressions must eval to a bool", node)
     node.typeinfo = boolType
   of NodeNe, NodeCmp:
     node.checkKids(s)
@@ -459,9 +475,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of TypeInt, TypeFloat, TypeString, TypeBool:
       node.typeinfo = boolType
     of TypeBottom:
-      typeError("Types to comparison operators must match")
+      fatal("Types to comparison operators must match", node)
     else:
-      typeError("== and != currently do not work on lists or dicts")
+      fatal("== and != currently do not work on lists or dicts", node)
   of NodeGte, NodeLte, NodeGt, NodeLt:
     node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
@@ -470,49 +486,49 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of TypeInt, TypeFloat, TypeString:
       node.typeinfo = boolType
     of TypeBottom:
-      typeError("Types to comparison operators must match")
+      fatal("Types to comparison operators must match", node)
     else:
-      typeError("Comparison ops only work on numbers and strings")
+      fatal("Comparison ops only work on numbers and strings", node)
   of NodePlus:
     node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
-      typeError("Types of left and right side of binary operators must match")
+      fatal("Types of left and right side of binary operators must match", node)
     of TypeInt, TypeFloat, TypeString:
       node.typeInfo = t
     else:
-      typeError("Invalid type for bianry operator")
+      fatal("Invalid type for bianry operator", node)
   of NodeMinus, NodeMul:
     node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
-      typeError("Types of left and right side of binary operators must match")
+      fatal("Types of left and right side of binary operators must match", node)
     of TypeInt, TypeFloat:
       node.typeInfo = t
     else:
-      typeError("Invalid type for bianry operator")
+      fatal("Invalid type for bianry operator", node)
   of NodeMod:
     node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
-      typeError("Types of left and right side of binary operators must match")
+      fatal("Types of left and right side of binary operators must match", node)
     of TypeInt:
       node.typeInfo = t
     else:
-      typeError("Invalid type for bianry operator")
+      fatal("Invalid type for bianry operator", node)
   of NodeDiv:
     node.checkKids(s)
     let t = unify(node.children[0], node.children[1])
     case t.kind
     of TypeBottom:
-      typeError("Types of left and right side of binary operators must match")
+      fatal("Types of left and right side of binary operators must match", node)
     of TypeInt, TypeFloat:
       node.typeInfo = floatType
     else:
-      typeError("Invalid type for bianry operator")
+      fatal("Invalid type for bianry operator", node)
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -524,7 +540,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       varEntry = scopes.vars.lookup(name)
 
     if attrEntry.isNone() and varEntry.isNone():
-      parseError("Variable {name} used before definition".fmt())
+      fatal("Variable {name} used before definition".fmt(), node)
 
     let ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
 

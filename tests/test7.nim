@@ -388,10 +388,10 @@ test "samiconf":
 
   check tree != nil
 
-  let ctx = tree.checkTree()
-  tree.evalTree(ctx)
-  ctx.addSpec(spec)
+  let ctx = tree.evalTree().getOrElse(nil)
+  check ctx != nil
 
+  ctx.addSpec(spec)  
   check ctx.validateConfig()
 
   var conf = ctx.loadSamiConfig()
