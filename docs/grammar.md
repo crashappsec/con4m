@@ -1,8 +1,9 @@
-# SiCL grammar
+# Con4m grammar
 
-Lexical elements are defined in lex.md. Note that all comment and
-white space tokens other than newlines are ignored, and newlines are
-ignored in most expression contexts.
+Major lexical elements are defined in lex.md, and are all-uppercase
+here. Minor ones are inlined, in double quotes. Note that all comment
+and white space tokens other than newlines are ignored, and newlines
+are ignored in most expression contexts.
 
 ```ebnf
 top           ::= (coreBodyItems | enum) *
@@ -17,11 +18,11 @@ ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
 	 	  ("else" expression "{" body" "}")?
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
-whileStmt     ::= "while" expression "{" body "}"
+# whileStmt     ::= "while" expression "{" body "}" removed b/c can't prove temrination
 breakStmt     ::= "break" (";")?
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
-notExpr       ::= "!" expression
+notExpr       ::= ("!" | "not") expression
 literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | NULL
 accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)* 
 listLiteral   ::= "[" (expression ("," expression)* )? "]"
@@ -32,8 +33,8 @@ memberExpr    ::= "." ID
 indexExpr     ::= "[" expression "]"
 callActuals   ::= "(" (expression ("," expression)* )? ")"
 expression    ::= exprStart (orExpr*)
-orExpr        ::= "||" expression | andExpr
-andExpr       ::= "&&" andExprRHS | neExpr
+orExpr        ::= ("||" | "or")  expression | andExpr
+andExpr       ::= ("&&" | "and") andExprRHS | neExpr
 andExprRHS    ::= exprStart (andExpr)*
 neExpr        ::= "!=" neExprRHS | eqExpr
 neExprRHS     ::= exprStart (neExpr)*

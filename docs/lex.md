@@ -1,4 +1,4 @@
-# SiCL Lexical tokens
+# Con4m Lexical tokens
 
 This document enumerates all the lexical elements for SiCL.
 
