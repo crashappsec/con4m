@@ -1,3 +1,13 @@
+##
+## This is a simple recursive descent parser.  Note that I've explicitly
+## factored the grammar for right recursion, so in the expression grammar
+## there is a bit of tree jockeying to get the tree to look natural.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
+
+
 import options
 import streams
 import macros
@@ -6,7 +16,7 @@ import con4m_types
 import lex
 import dollars
 
-macro getOrElseActual*(x: untyped, y: untyped): untyped =
+macro getOrElseActual(x: untyped, y: untyped): untyped =
   return quote do:
     if `x`.isSome():
       `x`.get()
@@ -14,13 +24,15 @@ macro getOrElseActual*(x: untyped, y: untyped): untyped =
       `y`
   
 proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
+  ## Allows us to derefenrece an Option[] type if it isSome(),
+  ## and if not, set a default value instead.
   getOrElseActual(x, y)
 
 
 type Con4mError* = object of CatchableError
   
 proc fatal*(msg: string, token: Con4mToken) =
-
+  ## Raise a Con4mError, and add any context in the error message.
   if (token == nil):
     assert false, "Programmer error: token not provided"
     raise newException(Con4mError,
@@ -34,7 +46,7 @@ proc fatal*(msg: string, token: Con4mToken) =
 
   
 proc fatal*(msg: string, node: Con4mNode = nil) =
-
+  ## Raise a Con4mError, and add any context in the error message.
   if (node == nil): 
     raise newException(Con4mError,
                        "Unrecoverable error in configuration file: " & msg)
@@ -42,9 +54,6 @@ proc fatal*(msg: string, node: Con4mNode = nil) =
   let t = node.token.getOrElse(nil)
 
   fatal(msg, t)
-
-
-  
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.

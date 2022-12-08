@@ -1,4 +1,4 @@
 nimcache/
 nimblecache/
 htmldocs/
-tests/t[^.]*
+tests/t[^.]*[^m]

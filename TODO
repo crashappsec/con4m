@@ -5,6 +5,7 @@
 - Ability to load a stacked configuration file.
 - String interpolations (This is nim-side only).
 - Make sure complex types are boxing properly in calls.
+- wrap scall in try/except.
 
 # P1: Before going public
 - Make sure errors in our macros give reasonable line number / token info
@@ -40,6 +41,12 @@
   top-level.  There's a pointer from the section spec back up to
   the config spec, and this is the ONLY reason we use it; it should
   be removed once we address this issue.
+
+- Drop capabilities
+
+- Make adding builtin functions a bit easier, for instance adding a
+  command in the macro language, and generating the code to do the
+  boxing/unboxing automatically.
   
 - Add in <<END as an option for long strings
 - Move strings to a resources file.
@@ -55,3 +62,20 @@
 - Curses UI for config management
 - Command-line flag handling
 - Ability to embed and dump configs into the actual binary itself.
+- Ability to lock individual sections.  isLocked is in SectionState, but unused.
+
+- Error strings should be codes instead.
+
+
+# Test split.
+
+Use doc strings, command-line arguments.
+
+  ## The doc parameter is for doc strings, which is currently not
+  ## used, but will be used down the road when we merge in supporting
+  ## command-line argument handling, and start providing help
+  ## messages.
+
+
+:Author: John Viega (john@crashoverride.com)
+:Copyright: 2022

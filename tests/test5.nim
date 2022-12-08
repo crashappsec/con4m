@@ -55,6 +55,3 @@ test "hello, world":
     echo item
 
   check unbox[int](ctx.getConfigVar("item.okay.foo").get()) == 2
-
-  for item in ctx.getSections():
-    echo ctx.getSections(item)

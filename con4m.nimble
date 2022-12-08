@@ -9,3 +9,7 @@ srcDir        = "src"
 # Dependencies
 requires "nim >= 1.6.8"
 requires "unicodedb >= 0.11.1"
+
+# Docs generated with
+# nimble --project --index:on --git.url:https://github.com/crashappsec/con4m.git --git.commit:`version`
+# --outdir:docs src/con4m.nim

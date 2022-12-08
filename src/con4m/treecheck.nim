@@ -1,3 +1,17 @@
+## This module is doing three things:
+## 
+## 1) Type-checking the program, using the standard unifcation
+##    algorithm, which itself lives in typecheck.nim
+##
+## 2) Putting symbol tables into each node, inserting variables (and
+##    constants) into the proper symbol tables as it goes.
+##
+## 3) Setting values from string literals.  Dict/list literals are 
+##    done at eval time.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import math
 import options
 import strformat
@@ -14,18 +28,6 @@ import builtins
 import spec
 import parse # just for fatal()
 
-## This module is doing three things:
-## 
-## 1) Type-checking the program, using a basic unification algorithm.
-##
-## 2) Putting symbol tables into each node, inserting variables (and
-##    constants) into the proper symbol tables as it goes.
-##
-## 3) Setting values from string literals.  Dict/list literals are 
-##    done at eval time.
-##
-
-
 proc checkNode(node: Con4mNode, s: ConfigState)
 
 proc checkKids(node: Con4mNode, s: ConfigState) {.inline.} =
@@ -40,14 +42,19 @@ template pushVarScope() =
   node.scopes = some(scopes)
 
 proc getVarScope*(node: Con4mNode): Con4mScope =
+  ## Internal. Returns just the current variables scope, when we
+  ## already know it exists.
   let scopes = node.scopes.get()
   return scopes.vars
 
 proc getAttrScope*(node: Con4mNode): Con4mScope =
+  ## Internal. Returns just the current attributes scope, when we
+  ## already know it exists.
   let scopes = node.scopes.get()
   return scopes.attrs
 
 proc getBothScopes*(node: Con4mNode): CurScopes =
+  ## Internal. Returns both scopes when we know they exist.
   return node.scopes.get()
 
 proc checkStringLit(node: Con4mNode) =
@@ -126,7 +133,7 @@ proc checkStringLit(node: Con4mNode) =
   token.unescaped = res
 
 proc getTokenText*(node: Con4mNode): string {.inline.} =
-  # This returns the raw string.
+  ## This returns the raw string associated with a token.  Internal.
   let token = node.token.get()
 
   case token.kind
@@ -146,6 +153,8 @@ proc getLineNo(node: Con4mNode): int {.inline.} =
   return token.lineNo
 
 proc checkNode(node: Con4mNode, s: ConfigState) =
+  # We take our scope from the parent by default.  If we're going to
+  # have different scopes, the parent will tell us what our scope is.
   if node.scopes.isNone():
     node.scopes = node.parent.get().scopes
 
@@ -547,10 +556,21 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = ent.tinfo
 
 proc checkTree*(node: Con4mNode, s: ConfigState) =
+  ## Checks a parse tree rooted at `node` for static errors (i.e.,
+  ## anything we can easily find before execution).  This version
+  ## accepts an "old" `ConfigState` object, so that you can keep an
+  ## old symbol table around, layering new choices on top of the old
+  ## ones.
   for item in node.children:
     item.checkNode(s)
 
 proc checkTree*(node: Con4mNode): ConfigState =
+  ## Checks a parse tree rooted at `node` for static errors (i.e.,
+  ## anything we can easily find before execution).  This version
+  ## returns a new `ConfigState` object, that can be used for
+  ## querying, dumped to a data structure (via our macros), or sent
+  ## back to checkTree when loading a file being layered on top of
+  ## what we've already read.
   node.scopes = some(newRootScope())
 
   result = newConfigState(node.scopes.get().attrs)
@@ -575,7 +595,8 @@ when isMainModule:
   echo $("(int, int, int, *string)".tT())
   echo $"(int, int, int, *string) -> @x".tT().unify(
       "(int, int, int, *string)".tT())
-  echo $"(int, int, int, string) -> @x".tT().unify("(int, int, int, string)".tT())
+  echo $"(int, int, int, string) -> @x".tT(
+    ).unify("(int, int, int, string)".tT())
   echo $"(int, int, int, *string) -> @x".tT().unify(
       "(int, int, int, string, string)".tT())
   echo $"(int, int, int, *bool) -> @x".tT().unify("(int, int, int)".tT())

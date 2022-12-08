@@ -1,7 +1,9 @@
-#[ This module actually walks the tree, directly executing the
-#  operations encoded in it (as opposed to generating code that we would
-#  then run).
-]#
+##  This module actually walks the tree, directly executing the
+##  operations encoded in it (as opposed to generating code that we
+##  would then run).
+##
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
 
 import con4m_types
 import st

@@ -267,7 +267,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
   tmpBox = ctx.getConfigVar("output_file").get()
   result.output_file = unbox[string](tmpBox)
 
-  let sectionInfo = ctx.getAllSectSTs()
+  let sectionInfo = ctx.getAllSectionSTs()
 
   for (toplevel, k, v) in sectionInfo:
     var stEntry: STEntry

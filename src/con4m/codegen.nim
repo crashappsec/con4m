@@ -1,3 +1,9 @@
+## Macros for abstracting away config file specification, parsing,
+## validation and loading.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import con4m_types
 import macros
 import tables
@@ -1035,7 +1041,7 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
       nnkAsgn.newTree(
         newIdentNode("sections"),
         nnkCall.newTree(
-          newIdentNode("getAllSectSTs"),
+          newIdentNode("getAllSectionSTs"),
           newIdentNode("ctx"))),
       nnkAsgn.newTree(
         newIdentNode("currentSt"),
@@ -1086,7 +1092,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   #echo treerepr(slist)
   #echo toStrLit(slist)
 
-macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
+macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## While this is technically our top-level macro, it's intended that
   ## you instead call configDef() or con4m(), not this.  That's
   ## because we need a kludge to be able to give a good error message
@@ -1122,7 +1128,10 @@ template configDef*(nameNode: untyped, rest: untyped) =
   ## just generates code for us. The kludge variable is to ensure we
   ## don't run in a function scope, so that we can inject the
   ## loadNNNConfig() procedure.
-
+  ##
+  ## This is particularly useful when we want to add our own custom
+  ## built-in functions.  We may change those to be part of the macro
+  ## system.
   var kludge = 100
   cDefActual(kludge, nameNode, rest)
 
@@ -1130,6 +1139,7 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   ## This is our main wrapper that bundles up parsing, checking, evaling, ...
   ## It both returns your config object, but also injects the context object
   ## so you can load a second file on top of it.
+
   var
     tree = parse(newStringStream(confstr))
     opt = tree.evalTree()

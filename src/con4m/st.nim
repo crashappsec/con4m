@@ -1,3 +1,17 @@
+## The Con4m symbol table, scopes, and things that support it.  This
+## includes the helper functions for instantiating type objects.
+##
+## The methods are all meant to be internal; the end user shouldn't
+## directly deal with the symbol table objects.
+##
+## The external interface should either be via macros of
+## `getConfigVar()`, which lives in spec.nim just due to
+## cross-file dependencies.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
+
 import tables
 import options
 import unicode
@@ -7,9 +21,6 @@ import parse # only for fatal()
 
 import con4m_types
 
-
-# Symbol tables and scopes, and things that support it.
-# This includes the helper functions for instantiating type objects.
 
 var tVarNum: int
 
@@ -96,6 +107,10 @@ proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
 proc lookupAttr*(scope: Con4mScope,
                  name: string,
                  scopeOk: bool = false): Option[STEntry] =
+  ## This method is exposed because it's used in the code generated
+  ## automatically by our macro library.  It's lower level, operating
+  ## on the scope data type that doesn't get exposed from the package
+  ## by default.  Instead, use `getConfigVar()`.
   if scope.entries.contains(name):
     if not scopeOk and scope.entries[name].subscope.isSome():
       lookupError("asked for a attribute, but this name refers to a section",
@@ -212,6 +227,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
     raise newException(ValueError, "Unknown character: {$(n[0])}".fmt())
 
 proc toCon4mType*(s: string): Con4mType =
+  ## Converts a string to a Con4m type object.
   var
     v: Con4mType
     n: string
@@ -226,3 +242,5 @@ proc toCon4mType*(s: string): Con4mType =
                        "Extraneous text after parsed type: {n}".fmt())
 
   return v
+
+  
