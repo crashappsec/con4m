@@ -50,7 +50,7 @@ proc addSection*(spec: ConfigSpec,
                  validSubSecs: seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
   if spec.secSpecs.contains(name):
-    raise newException(ValueError, "Cannot redefine.")
+    raise newException(ValueError, "Cannot redefine section {name}.".fmt())
 
   if not name.isValidId():
     raise newException(ValueError, "Name is not a valid identifier")
@@ -58,9 +58,23 @@ proc addSection*(spec: ConfigSpec,
   result = SectionSpec(doc: doc,
                        requiredSubsections: requiredSubSecs,
                        allowedSubsections: validSubSecs,
-                       customAttrs: allowCustomAttrs)
+                       customAttrs: allowCustomAttrs,
+                       associatedSpec: spec)
 
   spec.secSpecs[name] = result
+
+proc addSection*(parent: SectionSpec,
+                 name: string,
+                 doc: string = "",
+                 requiredSubSecs: seq[string] = @[],
+                 validSubSecs: seq[string] = @[],
+                 allowCustomAttrs: bool = false): SectionSpec =
+
+  return parent.associatedSpec.addSection(name,
+                                          doc,
+                                          requiredSubSecs,
+                                          validSubSecs,
+                                          allowCustomAttrs)
 
 proc addAttr*(section: SectionSpec,
               name: string,
@@ -87,6 +101,7 @@ proc addAttr*(section: SectionSpec,
     validator: validator)
 
   section.predefinedAttrs[name] = attr
+
 
 proc containsFields(scope: Con4mScope): bool =
   for n, e in scope.entries:
@@ -202,6 +217,7 @@ proc requiredFieldCheck(ctx: ConFigState,
       else:
         if specEntry.defaultVal.isSome():
           entry.value = specEntry.defaultVal
+          scope.entries[key] = entry
         else:
           if specEntry.required:
             ctx.errors.add("In {scopeName}: Required symbol {key}".fmt() &
@@ -210,7 +226,8 @@ proc requiredFieldCheck(ctx: ConFigState,
     else:
       if specEntry.defaultVal.isNone():
         if specEntry.required:
-          ctx.errors.add("In {scopeName}: Required symbol {key} not found".fmt())
+          ctx.errors.add("In {scopeName}: " &
+                         "Required symbol {key} not found".fmt())
         continue
       else:
         let
@@ -218,6 +235,7 @@ proc requiredFieldCheck(ctx: ConFigState,
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
+        assert scope.lookupAttr(key).isSome()
 
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
@@ -351,27 +369,34 @@ proc getSections*(state: ConfigState, field: string = ""): seq[string] =
     if v.subscope.isSome():
       result.add(k)
 
-type Con4mSectInfo = seq[(string, Con4mScope)]
 
-proc walkSTForSects(path: string, scope: Con4mScope, s: var Con4mSectInfo) =
+type Con4mSectInfo = seq[(string, string, Con4mScope)]
+
+proc walkSTForSects(toplevel: string,
+                    path: string,
+                    scope: Con4mScope,
+                    s: var Con4mSectInfo) =
+
   if scope.containsFields():
-    s.add((path, scope))
+    s.add((toplevel, path, scope))
 
   for n, e in scope.entries:
-    if e.subscope.isNone(): continue
-    walkSTForSects(path & "." & n, e.subscope.get(), s)
+    if e.subscope.isNone():
+      continue
 
-proc getAllSectSTs*(ctx: ConfigState): OrderedTableRef[string, Con4mSectInfo] =
-  result = newOrderedTable[string, Con4mSectInfo]()
+    let newpath = if path != "":
+                    path & "." & n
+                  else:
+                    n
+
+    walkSTForSects(toplevel, newpath, e.subscope.get(), s)
+
+proc getAllSectSTs*(ctx: ConfigState): Con4mSectInfo =
+  result = @[]
 
   for k, entry in ctx.st.entries:
-    if entry.subscope.isNone():
-      continue
-    var s: Con4mSectInfo
-
-    s = newSeq[(string, Con4mScope)]()
-    walkSTForSects(k, entry.subscope.get(), s)
-    result[k] = s
+    if entry.subscope.isSome():
+      walkStForSects(k, "", entry.subscope.get(), result)
 
 proc addSpec*(s: ConfigState, spec: ConfigSpec) =
   s.spec = some(spec)
@@ -426,6 +451,4 @@ keySection.addAttr("since",
                    "string",
                    "The version of SAMI where the key was added.",
                    required: false)
-
-
 ]#

@@ -269,7 +269,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
   let sectionInfo = ctx.getAllSectSTs()
 
-  for (k, v) in sectionInfo["key"]:
+  for (toplevel, k, v) in sectionInfo:
     var stEntry: STEntry
     var entryOpt: Option[STEntry]
     

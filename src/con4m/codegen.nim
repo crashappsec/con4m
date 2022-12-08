@@ -346,8 +346,6 @@ proc foundCmdAttr(stmt: NimNode, state: MacroState) =
 
   state.currentSection.attrs[varName] = newAttr
 
-
-
 proc foundCmdSection(stmt: NimNode, state: MacroState) =
   ## This is the code for walking the tree to parse out a `section` command.
   ## Arg 0: "section"
@@ -479,13 +477,11 @@ proc parseConfigDef(nameNode: NimNode, rest: NimNode): MacroState =
   for stmt in rest.items:
     lookForConfigCmds(stmt, result)
 
-proc getSectionVarName(sec: SectContents, ctx: MacroState): string =
+proc getSectionTypeName(sec: SectContents, ctx: MacroState): string =
   ## Now we're entering into the code that supports generating the
   ## replacement code.  This is where things can probably start to get
   ## confusing.
-  let cfgName = ctx.name
-
-  result = cfgName
+  result = ctx.name.capitalizeAscii()
 
   if ctx.contents == sec:
     result = result & "Config"
@@ -496,8 +492,9 @@ proc getSectionVarName(sec: SectContents, ctx: MacroState): string =
   for item in parts:
     result = result & item.capitalizeAscii()
 
-  for i in 1 ..< parts.len():
-    result = result & "Sub"
+  while false: # Currently, we are only supporting top-level section typing.
+    for i in 1 ..< parts.len():
+      result = result & "Sub"
 
   result = result & "Section"
 
@@ -559,29 +556,50 @@ proc con4mTypeToNimNodes(t: Con4mType): NimNode =
     return nnkProcTy.newTree(params, newEmptyNode())
 
 
+const nimReservedWords = ["addr", "and", "as", "asm", "bind", "block",
+                          "break", "case", "cast", "concept", "const",
+                          "continue", "converter", "defer", "discard",
+                          "distinct", "div", "do", "elif", "else",
+                          "end", "enum", "except", "export",
+                          "finally", "for", "from", "func", "if",
+                          "import", "in", "include", "interface",
+                          "is", "isnot", "iterator", "let", "macro",
+                          "method", "mixin", "mod", "nil", "not",
+                          "notin", "object", "of", "or", "out",
+                          "proc", "ptr", "raise", "ref", "return",
+                          "shl", "shr", "static", "template", "try",
+                          "tuple", "type", "using", "var", "when",
+                          "while", "xor", "yield"]
+
+proc safeIdent(name: string): NimNode =
+  if name in nimReservedWords:
+    return nnkAccQuoted.newTree(newIdentNode(name))
+  return newIdentNode(name)
+
+
 proc buildDeclsOneSection(ctx: MacroState) =
   ## This code generates the data type declaration for a section.
-  ## The name for the data type is retrieved from getSectionVarName.
+  ## The name for the data type is retrieved from getSectionTypeName.
   ##
   ## The actual node layout for such things I get from writing small
   ## examples of what I WANT to generate, then I get Nim to dump the AST,
   ## making it easy for me to make sure I generate the same AST.
   var myItems = newNimNode(nnkRecList) # TODO: get line # info in there.
   let thisSection = ctx.currentSection
-  let secName = getSectionVarName(thisSection, ctx)
+  let secName = getSectionTypeName(thisSection, ctx)
 
   # Section decls go in front of us, so we can reference them.
   for name, subsection in thisSection.subsections:
     ctx.currentSection = subsection
     buildDeclsOneSection(ctx)
     ctx.currentSection = thisSection
-    let subSecName = getSectionVarName(subsection, ctx)
+    let subSecName = getSectionTypeName(subsection, ctx)
     myItems.add(nnkIdentDefs.newTree(
-                   newIdentNode(name),
+                   safeIdent(name),
                    nnkBracketExpr.newTree(
                      newIdentNode("OrderedTable"),
                      newIdentNode("string"),
-                     newIdentNode(subSecname)
+                     safeIdent(subSecname)
       ),
       newEmptyNode()
       )
@@ -589,13 +607,26 @@ proc buildDeclsOneSection(ctx: MacroState) =
 
   # Now we can add in attributes.
   for k, v in thisSection.attrs:
-    myItems.add(nnkIdentDefs.newTree(
-                   newIdentNode(k),
-                   con4mTypeToNimNodes(v.typeAsCon4mNative),
-                   newEmptyNode()
+
+    if (v.defaultVal != nil) or (v.required.isSome() and v.required.get()):
+      myItems.add(nnkIdentDefs.newTree(
+          safeIdent(k),
+          con4mTypeToNimNodes(v.typeAsCon4mNative),
+          newEmptyNode()
+        )
       )
-    )
-  let defnode = nnkTypeDef.newTree(newIdentNode(secName),
+    else:
+      myItems.add(nnkIdentDefs.newTree(
+          safeIdent(k),
+          nnkBracketExpr.newTree(
+            newIdentNode("Option"),
+            con4mTypeToNimNodes(v.typeAsCon4mNative),
+        ),
+          newEmptyNode()
+        )
+      )
+
+  let defnode = nnkTypeDef.newTree(safeIdent(secName),
                                     newEmptyNode(),
                                     nnkRefTy.newTree(
                                       nnkObjectTy.newTree(
@@ -736,7 +767,6 @@ proc buildSectionSpec(ctx: MacroState, slist: NimNode) =
                                  required = `required`,
                                  lockOnWrite = `loWrite`,
                                  doc = `doc`)
-
     slist.add(x)
 
   let subsections = curSec.subsections
@@ -782,29 +812,158 @@ proc buildGlobalSectionSpec(ctx: MacroState, slist: NimNode) =
 
 proc loadOneAttr(ctx: MacroState,
                  slist: NimNode,
-                 varName: string,
-                 attrInfo: AttrContents) =
-  ## TODO-- I am here.  This is going to be code that copies the
-  ## individual data fields that the parser is holding, boxed, in
-  ## symbol tables, into the data structures we generated.
-  discard
+                 attrName: string,
+                 attrInfo: AttrContents,
+                 stVariable: string,
+                 dstVariable: string) =
+  ## This function generates statements (adding to slist) necessary to
+  ## set a single field in a single data object.  The variable name on
+  ## the LHS of the assignment is in dstVariable, and the name of the
+  ## variable for the symbol table is stVariable.  Note we assume here
+  ## that the schema was checked, and that every variable we look up
+  ## will therefore be present in the symbol table (the checker
+  ## does make sure of it).
+  ##
+  ## Note that we have to generate different code depending on the
+  ## type of the attribute, since the unboxing code will be
+  ## type-dependent.
 
-proc buildSectionLoader(ctx: MacroState, slist: NimNode) =
+  var
+    node: NimNode
+    stVariableNode = newIdentNode("currentSt") #newIdentNode(stVariable)  TODO- fix
+    attrNameLitNode = newLit(attrName)
+    attrNameIdNode = safeIdent(attrName)
+    dstVariableNode = safeIdent(dstVariable)
+    nimTypeNodes = con4mTypeToNimNodes(attrInfo.typeAsCon4mNative)
+
+
+  if (attrInfo.defaultVal != nil) or (attrInfo.required.isSome() and
+      attrinfo.required.get()):
+
+    node = quote do:
+      entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
+      stEntry = entryOpt.get()
+      tmpBox = stEntry.value.get()
+      `dstVariableNode`.`attrNameIdNode` = unbox[`nimTypeNodes`](tmpBox)
+  else:
+    node = quote do:
+      entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        if stEntry.value.isSome():
+          tmpBox = stEntry.value.get()
+          `dstVariableNode`.`attrNameIdNode` = some(unbox[`nimTypeNodes`](tmpBox))
+
+  slist.add(node)
+
+proc flattenSections(sec: SectContents, secMap: OrderedTableRef[string,
+    SectContents]) =
+  for name, item in sec.subsections:
+    if name in secMap:
+      error("Recursive section not currently allowed, leading to a name conflict")
+    secMap[name] = item
+
+proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
   ## This is going to generate the code to set up the variable
   ## navigation needed, and then call loadOneAttr.
+
+  # Note that right now, con4m ONLY supports top-level section types
+  # (though they can have sub-instances, which will show up in dot
+  # syntax).  Still, the macro records section definitions as if
+  # nesting is possible.  here, we need to flatten this out.  We don't
+  # capture the top-level "section", just explicitly declared ones.
+
+  var secMap: OrderedTableRef[string, SectContents] = newOrderedTable[string,
+      SectContents]()
+  flattenSections(ctx.contents, secMap)
+
+  # Load root-scope attributes.
   let section = ctx.currentSection
+  for attrName, attrInfo in section.attrs:
+    loadOneAttr(ctx, slist, attrName, attrInfo, "st", "result")
 
-  for varName, attrInfo in section.attrs:
-    loadOneAttr(ctx, slist, varName, attrInfo)
+  for sectName, secInfo in secMap:
 
-  for secName, contents in section.subsections:
-    discard
-    # Save off previous st to st_n
-    # set the value of st to subsection's symbol table
-    # set the value of the destination section to some variable.
-    # Note: we probably want to add the type name of the destination section to
-    #   the static section information.
-    # call buildSectionLoader for
+    let
+      sectTypeName = safeIdent(getSectionTypeName(secInfo, ctx))
+      sectNameIdentNode = safeIdent(sectName)
+      sectNameLitNode = newLit(sectName)
+      attrs = newNimNode(nnkStmtList)
+
+
+    # Build the code to load this section's attributes into the variable
+    # named record.  We do this before the code leading up to it, so that
+    # we can use quote do: blocks for everything.
+    #
+    # The resulting tree lives in `attrs`.
+    for attrName, attrInfo in secInfo.attrs:
+      ctx.loadOneAttr(attrs, attrName, attrInfo, "sectSt", "record")
+
+
+
+    # Here's the code we'll generate to go through each section, looking for
+    # ones where we should be creating an object, copying the fields, and
+    # storing it.
+    #
+    # Had issues with how quote: do handles deciding what to symgen so
+    # didn't use it.
+    # This is what the quote do should have contianed:
+    # let nodes = quote do:
+    #  for dottedName, sectSt in sections:  #'key' : [(fullname, Section)]
+    #    for scope in sectSt:
+    #      currentSt = scope
+    #      let
+    #        parts      = dottedName.split(".")
+    #      if parts[0] != `sectNameLitNode`: continue
+    #      var record = `sectTypeName`()
+    #      result.`sectNameIdentNode`[topLevelName] = record
+    #
+    # slist.add(nodes)
+
+
+    var forBody = nnkStmtList.newTree(
+                      nnkAsgn.newTree(
+                        newIdentNode("currentSt"),
+                        newIdentNode("sectSt")
+      ),
+                    nnkVarSection.newTree(
+                      nnkIdentDefs.newTree(
+                        newIdentNode("record"),
+                        newEmptyNode(),
+                        nnkCall.newTree(
+                          sectTypeName # substitution point
+      )
+    )
+      )
+    )
+
+
+    for kid in attrs:
+      forBody.add(kid)
+
+    forBody.add(nnkAsgn.newTree(
+             nnkBracketExpr.newTree(
+               nnkDotExpr.newTree(
+                 newIdentNode("result"),
+                 sectNameIdentNode # substitution point
+      ),
+      newIdentNode("topLevelName")
+    ),
+             newIdentNode("record")
+      )
+    )
+
+    slist.add(nnkForStmt.newTree(
+                nnkVarTuple.newTree(
+                  newIdentNode("topLevelName"),
+                  newIdentNode("dottedName"),
+                  newIdentNode("sectSt"),
+                  newEmptyNode()
+      ),
+      newIdentNode("sections"),
+      forBody
+    )
+      )
 
 ## More helper functions for creating symbol names that we'll use.
 proc getSpecVarName(ctx: MacroState): string =
@@ -831,38 +990,105 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
     loadFuncName = getLoadingProcName(ctx)
     confTypeName = getConfigTypeName(ctx)
 
-  var stmts = nnkStmtList.newTree(
-                nnkAsgn.newTree(
-                  newIdentNode("result"),
-                  nnkCall.newTree(
-                    newIdentNode("SamiConfig") # TODO
+  # Most of the work is going to be adding statements into the proc's
+  # statement block. So delcare that first, and have everything append
+  # to it.  Then, at the end of the proc, we'll shove this block into
+  # the right place in a procedure declaration.
+  #
+  # Note that we'll use some helper variables in the generated code:
+  # 1) `tmpBox`, which we use for boxing up arguments
+  # 2) `currentSt`, which represents the current scope we're loading.
+  # 3) `sections`, is a table of all the sections available at runtime.
+  # 4) `stEntry`, the current symbol table entry
+  # 5) `entryOpt`, An option object holding the current stEntry, if any.
+
+  var
+    typename = safeIdent(getConfigTypeName(ctx))
+    sectionsId = newIdentNode("sections")
+
+    # stmts = quote do:
+    #   result = `typeName`()
+    #   var
+    #     tmpBox: Box
+    #     currentSt: on4mScope
+    #     `sectionsId`: seq[(string, string, Con4mScope)]
+    #     stEntry: STEntry
+    #     entryOpt: Option[StEntry]
+
+    #   sections = getAllSectSTs(ctx)
+    #   currentSt = ctx.st
+
+    stmts = nnkStmtList.newTree(
+      nnkAsgn.newTree(
+        newIdentNode("result"),
+        newCall(typeName)
+      ),
+      nnkVarSection.newTree(
+        nnkIdentDefs.newTree(
+          newIdentNode("tmpBox"),
+          newIdentNode("Box"),
+          newEmptyNode()
+        ),
+        nnkIdentDefs.newTree(
+          newIdentNode("currentSt"),
+          newIdentNode("Con4mScope"),
+          newEmptyNode()
+        ),
+        nnkIdentDefs.newTree(
+          sectionsId,
+          nnkBracketExpr.newTree(
+            newIdentNode("seq"),
+            nnkTupleConstr.newTree(
+              newIdentNode("string"),
+              newIdentNode("string"),
+              newIdentNode("Con4mScope")
+          )
+        ),
+          newEmptyNode()
+        ),
+        nnkIdentDefs.newTree(
+          newIdentNode("stEntry"),
+          newIdentNode("STEntry"),
+          newEmptyNode()
+        ),
+        nnkIdentDefs.newTree(
+          newIdentNode("entryOpt"),
+          nnkBracketExpr.newTree(
+            newIdentNode("Option"),
+            newIdentNode("StEntry")
+          ),
+          newEmptyNode()
+        )
+      ),
+      nnkAsgn.newTree(
+        newIdentNode("sections"),
+        nnkCall.newTree(
+          newIdentNode("getAllSectSTs"),
+          newIdentNode("ctx")
+        )
+      ),
+      nnkAsgn.newTree(
+        newIdentNode("currentSt"),
+        nnkDotExpr.newTree(
+          newIdentNode("ctx"),
+          newIdentNode("st")
+        )
+      )
     )
-  ),
-                nnkVarSection.newTree(
-                  nnkIdentDefs.newTree(
-                    newIdentNode("tmpBox"),
-                    newIdentNode("Box"),
-                    newEmptyNode()
-    ),
-                 nnkIdentDefs.newTree(
-                   newIdentNode("currentSt"),
-                   newEmptyNode(),
-                   nnkDotExpr.newTree(
-                     newIdentNode("ctx"),
-                     newIdentNode("st")
-    )
-  )
-    )
-  )
+
+
   ctx.currentSection = ctx.contents
-  buildSectionLoader(ctx, stmts)
+
+  buildSectionLoader(ctx, sectionsId, stmts)
+  stmts.add(nnkReturnStmt.newTree(newIdentNode("result")))
+
   slist.add(nnkProcDef.newTree(
               newIdentNode(loadFuncName),
               newEmptyNode(),
               newEmptyNode(),
               nnkFormalParams.newTree(
                 newIdentNode(confTypeName), # Return type
-    nnkIdentDefs.newTree(
+    nnkIdentDefs.newTree( # Parameter 1, the ConfigState context, ctx
       newIdentNode("ctx"),
       newIdentNode("ConfigState"),
       newEmptyNode()
@@ -880,14 +1106,14 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   ## code generation pieces, and lump it together into one tree.
   let specVarName = getSpecVarName(ctx)
 
-  ctx.specIdent = newIdentNode(specVarName)
+  ctx.specIdent = safeIdent(specVarName)
   ctx.nodeStack = @[]
-  ctx.parentSpecName = newIdentNode(specVarName)
+  ctx.parentSpecName = safeIdent(specVarName)
 
   slist.add(
     nnkVarSection.newTree(
                           nnkIdentDefs.newTree(
-                            newIdentNode(specVarName),
+                            safeIdent(specVarName),
                             newEmptyNode(),
                             nnkCall.newTree(
                              newIdentNode("newConfigSpec")
@@ -902,11 +1128,8 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
 
   buildLoadingProc(ctx, slist)
 
-  echo treerepr(slist)
-  #echo toStrLit(slist)
-
-dumptree:
-  x = 7
+  #echo treerepr(slist)
+  echo toStrLit(slist)
 
 
 macro cDefActual*(kludge: int, nameNode: untyped, rest: untyped): untyped =
@@ -947,163 +1170,3 @@ template configDef*(nameNode: untyped, rest: untyped): untyped =
     dumpAtRuntime(cDefActual(kludge, nameNode, rest))
   else:
     cDefActual(kludge, nameNode, rest)
-
-
-# This is just sample code I'm testing with.
-configDef(Sami):
-  attr(config_path, [string], @[".", "~"])
-  attr(config_filename, string, "sami.conf")
-  attr(color, bool, false)
-  attr(log_level, string, "warn")
-  attr(dry_run, string, false)
-  attr(artifact_search_path, [string], @["."])
-  attr(recursive, bool, true)
-  attr(output_dir, string, ".")
-  attr(output_file, string, "sami-extractions.json")
-  section("key", allowedSubSections = @["*", "*.json", "*.binary"]):
-    attr("required", bool, false)
-    attr("missing_action", string, "warn")
-    attr("system", bool, false)
-    attr("squash",
-         bool,
-         defaultVal = true,
-         lockOnWrite = true,
-         required = true)
-    attr("standard", bool, false)
-    attr("must_force", bool, false)
-    attr("plugin_ok", bool, true)
-    attr("skip", bool, false)
-    attr("priority", int, required = false)
-    attr("since", string, required = false)
-    attr("type", string, required = true)
-    attr("value", @x, required = false)
-    attr("codec", bool, false)
-    attr("docstring", string, required = false)
-
-
-#[ Below is the code in my current phase of work... I'm trying to generate the below,
-  and get it all working.
-
-dumpAstGen:
-dumpTree:
-  proc loadSamiConfig(ctx: ConfigState): SamiConf =
-    result =  SamiConfig()
-
-    var tmpBox: Box
-
-    tmpBox = ctx.getConfigVar("config_path").get()
-
-    let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
-    var config_path_seq_str: seq[string] = @[]
-
-    for item in config_path_box_seq_str:
-      config_path_seq_str.add(unbox[string](item))
-
-    result.config_path = config_path_seq_str
-
-    tmpBox = ctx.getConfigVar("config_filename").get()
-    result.config_filename = unbox[string](tmpBox)
-
-    tmpBox = ctx.getConfigVar("color").get()
-    result.color = unbox[bool](tmpBox)
-
-    tmpBox = ctx.getConfigVar("log_level").get()
-    result.log_level = unbox[string](tmpBox)
-
-    tmpBox = ctx.getConfigVar("dry_run").get()
-    result.dry_run  = unbox[bool](tmpBox)
-
-    tmpBox = ctx.getConfigVar("artifact_search_path").get()
-
-    let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
-    var artifact_search_path_seq_str: seq[string] = @[]
-
-    for item in artifact_search_path_box_seq_str:
-      artifact_search_path_seq_str.add(unbox[string](item))
-
-    result.artifact_search_path = artifact_search_path_seq_str
-
-    tmpBox = ctx.getConfigVar("recursive").get()
-    result.recursive = unbox[bool](tmpBox)
-
-    tmpBox = ctx.getConfigVar("output_dir").get()
-    result.output_dir = unbox[string](tmpBox)
-
-    tmpBox = ctx.getConfigVar("output_file").get()
-    result.output_file = unbox[string](tmpBox)
-
-    let sectionInfo = ctx.getAllSectSTs()
-
-    for (k, v) in sectionInfo["key"]:
-      var stEntry: STEntry
-      var entryOpt: Option[STEntry]
-
-      let sectionKey = k.split(".")[1 .. ^1].join(".")
-      var sectionData = SamiKeySection()
-      result.key[sectionKey] = sectionData
-
-      stEntry = v.lookupAttr("required").get()
-      tmpBox = stEntry.value.get()
-      sectionData.required = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("missing_action").get()
-      tmpBox = stEntry.value.get()
-      sectionData.missing_action = unbox[string](tmpBox)
-
-      stEntry = v.lookupAttr("system").get()
-      tmpBox = stEntry.value.get()
-      sectionData.system = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("squash").get()
-      tmpBox = stEntry.value.get()
-      sectionData.squash = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("standard").get()
-      tmpBox = stEntry.value.get()
-      sectionData.standard = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("must_force").get()
-      tmpBox = stEntry.value.get()
-      sectionData.must_force = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("plugin_ok").get()
-      tmpBox = stEntry.value.get()
-      sectionData.plugin_ok = unbox[bool](tmpBox)
-
-      stEntry = v.lookupAttr("skip").get()
-      tmpBox = stEntry.value.get()
-      sectionData.skip = unbox[bool](tmpBox)
-
-      entryOpt = v.lookupAttr("priority")
-      if entryOpt.isSome():
-        stEntry = entryOpt.get()
-        tmpBox = stEntry.value.get()
-        sectionData.priority = some(unbox[int](tmpBox))
-
-      entryOpt = v.lookupAttr("since")
-      if entryOpt.isSome():
-        stEntry = entryOpt.get()
-        tmpBox = stEntry.value.get()
-        sectionData.since = some(unbox[string](tmpBox))
-
-      stEntry = v.lookupAttr("type").get()
-      tmpBox = stEntry.value.get()
-      sectionData.`type` = unbox[string](tmpBox)
-
-      entryOpt = v.lookupAttr("value")
-      if entryOpt.isSome():
-        stEntry = entryOpt.get()
-        tmpBox = stEntry.value.get()
-        sectionData.value = some(unbox[Box](tmpBox))
-
-      stEntry = v.lookupAttr("codec").get()
-      tmpBox = stEntry.value.get()
-      sectionData.codec = unbox[bool](tmpBox)
-
-      entryOpt = v.lookupAttr("docstring")
-      if entryOpt.isSome():
-        stEntry = entryOpt.get()
-        tmpBox = stEntry.value.get()
-        sectionData.docstring = some(unbox[string](tmpBox))
-      ]#
-

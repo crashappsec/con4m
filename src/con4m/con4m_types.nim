@@ -69,6 +69,8 @@ type
     parent*: Option[Con4mScope]
     entries*: OrderedTable[string, STEntry]
 
+  Con4mSectInfo* = seq[(string, Con4mScope)]
+
   CurScopes* = object
     vars*: Con4mScope
     attrs*: Con4mScope
@@ -106,6 +108,9 @@ type
     predefinedAttrs*: FieldAttrs
     customAttrs*: bool
     doc*: string
+    associatedSpec*: ConfigSpec ## Don't use this, it's only temporary to
+                                ## support having *some* code in place
+                                ## for seprately typed subsections.
 
   ConfigSpec* = ref object
     builtins*: OrderedTable[string, seq[BuiltInInfo]]
