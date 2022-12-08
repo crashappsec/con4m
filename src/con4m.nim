@@ -14,9 +14,15 @@ import con4m/treecheck
 export treecheck
 import con4m/builtins
 export builtins
-import con4m/typerepr
-export typerepr
+import con4m/dollars
+export dollars
 import con4m/box
 export box
 import con4m/eval
 export eval
+import con4m/spec
+export spec
+import con4m/con4m_types
+export con4m_types
+import con4m/codegen
+export codegen

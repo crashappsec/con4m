@@ -4,18 +4,18 @@ import typecheck
 import st
 import box
 
+import os
 import tables
 import osproc
 import strformat
+import strutils
 import options
 
 when defined(posix):
   import posix
-  
+
 when (NimMajor, NimMinor) >= (1, 7):
-  {.warning[CastSizes]:off.}
-  
-var builtins = initTable[string, seq[BuiltInInfo]]()
+  {.warning[CastSizes]: off.}
 
 proc builtinIToS*(args: seq[Box]): Option[Box] =
   let i = unbox[int](args[0])
@@ -24,14 +24,55 @@ proc builtinIToS*(args: seq[Box]): Option[Box] =
 
   return some(b)
 
-# This was necessary to get it to work before boxing; check it before deleting.
-# proc builtinIToS*(args: seq[Any]): Any =
-#   let f = unbox(args[0])
-#   var s = new(string)
+proc builtinBToS*(args: seq[Box]): Option[Box] =
+  let b = unbox[bool](args[0])
+  if b:
+    return some(box("true"))
+  else:
+    return some(box("false"))
 
-#   s[] = $(f)
+proc builtinFToS*(args: seq[Box]): Option[Box] =
+  let f = unbox[float](args[0])
+  var s = $(f)
 
-#   return s.toAny()
+  return some(box(s))
+
+proc builtinItoB*(args: seq[Box]): Option[Box] =
+  let i = unbox[int](args[0])
+  if i != 0:
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinFtoB*(args: seq[Box]): Option[Box] =
+  let f = unbox[float](args[0])
+  if f != 0:
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinStoB*(args: seq[Box]): Option[Box] =
+  let s = unbox[string](args[0])
+  if s != "":
+    return some(box(true))
+  else:
+    return some(box(false))
+
+proc builtinLToB*(args: seq[Box]): Option[Box] =
+  let l = unbox[seq[Box]](args[0])
+
+  if len(l) == 0:
+    return some(box(false))
+  else:
+    return some(box(true))
+
+proc builtinDToB*(args: seq[Box]): Option[Box] =
+  let d = unbox[seq[(Box, Box)]](args[0])
+
+  if len(d) == 0:
+    return some(box(false))
+  else:
+    return some(box(true))
 
 proc builtinIToF*(args: seq[Box]): Option[Box] =
   let
@@ -40,11 +81,25 @@ proc builtinIToF*(args: seq[Box]): Option[Box] =
 
   return some(box(f))
 
-proc builtinFToS*(args: seq[Box]): Option[Box] =
-  let f = unbox[float](args[0])
-  var s = $(f)
+proc builtinFToI*(args: seq[Box]): Option[Box] =
+  let
+    f = unbox[float](args[0])
+    i = int(f)
 
-  return some(box(s))
+  return some(box(i))
+
+proc builtinSplit*(args: seq[Box]): Option[Box] =
+  let
+    big = unbox[string](args[0])
+    small = unbox[string](args[1])
+    l = big.split(small)
+
+  var res: seq[Box]
+
+  for item in l:
+    res.add(box(item))
+
+  return some(box(res))
 
 proc builtinEcho*(args: seq[Box]): Option[Box] =
   var outStr: string
@@ -54,8 +109,82 @@ proc builtinEcho*(args: seq[Box]): Option[Box] =
 
   echo outStr
 
-proc builtinEmpty*(args: seq[Box]): Option[Box] =
-  discard
+proc builtinEnv*(args: seq[Box]): Option[Box] =
+  let arg = unbox[string](args[0])
+
+  return some(box(getEnv(arg)))
+
+proc builtinEnvExists*(args: seq[Box]): Option[Box] =
+  let arg = unbox[string](args[0])
+
+  return some(box(existsEnv(arg)))
+
+proc builtinEnvAll*(args: seq[Box]): Option[Box] =
+  var s: seq[(Box, Box)]
+
+  for (k, v) in envPairs():
+    s.add((box(k), box(v)))
+
+  return some(box(s))
+
+proc builtinStrip*(args: seq[Box]): Option[Box] =
+  let
+    arg = unbox[string](args[0])
+    stripped = arg.strip()
+
+  return some(box(stripped))
+
+proc builtinContainsStrStr*(args: seq[Box]): Option[Box] =
+  let
+    arg1 = unbox[string](args[0])
+    arg2 = unbox[string](args[1])
+    res = arg1.contains(arg2)
+
+  return some(box(res))
+
+proc builtinFindFromStart*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+    sub = unbox[string](args[1])
+    res = s.find(sub)
+
+  return some(box(res))
+
+proc builtinSlice*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+  var
+    startix = unbox[int](args[1])
+    endix = unbox[int](args[2])
+
+  if startix < 0:
+    startix += s.len()
+  if endix < 0:
+    endix += s.len()
+
+  try:
+    return some(box(s[startix .. endix]))
+  except:
+    return some(box(""))
+
+proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
+  let
+    s = unbox[string](args[0])
+    endix = s.len() - 1
+  var
+    startix = unbox[int](args[1])
+
+
+  if startix < 0:
+    startix += s.len()
+
+  try:
+    return some(box(s[startix .. endix]))
+  except:
+    return some(box(""))
+
+proc builtInAbort*(args: seq[Box]): Option[Box] =
+  quit()
 
 when defined(posix):
   proc builtinCmd*(args: seq[Box]): Option[Box] =
@@ -102,45 +231,61 @@ else:
     let
       (output, exitCode) = execCmdEx(cmd)
       exitAsStr = $(exitCode)
-      
+
     return some(box("{exitAsStr}:{output}".fmt()))
 
-proc newBuiltIn*(name: string, fn: BuiltInFn, tinfo: string) =
+proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
   let b = BuiltInInfo(fn: fn, tinfo: tinfo.toCon4mType())
-  if not builtins.contains(name):
-    builtins[name] = @[b]
+  if not s.builtins.contains(name):
+    s.builtins[name] = @[b]
   else:
-    builtins[name].add(b)
+    s.builtins[name].add(b)
 
-proc addDefaultBuiltins*() =
-  newBuiltIn("string", builtinIToS, "(int) -> string")
-  newBuiltIn("string", builtinFToS, "(float) -> string")
-  newBuiltIn("float", builtinItoF, "(int) -> float")
-  newBuiltIn("echo", builtinEcho, "(*string)")
-  # Not implemented yet.
-  newBuiltIn("env", builtinEmpty, "() -> {string : string}")
-  newBuiltIn("strip", builtinEmpty, "(string) -> string")
-  newBuiltIn("contains", builtinEmpty, "(string, string) -> bool")
-  newBuiltIn("dict", builtInEmpty, "(string) -> {string: string}")
-  newBuiltIn("abort", builtInEmpty, "(string)")
+proc addDefaultBuiltins*(s: ConfigState) =
+  s.newBuiltIn("string", builtinBToS, "(bool) -> string")
+  s.newBuiltIn("string", builtinIToS, "(int) -> string")
+  s.newBuiltIn("string", builtinFToS, "(float) -> string")
+  s.newBuiltIn("bool", builtinIToB, "(int) -> bool")
+  s.newBuiltIn("bool", builtinFToB, "(float) -> bool")
+  s.newBuiltIn("bool", builtinSToB, "(string) -> bool")
+  s.newBuiltIn("bool", builtinLToB, "([@x]) -> bool")
+  s.newBuiltIn("bool", builtinDToB, "({@x : @y}) -> bool")
+  s.newBuiltIn("float", builtinItoF, "(int) -> float")
+  s.newBuiltIn("int", builtinFtoI, "(float) -> int")
+  s.newBuiltIn("split", builtinSplit, "(string, string) -> [string]")
+  s.newBuiltIn("echo", builtinEcho, "(*string)")
+  s.newBuiltIn("env", builtinEnv, "(string) -> string")
+  s.newBuiltIn("envExists", builtinEnvExists, "(string) -> bool")
+  s.newBuiltIn("env", builtinEnvAll, "() -> {string : string}")
+  s.newBuiltIn("strip", builtinStrip, "(string) -> string")
+  s.newBuiltIn("contains", builtinContainsStrStr, "(string, string) -> bool")
+  s.newBuiltIn("find", builtinFindFromStart, "(string, string) -> int")
+  s.newBuiltIn("slice", builtinSlice, "(string, int, int) -> string")
+  s.newBuiltIn("slice", builtinSliceToEnd, "(string, int) -> string")
+  s.newBuiltIn("abort", builtInAbort, "(string)")
   when defined(posix):
-    newBuiltIn("run", builtinCmd, "(string) -> string")
+    s.newBuiltIn("run", builtinCmd, "(string) -> string")
 
-proc getBuiltinBySig*(name: string, t: Con4mType): Option[BuiltInInfo] =
-  if not builtins.contains(name):
+proc getBuiltinBySig*(s: ConfigState,
+                      name: string,
+                      t: Con4mType): Option[BuiltInInfo] =
+  if not s.builtins.contains(name):
     return
 
-  let bis = builtins[name]
+  let bis = s.builtins[name]
 
   for item in bis:
     if not isBottom(t, item.tinfo):
       return some(item)
 
-proc isBuiltin*(name: string): bool =
-  return builtins.contains(name)
+proc isBuiltin*(s: ConfigState, name: string): bool =
+  return s.builtins.contains(name)
 
-proc sCall*(name: string, a1: seq[Box], tinfo: Con4mType): Option[Box] =
-  let optBi = getBuiltinBySig(name, tinfo)
+proc sCall*(s: ConfigState,
+            name: string,
+            a1: seq[Box],
+            tinfo: Con4mType): Option[Box] =
+  let optBi = s.getBuiltinBySig(name, tinfo)
 
   if optBi.isSome():
     let bi = optBi.get()
@@ -148,30 +293,18 @@ proc sCall*(name: string, a1: seq[Box], tinfo: Con4mType): Option[Box] =
 
   raise newException(ValueError, "Signature not found")
 
-proc sCall*(name: string, a1: seq[Box], tinfo: string = ""): Option[Box] =
-
+proc sCall*(s: ConfigState,
+            name: string,
+            a1: seq[Box],
+            tinfo: string = ""): Option[Box] =
   if tinfo == "":
-    assert builtins[name].len() == 1
-    return builtins[name][0].fn(a1)
+    assert s.builtins[name].len() == 1
+    return s.builtins[name][0].fn(a1)
   else:
-    let optBi = getBuiltinBySig(name, toCon4mType(tinfo))
+    let optBi = s.getBuiltinBySig(name, toCon4mType(tinfo))
 
     if optBi.isSome():
       let bi = optBi.get()
       return bi.fn(a1)
 
     raise newException(ValueError, "Signature not found")
-
-
-when isMainModule:
-  addDefaultBuiltins()
-  var
-    fBox = box(8675309.123)
-    sBoxOpt = sCall("string", @[fBox], "(float) -> string")
-    sBox = sBoxOpt.get()
-    s2Box = box("echo hello, world #")
-
-  discard sCall("echo", @[s2Box, sBox])
-  let b = sCall("run", @[s2Box]).get()
-
-  echo unbox[string](b)

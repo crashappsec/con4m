@@ -283,6 +283,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "to": tok(TtTo)
       of "break": tok(TtBreak)
       of "continue": tok(TtContinue)
+      of "enum": tok(TtEnum)
       else: tok(TtIdentifier)
 
   unreachable()

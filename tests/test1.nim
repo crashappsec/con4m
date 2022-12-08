@@ -4,7 +4,6 @@ import con4m
 
 test "manual inspection":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  addDefaultBuiltins()
   let s = """
 
 defaults {
@@ -40,14 +39,14 @@ defaults {
 
   REPO_ENVVAR := "REPO_URI"
   REPO_COMMAND := "REPO_COMMAND" # E.g., "ask-user What is the name of this repository?"
-  repo_vars := dict(env()[REPO_ENVVAR])   # or system()
+  repo_vars := split(env()[REPO_ENVVAR], ":")   # or system()
 
   repo {
     enabled: true
     defaults {
-      origin: repo_vars["origin"]
-      commitId: repo_vars["commit"]
-      branch: repo_vars["branch"]
+      origin: repo_vars[0]
+      commitId: repo_vars[1]
+      branch: repo_vars[2]
     }
 
     source "github" {
@@ -68,7 +67,7 @@ defaults {
       enabled: false
     }
 
-    source "command" {
+    source "cmd" {
       enabled: true
       priority: 100 # Only if the others fail
       command: env()[REPO_COMMAND]
@@ -79,7 +78,7 @@ defaults {
     enabled: true
     required: true
 
-    plugin "command" {
+    plugin "cmd" {
       command: "/usr/bin/createsbom ${artifact}"
       force: true # cannot do --disable-sbom
       error: "abort"
@@ -91,7 +90,7 @@ defaults {
     }
   }
 
-  custom = { 
+  other = { 
    "XLOCAL_USER": run("uname -a"),
    "XFRAUD" : "false"
   }
@@ -110,7 +109,7 @@ defaults {
   if node != nil:
     echo "Parse was successful!"
 
-  checkTree(node)
+  discard checkTree(node)
   echo $(node)
 
   check node != nil # Why does this SEGV when node is nil??

@@ -5,7 +5,7 @@ import logging
 
 import con4m_types
 import lex
-import typerepr
+import dollars
 
 
 # See docs/grammar.md for the grammar.
@@ -440,7 +440,8 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       return
 
 proc section(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeSection, typeInfo: bottomType)
+  result = Con4mNode(kind: NodeSection, typeInfo: bottomType,
+                     token: some(ctx.curTok()))
 
   result.children.add(Con4mNode(kind: NodeIdentifier,
                                token: some(ctx.consume())))
@@ -497,8 +498,19 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
   else:
     parseError("Newline needed after attribute assignment")
 
+proc enumeration(ctx: ParseCtx): Con4mNode =
+  result = Con4mNode(kind: NodeEnum, token: some(ctx.consume()))
 
-proc body(ctx: ParseCtx): Con4mNode =
+  while true:
+    if ctx.curTok().kind != TtIdentifier:
+      parseError("Expected an identifier")
+    let kid = Con4mNode(kind: NodeIdentifier, token: some(ctx.consume()))
+    result.children.add(kid)
+    if ctx.curTok().kind != TtComma:
+      return
+    discard ctx.consume()
+
+proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
   result = Con4mNode(kind: NodeBody, typeInfo: bottomType)
 
   while true:
@@ -507,6 +519,11 @@ proc body(ctx: ParseCtx): Con4mNode =
       return
     of TtSemi, TtNewLine:
       discard ctx.consume()
+    of TtEnum:
+      if toplevel:
+        result.children.add(ctx.enumeration())
+      else:
+        parseError("Enums are only allowed at the top level of the config")
     of TtIdentifier:
       case ctx.lookAhead().kind
       of TtAttrAssign, TtColon:
@@ -520,8 +537,7 @@ proc body(ctx: ParseCtx): Con4mNode =
       else:
         try:
           result.children.add(ctx.expression())
-        except:
-          parseError("Expected an assignment, block start or expression", true)
+        except: parseError("Expected an assignment, block start or expression", true)
     of TtIf:
       result.children.add(ctx.ifStmt())
     of TtFor:
@@ -545,6 +561,10 @@ proc body(ctx: ParseCtx): Con4mNode =
       except:
         parseError("Expected an assignment, block start or expression", true)
 
+
+proc body(ctx: ParseCtx): Con4mNode =
+  return ctx.body(false)
+
 # Since we don't need to navigate the tree explicitly to parse, it's
 # far less error prone to just add parent info when the parsing is done.
 proc addParents(node: Con4mNode) =
@@ -563,7 +583,7 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
       echo i, ": ", $token
 
   try:
-    result = ctx.body()
+    result = ctx.body(toplevel = true)
     if ctx.curTok().kind != TtEof:
       parseError("EOF, assignment or block expected.", true)
     result.addParents()
@@ -573,7 +593,7 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
       msg = getCurrentExceptionMsg()
     error("{filename}:{tok.lineNo}:{tok.lineOffset}: (tok = {$tok})\n{msg}".fmt())
 
-proc parse*(s: Stream, filename: string): Con4mNode =
+proc parse*(s: Stream, filename: string = ""): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
   ## implementation on tokens, which kicks off the actual parsing.
 
@@ -607,3 +627,4 @@ proc parse*(filename: string): Con4mNode =
       result = s.parse(filename)
     finally:
       s.close()
+
