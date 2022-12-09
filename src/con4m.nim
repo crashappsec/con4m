@@ -11,14 +11,14 @@
 
 import con4m/con4m_types
 export Box, STEntry, Con4mScope, Con4mSectInfo, BuiltInFn, FieldValidator,
-       ConfigSpec, ConfigState, unreachable
+       ConfigSpec, ConfigState, Con4mNode, unreachable
 
-# Static interface       
 import con4m/parse
-export getOrElse, fatal, parse.parse
+export getOrElse, fatal, parse.parse, Con4mError
 
-import con4m/st
-export lookupAttr
+## This operates on tokens, as already produced by lex().  It simply
+## kicks off the parser by entering the top-level production (body),
+## and prints out any error message that happened during parsing.
 
 import con4m/treecheck
 export checkTree
@@ -48,8 +48,10 @@ export newConfigSpec, addGlobalAttr, addSection, addAttr, validateConfig,
 import con4m/codegen
 export codegen.con4m, configDef
 
-# Really just exposed for our tests.  Should change that.
-import con4m/dollars
-export dollars
+when defined(testCases):
+  # There are really just exposed for our tests.  Should change that.
+   import con4m/st
+   export lookupAttr
+   import con4m/dollars
+   export dollars
 
-         

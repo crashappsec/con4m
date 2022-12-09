@@ -9,7 +9,7 @@
 ## 
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
-  
+
 import tables
 
 import con4m_types
@@ -23,7 +23,7 @@ proc box*(value: bool): Box =
   return Box(kind: TypeBool, b: value)
 
 proc box*(value: string): Box =
-  ## Converts a string value to a box object.  
+  ## Converts a string value to a box object.
   return Box(kind: TypeString, s: value)
 
 proc box*(value: int): Box =

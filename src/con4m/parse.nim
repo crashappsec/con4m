@@ -22,7 +22,7 @@ macro getOrElseActual(x: untyped, y: untyped): untyped =
       `x`.get()
     else:
       `y`
-  
+
 proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
   ## Allows us to derefenrece an Option[] type if it isSome(),
   ## and if not, set a default value instead.
@@ -30,7 +30,7 @@ proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
 
 
 type Con4mError* = object of CatchableError
-  
+
 proc fatal*(msg: string, token: Con4mToken) =
   ## Raise a Con4mError, and add any context in the error message.
   if (token == nil):
@@ -44,10 +44,10 @@ proc fatal*(msg: string, token: Con4mToken) =
     raise newException(Con4mError, $(token.lineNo) & ":" &
       $(token.lineOffset) & ":" & msg)
 
-  
+
 proc fatal*(msg: string, node: Con4mNode = nil) =
   ## Raise a Con4mError, and add any context in the error message.
-  if (node == nil): 
+  if (node == nil):
     raise newException(Con4mError,
                        "Unrecoverable error in configuration file: " & msg)
 
@@ -103,9 +103,9 @@ proc unconsume(ctx: ParseCtx) =
     ctx.curTokIx.dec()
     if not ctx.curTok().isSkipped(): return
 
-template parseError(msg: string, backup = true) = 
+template parseError(msg: string, backup = true) =
   let info = instantiationInfo()
-  
+
   if backup: ctx.unconsume()
   fatal("Parse error (thrown at " & info.filename & ":" & $(info.line) &
     "): \n" & msg,
@@ -560,7 +560,8 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     discard ctx.consume()
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
-  result = Con4mNode(kind: NodeBody, typeInfo: bottomType, token: some(ctx.curTok()))
+  result = Con4mNode(kind: NodeBody, typeInfo: bottomType, token: some(
+      ctx.curTok()))
 
   while true:
     case ctx.curTok().kind

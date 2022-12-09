@@ -1,0 +1,8 @@
+box	con4m/box.html#box,bool	box: box(value: bool): Box	
+box	con4m/box.html#box,string	box: box(value: string): Box	
+box	con4m/box.html#box,int	box: box(value: int): Box	
+box	con4m/box.html#box,float	box: box(value: float): Box	
+box	con4m/box.html#box,seq[T]	box: box[T](value: var seq[T]): Box	
+box	con4m/box.html#box,TableRef[T,Box]	box: box[T](value: var TableRef[T, Box]): Box	
+boxDict	con4m/box.html#boxDict,TableRef[K,V]	box: boxDict[K, V](value: var TableRef[K, V]): Box	
+unbox	con4m/box.html#unbox,Box	box: unbox[T](box: Box): T	

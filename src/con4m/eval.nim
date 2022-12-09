@@ -207,7 +207,7 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
     #
     # However, right now, we explicitly are not supporting indexing
     # on the LHS of an assignment.
-    
+
     node.evalKids(s)
     let
       containerBox = node.children[0].value
@@ -399,10 +399,14 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
       name = node.getTokenText()
       attrEntry = scopes.attrs.lookup(name)
       varEntry = scopes.vars.lookup(name)
-      ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
-      optVal = ent.value
+    try:
+      let
+        ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
+        optVal = ent.value
+      node.value = optVal.get()
+    except:
+      fatal("Variable was referenced before assignment", node)
 
-    node.value = optVal.get()
 
 proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
   ## This runs the evaluator on a tree that has already been parsed
@@ -412,18 +416,18 @@ proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
 
   if node == nil:
     return
-  
+
   node.evalNode(state)
 
   return some(state)
 
 proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
-  
+
   ## Given the config file as a string, this will load and parse the
   ## file, then execute it, returning both the state object created,
   ## as well as the top-level symbol table for attributes, both
   ## assuming the operation was successful.
-  
+
   let
     tree = parse(filename)
     confOpt = tree.evalTree()
@@ -434,4 +438,4 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
       scopes = tree.scopes.get()
 
     return some((state, scopes.attrs))
-   
+

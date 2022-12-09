@@ -30,14 +30,15 @@ template lookupError(m: string, symbol: string, entry: Option[STEntry]) =
                        unescaped: symbol,
                        lineNo: -1,
                        lineOffset: -1)
+    fatal("When looking up " & symbol & ": " & m, t)
   else:
     let t = entry.get().firstDef.get().token
     if not t.isSome():
       assert false, "Programmer error, no token provided"
-    
-  fatal("When looking up " & symbol & ": " & m)
-    
-    
+
+    fatal("When looking up " & symbol & ": " & m, t.get())
+
+
 proc newListType*(contained: Con4mType): Con4mType =
   return Con4mType(kind: TypeList, itemType: contained)
 
@@ -243,4 +244,4 @@ proc toCon4mType*(s: string): Con4mType =
 
   return v
 
-  
+

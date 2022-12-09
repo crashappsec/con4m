@@ -10,6 +10,11 @@ srcDir        = "src"
 requires "nim >= 1.6.8"
 requires "unicodedb >= 0.11.1"
 
-# Docs generated with
-# nimble --project --index:on --git.url:https://github.com/crashappsec/con4m.git --git.commit:`version`
-# --outdir:docs src/con4m.nim
+task tests, "Run test cases (passes flags needed to expose private symbols)":
+  exec "nimble test --define:testCases"
+
+let s = "nimble doc --project --git.url:https://github.com/crashappsec/con4m.git --git.commit:v" &
+  version & " --outdir:docs src/con4m.nim"
+
+task docs, "Build our docs":
+ exec s

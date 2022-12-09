@@ -110,8 +110,8 @@ type
     ## This helps make it easy for users to do computation, without
     ## polluting the runtime namespace, or making validation more
     ## challenging.
-    vars*: Con4mScope
     attrs*: Con4mScope
+    vars*: Con4mScope
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
@@ -123,7 +123,7 @@ type
     scopes*: Option[CurScopes]
     value*: Box
 
-  BuiltInFn* = (seq[Box] -> Option[Box])
+  BuiltInFn* = ((seq[Box], Con4mScope, Con4mScope) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
 
   BuiltInInfo* = ref object
@@ -160,8 +160,8 @@ type
     customAttrs*: bool
     doc*: string
     associatedSpec*: ConfigSpec ## Don't use this, it's only temporary to
-                                ## support having *some* code in place
-                                ## for seprately typed subsections.
+                                  ## support having *some* code in place
+                                  ## for seprately typed subsections.
 
   ConfigSpec* = ref object
     ## The main user-level abstraction for holding specification data

@@ -147,11 +147,6 @@ proc getTokenType(node: Con4mNode): Con4mTokenKind {.inline.} =
 
   return token.kind
 
-proc getLineNo(node: Con4mNode): int {.inline.} =
-  let token = node.token.get()
-
-  return token.lineNo
-
 proc checkNode(node: Con4mNode, s: ConfigState) =
   # We take our scope from the parent by default.  If we're going to
   # have different scopes, the parent will tell us what our scope is.

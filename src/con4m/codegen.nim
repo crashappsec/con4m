@@ -5,14 +5,17 @@
 ## :Copyright: 2022
 
 import con4m_types
-import macros
-import tables
-import strutils
 import st
 import options
 import spec
 import box
+import eval
+
+import macros
+import tables
+import strutils
 import parse
+import streams
 
 const
   attrCmd = "attr"
@@ -259,7 +262,7 @@ proc foundCmdAttr(stmt: NimNode, state: MacroState) =
   ## Arg 0: "attr"
   ## Arg 1: Name, Identifier, required.
   ## Arg 2: con4m type, can already be as a string literal, required.
-  ## Arg 3: defaultVal (optional, named: "default = ")
+  ## Arg 3: defaultVal (optional, named: "defaultVal = ")
   ## Arg 4: required   (optional, named: "required = ")
   ## Arg 5: lockOnWrite (optional, named: "lockOnWrite = ")
   ## Arg 6: doc (optional, named: "doc = ")
@@ -670,9 +673,6 @@ proc requiresComplexBoxing(attr: AttrContents): bool =
   else:
     return false
 
-proc complexBoxIsDict(attr: AttrContents): bool =
-  return attr.typeAsCon4mNative.kind == TypeDict
-
 proc optBoolToIdent(b: Option[bool]): NimNode =
   ## In our macro parsing state, we have some fields that can be true,
   ## false or unspecified (assumed false).  These are basically
@@ -902,7 +902,6 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
     let
       sectTypeName = safeIdent(getSectionTypeName(secInfo, ctx))
       sectNameIdentNode = safeIdent(sectName)
-      sectNameLitNode = newLit(sectName)
       attrs = newNimNode(nnkStmtList)
 
 
@@ -1001,6 +1000,7 @@ proc buildLoadingProc(ctx: MacroState, slist: NimNode) =
   # 3) `sections`, is a table of all the sections available at runtime.
   # 4) `stEntry`, the current symbol table entry
   # 5) `entryOpt`, An option object holding the current stEntry, if any.
+  # I need to convert these to gensyms.
 
   var
     typename = safeIdent(getConfigTypeName(ctx))
@@ -1139,7 +1139,182 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   ## This is our main wrapper that bundles up parsing, checking, evaling, ...
   ## It both returns your config object, but also injects the context object
   ## so you can load a second file on top of it.
-
+  ##
+  ## `nameBase` is the base name of your configuration file. Con4m
+  ##  will use that to generate some of the symbols it exports.
+  ##
+  ## Currently, this macro will export a few different symbols,
+  ## specifically:
+  ##
+  ## 1. If the first parameter is `example` It will inject a symbol
+  ##    called `ctxExampleConf`, which will be an object representing
+  ##    your configuration, from which you can access the fields
+  ##    directly once the configuration file is loaded, using the
+  ##    names in the specification you provide in this macro (see
+  ##    below).
+  ##
+  ## 2. A type declaration for the previous symbol.  Again, if the first
+  ##    parameter is `example`, then the top level type will be called
+  ##    `ExampleConfig`.  So your context will have been declared:
+  ##    `ctxExampleConf: ExampleConfig`.
+  ##
+  ## 3. Type declarations for each unique section you
+  ##    defined. Currently, if a section name is, for example `host`,
+  ##    it will take the form of: `HostSection`.
+  ##
+  ## 4. There are some helper variables that need to be hidden,
+  ##    because they don't need to be exposed, but I haven't done that
+  ##    yet: `tmpBox`, `currentSt`, `sections`, `stEntry`, `entryOpt`,
+  ##    `confSpecExample` (where Example is your name).  Again, all of
+  ##    these should go away.
+  ##
+  ## 5. A function called `loadExampleConf(ctx: ExampleConfig)`.
+  ##    `con4m()` actually calls this function for you, but you can
+  ##    re-call it if you need to.  There is a lower-level version of
+  ##    the macro that this builds upon, called `configDef`, that does
+  ##    NOT call it for you, if you need to customize more.
+  ##
+  ## The `confstr` argument is the configuration file you want to
+  ## parse.
+  ##
+  ##  While `con4m()` does NOT read in the config file for you, it
+  ## does do everything else... parse it, check it for consistency,
+  ## evaluate it, check it against your specification.  The
+  ## `configDef()` just generates the supporting code to build the
+  ## spec.
+  ##
+  ## Because we generate a proc for you, `con4m()` cannot be invoked
+  ## from within a function, only at the module level (a nested
+  ## procedure wouldn't be intuitive).
+  ##
+  ## The last argument to `con4m()` is a block of commands to define
+  ## sections and attributes.  No other code may appear in this block;
+  ## it will result in an error.
+  ##
+  ## Currently, there are only two commands:
+  ##
+  ## `section`, which creates a section definition; and
+  ##
+  ## `attr`, which defines an attribute, placing it either in the
+  ##         section (When the attribute appears in a section block),
+  ##         or as an attribute in the global namespace, when not.
+  ##
+  ## ## The `section` command
+  ## This takes only two required arguments:
+  ## * The first argument is always the name of a section, as an
+  ##   identifier.  Eg, `host`
+  ## * The last argument is a block, which can constitute `attr`
+  ##   commands, or other section commands. Eventually, nested
+  ##   subsections will define sections that only apply inside the
+  ##   specified section.  However, they currently just create a new
+  ##   top-level section.
+  ##
+  ## Optional keyword commands to `section`
+  ##
+  ## 1. `allowCustomAttrs`, a boolean, indicating whether the user should
+  ##    be allowed to make up their own attributes in this section. This
+  ##    defaults to `false`.
+  ##
+  ## 2. `doc`, a string, which is documentation for that part of the
+  ##    configuration file. While this is stored if provided, it
+  ##    currently is unused.
+  ##
+  ## 3. `requiredSubSections`, a `seq[string]` of subsection names
+  ##    that a user MUST provide. Provide each option in dot notation,
+  ##    and a name can be replaced with a `"*"` to match anything for
+  ##    that dot.  If not provided, there are no required sections.
+  ##
+  ## 4. `allowedSubSections`, also a `seq[string]`, which is very
+  ##    similar, and again, is not checked if not provided.  Note that
+  ##    `requiredSubsections` are implicitly allowed, so you don't
+  ##    need to double spec them.  If not provided, this defaults to
+  ##    "*", allowing any section name, but no nesting.  Not providing
+  ##    either would disallow any subsection, only allowing a single
+  ##    instance of the toplevel section.
+  ##
+  ## Subsections are probably misnomers here, where we will probably
+  ## change the terminology at some point.  This are more section
+  ## modifiers, the set of which needs to be unique.  Subsections will
+  ## become nested sections of different types, once we implement
+  ## those.
+  ##
+  ## Currently, the macros do NOT provide an interface to any
+  ## user-defined attributes.  You have to search through the raw data
+  ## manually. Making such items available more directly is a TODO
+  ## item.
+  ##
+  ## ## The `attr` command
+  ##
+  ## This command takes the following arguments:
+  ##
+  ## 1. The name of the attribute, as an identifier.  Note that it's
+  ##    okay to use Nim keywords here, they get automatically quoted
+  ##    (this also happens when they are used in sections).  This is
+  ##    required.
+  ##
+  ## 2. The Con4m type to enforce for the attribute (NOT the Nim
+  ## type). This is required.
+  ##
+  ## 3. `defaultVal`, a keyword parameter specifying what value to set
+  ##    if the user does not provide something for this attribute,
+  ##    when defining a section.
+  ##
+  ## 4. `required`, a keyword parameter indicating whether con4m
+  ##    should throw an error when this is not present in a section.
+  ##    If you set `defaultVal`, this will be ignored.  This defaults
+  ##    to `true` if not provided.
+  ##
+  ## 5. `lockOnWrite`, a keyword parameter indicating that, once a
+  ##    configuration has set this value, it may not be written in
+  ##    future config file loads that reuse the same underlying
+  ##    configuration state.  This allows you to provide internal
+  ##    "configuration" parameters within your program (by reading
+  ##    your config from a string in memory, for instance), without
+  ##    risking them getting clobbered.  This defaults to false.
+  ##
+  ## 6. `doc`, a keyword parameter, represents a doc string. But, as
+  ##    above, this is not yet used.
+  ##
+  ## 7. `validator`, a custom callback for this field so that you can
+  ##    easily do additional validation beyond what con4m already does.
+  ##    This is NOT yet implemented.
+  ##
+  ##
+  ## Note that fields that are *not* required and do not have a
+  ## default provided will be declared as `Optional[]` types so you
+  ## can determine whether the user provided them safely.
+  ##
+  ## In future releases, we expect to handle nested sections, and also
+  ## to make it easy to configure adding custom builtin functions with
+  ## a separate command.
+  ##
+  ## Note that Nim allows you to use `attribute_name` and `attributeName`
+  ## interchangably.  However, con4m does NOT, it will only accept the
+  ## name you provide.
+  ##
+  # runnableExamples:
+  #   let s = """
+  #       use_ipsec: false
+  #       host localhost {
+  #         ip: "127.0.0.1"
+  #         port: 8080
+  #       }
+  #       host workstation {
+  #         ip: "10.12.1.10"
+  #         port: 8080
+  #       }
+  #   """
+  #   var config = con4m(test, s):
+  #     attr(max_hosts, int, required = false) # required = true is the default.
+  #     attr(use_ipsec, bool, true) # defaultVal = works too, but positional params work
+  #     # Section should take a single argument, no sub-dots.
+  #     section(host, allowedSubSections = @["*"]):
+  #       attr(ip, string, required = true)
+  #       attr(port, string, required = true)
+  #
+  #   assert config.max_hosts.isNone()
+  #   assert config.use_ipsec
+  #   assert config.host[1].ip == "10.12.1.10"
   var
     tree = parse(newStringStream(confstr))
     opt = tree.evalTree()
@@ -1147,7 +1322,7 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   if not opt.isSome():
     echo "Error: invalid configuration file."
     quit()
-    
+
   var `ctx nameBase Conf` {.inject.} = opt.get()
 
   configDef(nameBase, rest)

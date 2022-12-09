@@ -9,6 +9,7 @@ import con4m_types
 import typecheck
 import st
 import box
+import parse # just for fatal()
 
 import os
 import tables
@@ -16,7 +17,7 @@ import osproc
 import strformat
 import strutils
 import options
-import parse # just for fatal()
+
 
 when defined(posix):
   import posix
@@ -24,7 +25,9 @@ when defined(posix):
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
 
-proc builtinIToS*(args: seq[Box]): Option[Box] =
+proc builtinIToS*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast integers to strings.  Exposed as `string(i)` by default.
   let i = unbox[int](args[0])
   var s = $(i)
@@ -32,22 +35,28 @@ proc builtinIToS*(args: seq[Box]): Option[Box] =
 
   return some(b)
 
-proc builtinBToS*(args: seq[Box]): Option[Box] =
-  ## Cast bools to strings.  Exposed as `string(b)` by default.  
+proc builtinBToS*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
+  ## Cast bools to strings.  Exposed as `string(b)` by default.
   let b = unbox[bool](args[0])
   if b:
     return some(box("true"))
   else:
     return some(box("false"))
 
-proc builtinFToS*(args: seq[Box]): Option[Box] =
-  ## Cast floats to strings.  Exposed as `string(f)` by default.    
+proc builtinFToS*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
+  ## Cast floats to strings.  Exposed as `string(f)` by default.
   let f = unbox[float](args[0])
   var s = $(f)
 
   return some(box(s))
 
-proc builtinItoB*(args: seq[Box]): Option[Box] =
+proc builtinItoB*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast integers to booleans (testing for non-zero).  Exposed as
   ## `bool(i)` by default.
   let i = unbox[int](args[0])
@@ -56,7 +65,9 @@ proc builtinItoB*(args: seq[Box]): Option[Box] =
   else:
     return some(box(false))
 
-proc builtinFtoB*(args: seq[Box]): Option[Box] =
+proc builtinFtoB*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast floats to booleans (testing for non-zero).  Exposed as
   ## `bool(f)` by default.
   let f = unbox[float](args[0])
@@ -65,7 +76,9 @@ proc builtinFtoB*(args: seq[Box]): Option[Box] =
   else:
     return some(box(false))
 
-proc builtinStoB*(args: seq[Box]): Option[Box] =
+proc builtinStoB*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast strings to booleans (testing for empty strings).  Exposed as
   ## `bool(s)` by default.
   let s = unbox[string](args[0])
@@ -74,7 +87,9 @@ proc builtinStoB*(args: seq[Box]): Option[Box] =
   else:
     return some(box(false))
 
-proc builtinLToB*(args: seq[Box]): Option[Box] =
+proc builtinLToB*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast lists of any type to booleans (testing for empty lists).
   ## Exposed as `bool(s)` by default.
   let l = unbox[seq[Box]](args[0])
@@ -84,7 +99,9 @@ proc builtinLToB*(args: seq[Box]): Option[Box] =
   else:
     return some(box(true))
 
-proc builtinDToB*(args: seq[Box]): Option[Box] =
+proc builtinDToB*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast dicitonaries of any type to booleans (testing for empty
   ## lists).  Exposed as `bool(s)` by default.
 
@@ -97,7 +114,9 @@ proc builtinDToB*(args: seq[Box]): Option[Box] =
   else:
     return some(box(true))
 
-proc builtinIToF*(args: seq[Box]): Option[Box] =
+proc builtinIToF*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast an integer to a float.  Exposed as `float(i)` by default.
   let
     i = unbox[int](args[0])
@@ -105,7 +124,9 @@ proc builtinIToF*(args: seq[Box]): Option[Box] =
 
   return some(box(f))
 
-proc builtinFToI*(args: seq[Box]): Option[Box] =
+proc builtinFToI*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Cast an float to an int (truncating).  Exposed as `int(f)` by
   ## default.
   let
@@ -114,14 +135,16 @@ proc builtinFToI*(args: seq[Box]): Option[Box] =
 
   return some(box(i))
 
-proc builtinSplit*(args: seq[Box]): Option[Box] =
+proc builtinSplit*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
   ## This should work as expected from other languages.
   ## Exposed as `split(s1, s2)` by default.
   # Note that, since the item type is known, we only box the
   # top-level, not the items.
-  
+
   var
     big = unbox[string](args[0])
     small = unbox[string](args[1])
@@ -129,11 +152,13 @@ proc builtinSplit*(args: seq[Box]): Option[Box] =
 
   return some(box(l))
 
-proc builtinEcho*(args: seq[Box]): Option[Box] =
+proc builtinEcho*(args: seq[Box],
+                  unused1: Con4mScope,
+                  unused2: Con4mScope): Option[Box] =
   ## Exposed as `echo(*s)` by default.  Prints the parameters to
   ## stdout, followed by a newline at the end.  Note that this does
   ## NOT add spaces between arguments for you.
-  
+
   var outStr: string
 
   for item in args:
@@ -141,18 +166,22 @@ proc builtinEcho*(args: seq[Box]): Option[Box] =
 
   echo outStr
 
-proc builtinEnv*(args: seq[Box]): Option[Box] =
+proc builtinEnv*(args: seq[Box],
+                 unused1: Con4mScope,
+                 unused2: Con4mScope): Option[Box] =
   ## Exposed as `env(s)` by default.  Returns the value of the
   ## requested environment variable.  If the environment variable is
   ## NOT set, it will return the empty string.  To distingush between
   ## the environment variable not being set, or the variable being set
   ## to the empty string, use `builtinEnvExists`.
-  
+
   let arg = unbox[string](args[0])
 
   return some(box(getEnv(arg)))
 
-proc builtinEnvExists*(args: seq[Box]): Option[Box] =
+proc builtinEnvExists*(args: seq[Box],
+                       unused1: Con4mScope,
+                       unused2: Con4mScope): Option[Box] =
   ## Returns true if the requested variable name is set in the
   ## environment, false if it's not.  Exposed as `envExists(s)` by
   ## default.
@@ -164,7 +193,9 @@ proc builtinEnvExists*(args: seq[Box]): Option[Box] =
 
   return some(box(existsEnv(arg)))
 
-proc builtinEnvAll*(args: seq[Box]): Option[Box] =
+proc builtinEnvAll*(args: seq[Box],
+                    unused1: Con4mScope,
+                    unused2: Con4mScope): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
   var s: seq[(string, string)]
@@ -174,7 +205,9 @@ proc builtinEnvAll*(args: seq[Box]): Option[Box] =
 
   return some(box(s))
 
-proc builtinStrip*(args: seq[Box]): Option[Box] =
+proc builtinStrip*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
   ## Remove leading and trailing white space from a string.
   ## Exposed by default as `strip(s)`
   let
@@ -183,7 +216,9 @@ proc builtinStrip*(args: seq[Box]): Option[Box] =
 
   return some(box(stripped))
 
-proc builtinContainsStrStr*(args: seq[Box]): Option[Box] =
+proc builtinContainsStrStr*(args: seq[Box],
+                            unused1: Con4mScope,
+                            unused2: Con4mScope): Option[Box] =
   ## Returns true if `s1` contains the substring `s2`.
   ## Exposed by default as `contains(s1, s2)`
   let
@@ -193,11 +228,13 @@ proc builtinContainsStrStr*(args: seq[Box]): Option[Box] =
 
   return some(box(res))
 
-proc builtinFindFromStart*(args: seq[Box]): Option[Box] =
+proc builtinFindFromStart*(args: seq[Box],
+                           unused1: Con4mScope,
+                           unused2: Con4mScope): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
   ## string `s1`, or -1 if it does not appear.  Exposed by default as
   ## `find(s1, s2)`
-  
+
   let
     s = unbox[string](args[0])
     sub = unbox[string](args[1])
@@ -205,7 +242,9 @@ proc builtinFindFromStart*(args: seq[Box]): Option[Box] =
 
   return some(box(res))
 
-proc builtinSlice*(args: seq[Box]): Option[Box] =
+proc builtinSlice*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, not
   ## including index `end`.  The semantics of this are Pythonic, where
   ## -1 works as expected.
@@ -213,7 +252,7 @@ proc builtinSlice*(args: seq[Box]): Option[Box] =
   ## Note that an index out of bounds will not error. If both
   ## indicies are out of bounds, you'll get the empty string.
   ## usually exposed as `slice(s, start, end)`
-  
+
   let
     s = unbox[string](args[0])
   var
@@ -230,7 +269,9 @@ proc builtinSlice*(args: seq[Box]): Option[Box] =
   except:
     return some(box(""))
 
-proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
+proc builtinSliceToEnd*(args: seq[Box],
+                        unused1: Con4mScope,
+                        unused2: Con4mScope): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, until the
   ## end of the string. The semantics of this are Pythonic, where -1
   ## works as expected (to index from the back).
@@ -238,7 +279,7 @@ proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
   ## Note that an index out of bounds will not error. If both
   ## indicies are out of bounds, you'll get the empty string.
   ## usually exposed as `slice(s, start)`
-  
+
   let
     s = unbox[string](args[0])
     endix = s.len() - 1
@@ -254,13 +295,106 @@ proc builtinSliceToEnd*(args: seq[Box]): Option[Box] =
   except:
     return some(box(""))
 
-proc builtInAbort*(args: seq[Box]): Option[Box] =
+proc builtInFormat*(args: seq[Box],
+                    attrs: Con4mScope,
+                    vars: Con4mScope): Option[Box] =
+  ## We don't error check on string bounds; when an exception gets
+  ## raised, SCall will call fatal().
+  var
+    s = unbox[string](args[0])
+    res = newStringOfCap(len(s)*2)
+    optEntry: Option[StEntry]
+    key: string
+    i = 0
+  while i < s.len():
+    case s[i]
+    of '}':
+      i += 1
+      if i == s.len() or s[i] == '}':
+        res.add(s[i])
+        i += 1
+      else:
+        raise newException(Con4mError,
+                           "Unescaped } w/o a matching { in format string")
+    of '{':
+      i = i + 1
+      if s[i] == '{':
+        res.add(s[i])
+        i = i + 1
+        continue
+      key = newStringOfCap(20)
+      while s[i] != '}':
+        key.add(s[i])
+        i = i + 1
+      i = i + 1
+      if key.contains("."):
+        let parts = key.split(".")
+        optEntry = attrs.dottedLookup(parts)
+      elif key in attrs.entries:
+        optEntry = attrs.lookupAttr(key)
+      elif key in vars.entries:
+        optEntry = attrs.lookup(key)
+      else:
+        raise newException(Con4mError, "Error in format: item not found")
+      if optEntry.isNone():
+        raise newException(Con4mError, "Error in format: item not found")
+
+      let entry = optEntry.get()
+
+      case entry.tInfo.kind
+      of TypeString:
+        res.add(unbox[string](entry.value.get()))
+      of TypeInt:
+        res.add($(unbox[int](entry.value.get())))
+      of TypeFloat:
+        res.add($(unbox[float](entry.value.get())))
+      of TypeBool:
+        res.add($(unbox[bool](entry.value.get())))
+      else:
+        raise newException(Con4mError, "Error: Invalid type for format " &
+          "argument, can't do lists or dicts")
+    else:
+      res.add(s[i])
+      i = i + 1
+
+  return some(box(res))
+
+
+proc builtInAbort*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
   ## Stops the entire program (not just the configuration file).
   ## Generally exposed as `abort()`
   quit()
 
+proc builtInListLen*(args: seq[Box],
+                     unused1: Con4mScope,
+                     unused2: Con4mScope): Option[Box] =
+  ## Returns the number of elements in the list.
+  var list = unbox[seq[Box]](args[0])
+
+  return some(box(len(list)))
+
+proc builtInStrLen*(args: seq[Box],
+                    unused1: Con4mScope,
+                    unused2: Con4mScope): Option[Box] =
+  ## Returns the number of bytes in a string.
+  var s = unbox[string](args[0])
+
+  return some(box(len(s)))
+
+proc builtInDictLen*(args: seq[Box],
+                     unused1: Con4mScope,
+                     unused2: Con4mScope): Option[Box] =
+  ## Returns the number of k,v pairs in a dictionary.
+  var dict = unbox[TableRef[Box, Box]](args[0])
+
+  return some(box(len(dict)))
+
 when defined(posix):
-  proc builtinCmd*(args: seq[Box]): Option[Box] =
+  proc builtinCmd*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
     ## Generally exposed as `run(s)`
     ##
     ## Essentially calls the posix `system()` call, except that, a)
@@ -304,7 +438,9 @@ else:
   ## this might be wildly insecure on such systems, as far as I know.
   ## to that end, when posix is not defined, this command is removed
   ## from the defaults.
-  proc builtinCmd*(args: seq[Box]): Box =
+  proc builtinCmd*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
     ## An unsafe version of this for non-posix OSes.  On such machines,
     ## it is NOT a default builtin.
     var cmd: string = unbox(args[0])
@@ -320,7 +456,7 @@ proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
   ## to a configuration for use as a builtin con4m function. `name` is
   ## the parameter used to specify the name exposed to con4m.  `tinfo`
   ## is the Conform type signature.
-  
+
   let b = BuiltInInfo(fn: fn, tinfo: tinfo.toCon4mType())
   if not s.builtins.contains(name):
     s.builtins[name] = @[b]
@@ -337,7 +473,7 @@ proc addDefaultBuiltins*(s: ConfigState) =
   ##
   ## Instead, you probably should just use `newBuiltIn()` to add your
   ## own calls, unless you want to remove or rename things.
-  
+
   s.newBuiltIn("string", builtinBToS, "(bool) -> string")
   s.newBuiltIn("string", builtinIToS, "(int) -> string")
   s.newBuiltIn("string", builtinFToS, "(float) -> string")
@@ -359,6 +495,11 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("slice", builtinSlice, "(string, int, int) -> string")
   s.newBuiltIn("slice", builtinSliceToEnd, "(string, int) -> string")
   s.newBuiltIn("abort", builtInAbort, "(string)")
+  s.newBuiltIn("len", builtInStrLen, "(string) -> int")
+  s.newBuiltIn("len", builtInListLen, "([@x]) -> int")
+  s.newBuiltIn("len", builtInDictLen, "({@x : @y}) -> int")
+  s.newBuiltIn("format", builtInFormat, "(string) -> string")
+
   when defined(posix):
     s.newBuiltIn("run", builtinCmd, "(string) -> string")
 
@@ -392,8 +533,27 @@ proc sCall*(s: ConfigState,
 
   let optBi = s.getBuiltinBySig(name, tinfo)
 
+  var
+    scopeOpt: Option[CurScopes]
+    scopes: CurScopes
+    n = node
+
+  scopeOpt = n.scopes
+
+  while scopeOpt.isNone():
+    n = n.parent.get()
+    scopeOpt = n.scopes
+
+  scopes = n.scopes.get()
+
   if optBi.isSome():
     let bi = optBi.get()
-    return bi.fn(a1)
 
-  fatal("Function {name} not found", node)
+    try:
+      return bi.fn(a1, scopes.attrs, scopes.vars)
+    except Con4mError:
+      fatal(getCurrentExceptionMsg(), node)
+    except:
+      fatal("Unhandled error when running builtin call: {name}".fmt(), node)
+
+  fatal("Function {name} not found".fmt(), node)

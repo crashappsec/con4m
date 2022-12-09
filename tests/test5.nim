@@ -7,6 +7,7 @@ const conffile = """
 
 good_ids: [12]
 
+test1: "test"
 
 defaults {
   test: true
@@ -18,8 +19,17 @@ item {
 
 item "okay" {
   foo: 2
-  bar: 2
+  bar: "example"
 }
+
+s: format("set an {item.okay.bar}!")
+echo(s)
+
+test2: format("This is {test1} #{item.okay.foo} of format")
+echo(test2)
+
+
+
 
 
 """
@@ -30,13 +40,17 @@ test "hello, world":
   var spec = newConfigSpec()
   spec.addGlobalAttr("good_ids", "[int]")
   spec.addGlobalAttr("fart", "bool", required = false)
+  spec.addGlobalAttr("test1", "string")
+  spec.addGlobalAttr("test2", "string")
+  spec.addGlobalAttr("s", "string")    
+  
   var defaultSection = spec.addSection("defaults")
   defaultSection.addAttr("test", "bool")
 
   var itemSection = spec.addSection("item", validSubSecs = @["*"])
   itemSection.addAttr("foo", "int")
-  itemSection.addAttr("bar", "int", required = false)
-  itemSection.addAttr("boz", "int", required = false)    
+  itemSection.addAttr("bar", "string", required = false)
+  itemSection.addAttr("boz", "int", required = false)
 
   let
     tree = parse(newStringStream(conffile))
@@ -55,3 +69,5 @@ test "hello, world":
     echo item
 
   check unbox[int](ctx.getConfigVar("item.okay.foo").get()) == 2
+  check unbox[string](ctx.getConfigVar("s").get()) == "set an example!"
+  

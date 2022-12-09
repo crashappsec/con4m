@@ -22,7 +22,7 @@ proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
   ## Returns a new, empty ConfigSpec object, which allows us to define
   ## a schema for our config files that we will validate after loading
   ## the file.
-  ## 
+  ##
   ## By default, the top-level section will not accept new
   ## user-defined attributes added to it.  Users get variables, so
   ## generally they shouldn't need it in the top-level space.
@@ -43,7 +43,7 @@ proc addGlobalAttr*(spec: ConfigSpec,
   ## to false when calling `newConfigSpec`), user-defined attributes
   ## will NOT be allowed in the global namespace.  They do get
   ## user-defined variables that don't bubble up to your app, though!
-  ## 
+  ##
   ## Right now, this is the biggest wart in con4m. I was going to have
   ## there only be an `addAttr()` API, but the section would have to
   ## have a back-reference to the top, and I thought that would be
@@ -54,7 +54,7 @@ proc addGlobalAttr*(spec: ConfigSpec,
   ## used, but will be used down the road when we merge in supporting
   ## command-line argument handling, and start providing help
   ## messages.
-  
+
   if spec.globalAttrs.contains(name):
     raise newException(ValueError, "Global attribute already has a spec")
 
@@ -86,7 +86,7 @@ proc addSection*(spec: ConfigSpec,
   ## key "test" "foo" "bar" {
   ##  test: 10
   ## }
-  ##    
+  ##
   ## is invalid, because the namespace for the descriptors at the
   ## start of the block is the same as the namespace for attributes
   ## inside the block.  I did it this way because HCL does, then
@@ -96,7 +96,7 @@ proc addSection*(spec: ConfigSpec,
   ## giving both concepts their own namespace, essentially.
   ##
   ## But it's a lot of work, so until I prioritize it, you cannot do:
-  ##    
+  ##
   ## host "test" {
   ##    subsec {
   ##       foo : 10
@@ -112,10 +112,11 @@ proc addSection*(spec: ConfigSpec,
   ## Actually, you *can* do it, but it must have the same schema at
   ## the parent.
   ##
-  ## Currently, `requiredSubSecs` and `validSubSecs` are a list of allowed
-  ## values for the subblock descritors (the `"test" "foo" "bar"`
-  ## above).  An asterisk in one position allows anything in that
-  ## position.  You cannot match arbitrary lengths.
+  ## Currently, `requiredSubSecs` and `validSubSecs` are a list of
+  ## allowed values for the sub-block descritors (the `"test" "foo"
+  ## "bar"` above).  An asterisk in one position allows anything in
+  ## that position.  You cannot match arbitrary lengths.  Use dot
+  ## notation here.
   ##
   ## `allowCustomAttrs` can be turned on, but it's off by default,
   ## because, hey, Con4m has a separate set of variables.
@@ -124,7 +125,7 @@ proc addSection*(spec: ConfigSpec,
   ## used, but will be used down the road when we merge in supporting
   ## command-line argument handling, and start providing help
   ## messages.
-    
+
   if spec.secSpecs.contains(name):
     raise newException(ValueError, "Cannot redefine section {name}.".fmt())
 
@@ -221,6 +222,7 @@ proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
   # scope under us.
 
   let thisScopeContainsData = scope.containsFields()
+
   for spec in specs:
     case spec.checkOneSectionSpec(stack)
     of Invalid: continue
@@ -474,7 +476,7 @@ proc getAllSectionSTs*(ctx: ConfigState): Con4mSectInfo =
   ## The tuples are of the format (`topsection`, `dotted path`, `scope`)
   ##
   ## Where scope is an object of type `Con4mScope`
-  
+
 
   result = @[]
 
