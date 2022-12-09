@@ -1,0 +1,2 @@
+evalTree	con4m/eval.html#evalTree,Con4mNode	eval: evalTree(node: Con4mNode): Option[ConfigState]	
+evalConfig	con4m/eval.html#evalConfig,string	eval: evalConfig(filename: string): Option[(ConfigState, Con4mScope)]	

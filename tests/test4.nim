@@ -1,6 +1,7 @@
 import unittest, logging
 import con4m
 import streams
+import options
 
 const conffile = """
 
@@ -45,14 +46,16 @@ test "hello, world":
 
   check tree != nil
 
-  let ctx = tree.checkTree()
-  tree.evalTree(ctx)
+  let ctx = tree.evalTree().getOrElse(nil)
+
+  check ctx != nil
+
 
   ctx.addSpec(spec)
   
   check not ctx.validateConfig()
-
   for item in ctx.errors:
     echo item
 
   check len(ctx.errors) == 2
+

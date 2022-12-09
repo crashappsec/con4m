@@ -267,7 +267,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
   tmpBox = ctx.getConfigVar("output_file").get()
   result.output_file = unbox[string](tmpBox)
 
-  let sectionInfo = ctx.getAllSectSTs()
+  let sectionInfo = ctx.getAllSectionSTs()
 
   for (toplevel, k, v) in sectionInfo:
     var stEntry: STEntry
@@ -388,10 +388,10 @@ test "samiconf":
 
   check tree != nil
 
-  let ctx = tree.checkTree()
-  tree.evalTree(ctx)
-  ctx.addSpec(spec)
+  let ctx = tree.evalTree().getOrElse(nil)
+  check ctx != nil
 
+  ctx.addSpec(spec)  
   check ctx.validateConfig()
 
   var conf = ctx.loadSamiConfig()

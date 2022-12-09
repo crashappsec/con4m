@@ -1,3 +1,8 @@
+## Lexical analysis.  Should be straightforward.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import streams
 import unicode
 
@@ -25,6 +30,7 @@ template atNewLine() =
   lineStart = s.getPosition()
 
 proc lex*(s: Stream): (bool, seq[Con4mToken]) =
+  ## Lexical analysis. Doesn't need to be exported.
   var
     lineNo: int = 1
     lineStart: int = s.getPosition()

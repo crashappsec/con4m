@@ -1,3 +1,10 @@
+## Functions to represent various data types as strings.  For the
+## things mapping to internal data structures, these are pretty much
+## all just used for debugging.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import options
 import strformat
 import strutils
@@ -37,6 +44,9 @@ else:
         return "~multi-line value~"
 
 proc `$`*(t: Con4mType): string =
+  ## Prints a type object the way it should be written for input, with
+  ## the exception of the bottom type, which prints as its
+  ## mathematical symbol (`⊥`)
   case t.kind
   of TypeString: return "string"
   of TypeBool: return "bool"
@@ -152,7 +162,6 @@ proc `$`*(scope: Con4mScope, indent: int): string =
     result = result & s
 
 proc `$`*(scope: Con4mScope, goDown = true): string =
-
   if not goDown:
     for k, v in scope.entries:
       let s = $(v.tInfo)

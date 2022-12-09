@@ -1,8 +1,16 @@
+## Nim is actually very flexible on identifiers; too flexible!  Our
+## lexer accepts based on the Unicode standard for identifiers.
+## Unfortunately, neither Nim itself or the unicode character database
+## package implements this check, so we do it ourselves.
+##
+## The end user should never see this in the context of con4m though.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import streams
 import unicode
 import unicodedb/properties
-# I'm surprised unicodedb doesn't provide this info, since it's in the
-# Unicode spec.
 
 proc isPatternSyntax*(r: Rune): bool =
   case r.ord()

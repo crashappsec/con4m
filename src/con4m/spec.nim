@@ -1,3 +1,9 @@
+## Routines for specifying a config file schema, and for checking an
+## executed config against that schema.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import options
 import tables
 import strutils
@@ -13,6 +19,13 @@ import builtins
 
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
+  ## Returns a new, empty ConfigSpec object, which allows us to define
+  ## a schema for our config files that we will validate after loading
+  ## the file.
+  ##
+  ## By default, the top-level section will not accept new
+  ## user-defined attributes added to it.  Users get variables, so
+  ## generally they shouldn't need it in the top-level space.
   return ConfigSpec(customTopLevelOk: customTopLevelOk)
 
 # TODO: merge these default with buildSectionSpec in codegen, using a
@@ -25,6 +38,22 @@ proc addGlobalAttr*(spec: ConfigSpec,
                     lockOnWrite: bool = false,
                     v: FieldValidator = nil,
                     doc: string = "") =
+  ## This call specifies properties of specific attributes set in the
+  ## global namespace. By default (unless you set `customTopLevelOK`
+  ## to false when calling `newConfigSpec`), user-defined attributes
+  ## will NOT be allowed in the global namespace.  They do get
+  ## user-defined variables that don't bubble up to your app, though!
+  ##
+  ## Right now, this is the biggest wart in con4m. I was going to have
+  ## there only be an `addAttr()` API, but the section would have to
+  ## have a back-reference to the top, and I thought that would be
+  ## confusing.  But I think eventually that's where I'm going to go,
+  ## as I don't like the irregularity.
+  ##
+  ## The `doc` parameter is for doc strings, which is currently not
+  ## used, but will be used down the road when we merge in supporting
+  ## command-line argument handling, and start providing help
+  ## messages.
 
   if spec.globalAttrs.contains(name):
     raise newException(ValueError, "Global attribute already has a spec")
@@ -49,6 +78,54 @@ proc addSection*(spec: ConfigSpec,
                  requiredSubSecs: seq[string] = @[],
                  validSubSecs: seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
+  ## Adds information about the section to our specification.  Note
+  ## that currently, we limit section schema specs to the top-level
+  ## space.  That limitation will eventually change, but right now,
+  ## this con4m code:
+  ##
+  ## key "test" "foo" "bar" {
+  ##  test: 10
+  ## }
+  ##
+  ## is invalid, because the namespace for the descriptors at the
+  ## start of the block is the same as the namespace for attributes
+  ## inside the block.  I did it this way because HCL does, then
+  ## realized it's confusing AF, so instead of kludging a way to have
+  ## both approaches interoperate, I decided to not implement nested
+  ## sections quite yet; I'm going to come back and fix it properly by
+  ## giving both concepts their own namespace, essentially.
+  ##
+  ## But it's a lot of work, so until I prioritize it, you cannot do:
+  ##
+  ## host "test" {
+  ##    subsec {
+  ##       foo : 10
+  ##    }
+  ## }
+  ##
+  ## Because that currently is the same as:
+  ##
+  ## host "test" subsec {
+  ##   foo: 10
+  ## }
+  ##
+  ## Actually, you *can* do it, but it must have the same schema at
+  ## the parent.
+  ##
+  ## Currently, `requiredSubSecs` and `validSubSecs` are a list of
+  ## allowed values for the sub-block descritors (the `"test" "foo"
+  ## "bar"` above).  An asterisk in one position allows anything in
+  ## that position.  You cannot match arbitrary lengths.  Use dot
+  ## notation here.
+  ##
+  ## `allowCustomAttrs` can be turned on, but it's off by default,
+  ## because, hey, Con4m has a separate set of variables.
+  ##
+  ## The `doc` parameter is for doc strings, which is currently not
+  ## used, but will be used down the road when we merge in supporting
+  ## command-line argument handling, and start providing help
+  ## messages.
+
   if spec.secSpecs.contains(name):
     raise newException(ValueError, "Cannot redefine section {name}.".fmt())
 
@@ -69,7 +146,8 @@ proc addSection*(parent: SectionSpec,
                  requiredSubSecs: seq[string] = @[],
                  validSubSecs: seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
-
+  ## Same as above, but just delegates to the associatedSpec field to
+  ## allow these things to be chained.
   return parent.associatedSpec.addSection(name,
                                           doc,
                                           requiredSubSecs,
@@ -84,7 +162,9 @@ proc addAttr*(section: SectionSpec,
               lockOnWrite: bool = false,
               v: FieldValidator = nil,
               doc: string = "") =
-
+  ## Same as `globalAddAttr`, except for the first parameter being the
+  ## section to put the attr into, not the global state.  We're going
+  ## to fix this :(
   if section.predefinedAttrs.contains(name):
     raise newException(ValueError, "Attribute already has a spec")
 
@@ -142,6 +222,7 @@ proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
   # scope under us.
 
   let thisScopeContainsData = scope.containsFields()
+
   for spec in specs:
     case spec.checkOneSectionSpec(stack)
     of Invalid: continue
@@ -204,7 +285,8 @@ proc requiredFieldCheck(ctx: ConFigState,
                         scope: Con4mScope,
                         attrs: FieldAttrs,
                         scopeName: string) =
-
+  # Fill in fields tha were not provided, when there are defaults we
+  # can fill in.  Otherwise, if fields are required, error.
   if scope.containsSubscopes() and not scope.containsFields():
     if scopeName != "<global>":
       return
@@ -231,7 +313,7 @@ proc requiredFieldCheck(ctx: ConFigState,
         continue
       else:
         let
-          opt = scope.addEntry(key, -1, specEntry.attrType.toCon4mType())
+          opt = scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
@@ -281,6 +363,18 @@ proc validateScope(ctx: ConfigState,
 
 
 proc validateConfig*(config: ConfigState): bool =
+  ## This function validates the executed configuration file against
+  ## the specification set in the `config` variable (which you should
+  ## have already set with `addSpec()`).
+  ##
+  ## Note that, unlike static errors and the few possible runtime
+  ## errors (currently just index out of bounds errors) this does
+  ## *NOT* throw an exception on error.  Instead, the config context
+  ## will contain a list of error strings.
+  ##
+  ## This makes it easier you to decide whether you want to error
+  ## outright, or overcome the mistakes somehow, as we don't bail on
+  ## our work in the middle of it.
   let
     scope = config.st
     optSpec = config.spec
@@ -328,7 +422,9 @@ proc newConfigState*(scope: Con4mScope,
                      spec: ConfigSpec = nil,
                      addBuiltins: bool = true
                     ): ConfigState =
-
+  ## Return a new `ConfigState` object, optionally setting the `spec`
+  ## object, and, if requested via `addBuiltins`, installs the default
+  ## set of builtin functions.
   if spec != nil:
     result = ConfigState(st: scope, spec: some(spec))
   else:
@@ -337,8 +433,12 @@ proc newConfigState*(scope: Con4mScope,
   if addBuiltins:
     result.addDefaultBuiltins()
 
-# TODO: stack-configs
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
+  ## This interface allows you to look up individual fields to get
+  ## their value as a Box (since the config schema doesn't need to be
+  ## static).
+  ##
+  ## The contents of `field` use standard object dot notation.
   let
     parts = field.split('.')
     optEntry = state.st.dottedLookup(parts)
@@ -347,28 +447,6 @@ proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
     return
 
   return optEntry.get().value
-
-proc getSections*(state: ConfigState, field: string = ""): seq[string] =
-  var scope: Con4mScope
-
-  if field == "":
-    scope = state.st
-  else:
-    let
-      parts = field.split(".")
-      optEntry = state.st.dottedLookup(partS)
-
-    if optEntry.isNone():
-      return
-    let entry = optEntry.get()
-    if entry.subscope.isNone():
-      return
-    scope = entry.subscope.get()
-
-  for k, v in scope.entries:
-    if v.subscope.isSome():
-      result.add(k)
-
 
 type Con4mSectInfo = seq[(string, string, Con4mScope)]
 
@@ -391,7 +469,15 @@ proc walkSTForSects(toplevel: string,
 
     walkSTForSects(toplevel, newpath, e.subscope.get(), s)
 
-proc getAllSectSTs*(ctx: ConfigState): Con4mSectInfo =
+proc getAllSectionSTs*(ctx: ConfigState): Con4mSectInfo =
+  ## Returns a sequence of tuples, one per section provided in
+  ## a config file that's been read in.
+  ##
+  ## The tuples are of the format (`topsection`, `dotted path`, `scope`)
+  ##
+  ## Where scope is an object of type `Con4mScope`
+
+
   result = @[]
 
   for k, entry in ctx.st.entries:
@@ -399,56 +485,6 @@ proc getAllSectSTs*(ctx: ConfigState): Con4mSectInfo =
       walkStForSects(k, "", entry.subscope.get(), result)
 
 proc addSpec*(s: ConfigState, spec: ConfigSpec) =
+  ## Associate a ConfigSpec object with an existing state object.
   s.spec = some(spec)
 
-
-#[
-var spec = Con4mSpec()
-
-var keySection = spec.addSection("key", allowedSubKeys = @["string", "binary"])
-keySection.addAttr("type",
-                   string,
-                   
-                   "The type associated with the key. Must be one of: " &
-                   "string, int, bool, binary, list(x), dict(x, y) where " &
-                   "x and y represent other valid types"
-                   writeOnce: true)
-keySection.addAttr("required",
-                   "bool",
-                   "Whether the key MUST be present")
-keySection.addDefault("required", false)
-keySection.addAttr("missing_ll",
-                   "string",
-                   "Log level for when key is not present in input SAMI")
-keySection.addDefault("missing_ll", "warn")
-keySection.addAttr("system",
-                   "bool",
-                   "If true, this implementation will only allow itself " &
-                   "to set the value of this key.")
-keySection.addDefault("system", false)
-keySection.addAttr("squash",
-                   "bool",
-                   "If an existing SAMI is present, a new SAMI will remove " &
-                   "the old value.")
-keySection.addDefault("squash", true)
-keySection.addAttr("standard",
-                   "bool",
-                   "Is the key part of the specification?")
-keySection.addDefault("standard", false)
-keySection.addAttr("must_force",
-                   "bool",
-                   "Even if a plugin can discover the data, the user must " &
-                   "explicitly ask to get this key in output SAMIs.")
-keySection.addDefault("must_force", false)
-keySection.addAttr("priority",
-                   "int",
-                   "The order in which keys are written, from low to high." &
-                   " The minimum value is 0, max is 1000 and values may " &
-                   "not repeat. This may be unspecified, in which case " &
-                   "the system will assign values near the middle when needed",
-                   required: false)
-keySection.addAttr("since",
-                   "string",
-                   "The version of SAMI where the key was added.",
-                   required: false)
-]#

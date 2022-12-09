@@ -1,0 +1,7 @@
+unify	con4m/typecheck.html#unify,Con4mType,Con4mType	typecheck: unify(t1: Con4mType; t2: Con4mType): Con4mType	
+isBottom	con4m/typecheck.html#isBottom,Con4mType	typecheck: isBottom(t: Con4mType): bool	
+isBottom	con4m/typecheck.html#isBottom,Con4mType,Con4mType	typecheck: isBottom(t1, t2: Con4mType): bool	
+unify	con4m/typecheck.html#unify,Con4mNode,Con4mNode	typecheck: unify(n1, n2: Con4mNode): Con4mType	
+isBottom	con4m/typecheck.html#isBottom,Con4mNode	typecheck: isBottom(n: Con4mNode): bool	
+isBottom	con4m/typecheck.html#isBottom,Con4mNode,Con4mNode	typecheck: isBottom(n1, n2: Con4mNode): bool	
+isBottom	con4m/typecheck.html#isBottom,Con4mNode,Con4mType	typecheck: isBottom(n: Con4mNode; t: Con4mType): bool	

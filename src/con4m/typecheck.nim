@@ -1,3 +1,9 @@
+## Our implementation of the good ol' unifcation algorithm, with
+## Con4m's current type rules codified.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
 import con4m_types
 import st
 

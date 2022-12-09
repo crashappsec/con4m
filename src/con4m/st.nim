@@ -1,16 +1,43 @@
+## The Con4m symbol table, scopes, and things that support it.  This
+## includes the helper functions for instantiating type objects.
+##
+## The methods are all meant to be internal; the end user shouldn't
+## directly deal with the symbol table objects.
+##
+## The external interface should either be via macros of
+## `getConfigVar()`, which lives in spec.nim just due to
+## cross-file dependencies.
+## 
+## :Author: John Viega (john@crashoverride.com)
+## :Copyright: 2022
+
+
 import tables
 import options
 import unicode
 import strutils
 import strformat
+import parse # only for fatal()
 
 import con4m_types
 
 
-# Symbol tables and scopes, and things that support it.
-# This includes the helper functions for instantiating type objects.
-
 var tVarNum: int
+
+template lookupError(m: string, symbol: string, entry: Option[STEntry]) =
+  if entry.isNone() or entry.get().firstDef.isNone():
+    let t = Con4mToken(kind: TTStringLit,
+                       unescaped: symbol,
+                       lineNo: -1,
+                       lineOffset: -1)
+    fatal("When looking up " & symbol & ": " & m, t)
+  else:
+    let t = entry.get().firstDef.get().token
+    if not t.isSome():
+      assert false, "Programmer error, no token provided"
+
+    fatal("When looking up " & symbol & ": " & m, t.get())
+
 
 proc newListType*(contained: Con4mType): Con4mType =
   return Con4mType(kind: TypeList, itemType: contained)
@@ -48,12 +75,12 @@ proc getEntry*(scope: Con4mScope, name: string): Option[STEntry] =
 
 proc addEntry*(scope: Con4mScope,
                name: string,
-               loc: int,
+               firstDef: Option[Con4mNode] = none(Con4mNode),
                tinfo = newTypeVar(),
                subscope: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
     return
-  let e = STEntry(tinfo: tinfo, defLocs: @[loc])
+  let e = STEntry(tinfo: tinfo, firstDef: firstDef)
   if subscope:
     let ss = Con4mScope(parent: some(scope))
     e.subscope = some(ss)
@@ -67,8 +94,9 @@ proc addEntry*(scope: Con4mScope,
 proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
   if scope.entries.contains(name):
     if scope.entries[name].subscope.isSome():
-      raise newException(ValueError, "Attempting to look up attribute that " &
-                                     "refers to a section -- " & name)
+      lookupError("asked for a attribute, but this name refers to a section",
+                  name,
+                  some(scope.entries[name]))
 
     return some(scope.entries[name])
   if scope.parent.isSome():
@@ -80,10 +108,15 @@ proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
 proc lookupAttr*(scope: Con4mScope,
                  name: string,
                  scopeOk: bool = false): Option[STEntry] =
+  ## This method is exposed because it's used in the code generated
+  ## automatically by our macro library.  It's lower level, operating
+  ## on the scope data type that doesn't get exposed from the package
+  ## by default.  Instead, use `getConfigVar()`.
   if scope.entries.contains(name):
     if not scopeOk and scope.entries[name].subscope.isSome():
-      raise newException(ValueError, "Attempting to look up attribute that " &
-                                     "refers to a section -- " & name)
+      lookupError("asked for a attribute, but this name refers to a section",
+                  name,
+                  some(scope.entries[name]))
 
     return some(scope.entries[name])
 
@@ -195,6 +228,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
     raise newException(ValueError, "Unknown character: {$(n[0])}".fmt())
 
 proc toCon4mType*(s: string): Con4mType =
+  ## Converts a string to a Con4m type object.
   var
     v: Con4mType
     n: string
@@ -205,22 +239,9 @@ proc toCon4mType*(s: string): Con4mType =
     raise newException(ValueError, "Incomplete type specification")
 
   if unicode.strip(n).len() != 0:
-    raise newException(ValueError, "Extraneous text after parsed type: {n}")
+    raise newException(ValueError,
+                       "Extraneous text after parsed type: {n}".fmt())
 
   return v
 
-when isMainModule:
-  var
-    ctx: CurScopes = newRootScope()
-    s: Con4mScope = ctx.attrs
-    entry = s.addEntry(name = "module", loc = 1, subscope = true).get()
-    ss = entry.subscope.get()
 
-  discard s.addEntry("foo", 1)
-  discard ss.addEntry("bar", 1)
-
-  assert s.lookup("foo").isSome()
-  assert s.lookup("bar").isNone()
-  assert ss.lookup("foo").isSome()
-  assert ss.lookup("bar").isSome()
-  assert ss.lookup("boz").isNone()
