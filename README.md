@@ -79,7 +79,7 @@ Then, from your Nim application, you only need to: `import con4m`
 - Getting started.
 - [Learn about the Con4m configuration file syntax](docs/writing.md). It’s familiar, fast, easy, while being just powerful enough. And it always terminates.
 - [Con4m API docs for Nim.](docs/nim-api.md)
-- Browse the current list of [builtin function calls](builtins.md).
+- Browse the current list of [builtin function calls](docs/builtins.md).
 - Learn about planned features in [the Github backlog](https://github.com/crashappsec/con4m/issues).
 
 # About
