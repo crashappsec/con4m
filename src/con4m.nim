@@ -9,10 +9,6 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m/con4m_types
-export Box, STEntry, Con4mScope, Con4mSectInfo, BuiltInFn, FieldValidator,
-       ConfigSpec, ConfigState, Con4mNode, unreachable
-
 import con4m/parse
 export getOrElse, fatal, parse.parse, Con4mError
 
@@ -42,7 +38,8 @@ export builtinIToS, builtinBToS, builtinFToS, builtInItoB, builtinFtoB,
 # Post-runtime (spec checking)
 import con4m/spec
 export newConfigSpec, addGlobalAttr, addSection, addAttr, validateConfig,
-       newConfigState, getConfigVar, getAllSectionSTs, addSpec
+       newConfigState, getConfigVar, getAllSectionSTs, addSpec, lockConfigVar,
+       setOverride
 
 # Simplification via complexity
 import con4m/codegen

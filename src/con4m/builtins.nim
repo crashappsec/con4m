@@ -150,7 +150,7 @@ proc builtinSplit*(args: seq[Box],
     small = unbox[string](args[1])
     l = big.split(small)
 
-  return some(box(l))
+  return some(boxList[string](l))
 
 proc builtinEcho*(args: seq[Box],
                   unused1: Con4mScope,
@@ -198,12 +198,12 @@ proc builtinEnvAll*(args: seq[Box],
                     unused2: Con4mScope): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
-  var s: seq[(string, string)]
+  var s = newTable[string, string]()
 
   for (k, v) in envPairs():
-    s.add((k, v))
+    s[k] = v
 
-  return some(box(s))
+  return some(boxDict[string, string](s))
 
 proc builtinStrip*(args: seq[Box],
                    unused1: Con4mScope,
@@ -429,7 +429,8 @@ when defined(posix):
       (output, exitCode) = execCmdEx(cmd)
       exitAsStr = $(exitCode)
 
-    result = some(box("{exitAsStr}:{output}".fmt()))
+    result = some(box(output))
+    # TODO: When adding tuples, also return the exit code.
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)

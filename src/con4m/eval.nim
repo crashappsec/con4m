@@ -301,12 +301,36 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
       dict[k] = boxedValue
   of NodeListLit:
     node.evalKids(s)
-    var l: seq[Box]
-
-    for item in node.children:
-      l.add(item.value)
-
-    node.value = box[Box](l)
+    if len(node.children) == 0:
+      var l: seq[Box]
+      node.value = boxList[Box](l, empty=true)
+    else:
+      case node.children[0].typeInfo.kind
+      of TypeBool:
+        var l: seq[bool]
+        for item in node.children:
+          l.add(unbox[bool](item.value))
+          node.value = boxList[bool](l)
+      of TypeInt:
+        var l: seq[int]
+        for item in node.children:
+          l.add(unbox[int](item.value))
+          node.value = boxList[int](l)
+      of TypeFloat:
+        var l: seq[float]
+        for item in node.children:
+          l.add(unbox[float](item.value))
+          node.value = boxList[float](l)
+      of TypeString:
+        var l: seq[string]
+        for item in node.children:
+          l.add(unbox[string](item.value))
+          node.value = boxList[string](l)
+      else:
+        var l: seq[Box]
+        for item in node.children:
+          l.add(item.value)
+          node.value = boxList[Box](l)
   of NodeOr:
     node.children[0].evalNode(s)
     node.value = node.children[0].value

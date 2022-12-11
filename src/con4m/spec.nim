@@ -275,7 +275,8 @@ proc validateAttr(ctx: ConfigState,
   if spec.validator.isSome():
     let f = spec.validator.get()
     if not f(stack, box):
-      ctx.errors.add("{stack.join(\".\")} didn't pass its validation check")
+      ctx.errors.add(
+        """{stack.join(".")} didn't pass its validation check""".fmt())
       return
 
   if spec.lockOnWrite:
@@ -308,9 +309,11 @@ proc requiredFieldCheck(ctx: ConFigState,
     else:
       if specEntry.defaultVal.isNone():
         if specEntry.required:
-          ctx.errors.add("In {scopeName}: " &
+          ctx.errors.add("In {scopeName}: ".fmt() &
                          "Required symbol {key} not found".fmt())
-        continue
+        else:
+          # Add in an empty value.
+          discard scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
       else:
         let
           opt = scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
@@ -333,7 +336,7 @@ proc validateScope(ctx: ConfigState,
   # spec.
   if stack.len() == 1:
     if not ctx.spec.get().secSpecs.contains(sname):
-      ctx.errors.add("Invalid top-level section in config: {sname}")
+      ctx.errors.add("Invalid top-level section in config: {sname}".fmt())
       return
 
   let
@@ -409,11 +412,11 @@ proc validateConfig*(config: ConfigState): bool =
     for targetSection in spec.requiredSubsections:
       if targetSection.contains("*"):
         config.errors.add("Required section spec cannot contain " &
-                          "wildcards (spec {targetSection})")
+                          "wildcards (spec {targetSection})".fmt())
         continue
       let parts = targetSection.split(".")
       if dottedLookup(scope, parts).isNone():
-        config.errors.add("Required section not provided: {targetSection}")
+        config.errors.add("Required section not provided: {targetSection}".fmt())
 
   if config.errors.len() == 0:
     return true
@@ -446,9 +449,48 @@ proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   if optEntry.isNone():
     return
 
-  return optEntry.get().value
+  let entry = optEntry.get()
+  
+  if entry.override.isSome():
+    return entry.override
+    
+  return entry.value
 
 type Con4mSectInfo = seq[(string, string, Con4mScope)]
+
+proc lockConfigVar*(state: ConfigState, field: string): bool =
+  ## This prevents the variable from being written.  Returns false if
+  ## the variable doesn't exist in the scope, which will generally
+  ## imply a programmer error.
+  let
+    parts = field.split('.')
+    optEntry = state.st.dottedLookup(parts)
+
+  if optEntry.isNone():
+    return false
+
+  let entry = optEntry.get()
+  entry.locked = true
+  return true
+
+proc setOverride*(state: ConfigState, field: string, value: Box): bool =
+  ## This indicates that, while the executing config file might be
+  ## able to write to a field, some higher power (generally a
+  ## command-line flag) is going to clobber with this value, as soon
+  ## as execution completes.
+  ##
+  ## Will return false if the specified variable doesn't exist in the
+  ## scope, which will generally imply a programmer error.
+  let
+    parts = field.split('.')
+    optEntry = state.st.dottedLookup(parts)
+
+  if optEntry.isNone():
+    return false
+
+  let entry = optEntry.get()
+  entry.override = some(value)
+  return true
 
 proc walkSTForSects(toplevel: string,
                     path: string,

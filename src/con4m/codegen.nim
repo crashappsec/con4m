@@ -209,7 +209,7 @@ proc toNimTypeString(t: Con4mType, tvars: var seq[int]): string =
   of TypeList:
     return "seq[" & toNimTypeString(t.itemType, tvars) & "]"
   of TypeDict:
-    return "OrderedTableRef[" & toNimTypeString(t.keyType, tvars) &
+    return "TableRef[" & toNimTypeString(t.keyType, tvars) &
       ", " & toNimTypeString(t.valType, tvars) & "]"
   of TypeProc:
     var paramTypes: seq[string] = @[]
@@ -515,7 +515,7 @@ proc con4mTypeToNimNodes(t: Con4mType): NimNode =
              con4mTypeToNimNodes(t.itemType))
   of TypeDict:
     return nnkBracketExpr.newTree(
-             newIdentNode("OrderedTable"),
+             newIdentNode("TableRef"),
              con4mTypeToNimNodes(t.keyType),
              con4mTypeToNimNodes(t.valType))
   of TypeProc:
@@ -584,7 +584,7 @@ proc buildDeclsOneSection(ctx: MacroState) =
     myItems.add(nnkIdentDefs.newTree(
                    safeIdent(name),
                    nnkBracketExpr.newTree(
-                     newIdentNode("OrderedTable"),
+                     newIdentNode("TableRef"),
                      newIdentNode("string"),
                      safeIdent(subSecname)),
       newEmptyNode()))
@@ -605,7 +605,9 @@ proc buildDeclsOneSection(ctx: MacroState) =
             con4mTypeToNimNodes(v.typeAsCon4mNative)),
           newEmptyNode()))
 
-  let defnode = nnkTypeDef.newTree(safeIdent(secName),
+  let defnode = nnkTypeDef.newTree(nnkPostfix.newTree(
+                                     newIdentNode("*"),
+                                     safeIdent(secName)),
                                     newEmptyNode(),
                                     nnkRefTy.newTree(
                                       nnkObjectTy.newTree(
@@ -628,7 +630,7 @@ proc buildTypeDecls(ctx: MacroState): NimNode =
     defList.add(item)
 
   return defList
-
+  
 proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   ## When the config file parser loads up fields, it does not have any
   ## notion of what the "right" type is for each attribute. In some
@@ -647,7 +649,7 @@ proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   of TypeProc:
     error("Con4m does not currently support function pointers.")
   of TypeList:
-    return nnkCall.newTree(newIdentNode("box"), v)
+    return nnkCall.newTree(newIdentNode("boxList"), v)
   of TypeDict:
     return nnkCall.newTree(newIdentNode("boxDict"), v)
   of TypeBottom:
@@ -849,17 +851,38 @@ proc loadOneAttr(ctx: MacroState,
     attrNameLitNode = newLit(attrName)
     attrNameIdNode = safeIdent(attrName)
     dstVariableNode = safeIdent(dstVariable)
-    nimTypeNodes = con4mTypeToNimNodes(attrInfo.typeAsCon4mNative)
+    unboxBracket = nnkBracketExpr.newTree()
+    unboxCall = nnkCall.newTree()
 
+  case attrInfo.typeAsCon4mNative.kind
+  of TypeBool, TypeInt, TypeFloat, TypeString, TypeTVar:
+    unboxBracket.add(newIdentNode("unbox"))    
+    unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative))
+    unboxCall.add(unboxBracket)
+  of TypeList:
+    unboxBracket.add(newIdentNode("unboxList"))
+    unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative.itemType))
+    unboxCall.add(unboxBracket)
+  of TypeDict:
+    unboxBracket.add(newIdentNode("unboxDict"))
+    unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative.keyType))
+    unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative.valType))
+    unboxCall.add(unboxBracket)
+  else:
+    unreachable
+
+  unboxCall.add(newIdentNode("tmpBox"))
 
   if (attrInfo.defaultVal != nil) or (attrInfo.required.isSome() and
       attrinfo.required.get()):
 
     node = quote do:
       entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
-      stEntry = entryOpt.get()
-      tmpBox = stEntry.value.get()
-      `dstVariableNode`.`attrNameIdNode` = unbox[`nimTypeNodes`](tmpBox)
+      if entryOpt.isSome():
+        stEntry = entryOpt.get()
+        if stEntry.value.isSome():
+          tmpBox = stEntry.value.get()
+          `dstVariableNode`.`attrNameIdNode` = `unboxCall`
   else:
     node = quote do:
       entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
@@ -867,10 +890,11 @@ proc loadOneAttr(ctx: MacroState,
         stEntry = entryOpt.get()
         if stEntry.value.isSome():
           tmpBox = stEntry.value.get()
-          `dstVariableNode`.`attrNameIdNode` = some(unbox[`nimTypeNodes`](tmpBox))
+          `dstVariableNode`.`attrNameIdNode` = some(`unboxCall`)
 
   slist.add(node)
 
+import strformat
 proc flattenSections(sec: SectContents,
                      secMap: OrderedTableRef[string, SectContents]) =
   for name, item in sec.subsections:
@@ -892,18 +916,26 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
       SectContents]()
   flattenSections(ctx.contents, secMap)
 
+  for secname, secval in ctx.contents.subsections:
+    var
+      sectNameLit = safeIdent(secname)
+      sectTypeName = safeIdent(getSectionTypeName(secval, ctx))
+    
+    let n = quote do:
+      result.`sectNameLit` = newTable[string, `sectTypeName`]()
+    slist.add(n)
+  
   # Load root-scope attributes.
   let section = ctx.currentSection
   for attrName, attrInfo in section.attrs:
     loadOneAttr(ctx, slist, attrName, attrInfo, "st", "result")
 
   for sectName, secInfo in secMap:
-
     let
       sectTypeName = safeIdent(getSectionTypeName(secInfo, ctx))
       sectNameIdentNode = safeIdent(sectName)
+      sectNameLitNode = newLit(sectName)
       attrs = newNimNode(nnkStmtList)
-
 
     # Build the code to load this section's attributes into the variable
     # named record.  We do this before the code leading up to it, so that
@@ -933,6 +965,15 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
     # slist.add(nodes)
 
     var forBody = nnkStmtList.newTree(
+                      nnkIfStmt.newTree(
+                        nnkElifBranch.newTree(
+                          nnkInfix.newTree(
+                            newIdentNode("!="),
+                            newIdentNode("toplevelname"),
+                            sectNameLitNode
+                            ),
+                          nnkStmtList.newTree(
+                            nnkContinueStmt.newTree(newEmptyNode())))),
                       nnkAsgn.newTree(
                         newIdentNode("currentSt"),
                         newIdentNode("sectSt")),
@@ -942,7 +983,8 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
                         newEmptyNode(),
                         nnkCall.newTree(
                           sectTypeName # substitution point
-      ))))
+                        ))))
+                    
 
     for kid in attrs:
       forBody.add(kid)
@@ -1090,7 +1132,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   buildLoadingProc(ctx, slist)
 
   #echo treerepr(slist)
-  #echo toStrLit(slist)
+  echo toStrLit(slist)
 
 macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## While this is technically our top-level macro, it's intended that

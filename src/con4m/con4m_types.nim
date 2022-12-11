@@ -66,6 +66,14 @@ type
       varNum*: int
     else: discard
 
+  ListBox*[T] = ref object 
+    contents*: seq[T]
+    empty*: bool
+
+  DictBox*[K, V] = ref object 
+    contents*: TableRef[K, V]
+    empty*: bool    
+    
   Box* = ref object
     ## This type is used in cases where a specification allows
     ## multiple types to be stored.  This shouldn't happen often, but
@@ -78,13 +86,18 @@ type
     of TypeString: s*: string
     of TypeInt: i*: int
     of TypeFloat: f*: float
+    of TypeList: l*: RootRef
+    of TypeDict: d*: RootRef
     else:
-      p*: pointer
+      nil
 
   STEntry* = ref object
     ## Internal; our symbol table data structure.
     tInfo*: Con4mType
     value*: Option[Box]
+    override*: Option[Box] ## If a command-line flag or the program set this
+                           ## value at runtime, then it will automatically be
+                           ## re-set after the configuration file loads.
     subscope*: Option[Con4mScope]
     firstDef*: Option[Con4mNode]
     locked*: bool

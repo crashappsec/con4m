@@ -35,25 +35,19 @@ proc box*(value: float): Box =
   ## Converts a float value to a box object.
   return Box(kind: TypeFloat, f: value)
 
-proc box*[T](value: var seq[T]): Box =
-  ## Converts a sequence to a box object.  Note, however, that the
-  ## pointer doesn't get tracked by the memory management system, so
-  ## if the pointer goes out of scope, then errors will abound!
-  return Box(kind: TypeList, p: cast[pointer](addr(value)))
+proc boxList*[T](value: seq[T], empty: bool = false): Box =
+  ## Converts a sequence to a box object.  
+  var listbox = ListBox[T](contents: value, empty: empty)
+  
+  return Box(kind: TypeList, l: cast[RootRef](listbox))
 
-proc box*[T](value: var TableRef[T, Box]): Box =
-  ## Converts a Tableref to a box object, when the value type is known
-  ## to be Box.  Note, however, that the pointer doesn't get tracked
-  ## by the memory management system, so if the pointer goes out of
-  ## scope, then errors will abound!
-  return Box(kind: TypeDict, p: cast[pointer](addr(value)))
-
-proc boxDict*[K, V](value: var TableRef[K, V]): Box =
+proc boxDict*[K, V](value: TableRef[K, V], empty: bool = false): Box =
   ## Converts a Tableref to a box object.  This has to be named,
   ## because Nim doesn't seem to be able to distinguish between this
   ## and box[T] with dictionaries, even though they're generic types
   ## w/ two type parameters :)
-  return Box(kind: TypeDict, p: cast[pointer](addr(value)))
+  var dictbox = DictBox[K, V](contents: value, empty: empty)
+  return Box(kind: TypeDict, d: cast[RootRef](dictbox))
 
 proc unbox*[T](box: Box): T =
   ## Generically unboxes any data type.
@@ -62,13 +56,23 @@ proc unbox*[T](box: Box): T =
   of TypeInt: return cast[T](box.i)
   of TypeFloat: return cast[T](box.f)
   of TypeString:
-
     when (NimMajor, NimMinor) >= (1, 7):
       return cast[ptr T](addr(box.s))[]
     else:
       return cast[T](box.s)
+  of TypeTVar:
+    return cast[T](box)
+  else:
+    raise newException(ValueError, "Invalid box type for unboxing")
+    
+proc unboxList*[T](box: Box): seq[T] =
+  let l : ListBox[T] = cast[ListBox[T]](box.l)
+  return l.contents
 
-  else: return cast[ptr T](box.p)[]
+proc unboxDict*[K, V](box: Box): TableRef[K, V] =
+    let d: DictBox[K, V] = cast[DictBox[K, V]](box.d)
+    return d.contents
+
 
 
   # This interface is gone, but I wanted to leave the comment for my

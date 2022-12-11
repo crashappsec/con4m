@@ -47,7 +47,10 @@ proc isOtherIdContinue*(r: Rune): bool =
     return false
 
 # \p{L}\p{Nl}\p{Other_ID_Start}-\p{Pattern_Syntax}-\p{Pattern_White_Space}
-proc isIdStart*(r: Rune): bool =
+proc isIdStart*(r: Rune, underscoreOk: bool = true): bool =
+
+  if underscoreOk and r.ord == 0x005f:
+    return true
   if (r.unicodeCategory() in ctgL+ctgNl) or r.isOtherIdStart():
     if not (r.isPatternSyntax() or r.isPatternWhiteSpace()):
       return true
