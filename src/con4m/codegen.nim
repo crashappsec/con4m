@@ -1132,7 +1132,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   buildLoadingProc(ctx, slist)
 
   #echo treerepr(slist)
-  echo toStrLit(slist)
+  #echo toStrLit(slist)
 
 macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## While this is technically our top-level macro, it's intended that
