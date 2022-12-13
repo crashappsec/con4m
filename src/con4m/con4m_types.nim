@@ -66,14 +66,14 @@ type
       varNum*: int
     else: discard
 
-  ListBox*[T] = ref object 
+  ListBox*[T] = ref object
     contents*: seq[T]
     empty*: bool
 
-  DictBox*[K, V] = ref object 
+  DictBox*[K, V] = ref object
     contents*: TableRef[K, V]
     empty*: bool
-    
+
   Box* = ref object
     ## This type is used in cases where a specification allows
     ## multiple types to be stored.  This shouldn't happen often, but

@@ -332,10 +332,9 @@ proc builtInFormat*(args: seq[Box],
         optEntry = attrs.dottedLookup(parts)
       elif key in attrs.entries:
         optEntry = attrs.lookupAttr(key)
-      elif key in vars.entries:
-        optEntry = attrs.lookup(key)
       else:
-        raise newException(Con4mError, "Error in format: item not found")
+        optEntry = vars.lookup(key)
+
       if optEntry.isNone():
         raise newException(Con4mError, "Error in format: item not found")
 

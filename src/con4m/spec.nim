@@ -450,10 +450,10 @@ proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
     return
 
   let entry = optEntry.get()
-  
+
   if entry.override.isSome():
     return entry.override
-    
+
   return entry.value
 
 type Con4mSectInfo = seq[(string, string, Con4mScope)]

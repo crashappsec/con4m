@@ -556,6 +556,10 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## accepts an "old" `ConfigState` object, so that you can keep an
   ## old symbol table around, layering new choices on top of the old
   ## ones.
+  ##
+  ## It does need to create a new variable scope though!
+  node.scopes = some(CurScopes(vars: Con4mScope(), attrs: s.st))
+
   for item in node.children:
     item.checkNode(s)
 

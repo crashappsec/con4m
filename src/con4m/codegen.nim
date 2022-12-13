@@ -630,7 +630,7 @@ proc buildTypeDecls(ctx: MacroState): NimNode =
     defList.add(item)
 
   return defList
-  
+
 proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   ## When the config file parser loads up fields, it does not have any
   ## notion of what the "right" type is for each attribute. In some
@@ -856,7 +856,7 @@ proc loadOneAttr(ctx: MacroState,
 
   case attrInfo.typeAsCon4mNative.kind
   of TypeBool, TypeInt, TypeFloat, TypeString, TypeTVar:
-    unboxBracket.add(newIdentNode("unbox"))    
+    unboxBracket.add(newIdentNode("unbox"))
     unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative))
     unboxCall.add(unboxBracket)
   of TypeList:
@@ -880,7 +880,10 @@ proc loadOneAttr(ctx: MacroState,
       entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
       if entryOpt.isSome():
         stEntry = entryOpt.get()
-        if stEntry.value.isSome():
+        if stEntry.override.isSome():
+          tmpBox = stEntry.override.get()
+          `dstVariableNode`.`attrNameIdNode` = `unboxCall`
+        elif stEntry.value.isSome():
           tmpBox = stEntry.value.get()
           `dstVariableNode`.`attrNameIdNode` = `unboxCall`
   else:
@@ -888,7 +891,10 @@ proc loadOneAttr(ctx: MacroState,
       entryOpt = `stVariableNode`.lookupAttr(`attrNameLitNode`)
       if entryOpt.isSome():
         stEntry = entryOpt.get()
-        if stEntry.value.isSome():
+        if stEntry.override.isSome():
+          tmpBox = stEntry.override.get()
+          `dstVariableNode`.`attrNameIdNode` = some(`unboxCall`)
+        elif stEntry.value.isSome():
           tmpBox = stEntry.value.get()
           `dstVariableNode`.`attrNameIdNode` = some(`unboxCall`)
 
@@ -920,11 +926,11 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
     var
       sectNameLit = safeIdent(secname)
       sectTypeName = safeIdent(getSectionTypeName(secval, ctx))
-    
+
     let n = quote do:
       result.`sectNameLit` = newTable[string, `sectTypeName`]()
     slist.add(n)
-  
+
   # Load root-scope attributes.
   let section = ctx.currentSection
   for attrName, attrInfo in section.attrs:
@@ -971,7 +977,7 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
                             newIdentNode("!="),
                             newIdentNode("toplevelname"),
                             sectNameLitNode
-                            ),
+      ),
                           nnkStmtList.newTree(
                             nnkContinueStmt.newTree(newEmptyNode())))),
                       nnkAsgn.newTree(
@@ -983,8 +989,8 @@ proc buildSectionLoader(ctx: MacroState, sectionsId: NimNode, slist: NimNode) =
                         newEmptyNode(),
                         nnkCall.newTree(
                           sectTypeName # substitution point
-                        ))))
-                    
+      ))))
+
 
     for kid in attrs:
       forBody.add(kid)

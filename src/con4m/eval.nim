@@ -22,7 +22,7 @@ when (NimMajor, NimMinor) >= (1, 7):
 const breakMsg = "b"
 const continueMsg = "c"
 
-proc evalNode(node: Con4mNode, s: ConfigState)
+proc evalNode*(node: Con4mNode, s: ConfigState)
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
@@ -52,13 +52,14 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = box(ret)
 
-proc evalNode(node: Con4mNode, s: ConfigState) =
+proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
   ## the tree to evaluate, and then take whatever action is
   ## apporpriate after, if any.
   case node.kind
   of NodeBody, NodeElse, NodeActuals:
     node.evalKids(s)
+    node.value = box(false)
   of NodeSimpLit, NodeEnum:
     # Values for these were all assigned when we checked the tree, so we
     # don't have to do anything on this pass.
@@ -303,7 +304,7 @@ proc evalNode(node: Con4mNode, s: ConfigState) =
     node.evalKids(s)
     if len(node.children) == 0:
       var l: seq[Box]
-      node.value = boxList[Box](l, empty=true)
+      node.value = boxList[Box](l, empty = true)
     else:
       case node.children[0].typeInfo.kind
       of TypeBool:

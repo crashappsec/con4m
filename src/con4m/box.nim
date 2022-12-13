@@ -39,7 +39,7 @@ proc box*(value: float): Box =
   return Box(kind: TypeFloat, f: value)
 
 proc boxList*[T](value: seq[T], empty: bool = false): Box =
-  ## Converts a sequence to a box object.  
+  ## Converts a sequence to a box object.
   var listbox = ListBox[T](contents: value, empty: empty)
   return Box(kind: TypeList, l: cast[RootRef](listbox))
 
@@ -72,7 +72,7 @@ proc unbox*[T](box: Box): T =
       raise newException(ValueError, "Invalid box type for unboxing")
 
 proc unboxList*[T](box: Box): seq[T] =
-  let l : ListBox[T] = cast[ListBox[T]](box.l)
+  let l: ListBox[T] = cast[ListBox[T]](box.l)
 
   return l.contents
 
