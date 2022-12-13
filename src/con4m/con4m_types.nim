@@ -72,7 +72,7 @@ type
 
   DictBox*[K, V] = ref object 
     contents*: TableRef[K, V]
-    empty*: bool    
+    empty*: bool
     
   Box* = ref object
     ## This type is used in cases where a specification allows
