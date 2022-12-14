@@ -11,7 +11,7 @@ import strutils
 import streams
 import tables
 
-import con4m_types
+import ./types
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.

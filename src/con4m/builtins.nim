@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m_types
+import ./types
 import typecheck
 import st
 import box

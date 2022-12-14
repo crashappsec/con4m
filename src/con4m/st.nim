@@ -19,7 +19,7 @@ import strutils
 import strformat
 import parse # only for fatal()
 
-import con4m_types
+import ./types
 
 
 var tVarNum: int

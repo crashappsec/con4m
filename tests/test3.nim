@@ -1,5 +1,6 @@
 import unittest, logging
 import con4m
+import con4m/types
 import options
 
 const conffile = "tests/conf.test"

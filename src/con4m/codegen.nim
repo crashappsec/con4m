@@ -4,11 +4,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m_types
+import ./types
 import st
 import options
 import spec
-import box
 import eval
 
 import macros
@@ -143,6 +142,7 @@ type
     curSecName: string
     nodeStack: seq[NimNode]
     specIdent: NimNode
+    genExportMarkers: bool
 
 proc newSectContents(path: string, parent: SectContents = nil): SectContents =
   result = SectContents(fullPath: path)
@@ -452,11 +452,13 @@ proc lookForConfigCmds(stmt: NimNode, state: MacroState) =
     error("configDef block can only contain 'attr' and 'section' commands",
           stmt)
 
-proc parseConfigDef(nameNode: NimNode, rest: NimNode): MacroState =
+proc parseConfigDef(nameNode: NimNode, rest: NimNode, markers: bool): MacroState =
   ## This is the entry point for parsing; it sets up the state, and kicks
   ## off lookForConfigCommands on each statement in the macro.
   nameNode.expectKind(nnkIdent)
-  result = MacroState(spec: ConfigSpec(), name: nameNode.strVal)
+  result = MacroState(spec: ConfigSpec(),
+                      name: nameNode.strVal,
+                      genExportMarkers: markers)
 
   result.contents = newSectContents("")
   result.currentSection = result.contents
@@ -605,9 +607,12 @@ proc buildDeclsOneSection(ctx: MacroState) =
             con4mTypeToNimNodes(v.typeAsCon4mNative)),
           newEmptyNode()))
 
-  let defnode = nnkTypeDef.newTree(nnkPostfix.newTree(
-                                     newIdentNode("*"),
-                                     safeIdent(secName)),
+  let identnode = if ctx.genExportMarkers:
+                    nnkPostfix.newTree(newIdentNode("*"), safeIdent(secName))
+                  else:
+                    safeIdent(secName)
+                    
+  let defnode = nnkTypeDef.newTree(identnode,
                                     newEmptyNode(),
                                     nnkRefTy.newTree(
                                       nnkObjectTy.newTree(
@@ -900,7 +905,6 @@ proc loadOneAttr(ctx: MacroState,
 
   slist.add(node)
 
-import strformat
 proc flattenSections(sec: SectContents,
                      secMap: OrderedTableRef[string, SectContents]) =
   for name, item in sec.subsections:
@@ -1156,11 +1160,18 @@ macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## Didn't find this one via Google; was thanks to elegantbeef on the
   ## Nim discord server (Jason Beetham, beefers331@gmail.com)
   var
-    state = parseConfigDef(nameNode, rest)
-    owner = kludge.owner
+    owner   = kludge.owner
+    markers = true
 
   if owner.symKind != nskModule:
-    error("Only use this macro in a module scope")
+    markers = false
+    for i in 1 .. 5:
+      echo "**************"
+    echo "warning: Using con4m macro inside a function is NOT recommended."
+    for i in 1 .. 5:
+      echo "**************"
+  
+  var state = parseConfigDef(nameNode, rest, markers)
 
   result = newNimNode(nnkStmtList, lineInfoFrom = nameNode)
 

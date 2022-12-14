@@ -4,7 +4,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m_types
+import ./types
 import st
 
 # Just in case someone manages to clone a singleton, we

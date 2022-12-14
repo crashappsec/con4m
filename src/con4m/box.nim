@@ -15,7 +15,7 @@
 
 import tables
 
-import con4m_types
+import ./types
 
 
 when (NimMajor, NimMinor) > (1, 7):
@@ -38,16 +38,18 @@ proc box*(value: float): Box =
   ## Converts a float value to a box object.
   return Box(kind: TypeFloat, f: value)
 
-proc boxList*[T](value: seq[T], empty: bool = false): Box =
+proc boxList*[T](value: seq[T]): Box =
   ## Converts a sequence to a box object.
+  let empty = if len(value) != 0: false else: true
   var listbox = ListBox[T](contents: value, empty: empty)
   return Box(kind: TypeList, l: cast[RootRef](listbox))
 
-proc boxDict*[K, V](value: TableRef[K, V], empty: bool = false): Box =
+proc boxDict*[K, V](value: TableRef[K, V]): Box =
   ## Converts a Tableref to a box object.  This has to be named,
   ## because Nim doesn't seem to be able to distinguish between this
   ## and box[T] with dictionaries, even though they're generic types
   ## w/ two type parameters :)
+  let empty = if len(value) != 0: false else: true  
   var dictbox = DictBox[K, V](contents: value, empty: empty)
   return Box(kind: TypeDict, d: cast[RootRef](dictbox))
 

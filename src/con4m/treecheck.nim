@@ -19,7 +19,7 @@ import strutils
 import unicode
 import streams
 
-import con4m_types
+import ./types
 import st
 import box
 import dollars

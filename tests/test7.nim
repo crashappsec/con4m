@@ -1,5 +1,8 @@
 import unittest, logging
 import con4m
+import con4m/types
+import con4m/box
+import con4m/st
 import options
 import streams
 import tables
@@ -228,7 +231,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
   tmpBox = ctx.getConfigVar("config_path").get()
   
-  let config_path_box_seq_str = unbox[seq[Box]](tmpBox)
+  let config_path_box_seq_str = unboxList[Box](tmpBox)
   var config_path_seq_str: seq[string] = @[]
 
   for item in config_path_box_seq_str:
@@ -250,7 +253,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
   tmpBox = ctx.getConfigVar("artifact_search_path").get()
   
-  let artifact_search_path_box_seq_str = unbox[seq[Box]](tmpBox)
+  let artifact_search_path_box_seq_str = unboxList[Box](tmpBox)
   var artifact_search_path_seq_str: seq[string] = @[]
 
   for item in artifact_search_path_box_seq_str:
@@ -312,8 +315,9 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
     entryOpt = v.lookupAttr("priority")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
-      tmpBox = stEntry.value.get()
-      sectionData.priority = some(unbox[int](tmpBox))
+      if stEntry.value.isSome():
+        tmpBox = stEntry.value.get()
+        sectionData.priority = some(unbox[int](tmpBox))
     
     entryOpt = v.lookupAttr("since")
     if entryOpt.isSome():
@@ -328,8 +332,9 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
     entryOpt = v.lookupAttr("value")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
-      tmpBox = stEntry.value.get()
-      sectionData.value = some(unbox[Box](tmpBox))
+      if stEntry.value.isSome():
+        tmpBox = stEntry.value.get()
+        sectionData.value = some(unbox[Box](tmpBox))
 
     stEntry = v.lookupAttr("codec").get()
     tmpBox = stEntry.value.get()
@@ -338,8 +343,9 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
     entryOpt = v.lookupAttr("docstring")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
-      tmpBox = stEntry.value.get()
-      sectionData.docstring = some(unbox[string](tmpBox))
+      if stEntry.value.isSome():
+        tmpBox = stEntry.value.get()
+        sectionData.docstring = some(unbox[string](tmpBox))
 
 test "samiconf":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
@@ -351,14 +357,14 @@ test "samiconf":
 
   spec.addGlobalAttr("config_path",
                      "[string]",
-                     some(box(defaultCfgPathSpec)))
+                     some(boxList[Box](defaultCfgPathSpec)))
   spec.addGlobalAttr("config_filename", "string",
                      some(box("sami.conf")))
   spec.addGlobalAttr("color", "bool", some(box(false)))
   spec.addGlobalAttr("log_level", "string", some(box("warn")))
   spec.addGlobalAttr("dry_run", "string", some(box(false)))
   spec.addGlobalAttr("artifact_search_path", "[string]",
-                     some(box(defaultArtPathSpec)))
+                     some(boxList[Box](defaultArtPathSpec)))
   spec.addGlobalAttr("recursive", "bool", some(box(true)))
   spec.addGlobalAttr("output_dir", "string", some(box(".")))
   spec.addGlobalAttr("output_file",
@@ -387,7 +393,6 @@ test "samiconf":
     tree = parse(newStringStream(conffile))
 
   check tree != nil
-
   let ctx = tree.evalTree().getOrElse(nil)
   check ctx != nil
 

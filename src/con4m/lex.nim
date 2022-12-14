@@ -6,7 +6,7 @@
 import streams
 import unicode
 
-import con4m_types
+import ./types
 import unicodeident
 
 template tok(k: Con4mTokenKind) =

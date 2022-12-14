@@ -20,6 +20,9 @@ import con4m/treecheck
 export checkTree
 
 # Runtime bits
+import con4m/types
+export types
+
 import con4m/eval
 export evalTree, evalConfig
 

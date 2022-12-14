@@ -12,7 +12,7 @@ import options
 import streams
 import macros
 
-import con4m_types
+import ./types
 import lex
 import dollars
 

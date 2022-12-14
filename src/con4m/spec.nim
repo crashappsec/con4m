@@ -10,7 +10,7 @@ import strutils
 import unicode
 import strformat
 
-import con4m_types
+import ./types
 import unicodeident
 import st
 import typecheck

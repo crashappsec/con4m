@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m_types
+import ./types
 import st
 import builtins
 import box
@@ -304,7 +304,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.evalKids(s)
     if len(node.children) == 0:
       var l: seq[Box]
-      node.value = boxList[Box](l, empty = true)
+      node.value = boxList[Box](l)
     else:
       case node.children[0].typeInfo.kind
       of TypeBool:
