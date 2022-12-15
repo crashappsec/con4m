@@ -329,10 +329,14 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
     case ctx.consume().kind
     of TtRParen:
       ctx.nlWatch = watch
-      
-      if len(result.children) < 2:
-        parseError("Tuples must have two or more items.")
-      return
+
+      case result.children.len()
+      of 0:
+        parseError("Cannot have an empty tuple.")
+      of 1:
+        return result.children[0]
+      else:
+        return
     of TtComma:
       continue
     else:
