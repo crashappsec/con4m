@@ -17,6 +17,18 @@ proc unify*(t1: Con4mType, t2: Con4mType): Con4mType =
     if t2.kind == TypeTVar:
       return t1
     return bottomType
+  of TypeTuple:
+    if t2.kind == TypeTVar:
+      return t1
+    if t2.kind != TypeTuple: return bottomType
+    if len(t2.itemTypes) != len(t1.itemTypes): return bottomType
+    result = Con4mType(kind: TypeTuple, itemTypes: @[])
+    for i, item in t1.itemTypes:
+      let l = unify(item, t2.itemTypes[i])
+      if l.kind == TypeBottom:
+        return bottomType
+      result.itemTypes.add(l)
+    return
   of TypeList:
     if t2.kind == TypeTVar:
       return t1
@@ -95,3 +107,20 @@ proc isBottom*(n1, n2: Con4mNode): bool =
 
 proc isBottom*(n: Con4mNode, t: Con4mType): bool =
   return isBottom(n.typeInfo, t)
+
+proc hasTypeVar*(t: Con4mType): bool =
+  case t.kind
+  of TypeTVar:
+    return true
+  # Proc types must be concrete.
+  of TypeBool, TypeString, TypeInt, TypeFloat, TypeProc, TypeBottom:
+    return false
+  of TypeList:
+    return hasTypeVar(t.itemType)
+  of TypeTuple:
+    for item in t.itemTypes:
+      if hasTypeVar(item):
+        return true
+    return false
+  of TypeDict:
+    return hasTypeVar(t.keyType) or hasTypeVar(t.keyType)

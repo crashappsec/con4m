@@ -389,7 +389,7 @@ proc builtInDictLen*(args: seq[Box],
   var dict = unbox[TableRef[Box, Box]](args[0])
 
   return some(box(len(dict)))
-
+                       
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
                    unused1: Con4mScope,
@@ -433,6 +433,38 @@ when defined(posix):
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
+
+  proc builtinSystem*(args: seq[Box],
+                   unused1: Con4mScope,
+                   unused2: Con4mScope): Option[Box] =
+    ## Generally exposed as `system(s)`
+    ##
+    ## like `run` except returns a tuple containing the output and the exit code.
+    var
+      cmd = unbox[string](args[0])
+    let
+      uid = getuid()
+      euid = geteuid()
+      gid = getgid()
+      egid = getegid()
+
+    if (uid != euid) or (gid != egid):
+      discard seteuid(uid)
+      discard setegid(gid)
+
+    let (output, exitCode) = execCmdEx(cmd)
+
+    var outlist: seq[Box] = @[]
+
+    outlist.add(box(output))
+    outlist.add(box(exitCode))
+    
+    result = some(boxList[Box](outlist))
+    # TODO: When adding tuples, also return the exit code.
+
+    if (uid != euid): discard seteuid(euid)
+    if (gid != egid): discard setegid(egid)
+    
 else:
   ## I don't know the permissions models on any non-posix OS, so
   ## this might be wildly insecure on such systems, as far as I know.
@@ -450,6 +482,7 @@ else:
       exitAsStr = $(exitCode)
 
     return some(box("{exitAsStr}:{output}".fmt()))
+
 
 proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
   ## Allows you to associate a NIM function with the correct signature
@@ -474,34 +507,35 @@ proc addDefaultBuiltins*(s: ConfigState) =
   ## Instead, you probably should just use `newBuiltIn()` to add your
   ## own calls, unless you want to remove or rename things.
 
-  s.newBuiltIn("string", builtinBToS, "(bool) -> string")
-  s.newBuiltIn("string", builtinIToS, "(int) -> string")
-  s.newBuiltIn("string", builtinFToS, "(float) -> string")
-  s.newBuiltIn("bool", builtinIToB, "(int) -> bool")
-  s.newBuiltIn("bool", builtinFToB, "(float) -> bool")
-  s.newBuiltIn("bool", builtinSToB, "(string) -> bool")
-  s.newBuiltIn("bool", builtinLToB, "([@x]) -> bool")
-  s.newBuiltIn("bool", builtinDToB, "({@x : @y}) -> bool")
-  s.newBuiltIn("float", builtinItoF, "(int) -> float")
-  s.newBuiltIn("int", builtinFtoI, "(float) -> int")
-  s.newBuiltIn("split", builtinSplit, "(string, string) -> [string]")
-  s.newBuiltIn("echo", builtinEcho, "(*string)")
-  s.newBuiltIn("env", builtinEnv, "(string) -> string")
-  s.newBuiltIn("envExists", builtinEnvExists, "(string) -> bool")
-  s.newBuiltIn("env", builtinEnvAll, "() -> {string : string}")
-  s.newBuiltIn("strip", builtinStrip, "(string) -> string")
-  s.newBuiltIn("contains", builtinContainsStrStr, "(string, string) -> bool")
-  s.newBuiltIn("find", builtinFindFromStart, "(string, string) -> int")
-  s.newBuiltIn("slice", builtinSlice, "(string, int, int) -> string")
-  s.newBuiltIn("slice", builtinSliceToEnd, "(string, int) -> string")
-  s.newBuiltIn("abort", builtInAbort, "(string)")
-  s.newBuiltIn("len", builtInStrLen, "(string) -> int")
-  s.newBuiltIn("len", builtInListLen, "([@x]) -> int")
-  s.newBuiltIn("len", builtInDictLen, "({@x : @y}) -> int")
-  s.newBuiltIn("format", builtInFormat, "(string) -> string")
+  s.newBuiltIn("string", builtinBToS, "f(bool) -> string")
+  s.newBuiltIn("string", builtinIToS, "f(int) -> string")
+  s.newBuiltIn("string", builtinFToS, "f(float) -> string")
+  s.newBuiltIn("bool", builtinIToB, "f(int) -> bool")
+  s.newBuiltIn("bool", builtinFToB, "f(float) -> bool")
+  s.newBuiltIn("bool", builtinSToB, "f(string) -> bool")
+  s.newBuiltIn("bool", builtinLToB, "f([@x]) -> bool")
+  s.newBuiltIn("bool", builtinDToB, "f({@x : @y}) -> bool")
+  s.newBuiltIn("float", builtinItoF, "f(int) -> float")
+  s.newBuiltIn("int", builtinFtoI, "f(float) -> int")
+  s.newBuiltIn("split", builtinSplit, "f(string, string) -> [string]")
+  s.newBuiltIn("echo", builtinEcho, "f(*string)")
+  s.newBuiltIn("env", builtinEnv, "f(string) -> string")
+  s.newBuiltIn("envExists", builtinEnvExists, "f(string) -> bool")
+  s.newBuiltIn("env", builtinEnvAll, "f() -> {string : string}")
+  s.newBuiltIn("strip", builtinStrip, "f(string) -> string")
+  s.newBuiltIn("contains", builtinContainsStrStr, "f(string, string) -> bool")
+  s.newBuiltIn("find", builtinFindFromStart, "f(string, string) -> int")
+  s.newBuiltIn("slice", builtinSlice, "f(string, int, int) -> string")
+  s.newBuiltIn("slice", builtinSliceToEnd, "f(string, int) -> string")
+  s.newBuiltIn("abort", builtInAbort, "f(string)")
+  s.newBuiltIn("len", builtInStrLen, "f(string) -> int")
+  s.newBuiltIn("len", builtInListLen, "f([@x]) -> int")
+  s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
+  s.newBuiltIn("format", builtInFormat, "f(string) -> string")
 
   when defined(posix):
-    s.newBuiltIn("run", builtinCmd, "(string) -> string")
+    s.newBuiltIn("run", builtinCmd, "f(string) -> string")
+    s.newBuiltIn("system", builtinSystem, "f(string) -> (string, int)")
 
 proc getBuiltinBySig*(s: ConfigState,
                       name: string,

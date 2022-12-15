@@ -189,7 +189,7 @@ key "SBOMS" {
     since: "0.1.0"
 }
 """
-        
+
 
 test "samiconf":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
@@ -224,7 +224,7 @@ test "samiconf":
       attr("codec", bool, false)
       attr("docstring", string, required = false)
 
-      
+
   echo "log level: ", conf.log_level
   echo "artifact path: ", conf.artifact_search_path
   echo "config file path: ", conf.config_path

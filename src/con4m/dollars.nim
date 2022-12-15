@@ -54,17 +54,22 @@ proc `$`*(t: Con4mType): string =
   of TypeFloat: return "float"
   of TypeList: return "[{t.itemType}]".fmt()
   of TypeDict: return "{{{t.keyType} : {t.valType}}}".fmt()
+  of TypeTuple:
+    var s: seq[string]
+    for item in t.itemTypes:
+      s.add($(item))
+    return fmt"""({s.join(", ")})"""
   of TypeTVar: return "@{t.varNum}".fmt()
   of TypeBottom: return "⊥"
   of TypeProc:
-    if t.params.len() == 0: return "() -> {$(t.retType)}".fmt()
+    if t.params.len() == 0: return "f() -> {$(t.retType)}".fmt()
     else:
       var paramTypes: seq[string]
       for item in t.params:
         paramTypes.add($(item))
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
-      return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
+      return "f({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string
 
@@ -90,6 +95,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeBody: fmtNt("Body")
   of NodeAttrAssign: fmtNt("AttrAssign")
   of NodeVarAssign: fmtNt("VarAssign")
+  of NodeUnpack: fmtNt("Unpack")
   of NodeSection: fmtNt("Section")
   of NodeIfStmt: fmtNt("If Stmt")
   of NodeConditional: fmtNt("Conditional")
@@ -107,6 +113,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeDictLit: fmtNt("DictLit")
   of NodeKVPair: fmtNt("KVPair")
   of NodeListLit: fmtNt("ListLit")
+  of NodeTupleLit: fmtNt("TupleLit")
   of NodeEnum: fmtNt("Enum")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:

@@ -50,8 +50,8 @@ export codegen.con4m, configDef
 
 when defined(testCases):
   # There are really just exposed for our tests.  Should change that.
-   import con4m/st
-   export lookupAttr
-   import con4m/dollars
-   export dollars
+    import con4m/st
+    export lookupAttr
+    import con4m/dollars
+    export dollars
 
