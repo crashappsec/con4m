@@ -17,6 +17,11 @@ for i from 0 to 2 {
 d, e, f := x
 
 echo(string(f[1])) # should be 2
+
+out, status := system("ls")
+
+echo("Output is: ", out)
+echo("Status was: ", string(status))
 """
 
 test "manual inspection":

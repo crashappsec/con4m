@@ -183,11 +183,38 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
     return (newDictType(keyT, valT), n[1 .. ^1])
   elif n[0] == '(':
     var
+      argtypes: seq[Con4mType]
+      oneArgType: Con4mType
+
+    n = unicode.strip(n[1 .. ^1])
+    
+    while true:
+      (oneArgType, n) = n.toCon4mType(tv)
+      argTypes.add(oneArgType)
+      n = unicode.strip(n[0 .. ^1])
+      case n[0]
+      of ',':
+        n = unicode.strip(n[1 .. ^1])
+      of ')':
+        if len(argTypes) < 2:
+          raise newException(ValueError, "Tuples must have 2 or more items")
+        n = unicode.strip(n[1 .. ^1])
+        return (Con4mType(kind: TypeTuple, itemTypes: argTypes), n)
+      else:
+        raise newException(ValueError, "Invalid function type spec")
+  elif n[0] == 'f':
+    var
       params: seq[Con4mType]
       oneParam: Con4mType
       va: bool
 
     n = unicode.strip(n[1 .. ^1])
+    
+    if n[0] != '(':
+      raise newException(ValueError, "Function types are written: f() -> ...")
+      
+    n = unicode.strip(n[1 .. ^1])      
+    
     if n[0] == ')':
       n = unicode.strip(n[1 .. ^1])
     else:

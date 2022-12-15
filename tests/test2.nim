@@ -5,7 +5,7 @@ import options
 
 test "manual inspection":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
-  
+
   var s = """
 
 defaults {

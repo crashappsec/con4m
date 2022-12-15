@@ -193,7 +193,7 @@ key "SBOMS" {
     since: "0.1.0"
 }
 """
-        
+
 type
   SamiKeySection = ref object
     required: bool
@@ -210,7 +210,7 @@ type
     value: Option[Box]
     codec: bool
     docstring: Option[string]
-      
+
   SamiConf = ref object
     config_path: seq[string]
     config_filename: string
@@ -230,7 +230,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
   var tmpBox: Box
 
   tmpBox = ctx.getConfigVar("config_path").get()
-  
+
   let config_path_box_seq_str = unboxList[Box](tmpBox)
   var config_path_seq_str: seq[string] = @[]
 
@@ -241,24 +241,24 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
   tmpBox = ctx.getConfigVar("config_filename").get()
   result.config_filename = unbox[string](tmpBox)
-  
+
   tmpBox = ctx.getConfigVar("color").get()
   result.color = unbox[bool](tmpBox)
-  
+
   tmpBox = ctx.getConfigVar("log_level").get()
   result.log_level = unbox[string](tmpBox)
-  
+
   tmpBox = ctx.getConfigVar("dry_run").get()
-  result.dry_run  = unbox[bool](tmpBox)
+  result.dry_run = unbox[bool](tmpBox)
 
   tmpBox = ctx.getConfigVar("artifact_search_path").get()
-  
+
   let artifact_search_path_box_seq_str = unboxList[Box](tmpBox)
   var artifact_search_path_seq_str: seq[string] = @[]
 
   for item in artifact_search_path_box_seq_str:
     artifact_search_path_seq_str.add(unbox[string](item))
-    
+
   result.artifact_search_path = artifact_search_path_seq_str
 
   tmpBox = ctx.getConfigVar("recursive").get()
@@ -275,7 +275,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
   for (toplevel, k, v) in sectionInfo:
     var stEntry: STEntry
     var entryOpt: Option[STEntry]
-    
+
     let sectionKey = k.split(".")[1 .. ^1].join(".")
     var sectionData = SamiKeySection()
     result.key[sectionKey] = sectionData
@@ -295,7 +295,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
     stEntry = v.lookupAttr("squash").get()
     tmpBox = stEntry.value.get()
     sectionData.squash = unbox[bool](tmpBox)
-    
+
     stEntry = v.lookupAttr("standard").get()
     tmpBox = stEntry.value.get()
     sectionData.standard = unbox[bool](tmpBox)
@@ -318,7 +318,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
       if stEntry.value.isSome():
         tmpBox = stEntry.value.get()
         sectionData.priority = some(unbox[int](tmpBox))
-    
+
     entryOpt = v.lookupAttr("since")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
@@ -339,7 +339,7 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
     stEntry = v.lookupAttr("codec").get()
     tmpBox = stEntry.value.get()
     sectionData.codec = unbox[bool](tmpBox)
-    
+
     entryOpt = v.lookupAttr("docstring")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
@@ -370,10 +370,10 @@ test "samiconf":
   spec.addGlobalAttr("output_file",
                      "string",
                      some(box("sami-extractions.json")))
-  
+
   var sectKey = spec.addSection("key", validSubSecs =
     @["*", "*.json", "*.binary"])
-  
+
   sectKey.addAttr("required", "bool", some(box(false)))
   sectKey.addAttr("missing_action", "string", some(box("warn")))
   sectKey.addAttr("system", "bool", some(box(false)))
@@ -396,7 +396,7 @@ test "samiconf":
   let ctx = tree.evalTree().getOrElse(nil)
   check ctx != nil
 
-  ctx.addSpec(spec)  
+  ctx.addSpec(spec)
   check ctx.validateConfig()
 
   var conf = ctx.loadSamiConfig()

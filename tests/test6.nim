@@ -47,16 +47,16 @@ test "hello, world":
   var itemSection = spec.addSection("item", validSubSecs = @["*"])
   itemSection.addAttr("foo", "int")
   itemSection.addAttr("bar", "int", required = false)
-  itemSection.addAttr("boz", "int", required = false)    
+  itemSection.addAttr("boz", "int", required = false)
 
   let
     tree = parse(newStringStream(conffile))
-    
+
   check tree != nil
 
   let ctx = tree.evalTree().getOrElse(nil)
   check ctx != nil
-  
+
   ctx.addSpec(spec)
   check ctx.validateConfig()
 

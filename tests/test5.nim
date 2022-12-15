@@ -42,8 +42,8 @@ test "hello, world":
   spec.addGlobalAttr("fart", "bool", required = false)
   spec.addGlobalAttr("test1", "string")
   spec.addGlobalAttr("test2", "string")
-  spec.addGlobalAttr("s", "string")    
-  
+  spec.addGlobalAttr("s", "string")
+
   var defaultSection = spec.addSection("defaults")
   defaultSection.addAttr("test", "bool")
 
@@ -58,11 +58,11 @@ test "hello, world":
   check tree != nil
 
   let ctx = tree.evalTree().getOrElse(nil)
-    
+
   check ctx != nil
-    
+
   ctx.addSpec(spec)
-  
+
   check ctx.validateConfig()
 
   for item in ctx.errors:
@@ -70,4 +70,4 @@ test "hello, world":
 
   check unbox[int](ctx.getConfigVar("item.okay.foo").get()) == 2
   check unbox[string](ctx.getConfigVar("s").get()) == "set an example!"
-  
+

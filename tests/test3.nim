@@ -10,8 +10,8 @@ test "hello, world":
 
   var
     state: ConfigState
-    cfg:   Option[Con4mScope]
-    
+    cfg: Option[Con4mScope]
+
   let opt = evalConfig(conffile)
 
   check opt.isSome()

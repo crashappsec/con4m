@@ -41,7 +41,7 @@ test "hello, world":
   itemSection.addAttr("foo", "int")
   itemSection.addAttr("bar", "int", required = false)
   itemSection.addAttr("boz", "int", required = false)
-  
+
   let tree = parse(newStringStream(conffile))
 
   check tree != nil
@@ -52,7 +52,7 @@ test "hello, world":
 
 
   ctx.addSpec(spec)
-  
+
   check not ctx.validateConfig()
   for item in ctx.errors:
     echo item

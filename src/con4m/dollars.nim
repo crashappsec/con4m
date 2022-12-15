@@ -62,14 +62,14 @@ proc `$`*(t: Con4mType): string =
   of TypeTVar: return "@{t.varNum}".fmt()
   of TypeBottom: return "⊥"
   of TypeProc:
-    if t.params.len() == 0: return "() -> {$(t.retType)}".fmt()
+    if t.params.len() == 0: return "f() -> {$(t.retType)}".fmt()
     else:
       var paramTypes: seq[string]
       for item in t.params:
         paramTypes.add($(item))
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
-      return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
+      return "f({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string
 
