@@ -6,8 +6,6 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-
-
 import options
 import streams
 import macros
@@ -313,6 +311,34 @@ proc listLiteral(ctx: ParseCtx): Con4mNode =
     else:
       unreachable
 
+proc tupleLiteral(ctx: ParseCtx): Con4mNode =
+  result = Con4mNode(kind: NodeTupleLit, token: some(ctx.consume()))
+  let watch = ctx.nlWatch
+
+  if ctx.curTok().kind == TtRParen:
+    parseError("Tuples must have two or more items.")    
+
+  ctx.nlWatch = false
+
+  while true:
+    try:
+      result.children.add(ctx.expression())
+    except:
+      parseError("Invalid list item", false)
+
+    case ctx.consume().kind
+    of TtRParen:
+      ctx.nlWatch = watch
+      
+      if len(result.children) < 2:
+        parseError("Tuples must have two or more items.")
+      return
+    of TtComma:
+      continue
+    else:
+      unreachable
+
+  
 proc accessExpr(ctx: ParseCtx): Con4mNode =
   var lhs: Con4mNode
   let tok = ctx.consume()
@@ -352,6 +378,8 @@ proc literal(ctx: ParseCtx): Con4mNode =
     return ctx.dictLiteral()
   of TtLBracket:
     return ctx.listLiteral()
+  of TtLParen:
+    return ctx.tupleLiteral()
   else:
     unreachable
 
@@ -363,15 +391,20 @@ proc notExpr(ctx: ParseCtx): Con4mNode =
 
 proc unaryExpr(ctx: ParseCtx): Con4mNode =
   let tok = ctx.consume()
-  let res = ctx.exprStart()
+  var res: Con4mNode
 
-  case res.kind
-  of NodeUnary:
+  case ctx.curTok().kind
+  of TtPlus, TtMinus:
     parseError("Two unarys in a row not allowed")
-  of NodeNot:
+  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull, TtLBrace,
+     TtLBracket, TtLParen:
+    res = ctx.literal()
+  of TtIdentifier:
+    res = ctx.accessExpr()
+  of TtNot:
     parseError("Unary before ! disallowed")
   else:
-    unreachable
+    parseError("Invalid expression start after unary operator")
 
   return Con4mNode(kind: NodeUnary, token: some(tok), children: @[res])
 
@@ -382,9 +415,9 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtNot:
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull, TtLBrace,
-     TtLBracket:
+     TtLBracket, TtLParen:
     return ctx.literal()
-  of TtLParen, TtIdentifier:
+  of TtIdentifier:
     return ctx.accessExpr()
   else:
     parseError("Invalid expression start", false)
@@ -514,15 +547,44 @@ proc section(ctx: ParseCtx): Con4mNode =
 
 
 proc varAssign(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
+  var
+    t = ctx.consume()
+    ids: seq[Con4mNode] = @[]
+  
 
-  result = Con4mNode(kind: NodeVarAssign, token: some(t))
-  result.children.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
+  ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
 
-  # Second token is validated already.
-  discard ctx.consume()
+  # Second token could be a comma, if we're unpacking a tuple.
+  # If it is, we need to check the assignment token after, because
+  # we do not accept unpacking into attributes.
+  
+  while ctx.curTok().kind == TtComma:
+    discard ctx.consume()
+    ctx.nlWatch = false
+    let t = ctx.consume()
+    if t.kind != TtIdentifier:
+      parseError("Can only unpack into named variables")
+    ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
+    ctx.nlWatch = true
+    
+  case ctx.consume().kind
+  of TtAttrAssign:
+    parseError("Cannot unpack into attributes, only variables. Use the := " &
+               "to go to variables, and then copy into attributes.", true)
+  of TtLocalAssign:
+    discard
+  else:
+    parseError("Expected := after list of identifiers for tuple unpack.", true)
+
+  if len(ids) == 1:
+    result = Con4mNode(kind: NodeVarAssign, token: some(t))
+  else:
+    result = Con4mNode(kind: NodeUnpack, token: some(t))
+    
+  result.children = ids
   ctx.nlWatch = true
   result.children.add(ctx.expression())
+  
   case ctx.consume().kind
   of TtSemi, TtNewLine:
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
@@ -579,7 +641,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       of TtAttrAssign, TtColon:
         result.children.add(ctx.attrAssign())
         continue
-      of TtLocalAssign:
+      of TtLocalAssign, TtComma:
         result.children.add(ctx.varAssign())
         continue
       of TtIdentifier, TtStringLit, TtLBrace:

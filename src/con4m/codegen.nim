@@ -206,6 +206,11 @@ proc toNimTypeString(t: Con4mType, tvars: var seq[int]): string =
     return "float"
   of TypeString:
     return "string"
+  of TypeTuple:
+    var s: seq[string]
+    for item in t.itemTypes:
+      s.add(toNimTypeString(item.itemType, tvars))
+    return "tuple[" & s.join(", ") & "]"
   of TypeList:
     return "seq[" & toNimTypeString(t.itemType, tvars) & "]"
   of TypeDict:
@@ -515,6 +520,11 @@ proc con4mTypeToNimNodes(t: Con4mType): NimNode =
     return nnkBracketExpr.newTree(
              newIdentNode("seq"),
              con4mTypeToNimNodes(t.itemType))
+  of TypeTuple:
+    result = nnkTupleConstr.newNimNode()
+    for item in t.itemTypes:
+      result.add(con4mTypeToNimNodes(item))
+    return
   of TypeDict:
     return nnkBracketExpr.newTree(
              newIdentNode("TableRef"),
@@ -657,6 +667,9 @@ proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
     return nnkCall.newTree(newIdentNode("boxList"), v)
   of TypeDict:
     return nnkCall.newTree(newIdentNode("boxDict"), v)
+  of TypeTuple:
+    # We just box tuples using the generic box; there's only one type parameter not two.
+    return nnkCall.newTree(newIdentNode("box"), v)
   of TypeBottom:
     error("Cannot box bottom value")
 
@@ -872,6 +885,10 @@ proc loadOneAttr(ctx: MacroState,
     unboxBracket.add(newIdentNode("unboxDict"))
     unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative.keyType))
     unboxBracket.add(con4mTypeToNimNodes(attrInfo.typeAsCon4mNative.valType))
+    unboxCall.add(unboxBracket)
+  of TypeTuple:
+    unboxBracket.add(newIdentNode("unboxList"))
+    unboxBracket.add(newIdentNode("Box"))
     unboxCall.add(unboxBracket)
   else:
     unreachable
@@ -1142,7 +1159,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   buildLoadingProc(ctx, slist)
 
   #echo treerepr(slist)
-  #echo toStrLit(slist)
+  echo toStrLit(slist)
 
 macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## While this is technically our top-level macro, it's intended that

@@ -96,8 +96,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     if entry.locked:
       fatal("Attempt to assign to a read-only field", node)
 
-    node.value = node.children[1].value
-    entry.value = some(node.value)
+    entry.value = some(node.children[1].value)
 
   of NodeVarAssign:
     # Variables are specific to the run, so this is a little simpler.
@@ -107,8 +106,22 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       scope = node.getVarScope()
       entry = scope.lookup(name).get()
 
-    node.value = node.children[1].value
-    entry.value = some(node.value)
+    entry.value = some(node.children[1].value)
+    
+  of NodeUnpack:
+    node.children[^1].evalNode(s)
+    let
+      boxedTup = node.children[^1].value
+      tup = unboxList[Box](boxedTup)
+      scope = node.getVarScope()
+      
+    for i, item in tup:
+      let
+        name = node.children[i].getTokenText()
+        entry = scope.lookup(name).get()
+
+      entry.value = some(item)
+    
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -215,9 +228,16 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       indexBox = node.children[1].value
 
     case node.children[0].typeInfo.kind
+    of TypeTuple:
+      let
+        l = unboxList[Box](containerBox)
+        i = unbox[int](indexBox)
+      if i >= l.len() or i < 0:
+        fatal("Runtime error in config: array index out of bounds", node)
+      node.value = l[i]
     of TypeList:
       let
-        l = unbox[seq[Box]](containerBox)
+        l = unboxList[Box](containerBox)
         i = unbox[int](indexBox)
 
       if i >= l.len() or i < 0:
@@ -302,36 +322,16 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       dict[k] = boxedValue
   of NodeListLit:
     node.evalKids(s)
-    if len(node.children) == 0:
-      var l: seq[Box]
+    var l: seq[Box]
+    for item in node.children:
+      l.add(item.value)
       node.value = boxList[Box](l)
-    else:
-      case node.children[0].typeInfo.kind
-      of TypeBool:
-        var l: seq[bool]
-        for item in node.children:
-          l.add(unbox[bool](item.value))
-          node.value = boxList[bool](l)
-      of TypeInt:
-        var l: seq[int]
-        for item in node.children:
-          l.add(unbox[int](item.value))
-          node.value = boxList[int](l)
-      of TypeFloat:
-        var l: seq[float]
-        for item in node.children:
-          l.add(unbox[float](item.value))
-          node.value = boxList[float](l)
-      of TypeString:
-        var l: seq[string]
-        for item in node.children:
-          l.add(unbox[string](item.value))
-          node.value = boxList[string](l)
-      else:
-        var l: seq[Box]
-        for item in node.children:
-          l.add(item.value)
-          node.value = boxList[Box](l)
+  of NodeTupleLit:
+    node.evalKids(s)
+    var l: seq[Box]
+    for kid in node.children:
+      l.add(kid.value)
+    node.value = boxList[Box](l)
   of NodeOr:
     node.children[0].evalNode(s)
     node.value = node.children[0].value

@@ -38,22 +38,24 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeBody, NodeAttrAssign, NodeVarAssign, NodeSection, NodeIfStmt,
-    NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue, NodeSimpLit,
-    NodeUnary, NodeNot, NodeMember, NodeIndex, NodeActuals, NodeCall,
-    NodeDictLit, NodeKVPair, NodeListLit, NodeOr, NodeAnd, NodeNe, NodeCmp,
-    NodeGte, NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul,
-    NodeDiv, NodeEnum, NodeIdentifier
+    NodeBody, NodeAttrAssign, NodeVarAssign, NodeUnpack, NodeSection,
+    NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue,
+    NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex, NodeActuals,
+    NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit, NodeOr,
+    NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt, NodePlus,
+    NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
-    TypeString, TypeBool, TypeInt, TypeFloat, TypeList, TypeDict, TypeProc,
-    TypeTVar, TypeBottom
+    TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
+    TypeProc, TypeTVar, TypeBottom
 
   Con4mType* = ref object
     ## The internal representation of a type.  Generally, you should
     ## write strings, and con4m will parse them.
     case kind*: Con4mTypeKind
+    of TypeTuple:
+      itemTypes*: seq[Con4mType]
     of TypeList:
       itemType*: Con4mType
     of TypeDict:

@@ -389,7 +389,7 @@ proc builtInDictLen*(args: seq[Box],
   var dict = unbox[TableRef[Box, Box]](args[0])
 
   return some(box(len(dict)))
-
+                       
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
                    unused1: Con4mScope,
@@ -450,6 +450,7 @@ else:
       exitAsStr = $(exitCode)
 
     return some(box("{exitAsStr}:{output}".fmt()))
+
 
 proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
   ## Allows you to associate a NIM function with the correct signature

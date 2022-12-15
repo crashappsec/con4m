@@ -18,18 +18,21 @@ coreBodyItems ::= attrAssign | varAssign | section | ifStmt | forStmt |
                    whileStmt | breakStmt | expression (NL|";")+
 enum          ::= "enum" ID ("," ID)*		   
 attrAssign    ::= ID ("="|":") expression (NL|";")+
-varAssign     ::= ID ":=" expression (NL|";")+
+varAssign     ::= ID ("," ID)* ":=" expression (NL|";")+
 section       ::= ID (STR | ID)* "{" body "}" 
 ifStmt        ::= "if" expression "{" body "}" 
                   ("elif" expression "{" body "}")*
 	 	              ("else" expression "{" body" "}")?
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
 breakStmt     ::= "break" (";")?
+# Note that literal matches before accessExpr, so a lparen at an exprStart
+# or in a unaryExpr will be treated as a tuple literal.
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
 notExpr       ::= ("!" | "not") expression
 literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | NULL
 accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)* 
+tupleLiteral  ::= "(" expression ("," expression)*)+ ")"
 listLiteral   ::= "[" (expression ("," expression)* )? "]"
 dictLiteral   ::= "{" (expression ":" expression
                        ("," expression ":" expression)*) "}"

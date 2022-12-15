@@ -249,7 +249,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       tinfo = node.children[1].typeinfo
 
     if scopes.attrs.lookupAttr(name).isSome():
-      fatal("Variable {name} conflicts with existing attribute".fmt(),
+      fatal(fmt"Variable {name} conflicts with existing attribute",
             node.children[0])
 
     let existing = scopes.vars.lookup(name)
@@ -264,13 +264,51 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if entry.locked:
         # Could be a loop index, enum, or something a previous
         # run locked.
-        fatal("You cannot assign to this value.", node.children[0])
+        fatal(fmt"You cannot assign to the (locked) value {name}.",
+              node.children[0])
 
       if t.isBottom():
-        fatal("Type of value assigned conflicts with the exiting type",
+        fatal(fmt"Type of value assigned to {name} conflicts with " &
+                 "the exiting type",
               node.children[1])
       else:
         entry.tinfo = t
+
+  of NodeUnpack:
+    let
+      tup    = node.children[^1]
+      scopes = node.getBothScopes()
+
+    tup.checkNode(s)
+    if tup.typeInfo.kind != TypeTuple:
+      fatal("Trying to unpack a value that is not a tuple.", tup)
+    if tup.typeInfo.itemTypes.len() != node.children.len() - 1:
+      fatal("Trying to unpack a tuple of the wrong size.", tup)
+      
+    for i, tv in tup.typeInfo.itemTypes:
+      let name = node.children[i].getTokenText()
+      if scopes.attrs.lookupAttr(name).isSome():
+        fatal("Variable {name} conflicts with existing attribute".fmt(),
+              node.children[0])
+
+      let existing = scopes.vars.lookup(name)
+      if not existing.isSome():
+        discard scopes.vars.addEntry(name, some(node), tv)
+      else:
+        let
+          entry = existing.get()
+          t = unify(tv, entry.tinfo)
+
+        if entry.locked:
+          fatal(fmt"Cannot unpack to (locked) variable {name}.",
+                node.children[i])
+        if t.isBottom():
+          fatal(fmt"Type of value assigned to {name} conflicts with " &
+            "the exiting type",
+            node.children[1])
+        else:
+          entry.tinfo = t
+        
   of NodeIfStmt, NodeElse:
     pushVarScope()
     node.checkKids(s)
@@ -400,6 +438,19 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeIndex:
     node.checkKids(s)
     case node.children[0].typeInfo.kind
+    of TypeTuple:
+      if isBottom(node.children[1], intType):
+        fatal("Invalid tuple index (numbers only)", node.children[1])
+      node.typeInfo = newTypeVar()
+      let v = node.children[1].value
+      if v == nil:
+        fatal("Tuple index must be an integer literal for " &
+              "static type checking", node.children[1])
+      let i = unbox[int](v)
+
+      if i < 0 or i >= node.children[0].typeInfo.itemTypes.len():
+        fatal("Tuple index out of bounds", node.children[1])
+      node.typeInfo = node.children[0].typeInfo.itemTypes[i]
     of TypeList:
       if isBottom(node.children[1], intType):
         fatal("Invalid list index (numbers only)", node.children[1])
@@ -465,6 +516,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if ct.isBottom():
         fatal("List items must all be the same type", node)
     node.typeInfo = newListType(ct)
+  of NodeTupleLit:
+    node.checkKids(s)
+    var itemTypes: seq[Con4mType]
+    
+    for item in node.children:
+      itemTypes.add(item.typeInfo)
+    node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: itemTypes)
   of NodeOr, NodeAnd:
     node.checkKids(s)
     if isBottom(node.children[0], boolType) or

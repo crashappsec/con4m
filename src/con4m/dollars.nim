@@ -54,6 +54,11 @@ proc `$`*(t: Con4mType): string =
   of TypeFloat: return "float"
   of TypeList: return "[{t.itemType}]".fmt()
   of TypeDict: return "{{{t.keyType} : {t.valType}}}".fmt()
+  of TypeTuple:
+    var s: seq[string]
+    for item in t.itemTypes:
+      s.add($(item))
+    return fmt"""({s.join(", ")})"""
   of TypeTVar: return "@{t.varNum}".fmt()
   of TypeBottom: return "⊥"
   of TypeProc:
@@ -90,6 +95,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeBody: fmtNt("Body")
   of NodeAttrAssign: fmtNt("AttrAssign")
   of NodeVarAssign: fmtNt("VarAssign")
+  of NodeUnpack: fmtNt("Unpack")
   of NodeSection: fmtNt("Section")
   of NodeIfStmt: fmtNt("If Stmt")
   of NodeConditional: fmtNt("Conditional")
@@ -107,6 +113,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeDictLit: fmtNt("DictLit")
   of NodeKVPair: fmtNt("KVPair")
   of NodeListLit: fmtNt("ListLit")
+  of NodeTupleLit: fmtNt("TupleLit")
   of NodeEnum: fmtNt("Enum")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
