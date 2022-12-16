@@ -187,7 +187,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       oneArgType: Con4mType
 
     n = unicode.strip(n[1 .. ^1])
-    
+
     while true:
       (oneArgType, n) = n.toCon4mType(tv)
       argTypes.add(oneArgType)
@@ -209,12 +209,12 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       va: bool
 
     n = unicode.strip(n[1 .. ^1])
-    
+
     if n[0] != '(':
       raise newException(ValueError, "Function types are written: f() -> ...")
-      
-    n = unicode.strip(n[1 .. ^1])      
-    
+
+    n = unicode.strip(n[1 .. ^1])
+
     if n[0] == ')':
       n = unicode.strip(n[1 .. ^1])
     else:

@@ -389,7 +389,7 @@ proc builtInDictLen*(args: seq[Box],
   var dict = unbox[TableRef[Box, Box]](args[0])
 
   return some(box(len(dict)))
-                       
+
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
                    unused1: Con4mScope,
@@ -458,13 +458,13 @@ when defined(posix):
 
     outlist.add(box(output))
     outlist.add(box(exitCode))
-    
+
     result = some(boxList[Box](outlist))
     # TODO: When adding tuples, also return the exit code.
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
-    
+
 else:
   ## I don't know the permissions models on any non-posix OS, so
   ## this might be wildly insecure on such systems, as far as I know.
@@ -483,18 +483,51 @@ else:
 
     return some(box("{exitAsStr}:{output}".fmt()))
 
-
-proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
+proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
   ## the parameter used to specify the name exposed to con4m.  `tinfo`
   ## is the Conform type signature.
 
-  let b = BuiltInInfo(fn: fn, tinfo: tinfo.toCon4mType())
-  if not s.builtins.contains(name):
-    s.builtins[name] = @[b]
+  let
+    coreName = if fn == nil: "callback" else: "builtin"
+    tinfo = tStr.toCon4mType()
+
+  if tinfo.kind != TypeProc:
+    raise newException(Con4mError, fmt"Signature provided for {coreName} " &
+                       "is not a function signature.")
+
+  let b = if fn == nil:
+            FuncTableEntry(kind: FnCallback,
+                           tinfo: tinfo,
+                           impl: none(Con4mNode),
+                           name: name,
+                           cannotCycle: false,
+                           locked: false)
+          else:
+            # We intentionally don't set cannotCycle, seenThisCheck
+            # or locked because they shouldn't be used for builtins.
+            FuncTableEntry(kind: FnBuiltIn,
+                           tinfo: tinfo,
+                           builtin: fn,
+                           name: name)
+
+  if not s.funcTable.contains(name):
+    s.funcTable[name] = @[b]
   else:
-    s.builtins[name].add(b)
+    for item in s.funcTable[name]:
+      if not isBottom(tinfo, item.tinfo):
+        raise newException(Con4mError, fmt"Type for {coreName} conflicts " &
+          "with existing entry in the function table")
+    s.funcTable[name].add(b)
+
+proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
+  newCoreFunc(s, name, tinfo, fn)
+
+proc newCallback*(s: ConfigState, name: string, tinfo: string) =
+  newCoreFunc(s, name, tinfo, nil)
+
+# TODO: runCallback(seq[Box]): Box
 
 proc addDefaultBuiltins*(s: ConfigState) =
   ## This function loads existing default builtins. It gets called
@@ -537,57 +570,4 @@ proc addDefaultBuiltins*(s: ConfigState) =
     s.newBuiltIn("run", builtinCmd, "f(string) -> string")
     s.newBuiltIn("system", builtinSystem, "f(string) -> (string, int)")
 
-proc getBuiltinBySig*(s: ConfigState,
-                      name: string,
-                      t: Con4mType): Option[BuiltInInfo] =
-  ## This is not meant to be exposed outside this module, except to
-  ## the type checker.
-  if not s.builtins.contains(name):
-    return
 
-  let bis = s.builtins[name]
-
-  for item in bis:
-    if not isBottom(t, item.tinfo):
-      return some(item)
-
-proc isBuiltin*(s: ConfigState, name: string): bool =
-  ## This is not meant to be exposed outside this module, except to
-  ## the type checker.
-  return s.builtins.contains(name)
-
-proc sCall*(s: ConfigState,
-            name: string,
-            a1: seq[Box],
-            tinfo: Con4mType,
-            node: Con4mNode
-           ): Option[Box] =
-  ## This is not meant to be exposed outside this module, except to
-  ## the evaluator.  This runs a builtin call.
-
-  let optBi = s.getBuiltinBySig(name, tinfo)
-
-  var
-    scopeOpt: Option[CurScopes]
-    scopes: CurScopes
-    n = node
-
-  scopeOpt = n.scopes
-
-  while scopeOpt.isNone():
-    n = n.parent.get()
-    scopeOpt = n.scopes
-
-  scopes = n.scopes.get()
-
-  if optBi.isSome():
-    let bi = optBi.get()
-
-    try:
-      return bi.fn(a1, scopes.attrs, scopes.vars)
-    except Con4mError:
-      fatal(getCurrentExceptionMsg(), node)
-    except:
-      fatal("Unhandled error when running builtin call: {name}".fmt(), node)
-
-  fatal("Function {name} not found".fmt(), node)

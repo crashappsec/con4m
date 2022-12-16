@@ -20,8 +20,9 @@ type
     TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma, TtPeriod,
     TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
-    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtEnum,
-    TtIdentifier, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit
+    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtSof, TtEof, ErrorTok,
+    ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -40,10 +41,11 @@ type
     ## user.
     NodeBody, NodeAttrAssign, NodeVarAssign, NodeUnpack, NodeSection,
     NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue,
-    NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex, NodeActuals,
-    NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit, NodeOr,
-    NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt, NodePlus,
-    NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier
+    NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex,
+    NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit,
+    NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
+    NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier,
+    NodeFuncDef, NodeFormalList
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -141,10 +143,21 @@ type
   BuiltInFn* = ((seq[Box], Con4mScope, Con4mScope) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
 
-  BuiltInInfo* = ref object
-    ## Internal; table entry for the registered builtin functions.
-    fn*: BuiltInFn
+  FnType* = enum
+    FnBuiltIn, FnUserDefined, FnCallback
+
+  FuncTableEntry* = ref object
     tinfo*: Con4mType
+    name*: string # Need for cycle check error message.
+    onStack*: bool
+    cannotCycle*: bool
+    locked*: bool
+
+    case kind*: FnType
+    of FnBuiltIn:
+      builtin*: BuiltInFn
+    of FnUserDefined, FnCallback:
+      impl*: Option[Con4mNode]
 
   FieldValidator* = (seq[string], Box) -> bool
   ## This isn't implemented fully yet, but will allow the program to
@@ -187,7 +200,6 @@ type
     ## The spec will be used to ensure the config file is well formed
     ## enough to work with, by comparing it against the results of
     ## execution.
-    builtins*: OrderedTable[string, seq[BuiltInInfo]]
     secSpecs*: OrderedTable[string, SectionSpec]
     globalAttrs*: FieldAttrs
     customTopLevelOk*: bool
@@ -209,7 +221,13 @@ type
     st*: Con4mScope
     spec*: Option[ConfigSpec]
     errors*: seq[string]
-    builtins*: Table[string, seq[BuiltInInfo]]
+    funcTable*: Table[string, seq[FuncTableEntry]]
+    funcOrigin*: bool
+    callBeforeDef*: seq[(string, FuncTableEntry)]
+    waitingForTypeInfo*: bool
+    moduleFuncDefs*: seq[FuncTableEntry] # Typed.
+    moduleFuncImpls*: seq[Con4mNode] # Passed from the parser.
+    secondPass*: bool
 
 let
   # These are just shared instances for types that aren't

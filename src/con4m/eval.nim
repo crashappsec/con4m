@@ -7,10 +7,11 @@
 
 import ./types
 import st
-import builtins
 import box
 import parse
 import treecheck
+import typecheck
+import dollars
 
 import options
 import tables
@@ -21,6 +22,98 @@ when (NimMajor, NimMinor) >= (1, 7):
 
 const breakMsg = "b"
 const continueMsg = "c"
+
+proc getFuncBySig(s: ConfigState,
+                     name: string,
+                     t: Con4mType): Option[FuncTableEntry] =
+  if not s.funcTable.contains(name):
+    return
+
+  let candidates = s.funcTable[name]
+
+  for item in candidates:
+    if not isBottom(t, item.tinfo):
+      return some(item)
+
+proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box]
+
+proc sCallUserDef(s: ConfigState,
+                  name: string,
+                  a1: seq[Box],
+                  callback: bool,
+                  nodeOpt: Option[Con4mNode]): Option[Box] =
+
+  try:
+    if nodeOpt.isNone():
+      if callback:
+        return # Indicates the callback wasn't provided by the user.
+        # user function, no implementation, wouldn't pass the checker.
+      unreachable
+    return s.evalFunc(a1, nodeOpt.get())
+  except Con4mError:
+    fatal(getCurrentExceptionMsg(), nodeOpt.get())
+  except:
+    fatal(fmt"Unhandled error when running builtin call: {name}",
+          nodeOpt.get())
+
+proc sCallBuiltin(s: ConfigState,
+                  name: string,
+                  a1: seq[Box],
+                  fInfo: FuncTableEntry,
+                  node: Con4mNode): Option[Box] =
+  var
+    attrs, vars: Con4mScope
+    scopeOpt = node.scopes
+    n: Con4mNode = node
+
+
+  while scopeOpt.isNone():
+    n = n.parent.get()
+    scopeOpt = n.scopes
+
+  if n.scopes.isSome():
+    let scopes = n.scopes.get()
+    attrs = scopes.attrs
+    vars = scopes.vars
+  else:
+    attrs = nil
+    vars = nil
+
+  try:
+    return fInfo.builtin(a1, attrs, vars)
+  except Con4mError:
+    fatal(getCurrentExceptionMsg(), node)
+  except:
+    fatal("Unhandled error when running builtin call: {name}".fmt(), node)
+
+proc sCall*(s: ConfigState,
+            name: string,
+            a1: seq[Box],
+            tinfo: Con4mType,
+            nodeOpt: Option[Con4mNode] = none(Con4mNode)
+           ): Option[Box] =
+  ## This is not meant to be exposed outside this module, except to
+  ## the evaluator.  This runs a builtin call, callback or
+  ## user-defined function.
+  ##
+  ## The node parameter will be the node from the caller's scope, if
+  ## present.
+
+
+  let optFunc = s.getFuncBySig(name, tinfo)
+
+  if not optFunc.isSome():
+    fatal(fmt"Function {name}{`$`(tinfo)[1 .. ^1]} not found")
+
+  let fInfo = optFunc.get()
+
+
+  case fInfo.kind
+  of FnBuiltIn:
+    return s.sCallBuiltin(name, a1, fInfo, nodeOpt.get())
+  else:
+    let callback = fInfo.kind == FnCallback
+    return s.sCallUserDef(name, a1, callback, fInfo.impl)
 
 proc evalNode*(node: Con4mNode, s: ConfigState)
 
@@ -57,10 +150,24 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## the tree to evaluate, and then take whatever action is
   ## apporpriate after, if any.
   case node.kind
+  of NodeFuncDef:
+    # Exception handling here is just a mechanism for returns
+    # to break linear control flow
+    try:
+      node.children[2].evalNode(s)
+    except:
+      return
+  of NodeReturn:
+    if node.children.len() != 0:
+      node.children[0].evalNode(s)
+      let
+        scope = node.getVarScope()
+        entry = scope.getEntry("result").get()
+      entry.value = some(node.children[0].value)
   of NodeBody, NodeElse, NodeActuals:
     node.evalKids(s)
     node.value = box(false)
-  of NodeSimpLit, NodeEnum:
+  of NodeSimpLit, NodeEnum, NodeFormalList:
     # Values for these were all assigned when we checked the tree, so we
     # don't have to do anything on this pass.
     return
@@ -101,27 +208,28 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeVarAssign:
     # Variables are specific to the run, so this is a little simpler.
     node.children[1].evalNode(s)
+
     let
       name = node.children[0].getTokenText()
       scope = node.getVarScope()
       entry = scope.lookup(name).get()
 
     entry.value = some(node.children[1].value)
-    
+
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let
       boxedTup = node.children[^1].value
       tup = unboxList[Box](boxedTup)
       scope = node.getVarScope()
-      
+
     for i, item in tup:
       let
         name = node.children[i].getTokenText()
         entry = scope.lookup(name).get()
 
       entry.value = some(item)
-    
+
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -272,9 +380,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       unreachable
 
   of NodeCall:
-    # Calls are always to built-in functions, at least for now.  So
-    # all we need to is package up the arguments into a sequence, and
-    # then call; we checked for the function's existence already.
+    # We package up the arguments into a sequence, and then invoke
+    # sCall; we checked for the function's existence already.
 
     node.children[1].evalNode(s)
     let
@@ -286,7 +393,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    let ret = s.sCall(fname, args, funcSig, node.children[0])
+    let ret = s.sCall(fname, args, funcSig, some(node.children[0]))
 
     if ret.isSome():
       node.value = ret.get()
@@ -464,3 +571,20 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
 
     return some((state, scopes.attrs))
 
+proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
+  if args.len() != node.children[1].children.len():
+    raise newException(Con4mError, "Incorrect number of arugments")
+
+  let scope = node.getVarScope()
+
+  for i, idNode in node.children[1].children:
+    let
+      name = idNode.getTokenText()
+      entry = scope.lookup(name).get()
+
+    entry.value = some(args[i])
+
+  node.evalNode(s)
+
+  let entry = scope.lookup("result").get()
+  return entry.value

@@ -103,6 +103,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeFor: fmtNt("For")
   of NodeBreak: fmtT("Break")
   of NodeContinue: fmtT("Continue")
+  of NodeReturn: fmtNt("Return")
   of NodeSimpLit: fmtT("Literal")
   of NodeUnary: fmtNtNamed("Unary")
   of NodeNot: fmtNt("Not")
@@ -115,6 +116,8 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeListLit: fmtNt("ListLit")
   of NodeTupleLit: fmtNt("TupleLit")
   of NodeEnum: fmtNt("Enum")
+  of NodeFuncDef: fmtNtNamed("Def")
+  of NodeFormalList: fmtNt("Formals")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))

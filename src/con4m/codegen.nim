@@ -457,7 +457,8 @@ proc lookForConfigCmds(stmt: NimNode, state: MacroState) =
     error("configDef block can only contain 'attr' and 'section' commands",
           stmt)
 
-proc parseConfigDef(nameNode: NimNode, rest: NimNode, markers: bool): MacroState =
+proc parseConfigDef(nameNode: NimNode, rest: NimNode,
+    markers: bool): MacroState =
   ## This is the entry point for parsing; it sets up the state, and kicks
   ## off lookForConfigCommands on each statement in the macro.
   nameNode.expectKind(nnkIdent)
@@ -621,7 +622,7 @@ proc buildDeclsOneSection(ctx: MacroState) =
                     nnkPostfix.newTree(newIdentNode("*"), safeIdent(secName))
                   else:
                     safeIdent(secName)
-                    
+
   let defnode = nnkTypeDef.newTree(identnode,
                                     newEmptyNode(),
                                     nnkRefTy.newTree(
@@ -1159,7 +1160,7 @@ proc buildConfigSpec(ctx: MacroState, slist: NimNode) =
   buildLoadingProc(ctx, slist)
 
   #echo treerepr(slist)
-  echo toStrLit(slist)
+  #echo toStrLit(slist)
 
 macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## While this is technically our top-level macro, it's intended that
@@ -1177,7 +1178,7 @@ macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
   ## Didn't find this one via Google; was thanks to elegantbeef on the
   ## Nim discord server (Jason Beetham, beefers331@gmail.com)
   var
-    owner   = kludge.owner
+    owner = kludge.owner
     markers = true
 
   if owner.symKind != nskModule:
@@ -1187,7 +1188,7 @@ macro cDefActual(kludge: int, nameNode: untyped, rest: untyped): untyped =
     echo "warning: Using con4m macro inside a function is NOT recommended."
     for i in 1 .. 5:
       echo "**************"
-  
+
   var state = parseConfigDef(nameNode, rest, markers)
 
   result = newNimNode(nnkStmtList, lineInfoFrom = nameNode)

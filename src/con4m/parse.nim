@@ -316,7 +316,7 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
   let watch = ctx.nlWatch
 
   if ctx.curTok().kind == TtRParen:
-    parseError("Tuples must have two or more items.")    
+    parseError("Tuples must have two or more items.")
 
   ctx.nlWatch = false
 
@@ -342,7 +342,7 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
     else:
       unreachable
 
-  
+
 proc accessExpr(ctx: ParseCtx): Con4mNode =
   var lhs: Con4mNode
   let tok = ctx.consume()
@@ -426,6 +426,71 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   else:
     parseError("Invalid expression start", false)
 
+proc fnOrCallback(ctx: ParseCtx): Con4mNode =
+  let
+    t = ctx.consume()
+    callback = if t.kind == TtCallback: true else: false
+    id = ctx.consume()
+
+  if id.kind != TtIdentifier:
+    parseError("Expected identifier to name function or callback")
+
+  let formals = Con4mNode(kind: NodeFormalList, token: some(ctx.curTok()))
+
+  if ctx.consume().kind != TtLParen:
+    parseError("Expected '(' to start func or callback parameter defs")
+
+  case ctx.curTok().kind
+  of TtRParen:
+    discard ctx.consume()
+  of TtIdentifier:
+    formals.children.add(Con4mNode(kind: NodeIdentifier,
+                                   token: some(ctx.consume())))
+    while true:
+      case ctx.consume().kind
+      of TtRParen:
+        break
+      of TtComma:
+        let param = ctx.consume()
+        if param.kind != TtIdentifier:
+          parseError("Expected an identifier.", true)
+        formals.children.add(Con4mNode(kind: NodeIdentifier,
+                                       token: some(param)))
+      else:
+        parseError("Invalid parameter specification")
+  else:
+    parseError("Invalid parameter specification")
+
+  if ctx.consume().kind != TtLBrace:
+    parseError("Expected '{' to start function body")
+
+  result = Con4mNode(kind: NodeFuncDef, token: some(t))
+  result.children.add(Con4mNode(kind: NodeIdentifier, token: some(id)))
+  result.children.add(formals)
+  result.children.add(ctx.body())
+
+  ctx.nlWatch = false
+
+  if ctx.consume().kind != TtRBrace:
+    parseError("Expected '}' to end function body")
+
+proc returnStmt(ctx: ParseCtx): Con4mNode =
+  result = Con4mNode(kind: NodeReturn,
+                    token: some(ctx.consume()))
+  ctx.nlWatch = true
+  case ctx.curTok().kind
+  of TtSemi, TtNewLine:
+    discard ctx.consume()
+    while ctx.curTok().kind == TtSemi: discard ctx.consume()
+  else:
+    result.children.add(ctx.expression())
+    case ctx.consume().kind
+    of TtSemi, TtNewLine:
+      while ctx.curTok().kind == TtSemi: discard ctx.consume()
+    else:
+      parseError("Unexpected input after return")
+
+
 proc breakStmt(ctx: ParseCtx): Con4mNode =
   result = Con4mNode(kind: NodeBreak,
                     token: some(ctx.consume()),
@@ -490,12 +555,12 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
 
   while true:
     if ctx.consume().kind != TtLBrace:
-      parseError("Expected { after if/elif conditional")
+      parseError("Expected '{' after if/elif conditional")
     exp.children.add(ctx.body())
     result.children.add(exp)
     ctx.nlWatch = false
     if ctx.consume().kind != TtRBrace:
-      parseError("Expected } to end if/elif body")
+      parseError("Expected '}' to end if/elif body")
 
     case ctx.curTok().kind
     of TtElif:
@@ -554,14 +619,14 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
   var
     t = ctx.consume()
     ids: seq[Con4mNode] = @[]
-  
+
 
   ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
 
   # Second token could be a comma, if we're unpacking a tuple.
   # If it is, we need to check the assignment token after, because
   # we do not accept unpacking into attributes.
-  
+
   while ctx.curTok().kind == TtComma:
     discard ctx.consume()
     ctx.nlWatch = false
@@ -570,7 +635,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
       parseError("Can only unpack into named variables")
     ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
     ctx.nlWatch = true
-    
+
   case ctx.consume().kind
   of TtAttrAssign:
     parseError("Cannot unpack into attributes, only variables. Use the := " &
@@ -584,11 +649,11 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
     result = Con4mNode(kind: NodeVarAssign, token: some(t))
   else:
     result = Con4mNode(kind: NodeUnpack, token: some(t))
-    
+
   result.children = ids
   ctx.nlWatch = true
   result.children.add(ctx.expression())
-  
+
   case ctx.consume().kind
   of TtSemi, TtNewLine:
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
@@ -626,8 +691,9 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     discard ctx.consume()
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
-  result = Con4mNode(kind: NodeBody, typeInfo: bottomType, token: some(
-      ctx.curTok()))
+  result = Con4mNode(kind: NodeBody,
+                     typeInfo: bottomType,
+                     token: some(ctx.curTok()))
 
   while true:
     case ctx.curTok().kind
@@ -653,7 +719,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       else:
         try:
           result.children.add(ctx.expression())
-        except: parseError("Expected an assignment, block start or expression", true)
+        except: parseError("Expected an assignment, block start or expression")
     of TtIf:
       result.children.add(ctx.ifStmt())
     of TtFor:
@@ -664,6 +730,15 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       result.children.add(ctx.continueStmt())
     of TtBreak:
       result.children.add(ctx.breakStmt())
+    of TtFunc, TtCallback:
+      # These will get skipped in top-level execution, but we leave
+      # them in the main tree until the tree checking gets here, just
+      # to make life a bit easier.
+      if toplevel:
+        result.children.add(ctx.fnOrCallback())
+      else:
+        parseError("Functions and callbacks are only allowed at the top level",
+                   false)
     else:
       try:
         result.children.add(ctx.expression())
@@ -675,7 +750,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
           parseError("Expect a newline (or ;) at end of a body expression")
 
       except:
-        parseError("Expected an assignment, block start or expression", true)
+        parseError("Expected an assignment, block start or expression")
 
 
 proc body(ctx: ParseCtx): Con4mNode =
@@ -692,7 +767,10 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
   ## and prints out any error message that happened during parsing.
-  var ctx = ParseCtx(tokens: tokens, curTokIx: 0)
+  var ctx = ParseCtx(tokens: tokens,
+                     curTokIx: 0,
+                     nesting: 0,
+                     nlWatch: false)
 
   when defined(debugTokenStream):
     for i, token in tokens:

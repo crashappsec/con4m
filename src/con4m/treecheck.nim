@@ -18,13 +18,13 @@ import strformat
 import strutils
 import unicode
 import streams
+import tables
 
 import ./types
 import st
 import box
 import dollars
 import typecheck
-import builtins
 import spec
 import parse # just for fatal()
 
@@ -35,11 +35,22 @@ proc checkKids(node: Con4mNode, s: ConfigState) {.inline.} =
     item.checkNode(s)
 
 template pushVarScope() =
-  let scopeOpt = node.scopes
-  var scopes = scopeOpt.get()
+  if not s.secondPass:
+    let scopeOpt = node.scopes
+    var scopes = scopeOpt.get()
 
-  scopes.vars = Con4mScope(parent: some(scopes.vars))
-  node.scopes = some(scopes)
+    scopes.vars = Con4mScope(parent: some(scopes.vars))
+    node.scopes = some(scopes)
+
+proc getTokenText*(node: Con4mNode): string {.inline.} =
+  ## This returns the raw string associated with a token.  Internal.
+  let token = node.token.get()
+
+  case token.kind
+  of TtStringLit:
+    return token.unescaped
+  else:
+    return $(token)
 
 proc getVarScope*(node: Con4mNode): Con4mScope =
   ## Internal. Returns just the current variables scope, when we
@@ -56,6 +67,87 @@ proc getAttrScope*(node: Con4mNode): Con4mScope =
 proc getBothScopes*(node: Con4mNode): CurScopes =
   ## Internal. Returns both scopes when we know they exist.
   return node.scopes.get()
+
+proc cycleDetected(stack: var seq[FuncTableEntry]) =
+  let
+    toMatch = stack[^1]
+  var
+    msg = "Function call cycle detected (disallowed): "
+    parts: seq[string]
+
+  for item in stack:
+    if len(parts) == 0:
+      if item != toMatch:
+        continue
+    let
+      name = item.name
+      sig = `$`(item.tinfo)[1 .. ^1]
+    parts.add(fmt"{name}{sig}")
+
+  msg = msg & parts.join(" calls ")
+  raise newException(Con4mError, msg)
+
+proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[FuncTableEntry])
+
+proc cycleDescend(s: ConfigState,
+                  n: Con4mNode,
+                  stack: var seq[FuncTableEntry]) =
+  if n.kind != NodeCall:
+    for kid in n.children:
+      cycleDescend(s, kid, stack)
+  else:
+    let fname = n.children[0].getTokenText()
+    if fname in s.funcTable:
+      let entries = s.funcTable[fname]
+      for item in entries:
+        if item.kind == FnBuiltIn:
+          return
+        let t = unify(n.children[1].typeInfo, item.tinfo)
+        if not t.isBottom():
+          stack.add(item)
+          # This must be present if checking passed.
+          let node = item.impl.get()
+          cyCheckOne(s, node, stack)
+
+proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[FuncTableEntry]) =
+  if stack[^1].onStack:
+    cycleDetected(stack)
+
+  stack[^1].onStack = true
+  cycleDescend(s, n, stack)
+  stack[^1].onStack = false
+  stack[^1].cannotCycle = true
+  discard stack.pop()
+
+  # We are going to add functions that get defined in this module to
+  # the list of things to check for cycles.  We use the
+  # "onStack" field to track all possible call stacks, and if
+  # we go to push a function that is already on the stack, we
+  # know there's a cycle.
+
+  # Note that, when we allow function definitions to be shadowed, it
+  # is possible to introduce cross-config file cycles that aren't
+  # detectable just by looking at one file.
+  #
+  # To deal with such a case, we need to peer into the implementations
+  # of called functions from other config files we've loaded.  But, we
+  # only need to do that when they are called locally, we don't need
+  # to use them as starting points, just the functions defined
+  # locally.
+  #
+  # We also assume that built-in functions do NOT call back directly
+  # into config code. That would defeat the purpose of callbacks. If
+  # you break that rule, then all bets are off!
+proc cycleCheck(s: ConfigState) =
+  var stack: seq[FuncTableEntry]
+
+  for item in s.moduleFuncDefs:
+    if item.cannotCycle:
+      continue
+    else:
+      stack = @[item]
+      # If we got here, item.impl must exist.
+      s.cyCheckOne(item.impl.get(), stack)
 
 proc checkStringLit(node: Con4mNode) =
   # Note that we do NOT accept hex or octal escapes, since
@@ -132,16 +224,6 @@ proc checkStringLit(node: Con4mNode) =
 
   token.unescaped = res
 
-proc getTokenText*(node: Con4mNode): string {.inline.} =
-  ## This returns the raw string associated with a token.  Internal.
-  let token = node.token.get()
-
-  case token.kind
-  of TtStringLit:
-    return token.unescaped
-  else:
-    return $(token)
-
 proc getTokenType(node: Con4mNode): Con4mTokenKind {.inline.} =
   let token = node.token.get()
 
@@ -156,8 +238,32 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   case node.kind
   of NodeBody:
     node.checkKids(s)
-  of NodeBreak, NodeContinue:
+  of NodeBreak, NodeContinue, NodeFormalList:
     discard
+  of NodeReturn:
+    if not s.funcOrigin:
+      fatal("Return not allowed outside function or callback definition")
+    if len(node.children) == 0:
+      let
+        scope = node.getVarScope()
+        entry = scope.getEntry("result").get()
+      if entry.firstDef.isNone():
+        entry.tinfo = bottomType
+      elif entry.tinfo != bottomType:
+        fatal("Return without a value when expecting a value", node)
+    else:
+      node.children[0].checkKids(s)
+      let
+        scope = node.getVarScope()
+        entry = scope.getEntry("result").get()
+      if entry.firstDef.isNone():
+        entry.tinfo = node.children[0].typeInfo
+        entry.firstDef = some(node)
+      else:
+        let t = unify(entry.tinfo, node.children[0].typeInfo)
+        if t.isBottom():
+          fatal("Inconsistent return type for function", node.children[0])
+        entry.tinfo = t
   of NodeEnum:
     let
       scopes = node.scopes.get()
@@ -184,6 +290,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     var entry: STEntry
     var scopename = "<root>"
 
+    if s.funcOrigin:
+      fatal("Cannot introduce a section within a func or callback", node)
+
     for kid in node.children[0 ..< ^1]:
       if kid.kind == NodeSimpLit:
         kid.checkNode(s)
@@ -207,7 +316,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.scopes = some(scopes)
 
     node.children[^1].checkNode(s)
+
   of NodeAttrAssign:
+    if s.funcOrigin:
+      fatal("Cannot assign to attributes within functions or callbacks.", node)
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for attributes currently not supported.",
             node.children[0])
@@ -217,6 +329,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       name = node.children[0].getTokenText()
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
+
+    if name == "result":
+      fatal("'result' is a reserved word in con4m, and cannot be used " &
+        "for attributes", node)
 
     if scopes.vars.lookupAttr(name).isSome():
       fatal("Attribute {name} conflicts with existing user variable".fmt(),
@@ -248,6 +364,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       scopes = node.getBothScopes()
       tinfo = node.children[1].typeinfo
 
+    if name == "result" and not s.funcOrigin:
+      fatal("Cannot assign to special variable 'result' outside a function " &
+        "definition.")
     if scopes.attrs.lookupAttr(name).isSome():
       fatal(fmt"Variable {name} conflicts with existing attribute",
             node.children[0])
@@ -276,7 +395,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
   of NodeUnpack:
     let
-      tup    = node.children[^1]
+      tup = node.children[^1]
       scopes = node.getBothScopes()
 
     tup.checkNode(s)
@@ -284,7 +403,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Trying to unpack a value that is not a tuple.", tup)
     if tup.typeInfo.itemTypes.len() != node.children.len() - 1:
       fatal("Trying to unpack a tuple of the wrong size.", tup)
-      
+
     for i, tv in tup.typeInfo.itemTypes:
       let name = node.children[i].getTokenText()
       if scopes.attrs.lookupAttr(name).isSome():
@@ -308,7 +427,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             node.children[1])
         else:
           entry.tinfo = t
-        
+
   of NodeIfStmt, NodeElse:
     pushVarScope()
     node.checkKids(s)
@@ -466,26 +585,228 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal("Dict indicies can only be strings or ints", node.children[1])
     else:
       fatal("Currently only support indexing on dicts and lists", node)
+  of NodeFuncDef:
+    let
+      rootscope = node.getVarScope()
+      name = node.children[0].getTokenText()
+      callback = if node.getTokenText() == "callback": true else: false
+
+    if rootscope.getEntry(name).isSome():
+      fatal(fmt"Attempted to redefine {name} as a function", node)
+
+    if callback:
+      var scopes = node.scopes.get()
+      scopes.vars = Con4mScope(parent: none(Con4mScope))
+      node.scopes = some(scopes)
+    else:
+      pushVarScope()
+
+    # Remove these for execution; the executor will more or less treat
+    # them like top-level nodes.
+    #
+    # The if statement is due to the fact that, if there are forward
+    # references, we will end up doing multiple type checking passes.
+    if node.parent.isSome():
+      s.moduleFuncImpls.add(node)
+      var l = node.parent.get().children
+      l.delete(l.find(node))
+      node.parent = none(Con4mNode)
+
+    let scope = node.getVarScope()
+
+    # Add a "result" variable.
+    discard scope.addEntry("result")
+
+    for node in node.children[1].children:
+      let
+        varname = node.getTokenText()
+        optEntry = scope.addEntry(varname)
+      if optEntry.isNone():
+        fatal("Duplicate parameter name when defining function", node)
+
+
+    s.funcOrigin = true
+    node.children[2].checkNode(s)
+    s.funcOrigin = false
+
+    # Type check parameters, add the function w/ signature in the fn table.
+    # We look them back up in the symbol table.
+    # Note that, for now anyway, we are not accepting varargs functions.
+    let
+      tinfo = Con4mType(kind: TypeProc, va: false)
+      entry = scope.getEntry("result").get()
+
+    # If the return variable was never set, firstDef will be nothing,
+    # and this method returns void.
+    if entry.firstDef.isNone():
+      tinfo.retType = bottomType
+    else:
+      tinfo.retType = entry.tinfo
+
+    for node in node.children[1].children:
+      let
+        varname = node.getTokenText()
+        entry = scope.getEntry(varname).get()
+
+      tinfo.params.add(entry.tinfo)
+
+    # Now, that we have type info, we want to update the function table.
+    if not s.funcTable.contains(name):
+      if callback:
+        fatal(fmt"Callback {name} is not a known callback you can define",
+              node)
+      let f = FuncTableEntry(kind: FnUserDefined,
+                             tinfo: tinfo,
+                             name: name,
+                             onStack: true,
+                             cannotCycle: false,
+                             locked: false,
+                             impl: some(node))
+      s.moduleFuncDefs.add(f)
+      s.funcTable[name] = @[f]
+      return
+
+    var fnList = s.funcTable[name]
+    for item in fnList:
+      # Look for already installed info about functions of this name.
+      # If we find one, perform any checks we need, and if we are allowed
+      # to overwrite the old implementation, do so (and return).
+      #
+      # If we don't find a match, then we are adding a new signature
+      # with a name that is already defined.
+      case item.kind
+      of FnBuiltIn:
+        fatal(fmt"Function name conflicts with a builtin function", node)
+      of FnCallback:
+        if not callback:
+          fatal("User-defined function has the same name as a callback." &
+            "If you intended for this to be a callback implementation, " &
+            "use 'callback' instead of 'func'", node)
+        elif not isBottom(tinfo, item.tinfo):
+          if item.onStack:
+            fatal("Multiple callback defs in the same config file", node)
+          elif item.locked:
+            fatal("A callback is already installed, and is locked " &
+                  "(i.e., has been marked so that it can not be replaced)",
+                  node)
+          else:
+            item.onStack = true
+            item.impl = some(node) # Write over the old implementation.
+            s.moduleFuncDefs.add(item)
+            return
+      of FnUserDefined:
+        if not isBottom(tinfo, item.tinfo):
+          if item.onStack:
+            fatal("Multiple defs of function in one config file", node)
+          elif item.locked:
+            fatal("An implementation of this function exists and is " &
+              "locked (i.e., has been marked so that it can't be replaced)")
+          else:
+            item.onStack = true
+            item.impl = some(node)
+            s.moduleFuncDefs.add(item)
+            return
+    # If we get here, the name was already defined, and none of the existing
+    # definitions match our signature.  If it's a user-defined function, that's
+    # great, add ourselves in.
+    #
+    # However, if it's a callback, then we've wasted everybody's
+    # time and should be sent packing.
+      if item.kind == FnCallback:
+        fatal("Callback implementation does not match expected callback " &
+          "signature")
+    let f = FuncTableEntry(kind: FnUserDefined,
+                           tinfo: tinfo,
+                           name: name,
+                           impl: some(node),
+                           onStack: true,
+                           cannotCycle: false,
+                           locked: false)
+
+    fnList.add(f)
+    s.moduleFuncDefs.add(f)
+    s.funcTable[name] = fnList
+
   of NodeCall:
+    # Because we accept function calls for functions that aren't defined
+    # yet in the source when the call appaears, we need to insert a dummy
+    # type variable here, just in case we cannot resolve the type yet. This
+    # will keep typechecking above this node from failing due to no info
+    # about this node.
+    #
+    # However, if we do find a type, we will replace this value.
+    #
+    # Note that we do *not* allow the use of global variables before
+    # they are defined, even in a function.
+
+    node.typeInfo = newTypeVar()
+
     node.children[1].checkNode(s)
 
     if node.children[0].kind != NodeIdentifier:
       fatal("Data objects cannot currently have methods.", node.children[0])
 
-    let
-      fname = node.children[0].getTokenText()
-      builtinOpt = s.getBuiltinBySig(fname, node.children[1].typeInfo)
+    let fname = node.children[0].getTokenText()
 
-    if builtinOpt.isNone():
-      if s.isBuiltin(fname):
+    if fname in s.funcTable:
+      var entries = s.funcTable[fname]
+
+      for item in entries:
+        # If we have real type info here, we use it now.  Otherwise,
+        # we'll have to mark ourselves as waiting on a future
+        # definition, and there will need to be a second pass of the
+        # tree :(
+        if not item.tinfo.isBottom():
+          let t = unify(node.children[1].typeInfo, item.tinfo)
+          if t.isBottom():
+            # Actually, it didn't match this signature. Go back to
+            # hoping there's a forward reference.
+            continue
+          else:
+            # Here, it did match the signature, but check to see
+            # if there's an implementation, or if it's just a stub
+            # like a callback, or some user-defined function we're
+            # expecting to see based on previous code but haven't.
+            if not (item.kind == FnBuiltIn) and item.impl.isNone():
+              if not ((fname, item) in s.callBeforeDef):
+                s.callBeforeDef.add((fname, item))
+            node.typeInfo = t.retType
+            return
+
+      # After looping through all entries and not finding it, we hope
+      # there is a future definition, but only if the existing items
+      # are of type FnUserDefined (otherwise, the system should have
+      # given us a signature).
+      if entries[0].kind != FnUserDefined:
         fatal("No signature with that type found.", node.children[0])
-      else:
-        fatal("Function {fname} doesn't exist".fmt(), node.children[0])
 
-    # Could stash for when we execute, but currently will just
-    # look it up on the execute pass.
-    let builtin = builtinOpt.get()
-    node.typeInfo = builtin.tInfo.retType
+      let f = FuncTableEntry(kind: FnUserDefined,
+                             tinfo: bottomType,
+                             name: fname,
+                             impl: none(Con4mNode),
+                             onStack: false,
+                             cannotCycle: false,
+                             locked: false)
+      entries.add(f)
+      s.funcTable[fname] = entries
+      s.callBeforeDef.add((fname, f))
+      s.waitingForTypeInfo = true
+      return
+    else:
+      # The call wasn't in the function table, so we hope it's defined
+      # later in the config.
+      let f = FuncTableEntry(kind: FnUserDefined,
+                             tinfo: bottomType,
+                             name: fname,
+                             impl: none(Con4mNode),
+                             onStack: false,
+                             cannotCycle: false,
+                             locked: false)
+      s.funcTable[fname] = @[f]
+      s.callBeforeDef.add((fname, f))
+      s.waitingForTypeInfo = true
+      return
+
   of NodeActuals:
     var t: seq[Con4mType]
     node.checkKids(s)
@@ -519,7 +840,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeTupleLit:
     node.checkKids(s)
     var itemTypes: seq[Con4mType]
-    
+
     for item in node.children:
       itemTypes.add(item.typeInfo)
     node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: itemTypes)
@@ -618,8 +939,55 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## It does need to create a new variable scope though!
   node.scopes = some(CurScopes(vars: Con4mScope(), attrs: s.st))
 
+  s.funcOrigin = false
+  s.moduleFuncDefs = @[]
+  s.moduleFuncImpls = @[]
+  s.errors = @[]
+
   for item in node.children:
     item.checkNode(s)
+
+  # When this condition is true, some function call we saw was unable
+  # to find an implementation with the right signature.
+  #
+  # We now look to see if the function got provided.  If we see any
+  # call table entries where the function was supposed to be user
+  # defined and still hasn't been seen, then we know those functions
+  # have not been defined.  Otherwise, we now have complete
+  # information for function implementations. But, if we had been
+  # waiting on a user-defined function, we will have incomplete type
+  # information. Unfortunately, in such a case, need to run the type
+  # checker a second time before we can move on to the next step,
+  # which is detecting (and disallowing) recursive calls.
+
+  var badList: seq[string]
+  for (name, item) in s.callBeforeDef:
+    if item.impl.isNone():
+      badList.add(fmt"{name}{`$`(item.tinfo)[1 .. ^1]}")
+
+  if len(badList) != 0:
+    fatal(fmt"""func(s) {badList.join(", ")}() called but not defined.""")
+
+    # At least one of the call-before-def situations was to a function
+    # where we didn't have the type, but now we DO have the type. As a
+    # result, we have to make a second typecheck pass.
+    #
+    # Note that we've de-rooted any functions by this point, so to be
+    # able to re-check them, we kept them around.
+    #
+    # The secondPass flag tells the checker to skip anything not type
+    # related.
+    if s.waitingForTypeInfo:
+      s.waitingForTypeInfo = false
+      s.secondPass = true
+      for item in node.children:
+        item.checkNode(s)
+      for funcRoot in s.moduleFuncImpls:
+        funcRoot.checkNode(s)
+
+  # This cycle check waits until we are sure all forward references
+  # are resolved.
+  s.cycleCheck()
 
 proc checkTree*(node: Con4mNode): ConfigState =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
@@ -628,6 +996,8 @@ proc checkTree*(node: Con4mNode): ConfigState =
   ## querying, dumped to a data structure (via our macros), or sent
   ## back to checkTree when loading a file being layered on top of
   ## what we've already read.
+  ##
+  ## Adds all default builtins.
   node.scopes = some(newRootScope())
 
   result = newConfigState(node.scopes.get().attrs)
