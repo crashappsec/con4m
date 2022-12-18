@@ -11,7 +11,6 @@ import box
 import parse
 import treecheck
 import typecheck
-import dollars
 
 import options
 import tables
@@ -32,7 +31,7 @@ proc getFuncBySig(s: ConfigState,
   let candidates = s.funcTable[name]
 
   for item in candidates:
-    if not isBottom(t, item.tinfo):
+    if not isBottom(copyType(t), copyType(item.tinfo)):
       return some(item)
 
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box]
@@ -103,10 +102,9 @@ proc sCall*(s: ConfigState,
   let optFunc = s.getFuncBySig(name, tinfo)
 
   if not optFunc.isSome():
-    fatal(fmt"Function {name}{`$`(tinfo)[1 .. ^1]} not found")
+    fatal(fmt"Function {reprSig(name, tinfo)} not found")
 
   let fInfo = optFunc.get()
-
 
   case fInfo.kind
   of FnBuiltIn:
@@ -114,6 +112,22 @@ proc sCall*(s: ConfigState,
   else:
     let callback = fInfo.kind == FnCallback
     return s.sCallUserDef(name, a1, callback, fInfo.impl)
+
+proc runCallback*(s: ConfigState,
+                  name: string,
+                  args: seq[Box],
+                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
+  if tinfo.isSome():
+    return s.sCall(name, args, tinfo.get())
+  if not s.funcTable.contains(name):
+    # User did not supply the callback.
+    return
+  if len(s.funcTable[name]) > 0:
+    raise newException(ValueError,
+                       "When supporting callbacks with multiple signatures, " &
+                       "you must supply the type when calling runCallback()")
+  let impl = s.funcTable[name][0].impl
+  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
 
 proc evalNode*(node: Con4mNode, s: ConfigState)
 
