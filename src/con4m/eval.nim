@@ -374,7 +374,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       case kt.kind
       of TypeInt:
         let
-          d = unbox[TableRef[int, Box]](containerBox)
+          d = unboxDict[int, Box](containerBox)
           i = unbox[int](indexBox)
 
         if not d.contains(i):
@@ -382,7 +382,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = d[i]
       of TypeString:
         let
-          d = unbox[TableRef[string, Box]](containerBox)
+          d = unboxDict[string, Box](containerBox)
           s = unbox[string](indexBox)
 
         if not d.contains(s):
@@ -412,35 +412,31 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     if ret.isSome():
       node.value = ret.get()
   of NodeDictLit:
-    # 1. create a table ref here.
-    # 2. Let each of the KVPair nodes do the insertion.
-    if node.children[0].typeInfo.kind == TypeString:
-      # Right now, we only allow string and int keys.
-      # We could give boxes a hash, but we won't for now.
-      var lit = newTable[string, Box]()
-      node.value = boxDict[string, Box](lit)
-    else:
-      var lit = newTable[int, Box]()
-      node.value = boxDict[int, Box](lit)
-
     node.evalKids(s)
+
+    case node.typeInfo.keyType.kind
+    of TypeString:
+      var dict = newTable[string, Box]()
+      for kvpair in node.children:
+        let
+          boxedKey = kvpair.children[0].value
+          boxedVal = kvpair.children[1].value
+          s = unbox[string](boxedKey)
+        dict[s] = boxedVal
+      node.value = boxDict[string, Box](dict)
+    of TypeInt:
+      var dict = newTable[int, Box]()
+      for kvpair in node.children:
+        let
+          boxedKey = kvpair.children[0].value
+          boxedVal = kvpair.children[1].value
+          s = unbox[int](boxedKey)
+        dict[s] = boxedVal
+      node.value = boxDict[int, Box](dict)
+    else:
+      unreachable # Should already be restricted to ints and strings
   of NodeKVPair:
     node.evalKids(s)
-    let
-      boxedKey = node.children[0].value
-      boxedValue = node.children[1].value
-      boxedDict = node.parent.get().value
-
-    if node.typeInfo.kind == TypeString:
-      let
-        dict = unbox[TableRef[string, Box]](boxedDict)
-        k = unbox[string](boxedKey)
-      dict[k] = boxedValue
-    else:
-      let
-        dict = unbox[TableRef[int, Box]](boxedDict)
-        k = unbox[int](boxedKey)
-      dict[k] = boxedValue
   of NodeListLit:
     node.evalKids(s)
     var l: seq[Box]
