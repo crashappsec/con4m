@@ -68,6 +68,11 @@ type
       retType*: Con4mType
     of TypeTVar:
       varNum*: int
+      link*: Option[Con4mType]
+      linksin*: seq[Con4mType]
+      cycle*: bool
+      constraints*: set[Con4mTypeKind]
+
     else: discard
 
   ListBox*[T] = ref object
@@ -152,7 +157,6 @@ type
     onStack*: bool
     cannotCycle*: bool
     locked*: bool
-
     case kind*: FnType
     of FnBuiltIn:
       builtin*: BuiltInFn
@@ -223,7 +227,6 @@ type
     errors*: seq[string]
     funcTable*: Table[string, seq[FuncTableEntry]]
     funcOrigin*: bool
-    callBeforeDef*: seq[(string, FuncTableEntry)]
     waitingForTypeInfo*: bool
     moduleFuncDefs*: seq[FuncTableEntry] # Typed.
     moduleFuncImpls*: seq[Con4mNode] # Passed from the parser.

@@ -730,6 +730,8 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       result.children.add(ctx.continueStmt())
     of TtBreak:
       result.children.add(ctx.breakStmt())
+    of TtReturn:
+      result.children.add(ctx.returnStmt())
     of TtFunc, TtCallback:
       # These will get skipped in top-level execution, but we leave
       # them in the main tree until the tree checking gets here, just

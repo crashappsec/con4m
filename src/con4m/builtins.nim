@@ -18,7 +18,6 @@ import strformat
 import strutils
 import options
 
-
 when defined(posix):
   import posix
 
@@ -429,7 +428,6 @@ when defined(posix):
       exitAsStr = $(exitCode)
 
     result = some(box(output))
-    # TODO: When adding tuples, also return the exit code.
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
@@ -460,7 +458,6 @@ when defined(posix):
     outlist.add(box(exitCode))
 
     result = some(boxList[Box](outlist))
-    # TODO: When adding tuples, also return the exit code.
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
@@ -526,8 +523,6 @@ proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
 
 proc newCallback*(s: ConfigState, name: string, tinfo: string) =
   newCoreFunc(s, name, tinfo, nil)
-
-# TODO: runCallback(seq[Box]): Box
 
 proc addDefaultBuiltins*(s: ConfigState) =
   ## This function loads existing default builtins. It gets called

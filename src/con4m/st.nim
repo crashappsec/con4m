@@ -45,9 +45,14 @@ proc newListType*(contained: Con4mType): Con4mType =
 proc newDictType*(keyType, valType: Con4mType): Con4mType =
   return Con4mType(kind: TypeDict, keyType: keyType, valType: valType)
 
-proc newTypeVar*(): Con4mType =
+proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
   tVarNum.inc()
-  return Con4mType(kind: TypeTVar, varNum: tVarNum)
+  return Con4mType(kind: TypeTVar,
+                   varNum: tVarNum,
+                   link: none(Con4mType),
+                   linksin: @[],
+                   cycle: false,
+                   constraints: constraints)
 
 # This should only be called when we know that the type variable
 # is going to be unique for the context.  It's mainly meant

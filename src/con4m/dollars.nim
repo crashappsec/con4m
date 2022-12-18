@@ -59,7 +59,10 @@ proc `$`*(t: Con4mType): string =
     for item in t.itemTypes:
       s.add($(item))
     return fmt"""({s.join(", ")})"""
-  of TypeTVar: return "@{t.varNum}".fmt()
+  of TypeTVar:
+    if t.link.isSome():
+      return $(t.link.get())
+    return fmt"@{t.varNum}"
   of TypeBottom: return "⊥"
   of TypeProc:
     if t.params.len() == 0: return "f() -> {$(t.retType)}".fmt()
@@ -85,7 +88,7 @@ template fmtNt(name: string) =
   return self.formatNonTerm(name, i)
 
 template fmtNtNamed(name: string) =
-  return self.formatNonTerm(name & " " & $(self.token), i)
+  return self.formatNonTerm(name & " " & $(self.token.get()), i)
 
 template fmtT(name: string) =
   return self.formatTerm(name, i) & "\n"
