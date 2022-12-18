@@ -120,7 +120,7 @@ type
   Con4mSectInfo* = seq[(string, Con4mScope)]
 
   CurScopes* = object
-    ## At any point in a Con4m program, there are to different scopes,
+    ## At any point in a Con4m program, there are two different scopes,
     ## variable scopes (which change whenever we enter a new block
     ## like in a for loop), and attribute scopes, which nest based on
     ## sections.
@@ -132,8 +132,14 @@ type
     ## This helps make it easy for users to do computation, without
     ## polluting the runtime namespace, or making validation more
     ## challenging.
+    ##
+    ## We also keep a separate record of globals, even though they are
+    ## a parent of var scopes, because in user-defined functions, we
+    ## are going to disallow access to global variables, so we want to
+    ## be able to give good error messages.
     attrs*: Con4mScope
     vars*: Con4mScope
+    globals*: Con4mScope
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.

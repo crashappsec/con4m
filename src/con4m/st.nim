@@ -73,6 +73,7 @@ proc newProcType*(params: seq[Con4mType],
 
 proc newRootScope*(): CurScopes =
   result = CurScopes(vars: Con4mScope(), attrs: Con4mScope())
+  result.globals = result.vars
 
 proc getEntry*(scope: Con4mScope, name: string): Option[STEntry] =
   if not scope.entries.contains(name): return

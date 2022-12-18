@@ -101,8 +101,16 @@ proc getAttrScope*(node: Con4mNode): Con4mScope =
   let scopes = node.scopes.get()
   return scopes.attrs
 
+proc getGlobalScope(node: Con4mNode): Con4mScope =
+  ## Internal. Returns just the scope for global vars, when we
+  ## already know it exists.
+  let scopes = node.scopes.get()
+  return scopes.globals
+  
 proc getBothScopes*(node: Con4mNode): CurScopes =
   ## Internal. Returns both scopes when we know they exist.
+  ## The global var scope info is also in there, even though
+  ## outside a function it's part of the var scope.
   return node.scopes.get()
 
 proc cycleDetected(stack: var seq[FuncTableEntry]) =
@@ -636,7 +644,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Currently only support indexing on dicts and lists", node)
   of NodeFuncDef:
     let
-      rootscope = node.getVarScope()
+      rootscope = node.getGlobalScope()
       name = node.children[0].getTokenText()
       callback = if node.getTokenText() == "callback": true else: false
 
@@ -644,12 +652,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if rootscope.getEntry(name).isSome():
         fatal(fmt"Attempted to redefine {name} as a function", node)
 
-      if callback:
-        var scopes = node.scopes.get()
-        scopes.vars = Con4mScope(parent: none(Con4mScope))
-        node.scopes = some(scopes)
-      else:
-        pushVarScope()
+      var scopes = node.scopes.get()
+      scopes.vars = Con4mScope(parent: none(Con4mScope))
+      node.scopes = some(scopes)
+      
     # Remove these for execution; the executor will more or less treat
     # them like top-level nodes.
     #
@@ -945,6 +951,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       varEntry = scopes.vars.lookup(name)
 
     if attrEntry.isNone() and varEntry.isNone():
+      if scopes.globals.lookup(name).isSome():
+        fatal("Global vars are not available from functions or callbacks", node)
       fatal("Variable {name} used before definition".fmt(), node)
 
     let ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
@@ -959,8 +967,12 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## ones.
   ##
   ## It does need to create a new variable scope though!
-  node.scopes = some(CurScopes(vars: Con4mScope(), attrs: s.st))
+  var scopes = CurScopes(vars: Con4mScope(), attrs: s.st)
 
+  scopes.globals = scopes.vars
+  node.scopes = some(scopes)
+  
+  
   s.funcOrigin = false
   s.moduleFuncDefs = @[]
   s.moduleFuncImpls = @[]
