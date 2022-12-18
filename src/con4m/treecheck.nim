@@ -28,6 +28,17 @@ import typecheck
 import spec
 import parse # just for fatal()
 
+proc addFuncDef(s: ConfigState, fd: FuncTableEntry): bool =
+  # This func detects adding duplicates; but we only need it to run on the
+  # first pass.  On the second pass we want to ignore it.
+  if s.secondPass:
+    return true
+  for item in s.moduleFuncDefs:
+    if fd.name != item.name: continue
+    if isBottom(copyType(fd.tinfo), copyType(item.tinfo)): continue
+    return false
+  s.moduleFuncDefs.add(fd)
+  return true
 
 proc checkNode(node: Con4mNode, s: ConfigState)
 
@@ -310,7 +321,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         # assignment.
   of NodeSection:
     if not s.secondPass:
-
       var
         scopes = node.scopes.get()
         scope = scopes.attrs
@@ -388,6 +398,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             node.children[0])
 
     node.children[1].checkNode(s)
+
     let
       name = node.children[0].getTokenText()
       scopes = node.getBothScopes()
@@ -701,7 +712,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                              cannotCycle: false,
                              locked: false,
                              impl: some(node))
-      s.moduleFuncDefs.add(f)
+      discard s.addFuncDef(f)
       s.funcTable[name] = @[f]
       return
 
@@ -728,7 +739,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                   node)
           else:
             item.impl = some(node) # Write over the old implementation.
-            s.moduleFuncDefs.add(item)
+            if not s.addFuncDef(item):
+              fatal(fmt"Duplicate implementation of function '{item.name}'",
+                    node)
             return
       of FnUserDefined:
         if not isBottom(tinfo, item.tinfo):
@@ -737,7 +750,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
               "locked (i.e., has been marked so that it can't be replaced)")
           else:
             item.impl = some(node)
-            s.moduleFuncDefs.add(item)
+            if not s.addFuncDef(item):
+              fatal(fmt"Duplicate implementation of function '{item.name}'",
+                    node)
             return
     # If we get here, the name was already defined, and none of the existing
     # definitions match our signature.  If it's a user-defined function, that's
@@ -757,7 +772,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                            locked: false)
 
     fnList.add(f)
-    s.moduleFuncDefs.add(f)
+    if not s.addFuncDef(f):
+      fatal(fmt"Duplicate implementation of function '{f.name}'", node)
     s.funcTable[name] = fnList
 
   of NodeCall:

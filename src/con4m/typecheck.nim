@@ -25,6 +25,8 @@ proc resolveTypeVars(t: Con4mType): Con4mType =
     return t
 
 proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
+  if t1 == t2:
+    return
   if t2.kind == TypeTVar:
     t2.linksin.add(t1)
     t1.link = some(t2)
