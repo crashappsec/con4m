@@ -239,7 +239,7 @@ proc copyType*(t: Con4mType): Con4mType =
     # Right now, we constrain keys to string or int
     if t.hasTypeVar():
       result = Con4mType(kind: TypeDict)
-      result.keyType = copyType(t.itemType)
+      result.keyType = copyType(t.keyType)
       result.valType = copyType(t.valType)
     else:
       return t

@@ -509,11 +509,16 @@ proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
                            builtin: fn,
                            name: name)
 
+  if fn == nil:
+    if tinfo.retType.isBottom():
+      raise newException(Con4mError, fmt"{coreName}: user callbacks must " &
+        "have a return type")
+
   if not s.funcTable.contains(name):
     s.funcTable[name] = @[b]
   else:
     for item in s.funcTable[name]:
-      if not isBottom(tinfo, item.tinfo):
+      if not isBottom(copyType(tinfo), copyType(item.tinfo)):
         raise newException(Con4mError, fmt"Type for {coreName} conflicts " &
           "with existing entry in the function table")
     s.funcTable[name].add(b)
