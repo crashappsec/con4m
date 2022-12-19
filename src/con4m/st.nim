@@ -78,13 +78,14 @@ proc newRootScope*(): CurScopes =
 proc getEntry*(scope: Con4mScope, name: string): Option[STEntry] =
   if not scope.entries.contains(name): return
   return some(scope.entries[name])
-
+import dollars
 proc addEntry*(scope: Con4mScope,
                name: string,
                firstDef: Option[Con4mNode] = none(Con4mNode),
                tinfo = newTypeVar(),
                subscope: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
+    echo "That's already there.  Returning none"
     return
   let e = STEntry(tinfo: tinfo, firstDef: firstDef)
   if subscope:

@@ -183,6 +183,7 @@ Some things to note about functions:
 - Currently, users can NOT declare varargs functions. We may choose to add this, but do not right now.
 - We do not support default arguments.
 - Recursive functions are available by default, but they can be turned off at the time the program using con4m is compiled.
+- If you use an enum (which defines immutable constants), they generally live in the scope of VARIABLES.  They go away if a new config file gets loaded on top of yours, so they should not be used if called from callbacks.  However, we do explicitly make them available for local functions.  If a callback tries to use one when a new config has been layered in, you could end up with significant issues. I am thinking about removing enums, or else giving them their own permanant status without making them an attribute.  Haven't decided which is best yet, so they're currently living in this in-between state.
 
 # Learn more!
 

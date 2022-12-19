@@ -28,20 +28,40 @@ proc pushRuntimeFrame(s: ConfigState) {.inline.} =
 proc popRuntimeFrame(s: ConfigState): RuntimeFrame {.inline.} =
   return s.frames.pop()
 
-# We are assuming here that the analysis is done so that we'd
-# statically swat down any use-before-def situations.
-proc runtimeVarLookup*(frames: VarStack, name: string): Box =
-  var n = frames.len()
+proc runtimeVarLookup*(frames: VarStack,
+                       name: string,
+                       scope: Con4mScope): Box =
+
+  var
+    n = frames.len()
+    s = scope
 
   while n != 0:
     n = n - 1
     let frame = frames[n]
-    if name in frame:
-      return frame[name]
+    # TODO: you are here. The second half of this shouldn't be necessary.
+    # There should be code injecting this for nodeVarAssign, no??
+    # But neither place we're assigning is working :/
+    if name in s.entries or (name in frame):
+      if name in frame:
+        return frame[name]
+      else:
+        let entry = s.entries[name]
+        if entry.value.isSome():
+          return entry.value.get()
+        else:
+          raise newException(Con4mError, fmt"Variable {name} used before being defined")
+    if s.parent.isSome():
+      s = s.parent.get()
+    else:
+      break
+  echo "couldn't lookup ", name
   unreachable
 
-proc runtimeVarLookup(s: ConfigState, name: string): Box {.inline.} =
-  return runtimeVarLookup(s.frames, name)
+proc runtimeVarLookup(s: ConfigState,
+                      name: string,
+                      scope: Con4mScope): Box {.inline.} =
+  return runtimeVarLookup(s.frames, name, scope)
 
 
 proc runtimeVarSet*(state: ConfigState,
@@ -117,11 +137,13 @@ proc sCallBuiltin(s: ConfigState,
 
   if n.scopes.isSome():
     attrs = n.scopes.get().attrs
+    vars = n.scopes.get().vars
   else:
     attrs = nil
+    vars = nil
 
   try:
-    return fInfo.builtin(a1, attrs, s.frames)
+    return fInfo.builtin(a1, attrs, s.frames, vars)
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
@@ -585,7 +607,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       if attrEntry.isSome():
         node.value = attrEntry.get().value.get()
       else:
-        node.value = s.runtimeVarLookup(name)
+        node.value = s.runtimeVarLookup(name, scopes.vars)
     except:
       fatal("Variable was referenced before assignment", node)
 

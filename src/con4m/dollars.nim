@@ -157,16 +157,15 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
 proc `$`*(scope: Con4mScope, indent: int): string =
   let pad = " ".repeat(indent + 2)
 
-  for k, v in scope.entries.mpairs():
-    if v.subscope.isSome(): continue
+  for k, v in scope.entries:
     let s = $(v.tInfo)
     result = "{result}{pad}{k}: {s}".fmt()
     if v.value.isSome():
       result = "{result} {$(v.value.get())}\n".fmt()
     else:
-      result = "{result}\n".fmt()
+      result = "{result} (no value)\n".fmt()
 
-  for k, v in scope.entries.mpairs():
+  for k, v in scope.entries:
     if v.subscope.isNone(): continue
     let subscope = v.subscope.get()
     result = result & "{pad[0 .. ^2]}[subscope {k}]:\n".fmt()
@@ -175,6 +174,8 @@ proc `$`*(scope: Con4mScope, indent: int): string =
     result = result & s
 
 proc `$`*(scope: Con4mScope, goDown = true): string =
+  ## If you want to print subscopes, leave the goDown flag
+  ## as true.  Otherwise, set the goDown flag to false.
   if not goDown:
     for k, v in scope.entries:
       let s = $(v.tInfo)

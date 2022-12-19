@@ -423,7 +423,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     let existing = scopes.vars.lookup(name)
 
     if not existing.isSome():
-      let entry = scopes.vars.addEntry(name, some(node), tinfo)
+      discard scopes.vars.addEntry(name, some(node), tinfo)
     else:
       let
         entry = existing.get()
@@ -444,9 +444,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         let s = fmt"{`$`(t)} != {`$`(entry.tinfo)}"
         fatal(fmt"Unexpected error in assignment of {name}: new val {s}",
               node.children[1])
-      else:
-        entry.tinfo = t
-
   of NodeUnpack:
     let
       tup = node.children[^1]
@@ -658,12 +655,24 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       scopes.vars = Con4mScope(parent: none(Con4mScope))
       node.scopes = some(scopes)
 
+
     let scope = node.getVarScope()
 
-    # Add a "result" variable.
+    # Set up the function call's root scope.  We're explicitly
+    # removing old global variables.
     if not s.secondPass:
+      # Add in a result variable, which can be any type.
       discard scope.addEntry("result")
 
+      # This copies over items in the root scope that have a value
+      # set, which should be enumerated values.  These we keep around,
+      # because they're non-writable.  However, we do not migrate them
+      # if a new config gets layered on top of us.
+      for k, v in rootscope.entries:
+        if v.value.isSome():
+          scope.entries[k] = v
+
+      # Now add in the function's parameters.
       for node in node.children[1].children:
         let
           varname = node.getTokenText()
