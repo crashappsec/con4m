@@ -10,6 +10,7 @@ import typecheck
 import st
 import box
 import parse # just for fatal()
+import eval
 
 import os
 import tables
@@ -26,7 +27,7 @@ when (NimMajor, NimMinor) >= (1, 7):
 
 proc builtinIToS*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast integers to strings.  Exposed as `string(i)` by default.
   let i = unbox[int](args[0])
   var s = $(i)
@@ -36,7 +37,7 @@ proc builtinIToS*(args: seq[Box],
 
 proc builtinBToS*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast bools to strings.  Exposed as `string(b)` by default.
   let b = unbox[bool](args[0])
   if b:
@@ -46,7 +47,7 @@ proc builtinBToS*(args: seq[Box],
 
 proc builtinFToS*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast floats to strings.  Exposed as `string(f)` by default.
   let f = unbox[float](args[0])
   var s = $(f)
@@ -55,7 +56,7 @@ proc builtinFToS*(args: seq[Box],
 
 proc builtinItoB*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast integers to booleans (testing for non-zero).  Exposed as
   ## `bool(i)` by default.
   let i = unbox[int](args[0])
@@ -66,7 +67,7 @@ proc builtinItoB*(args: seq[Box],
 
 proc builtinFtoB*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast floats to booleans (testing for non-zero).  Exposed as
   ## `bool(f)` by default.
   let f = unbox[float](args[0])
@@ -77,7 +78,7 @@ proc builtinFtoB*(args: seq[Box],
 
 proc builtinStoB*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast strings to booleans (testing for empty strings).  Exposed as
   ## `bool(s)` by default.
   let s = unbox[string](args[0])
@@ -88,7 +89,7 @@ proc builtinStoB*(args: seq[Box],
 
 proc builtinLToB*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast lists of any type to booleans (testing for empty lists).
   ## Exposed as `bool(s)` by default.
   let l = unbox[seq[Box]](args[0])
@@ -100,7 +101,7 @@ proc builtinLToB*(args: seq[Box],
 
 proc builtinDToB*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast dicitonaries of any type to booleans (testing for empty
   ## lists).  Exposed as `bool(s)` by default.
 
@@ -115,7 +116,7 @@ proc builtinDToB*(args: seq[Box],
 
 proc builtinIToF*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast an integer to a float.  Exposed as `float(i)` by default.
   let
     i = unbox[int](args[0])
@@ -125,7 +126,7 @@ proc builtinIToF*(args: seq[Box],
 
 proc builtinFToI*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Cast an float to an int (truncating).  Exposed as `int(f)` by
   ## default.
   let
@@ -136,7 +137,7 @@ proc builtinFToI*(args: seq[Box],
 
 proc builtinSplit*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
   ## This should work as expected from other languages.
@@ -153,7 +154,7 @@ proc builtinSplit*(args: seq[Box],
 
 proc builtinEcho*(args: seq[Box],
                   unused1: Con4mScope,
-                  unused2: Con4mScope): Option[Box] =
+                  unused2: VarStack): Option[Box] =
   ## Exposed as `echo(*s)` by default.  Prints the parameters to
   ## stdout, followed by a newline at the end.  Note that this does
   ## NOT add spaces between arguments for you.
@@ -167,7 +168,7 @@ proc builtinEcho*(args: seq[Box],
 
 proc builtinEnv*(args: seq[Box],
                  unused1: Con4mScope,
-                 unused2: Con4mScope): Option[Box] =
+                 unused2: VarStack): Option[Box] =
   ## Exposed as `env(s)` by default.  Returns the value of the
   ## requested environment variable.  If the environment variable is
   ## NOT set, it will return the empty string.  To distingush between
@@ -180,7 +181,7 @@ proc builtinEnv*(args: seq[Box],
 
 proc builtinEnvExists*(args: seq[Box],
                        unused1: Con4mScope,
-                       unused2: Con4mScope): Option[Box] =
+                       unused2: VarStack): Option[Box] =
   ## Returns true if the requested variable name is set in the
   ## environment, false if it's not.  Exposed as `envExists(s)` by
   ## default.
@@ -194,7 +195,7 @@ proc builtinEnvExists*(args: seq[Box],
 
 proc builtinEnvAll*(args: seq[Box],
                     unused1: Con4mScope,
-                    unused2: Con4mScope): Option[Box] =
+                    unused2: VarStack): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
   var s = newTable[string, string]()
@@ -206,7 +207,7 @@ proc builtinEnvAll*(args: seq[Box],
 
 proc builtinStrip*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
   ## Remove leading and trailing white space from a string.
   ## Exposed by default as `strip(s)`
   let
@@ -217,7 +218,7 @@ proc builtinStrip*(args: seq[Box],
 
 proc builtinContainsStrStr*(args: seq[Box],
                             unused1: Con4mScope,
-                            unused2: Con4mScope): Option[Box] =
+                            unused2: VarStack): Option[Box] =
   ## Returns true if `s1` contains the substring `s2`.
   ## Exposed by default as `contains(s1, s2)`
   let
@@ -229,7 +230,7 @@ proc builtinContainsStrStr*(args: seq[Box],
 
 proc builtinFindFromStart*(args: seq[Box],
                            unused1: Con4mScope,
-                           unused2: Con4mScope): Option[Box] =
+                           unused2: VarStack): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
   ## string `s1`, or -1 if it does not appear.  Exposed by default as
   ## `find(s1, s2)`
@@ -243,7 +244,7 @@ proc builtinFindFromStart*(args: seq[Box],
 
 proc builtinSlice*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, not
   ## including index `end`.  The semantics of this are Pythonic, where
   ## -1 works as expected.
@@ -270,7 +271,7 @@ proc builtinSlice*(args: seq[Box],
 
 proc builtinSliceToEnd*(args: seq[Box],
                         unused1: Con4mScope,
-                        unused2: Con4mScope): Option[Box] =
+                        unused2: VarStack): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, until the
   ## end of the string. The semantics of this are Pythonic, where -1
   ## works as expected (to index from the back).
@@ -296,9 +297,10 @@ proc builtinSliceToEnd*(args: seq[Box],
 
 proc builtInFormat*(args: seq[Box],
                     attrs: Con4mScope,
-                    vars: Con4mScope): Option[Box] =
+                    vars: VarStack): Option[Box] =
   ## We don't error check on string bounds; when an exception gets
   ## raised, SCall will call fatal().
+
   var
     s = unbox[string](args[0])
     res = newStringOfCap(len(s)*2)
@@ -329,10 +331,26 @@ proc builtInFormat*(args: seq[Box],
       if key.contains("."):
         let parts = key.split(".")
         optEntry = attrs.dottedLookup(parts)
+      # These two branches both drop down past the else block to deal
+      # w/ their optEntry, but the other branch gets a box directly.
+      # Guess I should make an easier interface to attr lookup.
       elif key in attrs.entries:
         optEntry = attrs.lookupAttr(key)
       else:
-        optEntry = vars.lookup(key)
+        let boxed = vars.runtimeVarLookup(key)
+        case boxed.kind
+        of TypeString:
+          res.add(unbox[string](boxed))
+        of TypeInt:
+          res.add($(unbox[int](boxed)))
+        of TypeFloat:
+          res.add($(unbox[float](boxed)))
+        of Typebool:
+          res.add($(unbox[bool](boxed)))
+        else:
+          raise newException(Con4mError, "Error: Invalid type for format " &
+            "argument, can't do lists or dicts")
+        continue
 
       if optEntry.isNone():
         raise newException(Con4mError, "Error in format: item not found")
@@ -360,14 +378,14 @@ proc builtInFormat*(args: seq[Box],
 
 proc builtInAbort*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
   ## Stops the entire program (not just the configuration file).
   ## Generally exposed as `abort()`
   quit()
 
 proc builtInListLen*(args: seq[Box],
                      unused1: Con4mScope,
-                     unused2: Con4mScope): Option[Box] =
+                     unused2: VarStack): Option[Box] =
   ## Returns the number of elements in the list.
   var list = unbox[seq[Box]](args[0])
 
@@ -375,7 +393,7 @@ proc builtInListLen*(args: seq[Box],
 
 proc builtInStrLen*(args: seq[Box],
                     unused1: Con4mScope,
-                    unused2: Con4mScope): Option[Box] =
+                    unused2: VarStack): Option[Box] =
   ## Returns the number of bytes in a string.
   var s = unbox[string](args[0])
 
@@ -383,7 +401,7 @@ proc builtInStrLen*(args: seq[Box],
 
 proc builtInDictLen*(args: seq[Box],
                      unused1: Con4mScope,
-                     unused2: Con4mScope): Option[Box] =
+                     unused2: VarStack): Option[Box] =
   ## Returns the number of k,v pairs in a dictionary.
   var dict = unbox[TableRef[Box, Box]](args[0])
 
@@ -392,7 +410,7 @@ proc builtInDictLen*(args: seq[Box],
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
     ## Generally exposed as `run(s)`
     ##
     ## Essentially calls the posix `system()` call, except that, a)
@@ -434,7 +452,7 @@ when defined(posix):
 
   proc builtinSystem*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
     ## Generally exposed as `system(s)`
     ##
     ## like `run` except returns a tuple containing the output and the exit code.
@@ -469,7 +487,7 @@ else:
   ## from the defaults.
   proc builtinCmd*(args: seq[Box],
                    unused1: Con4mScope,
-                   unused2: Con4mScope): Option[Box] =
+                   unused2: VarStack): Option[Box] =
     ## An unsafe version of this for non-posix OSes.  On such machines,
     ## it is NOT a default builtin.
     var cmd: string = unbox(args[0])

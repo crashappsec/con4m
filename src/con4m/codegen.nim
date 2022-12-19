@@ -1330,7 +1330,7 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   ##    required.
   ##
   ## 2. The Con4m type to enforce for the attribute (NOT the Nim
-  ## type). This is required.
+  ##    type). This is required.
   ##
   ## 3. `defaultVal`, a keyword parameter specifying what value to set
   ##    if the user does not provide something for this attribute,

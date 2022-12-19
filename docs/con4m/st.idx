@@ -1,6 +1,6 @@
 newListType	con4m/st.html#newListType,Con4mType	st: newListType(contained: Con4mType): Con4mType	
 newDictType	con4m/st.html#newDictType,Con4mType,Con4mType	st: newDictType(keyType, valType: Con4mType): Con4mType	
-newTypeVar	con4m/st.html#newTypeVar	st: newTypeVar(): Con4mType	
+newTypeVar	con4m/st.html#newTypeVar,set[Con4mTypeKind]	st: newTypeVar(constraints: set[Con4mTypeKind] = {}): Con4mType	
 newTypeVar	con4m/st.html#newTypeVar,int	st: newTypeVar(num: int): Con4mType	
 newProcType	con4m/st.html#newProcType,seq[Con4mType],Con4mType,bool	st: newProcType(params: seq[Con4mType]; retType: Con4mType; va: bool = false): Con4mType	
 newRootScope	con4m/st.html#newRootScope	st: newRootScope(): CurScopes	

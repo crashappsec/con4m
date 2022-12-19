@@ -6,6 +6,7 @@
 
 import ./types
 import st
+
 import dollars
 import options
 
@@ -39,6 +40,18 @@ proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
       item.link = some(t2)
 
   t1.linksin = @[]
+
+proc getBaseType*(t: Con4mType): Con4mTypeKind =
+  case t.kind
+  of TypeTVar:
+    if t.link.isSome():
+      return t.link.get().getBaseType()
+    return TypeTVar
+  else:
+    return t.kind
+
+proc getBaseType*(node: Con4mNode): Con4mTypeKind =
+  return node.typeInfo.getBaseType()
 
 const allConstraints: set[Con4mTypeKind] = {
   TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict

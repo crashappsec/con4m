@@ -11,11 +11,11 @@ import unicode
 import strformat
 
 import ./types
-import unicodeident
 import st
 import typecheck
+
+import unicodeident
 import dollars
-import builtins
 
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
@@ -318,7 +318,6 @@ proc requiredFieldCheck(ctx: ConFigState,
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
-        assert scope.lookupAttr(key).isSome()
 
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
@@ -419,20 +418,6 @@ proc validateConfig*(config: ConfigState): bool =
   if config.errors.len() == 0:
     return true
 
-proc newConfigState*(scope: Con4mScope,
-                     spec: ConfigSpec = nil,
-                     addBuiltins: bool = true
-                    ): ConfigState =
-  ## Return a new `ConfigState` object, optionally setting the `spec`
-  ## object, and, if requested via `addBuiltins`, installs the default
-  ## set of builtin functions.
-  if spec != nil:
-    result = ConfigState(st: scope, spec: some(spec))
-  else:
-    result = ConfigState(st: scope)
-
-  if addBuiltins:
-    result.addDefaultBuiltins()
 
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   ## This interface allows you to look up individual fields to get

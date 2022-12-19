@@ -103,13 +103,25 @@ type
   STEntry* = ref object
     ## Internal; our symbol table data structure.
     tInfo*: Con4mType
-    value*: Option[Box]
+    value*: Option[Box]    ## Note that local variables are not stored in an
+                           ## STEntry during execution.  Before execution, this
+                           ## value can hold default values.
+                           ##
+                           ## Attribute scopes persist though, so we *do* use this
+                           ## variable at runtime for attributes.
     override*: Option[Box] ## If a command-line flag or the program set this
                            ## value at runtime, then it will automatically be
                            ## re-set after the configuration file loads.
     subscope*: Option[Con4mScope]
     firstDef*: Option[Con4mNode]
     locked*: bool
+
+  ## Frame for holding local variables.  In a call, the caller
+  ## does the pushing and popping.
+  RuntimeFrame* = TableRef[string, Box]
+  ##
+  ##
+  VarStack* = seq[RuntimeFrame]
 
   Con4mScope* = ref object
     ## Internal. It represents a single scope, only containing a
@@ -149,10 +161,12 @@ type
     parent*: Option[Con4mNode] # Root is nil
     typeInfo*: Con4mType
     scopes*: Option[CurScopes]
+    formalScopes*: Option[CurScopes]
     value*: Box
 
-  BuiltInFn* = ((seq[Box], Con4mScope, Con4mScope) -> Option[Box])
+  BuiltInFn* = ((seq[Box], Con4mScope, VarStack) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
+  ## VarStack is defined below, but is basically just a seq of tables.
 
   FnType* = enum
     FnBuiltIn, FnUserDefined, FnCallback
@@ -237,6 +251,7 @@ type
     moduleFuncDefs*: seq[FuncTableEntry] # Typed.
     moduleFuncImpls*: seq[Con4mNode] # Passed from the parser.
     secondPass*: bool
+    frames*: VarStack
 
 let
   # These are just shared instances for types that aren't
@@ -249,10 +264,18 @@ let
   bottomType* = Con4mType(kind: TypeBottom)
 
 template unreachable*() =
+  let info = instantiationInfo()
+
   ## We use this to be explicit about case statements that are
   ## necessary to cover all cases, but should be impossible to
   ## execute.  That way, if they do execute, we know we made a
   ## mistake.
-  doAssert(false, "Reached code the programmer thought was unreachable :(")
+  try:
+    echo "Reached code that was supposed to be unreachable.  Stack trace:"
+    echo "REACHED UNREACHABLE CODE AT: " & info.filename & ":" & $(info.line)
+    echo getStackTrace()
+    doAssert(false, "Reached code the programmer thought was unreachable :(")
+  finally:
+    discard
 
 

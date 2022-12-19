@@ -22,11 +22,10 @@ import tables
 
 import ./types
 import st
+import parse # just for fatal()
+import typecheck
 import box
 import dollars
-import typecheck
-import spec
-import parse # just for fatal()
 
 proc addFuncDef(s: ConfigState, fd: FuncTableEntry): bool =
   # This func detects adding duplicates; but we only need it to run on the
@@ -106,90 +105,92 @@ proc getGlobalScope(node: Con4mNode): Con4mScope =
   ## already know it exists.
   let scopes = node.scopes.get()
   return scopes.globals
-  
+
 proc getBothScopes*(node: Con4mNode): CurScopes =
   ## Internal. Returns both scopes when we know they exist.
   ## The global var scope info is also in there, even though
   ## outside a function it's part of the var scope.
   return node.scopes.get()
 
-proc cycleDetected(stack: var seq[FuncTableEntry]) =
-  let
-    toMatch = stack[^1]
-  var
-    msg = "Function call cycle detected (disallowed): "
-    parts: seq[string]
+when defined(disallowRecursion):
+  proc cycleDetected(stack: var seq[FuncTableEntry]) =
+    let
+      toMatch = stack[^1]
+    var
+      msg = "Function call cycle detected (disallowed): "
+      parts: seq[string]
 
-  for item in stack:
-    if len(parts) == 0:
-      if item != toMatch:
-        continue
-    parts.add(reprSig(item.name, item.tinfo))
+    for item in stack:
+      if len(parts) == 0:
+        if item != toMatch:
+          continue
+      parts.add(reprSig(item.name, item.tinfo))
 
-  msg = msg & parts.join(" calls ")
-  raise newException(Con4mError, msg)
+    msg = msg & parts.join(" calls ")
+    raise newException(Con4mError, msg)
 
-proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[FuncTableEntry])
+  proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[FuncTableEntry])
 
-proc cycleDescend(s: ConfigState,
-                  n: Con4mNode,
-                  stack: var seq[FuncTableEntry]) =
-  if n.kind != NodeCall:
-    for kid in n.children:
-      cycleDescend(s, kid, stack)
-  else:
-    let fname = n.children[0].getTokenText()
-    if fname in s.funcTable:
-      let entries = s.funcTable[fname]
-      for item in entries:
-        if item.kind == FnBuiltIn:
-          return
-        let t = unify(n.children[1].typeInfo, item.tinfo)
-        if not t.isBottom():
-          stack.add(item)
-          # This must be present if checking passed.
-          let node = item.impl.get()
-          cyCheckOne(s, node, stack)
-
-proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[FuncTableEntry]) =
-  if stack[^1].onStack:
-    cycleDetected(stack)
-
-  stack[^1].onStack = true
-  cycleDescend(s, n, stack)
-  stack[^1].onStack = false
-  stack[^1].cannotCycle = true
-  discard stack.pop()
-
-  # We are going to add functions that get defined in this module to
-  # the list of things to check for cycles.  We use the
-  # "onStack" field to track all possible call stacks, and if
-  # we go to push a function that is already on the stack, we
-  # know there's a cycle.
-
-  # Note that, when we allow function definitions to be shadowed, it
-  # is possible to introduce cross-config file cycles that aren't
-  # detectable just by looking at one file.
-  #
-  # To deal with such a case, we need to peer into the implementations
-  # of called functions from other config files we've loaded.  But, we
-  # only need to do that when they are called locally, we don't need
-  # to use them as starting points, just the functions defined
-  # locally.
-  #
-  # We also assume that built-in functions do NOT call back directly
-  # into config code. That would defeat the purpose of callbacks. If
-  # you break that rule, then all bets are off!
-proc cycleCheck(s: ConfigState) =
-  var stack: seq[FuncTableEntry]
-
-  for item in s.moduleFuncDefs:
-    if item.cannotCycle:
-      continue
+  proc cycleDescend(s: ConfigState,
+                    n: Con4mNode,
+                    stack: var seq[FuncTableEntry]) =
+    if n.kind != NodeCall:
+      for kid in n.children:
+        cycleDescend(s, kid, stack)
     else:
-      stack = @[item]
-      # If we got here, item.impl must exist.
-      s.cyCheckOne(item.impl.get(), stack)
+      let fname = n.children[0].getTokenText()
+      if fname in s.funcTable:
+        let entries = s.funcTable[fname]
+        for item in entries:
+          if item.kind == FnBuiltIn:
+            return
+          let t = unify(n.children[1].typeInfo, item.tinfo)
+          if not t.isBottom():
+            stack.add(item)
+            # This must be present if checking passed.
+            let node = item.impl.get()
+            cyCheckOne(s, node, stack)
+
+  proc cyCheckOne(s: ConfigState, n: Con4mNode, stack: var seq[
+      FuncTableEntry]) =
+    if stack[^1].onStack:
+      cycleDetected(stack)
+
+    stack[^1].onStack = true
+    cycleDescend(s, n, stack)
+    stack[^1].onStack = false
+    stack[^1].cannotCycle = true
+    discard stack.pop()
+
+    # We are going to add functions that get defined in this module to
+    # the list of things to check for cycles.  We use the
+    # "onStack" field to track all possible call stacks, and if
+    # we go to push a function that is already on the stack, we
+    # know there's a cycle.
+
+    # Note that, when we allow function definitions to be shadowed, it
+    # is possible to introduce cross-config file cycles that aren't
+    # detectable just by looking at one file.
+    #
+    # To deal with such a case, we need to peer into the implementations
+    # of called functions from other config files we've loaded.  But, we
+    # only need to do that when they are called locally, we don't need
+    # to use them as starting points, just the functions defined
+    # locally.
+    #
+    # We also assume that built-in functions do NOT call back directly
+    # into config code. That would defeat the purpose of callbacks. If
+    # you break that rule, then all bets are off!
+  proc cycleCheck(s: ConfigState) =
+    var stack: seq[FuncTableEntry]
+
+    for item in s.moduleFuncDefs:
+      if item.cannotCycle:
+        continue
+      else:
+        stack = @[item]
+        # If we got here, item.impl must exist.
+        s.cyCheckOne(item.impl.get(), stack)
 
 proc checkStringLit(node: Con4mNode) =
   # Note that we do NOT accept hex or octal escapes, since
@@ -278,7 +279,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.scopes = node.parent.get().scopes
 
   case node.kind
-  of NodeBody:
+  of NodeBody, NodeIfStmt:
     node.checkKids(s)
   of NodeBreak, NodeContinue, NodeFormalList:
     discard
@@ -291,8 +292,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         entry = scope.lookup("result").get()
       if entry.firstDef.isNone():
         entry.tinfo = bottomType
-      elif entry.tinfo != bottomType:
-        fatal("Return without a value when expecting a value", node)
     else:
       var scopes = node.scopes.get()
       node.children[0].checkNode(s)
@@ -328,6 +327,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         # it will pass the syntax check, but fail when we look at the
         # assignment.
   of NodeSection:
+    pushVarScope()
     if not s.secondPass:
       var
         scopes = node.scopes.get()
@@ -453,7 +453,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       scopes = node.getBothScopes()
 
     tup.checkNode(s)
-    if tup.typeInfo.kind != TypeTuple:
+    if tup.getBaseType() != TypeTuple:
       fatal("Trying to unpack a value that is not a tuple.", tup)
     if tup.typeInfo.itemTypes.len() != node.children.len() - 1:
       fatal("Trying to unpack a tuple of the wrong size.", tup)
@@ -482,7 +482,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         else:
           entry.tinfo = t
 
-  of NodeIfStmt, NodeElse:
+  of NodeElse:
     pushVarScope()
     node.checkKids(s)
   of NodeConditional:
@@ -613,7 +613,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     fatal("Member access is currently not supported.", node)
   of NodeIndex:
     node.checkKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeTuple:
       if isBottom(node.children[1], intType):
         fatal("Invalid tuple index (numbers only)", node.children[1])
@@ -648,6 +648,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       name = node.children[0].getTokenText()
       callback = if node.getTokenText() == "callback": true else: false
 
+    # The requirement for two type checking passes isn't universal...
+    # it only happens when there is a forward reference.
     if not s.secondPass:
       if rootscope.getEntry(name).isSome():
         fatal(fmt"Attempted to redefine {name} as a function", node)
@@ -655,16 +657,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       var scopes = node.scopes.get()
       scopes.vars = Con4mScope(parent: none(Con4mScope))
       node.scopes = some(scopes)
-      
-    # Remove these for execution; the executor will more or less treat
-    # them like top-level nodes.
-    #
-    # The if statement is due to the fact that, if there are forward
-    # references, we will end up doing multiple type checking passes.
-      s.moduleFuncImpls.add(node)
-      var l = node.parent.get().children
-      l.delete(l.find(node))
-      node.parent = none(Con4mNode)
 
     let scope = node.getVarScope()
 
@@ -795,7 +787,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # they are defined, even in a function.
 
     node.typeInfo = newTypeVar()
-
     node.children[1].checkNode(s)
 
     if node.children[0].kind != NodeIdentifier:
@@ -971,8 +962,8 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
 
   scopes.globals = scopes.vars
   node.scopes = some(scopes)
-  
-  
+
+
   s.funcOrigin = false
   s.moduleFuncDefs = @[]
   s.moduleFuncImpls = @[]
@@ -981,16 +972,27 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   for item in node.children:
     item.checkNode(s)
 
-    # When s.waitingForTypeInfo is set, at least one of the
-    # call-before-def situations was to a function where we didn't
-    # have the type, and if it got provided, we would now have the
-    # type. As a result, we have to make a second typecheck pass.
-    #
-    # Note that we've de-rooted any functions by this point, so to be
-    # able to re-check them, we kept them around.
-    #
-    # The secondPass flag tells the checker to skip anything not type
-    # related.
+  # Now that we've finished the first pass, unlink any nodes that are
+  # function decls, so they don't participate in the primary program
+  # execution.
+  var n = node.children.len()
+  while n != 0:
+    n = n - 1
+    if node.children[n].kind == NodeFuncDef:
+      node.children[n].parent = none(Con4mNode)
+      s.moduleFuncImpls.add(node.children[n])
+      node.children.delete(n)
+
+  # When s.waitingForTypeInfo is set, at least one of the
+  # call-before-def situations was to a function where we didn't
+  # have the type, and if it got provided, we would now have the
+  # type. As a result, we have to make a second typecheck pass.
+  #
+  # Note that we've de-rooted any functions by this point, so to be
+  # able to re-check them, we kept them around.
+  #
+  # The secondPass flag tells the checker to skip anything not type
+  # related.
   if s.waitingForTypeInfo:
     s.waitingForTypeInfo = false
     s.secondPass = true
@@ -999,9 +1001,15 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     for funcRoot in s.moduleFuncImpls:
       funcRoot.checkNode(s)
 
-  # This cycle check waits until we are sure all forward references
-  # are resolved.
-  s.cycleCheck()
+  when defined(disallowRecursion):
+    # This cycle check waits until we are sure all forward references
+    # are resolved.
+    s.cycleCheck()
+
+
+proc newConfigState*(scope: Con4mScope,
+                     spec: ConfigSpec = nil,
+                     addBuiltins: bool = true): ConfigState
 
 proc checkTree*(node: Con4mNode): ConfigState =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
@@ -1017,6 +1025,25 @@ proc checkTree*(node: Con4mNode): ConfigState =
   result = newConfigState(node.scopes.get().attrs)
 
   node.checkTree(result)
+
+import builtins
+
+proc newConfigState*(scope: Con4mScope,
+                     spec: ConfigSpec = nil,
+                     addBuiltins: bool = true
+                    ): ConfigState =
+  ## Return a new `ConfigState` object, optionally setting the `spec`
+  ## object, and, if requested via `addBuiltins`, installs the default
+  ## set of builtin functions.
+  if spec != nil:
+    result = ConfigState(st: scope, spec: some(spec))
+  else:
+    result = ConfigState(st: scope)
+
+  if addBuiltins:
+    result.addDefaultBuiltins()
+
+
 
 when isMainModule:
   proc tT(s: string): Con4mType =

@@ -22,9 +22,54 @@ when (NimMajor, NimMinor) >= (1, 7):
 const breakMsg = "b"
 const continueMsg = "c"
 
+proc pushRuntimeFrame(s: ConfigState) {.inline.} =
+  s.frames.add(RuntimeFrame())
+
+proc popRuntimeFrame(s: ConfigState): RuntimeFrame {.inline.} =
+  return s.frames.pop()
+
+# We are assuming here that the analysis is done so that we'd
+# statically swat down any use-before-def situations.
+proc runtimeVarLookup*(frames: VarStack, name: string): Box =
+  var n = frames.len()
+
+  while n != 0:
+    n = n - 1
+    let frame = frames[n]
+    if name in frame:
+      return frame[name]
+  unreachable
+
+proc runtimeVarLookup(s: ConfigState, name: string): Box {.inline.} =
+  return runtimeVarLookup(s.frames, name)
+
+
+proc runtimeVarSet*(state: ConfigState,
+                    scope: Con4mScope,
+                    name: string,
+                    val: Box) =
+  var
+    n = state.frames.len()
+    s = scope
+
+  while n != 0:
+    n = n - 1
+    let frame = state.frames[n]
+    if name in s.entries:
+      frame[name] = val
+      return
+    if s.parent.isSome():
+      s = s.parent.get()
+    else:
+      break
+
+  # If we didn't find this already set in a parent scope,
+  # then it must have been a local.
+  state.frames[n][name] = val
+
 proc getFuncBySig(s: ConfigState,
-                     name: string,
-                     t: Con4mType): Option[FuncTableEntry] =
+                  name: string,
+                  t: Con4mType): Option[FuncTableEntry] =
   if not s.funcTable.contains(name):
     return
 
@@ -71,15 +116,12 @@ proc sCallBuiltin(s: ConfigState,
     scopeOpt = n.scopes
 
   if n.scopes.isSome():
-    let scopes = n.scopes.get()
-    attrs = scopes.attrs
-    vars = scopes.vars
+    attrs = n.scopes.get().attrs
   else:
     attrs = nil
-    vars = nil
 
   try:
-    return fInfo.builtin(a1, attrs, vars)
+    return fInfo.builtin(a1, attrs, s.frames)
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
@@ -97,7 +139,6 @@ proc sCall*(s: ConfigState,
   ##
   ## The node parameter will be the node from the caller's scope, if
   ## present.
-
 
   let optFunc = s.getFuncBySig(name, tinfo)
 
@@ -165,22 +206,22 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## apporpriate after, if any.
   case node.kind
   of NodeFuncDef:
-    # Exception handling here is just a mechanism for returns
-    # to break linear control flow
-    try:
-      node.children[2].evalNode(s)
-    except:
-      return
+    unreachable
   of NodeReturn:
     if node.children.len() != 0:
       node.children[0].evalNode(s)
-      let
-        scope = node.getVarScope()
-        entry = scope.getEntry("result").get()
-      entry.value = some(node.children[0].value)
-  of NodeBody, NodeElse, NodeActuals:
+      s.runtimeVarSet(node.getVarScope(), "result", node.children[0].value)
+    raise newException(Con4mError, "return")
+  of NodeActuals, NodeBody:
     node.evalKids(s)
     node.value = box(false)
+  of NodeElse:
+    s.pushRuntimeFrame()
+    try:
+      node.evalKids(s)
+      node.value = box(false)
+    finally:
+      discard s.popRuntimeFrame()
   of NodeSimpLit, NodeEnum, NodeFormalList:
     # Values for these were all assigned when we checked the tree, so we
     # don't have to do anything on this pass.
@@ -196,7 +237,11 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeContinue:
     raise newException(ValueError, continueMsg)
   of NodeSection:
-    node.children[^1].evalNode(s)
+    s.pushRuntimeFrame()
+    try:
+      node.children[^1].evalNode(s)
+    finally:
+      discard s.popRuntimeFrame()
   of NodeAttrAssign:
     # We already created scope objects in the tree checking phase.
     # And, we only allow identifiers on the LHS right now. So we just
@@ -218,7 +263,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       fatal("Attempt to assign to a read-only field", node)
 
     entry.value = some(node.children[1].value)
-
   of NodeVarAssign:
     # Variables are specific to the run, so this is a little simpler.
     node.children[1].evalNode(s)
@@ -226,10 +270,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     let
       name = node.children[0].getTokenText()
       scope = node.getVarScope()
-      entry = scope.lookup(name).get()
 
-    entry.value = some(node.children[1].value)
-
+    s.runtimeVarSet(scope, name, node.children[1].value)
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let
@@ -238,12 +280,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       scope = node.getVarScope()
 
     for i, item in tup:
-      let
-        name = node.children[i].getTokenText()
-        entry = scope.lookup(name).get()
+      let name = node.children[i].getTokenText()
 
-      entry.value = some(item)
-
+      s.runtimeVarSet(scope, name, item)
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -260,7 +299,11 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.children[0].evalNode(s)
     node.value = node.children[0].value
     if unbox[bool](node.value):
-      node.children[1].evalNode(s)
+      s.pushRuntimeFrame()
+      try:
+        node.children[1].evalNode(s)
+      finally:
+        discard s.popRuntimeFrame()
   of NodeFor:
     # This is pretty straightforward, other than the fact that we use
     # exceptions to implement `break` / `continue` per the above
@@ -269,7 +312,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       scope = node.getVarScope()
       name = node.children[0].getTokenText()
     var
-      entry = scope.lookup(name).get()
       incr, start, stop, i: int
 
     node.children[1].evalNode(s)
@@ -284,18 +326,16 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     else:
       incr = -1
 
-    # Do this at runtime, just to ensure this works in all cases.
-    # Particularly, we might serialize this info, and if it gets
-    # editable, we still need this locked to prevent infinite loops.
-    entry.locked = true
+    s.pushRuntimeFrame()
     while i != (stop + incr):
-      entry.value = some(box(i))
+      s.runtimeVarSet(scope, name, box(i))
       i = i + incr
       try:
         node.children[3].evalNode(s)
       except ValueError:
         case getCurrentExceptionMsg()
         of breakMsg:
+          discard s.popRuntimeFrame()
           return
         of continueMsg:
           # continue breaks out of the current statement block,
@@ -303,6 +343,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
           continue
         else:
           raise
+    discard s.popRuntimeFrame()
   of NodeUnary:
     # The only unary ops we support are + and -, and only on numerics,
     # so + actually is a noop.
@@ -349,7 +390,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       containerBox = node.children[0].value
       indexBox = node.children[1].value
 
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeTuple:
       let
         l = unboxList[Box](containerBox)
@@ -408,7 +449,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       args.add(kid.value)
 
     let ret = s.sCall(fname, args, funcSig, some(node.children[0]))
-
     if ret.isSome():
       node.value = ret.get()
   of NodeDictLit:
@@ -463,7 +503,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = node.children[1].value
   of NodeNe:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `!=`)
     of TypeFloat: cmpWork(float, `!=`)
     of TypeBool: cmpWork(bool, `!=`)
@@ -471,81 +511,81 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     else: unreachable
   of NodeCmp:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `==`)
     of TypeFloat: cmpWork(float, `==`)
     of TypeBool: cmpWork(bool, `==`)
     of TypeString: cmpWork(string, `==`)
-    else: unreachable
+    else:
+      unreachable
   of NodeGte:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `>=`)
     of TypeFloat: cmpWork(float, `>=`)
     of TypeString: cmpWork(string, `>=`)
     else: unreachable
   of NodeLte:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `<=`)
     of TypeFloat: cmpWork(float, `<=`)
     of TypeString: cmpWork(string, `<=`)
     else: unreachable
   of NodeGt:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `>`)
     of TypeFloat: cmpWork(float, `>`)
     of TypeString: cmpWork(string, `>`)
     else: unreachable
   of NodeLt:
     node.evalKids(s)
-    case node.children[0].typeInfo.kind
+    case node.children[0].getBaseType()
     of TypeInt: cmpWork(int, `<`)
     of TypeFloat: cmpWork(float, `<`)
     of TypeString: cmpWork(string, `<`)
     else: unreachable
   of NodePlus:
     node.evalKids(s)
-    case node.typeInfo.kind
+    case node.getBaseType()
     of TypeInt: binaryOpWork(int, int, `+`)
     of TypeFloat: binaryOpWork(float, float, `+`)
     of TypeString: binaryOpWork(string, string, `&`)
     else: unreachable
   of NodeMinus:
     node.evalKids(s)
-    case node.typeInfo.kind
+    case node.getBaseType()
     of TypeInt: binaryOpWork(int, int, `-`)
     of TypeFloat: binaryOpWork(float, float, `-`)
     else: unreachable
   of NodeMod:
     node.evalKids(s)
-    case node.typeInfo.kind
+    case node.getBaseType()
     of TypeInt: binaryOpWork(int, int, `mod`)
     else: unreachable
   of NodeMul:
     node.evalKids(s)
-    case node.typeInfo.kind
+    case node.getBaseType()
     of TypeInt: binaryOpWork(int, int, `*`)
     of TypeFloat: binaryOpWork(float, float, `*`)
     else: unreachable
   of NodeDiv:
     node.evalKids(s)
-    case node.typeInfo.kind
+    case node.getBaseType()
     of TypeInt: binaryOpWork(int, float, `/`)
     of TypeFloat: binaryOpWork(float, float, `/`)
     else: unreachable
   of NodeIdentifier:
     let
-      scopes = node.getBothScopes()
       name = node.getTokenText()
+      scopes = node.getBothScopes()
       attrEntry = scopes.attrs.lookup(name)
-      varEntry = scopes.vars.lookup(name)
     try:
-      let
-        ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
-        optVal = ent.value
-      node.value = optVal.get()
+      if attrEntry.isSome():
+        node.value = attrEntry.get().value.get()
+      else:
+        node.value = s.runtimeVarLookup(name)
     except:
       fatal("Variable was referenced before assignment", node)
 
@@ -555,11 +595,14 @@ proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
   ## and type-checked.
 
   let state = node.checkTree()
-
   if node == nil:
     return
 
-  node.evalNode(state)
+  state.pushRuntimeFrame()
+  try:
+    node.evalNode(state)
+  finally:
+    discard state.popRuntimeFrame()
 
   return some(state)
 
@@ -582,19 +625,33 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
     return some((state, scopes.attrs))
 
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
+
   if args.len() != node.children[1].children.len():
     raise newException(Con4mError, "Incorrect number of arugments")
 
-  let scope = node.getVarScope()
+  let
+    scope = node.getVarScope()
+    savedFrames = s.frames
+
+  s.frames = @[]
+  s.pushRuntimeFrame()
 
   for i, idNode in node.children[1].children:
-    let
-      name = idNode.getTokenText()
-      entry = scope.lookup(name).get()
+    let name = idNode.getTokenText()
+    s.runtimeVarSet(scope, name, args[i])
 
-    entry.value = some(args[i])
+  try:
+    node.children[2].evalNode(s)
+  except Con4mError:
+    discard # Clean return
 
-  node.evalNode(s)
+  let frame = s.popRuntimeFrame()
 
-  let entry = scope.lookup("result").get()
-  return entry.value
+  s.frames = savedFrames
+
+  if "result" in frame:
+    node.value = frame["result"]
+    return some(node.value)
+  else:
+    return none(Box)
+

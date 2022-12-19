@@ -191,11 +191,14 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
   result = Con4mNode(kind: NodeCall, token: actuals.token)
 
   # Convert x.foo(blah) to foo(x, blah)
-  if lhs.kind == NodeIdentifier:
+  case lhs.kind
+  of NodeIdentifier:
     result.children.add(lhs)
-  else:
+  of NodeMember:
     result.children.add(lhs.children[1])
     actuals.children.add(lhs.children[0])
+  else:
+    unreachable
   result.children.add(actuals)
 
   # 0-arg call
@@ -688,7 +691,9 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     result.children.add(kid)
     if ctx.curTok().kind != TtComma:
       return
+    ctx.nlWatch = false
     discard ctx.consume()
+    ctx.nlWatch = true
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
   result = Con4mNode(kind: NodeBody,
@@ -696,6 +701,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
                      token: some(ctx.curTok()))
 
   while true:
+    ctx.nlWatch = true
     case ctx.curTok().kind
     of TtEOF, TtRBrace:
       return
@@ -718,6 +724,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         result.children.add(ctx.section())
       else:
         try:
+          ctx.nlWatch = true
           result.children.add(ctx.expression())
         except: parseError("Expected an assignment, block start or expression")
     of TtIf:
@@ -737,6 +744,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       # them in the main tree until the tree checking gets here, just
       # to make life a bit easier.
       if toplevel:
+        ctx.nlWatch = false
         result.children.add(ctx.fnOrCallback())
       else:
         parseError("Functions and callbacks are only allowed at the top level",

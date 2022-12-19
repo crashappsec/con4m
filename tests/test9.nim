@@ -3,25 +3,25 @@ import unittest, logging, streams
 import con4m
 
 
-let shouldblowup = """
+let blowupIfDisallowRecursion = """
 
 func fact(f) {
-  if (f == 1) {
-    return f
-  }
-  
+  if (f <= 1) {
+    result := f
+    return
+  } 
   return fact(f - 1) * f
 }
 
 x := 0
 
-for i from 1 to 5 {
+for i from 1 to 10 {
   x := fact(i)
-  echo(string(x))
+  echo(format("Fact({i}) = {x}"))
 }
 """
 
-## Shouldn't blow up
+## Shouldn't blow up ever
 let s = """
 
 func doFact(f) {
@@ -40,7 +40,7 @@ func fact(f) {
 #  return 1
 #}
 
-x := 0
+#x := 0
 
 for i from 1 to 10 {
   x := doFact(i)
@@ -52,7 +52,7 @@ test "manual inspection":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
 
   let
-    tree = parse(s.newStringStream())
+    tree = parse(blowupIfDisallowRecursion.newStringStream())
   let
     ctx = tree.evalTree().getOrElse(nil)
   check ctx != nil
