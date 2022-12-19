@@ -20,8 +20,9 @@ type
     TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma, TtPeriod,
     TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
-    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtEnum,
-    TtIdentifier, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit
+    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtSof, TtEof, ErrorTok,
+    ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -40,10 +41,11 @@ type
     ## user.
     NodeBody, NodeAttrAssign, NodeVarAssign, NodeUnpack, NodeSection,
     NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue,
-    NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex, NodeActuals,
-    NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit, NodeOr,
-    NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt, NodePlus,
-    NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier
+    NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex,
+    NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit,
+    NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
+    NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier,
+    NodeFuncDef, NodeFormalList
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -66,6 +68,11 @@ type
       retType*: Con4mType
     of TypeTVar:
       varNum*: int
+      link*: Option[Con4mType]
+      linksin*: seq[Con4mType]
+      cycle*: bool
+      constraints*: set[Con4mTypeKind]
+
     else: discard
 
   ListBox*[T] = ref object
@@ -96,13 +103,25 @@ type
   STEntry* = ref object
     ## Internal; our symbol table data structure.
     tInfo*: Con4mType
-    value*: Option[Box]
+    value*: Option[Box]    ## Note that local variables are not stored in an
+                           ## STEntry during execution.  Before execution, this
+                           ## value can hold default values.
+                           ##
+                           ## Attribute scopes persist though, so we *do* use this
+                           ## variable at runtime for attributes.
     override*: Option[Box] ## If a command-line flag or the program set this
                            ## value at runtime, then it will automatically be
                            ## re-set after the configuration file loads.
     subscope*: Option[Con4mScope]
     firstDef*: Option[Con4mNode]
     locked*: bool
+
+  ## Frame for holding local variables.  In a call, the caller
+  ## does the pushing and popping.
+  RuntimeFrame* = TableRef[string, Box]
+  ##
+  ##
+  VarStack* = seq[RuntimeFrame]
 
   Con4mScope* = ref object
     ## Internal. It represents a single scope, only containing a
@@ -113,7 +132,7 @@ type
   Con4mSectInfo* = seq[(string, Con4mScope)]
 
   CurScopes* = object
-    ## At any point in a Con4m program, there are to different scopes,
+    ## At any point in a Con4m program, there are two different scopes,
     ## variable scopes (which change whenever we enter a new block
     ## like in a for loop), and attribute scopes, which nest based on
     ## sections.
@@ -125,8 +144,14 @@ type
     ## This helps make it easy for users to do computation, without
     ## polluting the runtime namespace, or making validation more
     ## challenging.
+    ##
+    ## We also keep a separate record of globals, even though they are
+    ## a parent of var scopes, because in user-defined functions, we
+    ## are going to disallow access to global variables, so we want to
+    ## be able to give good error messages.
     attrs*: Con4mScope
     vars*: Con4mScope
+    globals*: Con4mScope
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
@@ -136,15 +161,27 @@ type
     parent*: Option[Con4mNode] # Root is nil
     typeInfo*: Con4mType
     scopes*: Option[CurScopes]
+    formalScopes*: Option[CurScopes]
     value*: Box
 
-  BuiltInFn* = ((seq[Box], Con4mScope, Con4mScope) -> Option[Box])
+  BuiltInFn* = ((seq[Box], Con4mScope, VarStack, Con4mScope) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
+  ## VarStack is defined below, but is basically just a seq of tables.
 
-  BuiltInInfo* = ref object
-    ## Internal; table entry for the registered builtin functions.
-    fn*: BuiltInFn
+  FnType* = enum
+    FnBuiltIn, FnUserDefined, FnCallback
+
+  FuncTableEntry* = ref object
     tinfo*: Con4mType
+    name*: string # Need for cycle check error message.
+    onStack*: bool
+    cannotCycle*: bool
+    locked*: bool
+    case kind*: FnType
+    of FnBuiltIn:
+      builtin*: BuiltInFn
+    of FnUserDefined, FnCallback:
+      impl*: Option[Con4mNode]
 
   FieldValidator* = (seq[string], Box) -> bool
   ## This isn't implemented fully yet, but will allow the program to
@@ -187,7 +224,6 @@ type
     ## The spec will be used to ensure the config file is well formed
     ## enough to work with, by comparing it against the results of
     ## execution.
-    builtins*: OrderedTable[string, seq[BuiltInInfo]]
     secSpecs*: OrderedTable[string, SectionSpec]
     globalAttrs*: FieldAttrs
     customTopLevelOk*: bool
@@ -209,7 +245,13 @@ type
     st*: Con4mScope
     spec*: Option[ConfigSpec]
     errors*: seq[string]
-    builtins*: Table[string, seq[BuiltInInfo]]
+    funcTable*: Table[string, seq[FuncTableEntry]]
+    funcOrigin*: bool
+    waitingForTypeInfo*: bool
+    moduleFuncDefs*: seq[FuncTableEntry] # Typed.
+    moduleFuncImpls*: seq[Con4mNode] # Passed from the parser.
+    secondPass*: bool
+    frames*: VarStack
 
 let
   # These are just shared instances for types that aren't
@@ -222,10 +264,18 @@ let
   bottomType* = Con4mType(kind: TypeBottom)
 
 template unreachable*() =
+  let info = instantiationInfo()
+
   ## We use this to be explicit about case statements that are
   ## necessary to cover all cases, but should be impossible to
   ## execute.  That way, if they do execute, we know we made a
   ## mistake.
-  doAssert(false, "Reached code the programmer thought was unreachable :(")
+  try:
+    echo "Reached code that was supposed to be unreachable.  Stack trace:"
+    echo "REACHED UNREACHABLE CODE AT: " & info.filename & ":" & $(info.line)
+    echo getStackTrace()
+    doAssert(false, "Reached code the programmer thought was unreachable :(")
+  finally:
+    discard
 
 

@@ -11,11 +11,11 @@ import unicode
 import strformat
 
 import ./types
-import unicodeident
 import st
 import typecheck
+
+import unicodeident
 import dollars
-import builtins
 
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
@@ -28,8 +28,6 @@ proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
   ## generally they shouldn't need it in the top-level space.
   return ConfigSpec(customTopLevelOk: customTopLevelOk)
 
-# TODO: merge these default with buildSectionSpec in codegen, using a
-# const variable.
 proc addGlobalAttr*(spec: ConfigSpec,
                     name: string,
                     con4mType: string,
@@ -64,7 +62,7 @@ proc addGlobalAttr*(spec: ConfigSpec,
   let validator: Option[FieldValidator] = if v != nil: some(v)
                                           else: none(FieldValidator)
   let attr = AttrSpec(doc: doc,
-                      attrType: con4mType, # TODO, make this an actual type
+                      attrType: con4mType,
     defaultVal: default,
     lockOnWrite: lockOnWrite,
     required: required,
@@ -174,7 +172,7 @@ proc addAttr*(section: SectionSpec,
   let validator: Option[FieldValidator] = if v != nil: some(v)
                                           else: none(FieldValidator)
   let attr = AttrSpec(doc: doc,
-                      attrType: con4mType, # TODO, make this an actual type
+                      attrType: con4mType,
     defaultVal: default,
     lockOnWrite: lockOnWrite,
     required: required,
@@ -320,7 +318,6 @@ proc requiredFieldCheck(ctx: ConFigState,
           entry = opt.get()
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
-        assert scope.lookupAttr(key).isSome()
 
 proc validateScope(ctx: ConfigState,
                    scope: Con4mScope,
@@ -421,20 +418,6 @@ proc validateConfig*(config: ConfigState): bool =
   if config.errors.len() == 0:
     return true
 
-proc newConfigState*(scope: Con4mScope,
-                     spec: ConfigSpec = nil,
-                     addBuiltins: bool = true
-                    ): ConfigState =
-  ## Return a new `ConfigState` object, optionally setting the `spec`
-  ## object, and, if requested via `addBuiltins`, installs the default
-  ## set of builtin functions.
-  if spec != nil:
-    result = ConfigState(st: scope, spec: some(spec))
-  else:
-    result = ConfigState(st: scope)
-
-  if addBuiltins:
-    result.addDefaultBuiltins()
 
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   ## This interface allows you to look up individual fields to get

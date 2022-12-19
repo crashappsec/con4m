@@ -1,7 +1,12 @@
-unify	con4m/typecheck.html#unify,Con4mType,Con4mType	typecheck: unify(t1: Con4mType; t2: Con4mType): Con4mType	
+getBaseType	con4m/typecheck.html#getBaseType,Con4mType	typecheck: getBaseType(t: Con4mType): Con4mTypeKind	
+getBaseType	con4m/typecheck.html#getBaseType,Con4mNode	typecheck: getBaseType(node: Con4mNode): Con4mTypeKind	
+unify	con4m/typecheck.html#unify,Con4mType,Con4mType	typecheck: unify(param1: Con4mType; param2: Con4mType): Con4mType	
 isBottom	con4m/typecheck.html#isBottom,Con4mType	typecheck: isBottom(t: Con4mType): bool	
 isBottom	con4m/typecheck.html#isBottom,Con4mType,Con4mType	typecheck: isBottom(t1, t2: Con4mType): bool	
-unify	con4m/typecheck.html#unify,Con4mNode,Con4mNode	typecheck: unify(n1, n2: Con4mNode): Con4mType	
+unify	con4m/typecheck.html#unify,Con4mNode,Con4mNode	typecheck: unify(n2, n1: Con4mNode): Con4mType	
 isBottom	con4m/typecheck.html#isBottom,Con4mNode	typecheck: isBottom(n: Con4mNode): bool	
 isBottom	con4m/typecheck.html#isBottom,Con4mNode,Con4mNode	typecheck: isBottom(n1, n2: Con4mNode): bool	
 isBottom	con4m/typecheck.html#isBottom,Con4mNode,Con4mType	typecheck: isBottom(n: Con4mNode; t: Con4mType): bool	
+hasTypeVar	con4m/typecheck.html#hasTypeVar,Con4mType	typecheck: hasTypeVar(t: Con4mType): bool	
+copyType	con4m/typecheck.html#copyType,Con4mType	typecheck: copyType(t: Con4mType): Con4mType	
+reprSig	con4m/typecheck.html#reprSig,string,Con4mType	typecheck: reprSig(name: string; t: Con4mType): string	

@@ -12,6 +12,10 @@ To access everything, it generates pages for each module inside the package, eve
 
 Until then, I do plan on writing a more in-depth developer intro, but for now, the autogen docs for the main interface, which should meet most needs, is pretty thorough.  See the [documentation for `con4m()`](con4m/codegen.html).
 
+## Notes not in the auto-gen docs
+- Con4m assumes that one thread only will compile the state, and that no other threads will attempt to use the config until it's loaded.
+- Con4m currently does NOT support the same callback being called from multiple threads in parallel.  If this might happen, you should put a lock around each callback.  We may support this in the future; some of the work is done toward it.
+
 Or, the jumble of auto-gened docs are [available starting here](con4m.html).
 
 ## More Info

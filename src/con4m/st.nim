@@ -45,9 +45,14 @@ proc newListType*(contained: Con4mType): Con4mType =
 proc newDictType*(keyType, valType: Con4mType): Con4mType =
   return Con4mType(kind: TypeDict, keyType: keyType, valType: valType)
 
-proc newTypeVar*(): Con4mType =
+proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
   tVarNum.inc()
-  return Con4mType(kind: TypeTVar, varNum: tVarNum)
+  return Con4mType(kind: TypeTVar,
+                   varNum: tVarNum,
+                   link: none(Con4mType),
+                   linksin: @[],
+                   cycle: false,
+                   constraints: constraints)
 
 # This should only be called when we know that the type variable
 # is going to be unique for the context.  It's mainly meant
@@ -68,17 +73,19 @@ proc newProcType*(params: seq[Con4mType],
 
 proc newRootScope*(): CurScopes =
   result = CurScopes(vars: Con4mScope(), attrs: Con4mScope())
+  result.globals = result.vars
 
 proc getEntry*(scope: Con4mScope, name: string): Option[STEntry] =
   if not scope.entries.contains(name): return
   return some(scope.entries[name])
-
+import dollars
 proc addEntry*(scope: Con4mScope,
                name: string,
                firstDef: Option[Con4mNode] = none(Con4mNode),
                tinfo = newTypeVar(),
                subscope: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
+    echo "That's already there.  Returning none"
     return
   let e = STEntry(tinfo: tinfo, firstDef: firstDef)
   if subscope:
@@ -187,7 +194,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       oneArgType: Con4mType
 
     n = unicode.strip(n[1 .. ^1])
-    
+
     while true:
       (oneArgType, n) = n.toCon4mType(tv)
       argTypes.add(oneArgType)
@@ -209,12 +216,12 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       va: bool
 
     n = unicode.strip(n[1 .. ^1])
-    
+
     if n[0] != '(':
       raise newException(ValueError, "Function types are written: f() -> ...")
-      
-    n = unicode.strip(n[1 .. ^1])      
-    
+
+    n = unicode.strip(n[1 .. ^1])
+
     if n[0] == ')':
       n = unicode.strip(n[1 .. ^1])
     else:

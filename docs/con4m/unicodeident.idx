@@ -2,7 +2,7 @@ isPatternSyntax	con4m/unicodeident.html#isPatternSyntax,Rune	unicodeident: isPat
 isPatternWhiteSpace	con4m/unicodeident.html#isPatternWhiteSpace,Rune	unicodeident: isPatternWhiteSpace(r: Rune): bool	
 isOtherIdStart	con4m/unicodeident.html#isOtherIdStart,Rune	unicodeident: isOtherIdStart(r: Rune): bool	
 isOtherIdContinue	con4m/unicodeident.html#isOtherIdContinue,Rune	unicodeident: isOtherIdContinue(r: Rune): bool	
-isIdStart	con4m/unicodeident.html#isIdStart,Rune	unicodeident: isIdStart(r: Rune): bool	
+isIdStart	con4m/unicodeident.html#isIdStart,Rune,bool	unicodeident: isIdStart(r: Rune; underscoreOk: bool = true): bool	
 isIdContinue	con4m/unicodeident.html#isIdContinue,Rune	unicodeident: isIdContinue(r: Rune): bool	
 isValidId	con4m/unicodeident.html#isValidId,string	unicodeident: isValidId(s: string): bool	
 readRune	con4m/unicodeident.html#readRune,Stream	unicodeident: readRune(s: Stream): Rune	

@@ -127,7 +127,7 @@ window.addEventListener('DOMContentLoaded', main);
 
   </div>
   &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/codegen.nim#L1"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/codegen.nim#L1"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/codegen.nim#L1" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -140,7 +140,7 @@ class="link-seesrc" target="_blank">Source</a>
   <div class="section" id="6">
 <h1><a class="toc-backref" href="#6">Imports</a></h1>
 <dl class="item">
-<a class="reference external" href="con4m_types.html">con4m_types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="spec.html">spec</a>, <a class="reference external" href="box.html">box</a>, <a class="reference external" href="eval.html">eval</a>, <a class="reference external" href="parse.html">parse</a>
+<a class="reference external" href="types.html">types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="spec.html">spec</a>, <a class="reference external" href="eval.html">eval</a>, <a class="reference external" href="parse.html">parse</a>
 </dl></div>
 <div class="section" id="18">
 <h1><a class="toc-backref" href="#18">Templates</a></h1>
@@ -185,7 +185,7 @@ This is our main wrapper that bundles up parsing, checking, evaling, ... It both
 
 <h2><a class="toc-backref" id="the-nimattr-command" href="#the-nimattr-command">The <tt class="docutils literal"><span class="pre"><span class="Identifier">attr</span></span></tt> command</a></h2><p>This command takes the following arguments:</p>
 <ol class="simple"><li>The name of the attribute, as an identifier.  Note that it's okay to use Nim keywords here, they get automatically quoted (this also happens when they are used in sections).  This is required.</li>
-<li>The Con4m type to enforce for the attribute, as a string literal. (required).</li>
+<li>The Con4m type to enforce for the attribute (NOT the Nim type). This is required.</li>
 <li><tt class="docutils literal"><span class="pre"><span class="Identifier">defaultVal</span></span></tt>, a keyword parameter specifying what value to set if the user does not provide something for this attribute, when defining a section.</li>
 <li><tt class="docutils literal"><span class="pre"><span class="Identifier">required</span></span></tt>, a keyword parameter indicating whether con4m should throw an error when this is not present in a section. If you set <tt class="docutils literal"><span class="pre"><span class="Identifier">defaultVal</span></span></tt>, this will be ignored.  This defaults to <tt class="docutils literal"><span class="pre"><span class="Identifier">true</span></span></tt> if not provided.</li>
 <li><tt class="docutils literal"><span class="pre"><span class="Identifier">lockOnWrite</span></span></tt>, a keyword parameter indicating that, once a configuration has set this value, it may not be written in future config file loads that reuse the same underlying configuration state.  This allows you to provide internal &quot;configuration&quot; parameters within your program (by reading your config from a string in memory, for instance), without risking them getting clobbered.  This defaults to false.</li>
@@ -197,9 +197,9 @@ This is our main wrapper that bundles up parsing, checking, evaling, ... It both
 <p>Note that Nim allows you to use <tt class="docutils literal"><span class="pre"><span class="Identifier">attribute_name</span></span></tt> and <tt class="docutils literal"><span class="pre"><span class="Identifier">attributeName</span></span></tt> interchangably.  However, con4m does NOT, it will only accept the name you provide. </p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/codegen.nim#L1138"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/codegen.nim#L1215"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/codegen.nim#L1138" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/codegen.nim#L1215" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -211,9 +211,9 @@ class="link-seesrc" target="_blank">Source</a>
 <p>This is particularly useful when we want to add our own custom built-in functions.  We may change those to be part of the macro system.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/codegen.nim#L1125"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/codegen.nim#L1202"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/codegen.nim#L1125" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/codegen.nim#L1202" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -227,7 +227,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-09 02:22:43 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-19 06:48:56 UTC</small>
       </div>
     </div>
   </div>

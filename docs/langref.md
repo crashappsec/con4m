@@ -12,19 +12,25 @@ Major lexical elements are  are all-uppercase here. Minor ones are inlined, in d
 are ignored in most expression contexts (they’re only used to separate statements where there would otherwise be ambiguity).
 
 ```ebnf
-top           ::= (coreBodyItems | enum) *
-body          ::= coreBodyItems *
-coreBodyItems ::= attrAssign | varAssign | section | ifStmt | forStmt |
-                   whileStmt | breakStmt | expression (NL|";")+
-enum          ::= "enum" ID ("," ID)*		   
-attrAssign    ::= ID ("="|":") expression (NL|";")+
+top           ::= (sectBodyItems | enum | fnOrCallback) *
+body          ::= sectBodyItems *
+coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
+                   breakStmt | returnStmt | expression (NL|";")+
+sectBodyItems ::= coreBodyItems | section
+enum          ::= "enum" ID ("," ID)*	   
+attrAssign    ::= ID("." ID)* ("="|":") expression (NL|";")+
 varAssign     ::= ID ("," ID)* ":=" expression (NL|";")+
 section       ::= ID (STR | ID)* "{" body "}" 
 ifStmt        ::= "if" expression "{" body "}" 
                   ("elif" expression "{" body "}")*
 	 	              ("else" expression "{" body" "}")?
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
+continueStmt  ::= "continue" (";")?
 breakStmt     ::= "break" (";")?
+returnStmt    ::= "return" expression? (";")?
+fnOrCallback  ::= ("func" | "callback") ID formalSpec fnBody
+formalSpec    ::= "(" (ID? ("," ID)* ")"
+fnBody        ::= "{" coreBodyItems* "}"
 # Note that literal matches before accessExpr, so a lparen at an exprStart
 # or in a unaryExpr will be treated as a tuple literal.
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr

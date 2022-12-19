@@ -107,7 +107,24 @@ window.addEventListener('DOMContentLoaded', main);
 <li>
   <a class="reference reference-toplevel" href="#12" id="62">Procs</a>
   <ul class="simple simple-toc-section">
-      <ul class="simple nested-toc-section">isBottom
+      <ul class="simple nested-toc-section">copyType
+      <li><a class="reference" href="#copyType%2CCon4mType"
+    title="copyType(t: Con4mType): Con4mType">copyType(t: Con4mType): Con4mType</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">getBaseType
+      <li><a class="reference" href="#getBaseType%2CCon4mNode"
+    title="getBaseType(node: Con4mNode): Con4mTypeKind">getBaseType(node: Con4mNode): Con4mTypeKind</a></li>
+  <li><a class="reference" href="#getBaseType%2CCon4mType"
+    title="getBaseType(t: Con4mType): Con4mTypeKind">getBaseType(t: Con4mType): Con4mTypeKind</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">hasTypeVar
+      <li><a class="reference" href="#hasTypeVar%2CCon4mType"
+    title="hasTypeVar(t: Con4mType): bool">hasTypeVar(t: Con4mType): bool</a></li>
+
+  </ul>
+  <ul class="simple nested-toc-section">isBottom
       <li><a class="reference" href="#isBottom%2CCon4mNode%2CCon4mNode"
     title="isBottom(n1, n2: Con4mNode): bool">isBottom(n1, n2: Con4mNode): bool</a></li>
   <li><a class="reference" href="#isBottom%2CCon4mNode"
@@ -120,11 +137,16 @@ window.addEventListener('DOMContentLoaded', main);
     title="isBottom(t: Con4mType): bool">isBottom(t: Con4mType): bool</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">reprSig
+      <li><a class="reference" href="#reprSig%2Cstring%2CCon4mType"
+    title="reprSig(name: string; t: Con4mType): string">reprSig(name: string; t: Con4mType): string</a></li>
+
+  </ul>
   <ul class="simple nested-toc-section">unify
       <li><a class="reference" href="#unify%2CCon4mNode%2CCon4mNode"
-    title="unify(n1, n2: Con4mNode): Con4mType">unify(n1, n2: Con4mNode): Con4mType</a></li>
+    title="unify(n2, n1: Con4mNode): Con4mType">unify(n2, n1: Con4mNode): Con4mType</a></li>
   <li><a class="reference" href="#unify%2CCon4mType%2CCon4mType"
-    title="unify(t1: Con4mType; t2: Con4mType): Con4mType">unify(t1: Con4mType; t2: Con4mType): Con4mType</a></li>
+    title="unify(param1: Con4mType; param2: Con4mType): Con4mType">unify(param1: Con4mType; param2: Con4mType): Con4mType</a></li>
 
   </ul>
 
@@ -135,7 +157,7 @@ window.addEventListener('DOMContentLoaded', main);
 
   </div>
   &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L1"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L1"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L1" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -148,92 +170,154 @@ class="link-seesrc" target="_blank">Source</a>
   <div class="section" id="6">
 <h1><a class="toc-backref" href="#6">Imports</a></h1>
 <dl class="item">
-<a class="reference external" href="con4m_types.html">con4m_types</a>, <a class="reference external" href="st.html">st</a>
+<a class="reference external" href="types.html">types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="dollars.html">dollars</a>
 </dl></div>
 <div class="section" id="12">
 <h1><a class="toc-backref" href="#12">Procs</a></h1>
 <dl class="item">
-<div id="isBottom,Con4mNode,Con4mNode">
-<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode%2CCon4mNode"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n1</span><span class="Other">,</span> <span class="Identifier">n2</span><span class="Other">:</span> <a href="con4m_types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<div id="copyType,Con4mType">
+<dt><pre><span class="Keyword">proc</span> <a href="#copyType%2CCon4mType"><span class="Identifier">copyType</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L93"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L237"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L93" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L237" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="getBaseType,Con4mNode">
+<dt><pre><span class="Keyword">proc</span> <a href="#getBaseType%2CCon4mNode"><span class="Identifier">getBaseType</span></a><span class="Other">(</span><span class="Identifier">node</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Con4mTypeKind"><span class="Identifier">Con4mTypeKind</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L53"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L53" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="getBaseType,Con4mType">
+<dt><pre><span class="Keyword">proc</span> <a href="#getBaseType%2CCon4mType"><span class="Identifier">getBaseType</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Con4mTypeKind"><span class="Identifier">Con4mTypeKind</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L44"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L44" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="hasTypeVar,Con4mType">
+<dt><pre><span class="Keyword">proc</span> <a href="#hasTypeVar%2CCon4mType"><span class="Identifier">hasTypeVar</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L217"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L217" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="isBottom,Con4mNode,Con4mNode">
+<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode%2CCon4mNode"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n1</span><span class="Other">,</span> <span class="Identifier">n2</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L211"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L211" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="isBottom,Con4mNode">
-<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n</span><span class="Other">:</span> <a href="con4m_types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L90"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L208"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L90" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L208" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="isBottom,Con4mNode,Con4mType">
-<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n</span><span class="Other">:</span> <a href="con4m_types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">;</span> <span class="Identifier">t</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mNode%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">n</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">;</span> <span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L96"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L214"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L96" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L214" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="isBottom,Con4mType,Con4mType">
-<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mType%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">t1</span><span class="Other">,</span> <span class="Identifier">t2</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mType%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">t1</span><span class="Other">,</span> <span class="Identifier">t2</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L84"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L202"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L84" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L202" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="isBottom,Con4mType">
-<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#isBottom%2CCon4mType"><span class="Identifier">isBottom</span></a><span class="Other">(</span><span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L81"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L199"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L81" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L199" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="reprSig,string,Con4mType">
+<dt><pre><span class="Keyword">proc</span> <a href="#reprSig%2Cstring%2CCon4mType"><span class="Identifier">reprSig</span></a><span class="Other">(</span><span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">t</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L278"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L278" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="unify,Con4mNode,Con4mNode">
-<dt><pre><span class="Keyword">proc</span> <a href="#unify%2CCon4mNode%2CCon4mNode"><span class="Identifier">unify</span></a><span class="Other">(</span><span class="Identifier">n1</span><span class="Other">,</span> <span class="Identifier">n2</span><span class="Other">:</span> <a href="con4m_types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#unify%2CCon4mNode%2CCon4mNode"><span class="Identifier">unify</span></a><span class="Other">(</span><span class="Identifier">n2</span><span class="Other">,</span> <span class="Identifier">n1</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L87"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L205"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L87" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L205" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="unify,Con4mType,Con4mType">
-<dt><pre><span class="Keyword">proc</span> <a href="#unify%2CCon4mType%2CCon4mType"><span class="Identifier">unify</span></a><span class="Other">(</span><span class="Identifier">t1</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">;</span> <span class="Identifier">t2</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#Con4mType"><span class="Identifier">Con4mType</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#unify%2CCon4mType%2CCon4mType"><span class="Identifier">unify</span></a><span class="Other">(</span><span class="Identifier">param1</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">;</span> <span class="Identifier">param2</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a> {.<span class="Identifier">inline</span><span class="Other">,</span>
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/typecheck.nim#L13"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/typecheck.nim#L64"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L13" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/typecheck.nim#L64" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -247,7 +331,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-09 02:22:43 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-19 06:48:55 UTC</small>
       </div>
     </div>
   </div>

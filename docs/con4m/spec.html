@@ -157,16 +157,19 @@ window.addEventListener('DOMContentLoaded', main);
     title="getConfigVar(state: ConfigState; field: string): Option[Box]">getConfigVar(state: ConfigState; field: string): Option[Box]</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">lockConfigVar
+      <li><a class="reference" href="#lockConfigVar%2CConfigState%2Cstring"
+    title="lockConfigVar(state: ConfigState; field: string): bool">lockConfigVar(state: ConfigState; field: string): bool</a></li>
+
+  </ul>
   <ul class="simple nested-toc-section">newConfigSpec
       <li><a class="reference" href="#newConfigSpec%2Cbool"
     title="newConfigSpec(customTopLevelOk: bool = false): ConfigSpec">newConfigSpec(customTopLevelOk: bool = false): ConfigSpec</a></li>
 
   </ul>
-  <ul class="simple nested-toc-section">newConfigState
-      <li><a class="reference" href="#newConfigState%2CCon4mScope%2CConfigSpec%2Cbool"
-    title="newConfigState(scope: Con4mScope; spec: ConfigSpec = nil;
-               addBuiltins: bool = true): ConfigState">newConfigState(scope: Con4mScope; spec: ConfigSpec = nil;
-               addBuiltins: bool = true): ConfigState</a></li>
+  <ul class="simple nested-toc-section">setOverride
+      <li><a class="reference" href="#setOverride%2CConfigState%2Cstring%2CBox"
+    title="setOverride(state: ConfigState; field: string; value: Box): bool">setOverride(state: ConfigState; field: string; value: Box): bool</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">validateConfig
@@ -182,7 +185,7 @@ window.addEventListener('DOMContentLoaded', main);
 
   </div>
   &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L1"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L1"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L1" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -195,30 +198,30 @@ class="link-seesrc" target="_blank">Source</a>
   <div class="section" id="6">
 <h1><a class="toc-backref" href="#6">Imports</a></h1>
 <dl class="item">
-<a class="reference external" href="con4m_types.html">con4m_types</a>, <a class="reference external" href="unicodeident.html">unicodeident</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="typecheck.html">typecheck</a>, <a class="reference external" href="dollars.html">dollars</a>, <a class="reference external" href="builtins.html">builtins</a>
+<a class="reference external" href="types.html">types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="typecheck.html">typecheck</a>, <a class="reference external" href="unicodeident.html">unicodeident</a>, <a class="reference external" href="dollars.html">dollars</a>
 </dl></div>
 <div class="section" id="12">
 <h1><a class="toc-backref" href="#12">Procs</a></h1>
 <dl class="item">
 <div id="addAttr,SectionSpec,string,string,Option[Box],bool,bool,FieldValidator,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#addAttr%2CSectionSpec%2Cstring%2Cstring%2COption%5BBox%5D%2Cbool%2Cbool%2CFieldValidator%2Cstring"><span class="Identifier">addAttr</span></a><span class="Other">(</span><span class="Identifier">section</span><span class="Other">:</span> <a href="con4m_types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">con4mType</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span>
-             <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="con4m_types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="con4m_types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">;</span> <span class="Identifier">required</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">;</span>
-             <span class="Identifier">lockOnWrite</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">;</span> <span class="Identifier">v</span><span class="Other">:</span> <a href="con4m_types.html#FieldValidator"><span class="Identifier">FieldValidator</span></a> <span class="Other">=</span> <span class="Keyword">nil</span><span class="Other">;</span>
+<dt><pre><span class="Keyword">proc</span> <a href="#addAttr%2CSectionSpec%2Cstring%2Cstring%2COption%5BBox%5D%2Cbool%2Cbool%2CFieldValidator%2Cstring"><span class="Identifier">addAttr</span></a><span class="Other">(</span><span class="Identifier">section</span><span class="Other">:</span> <a href="types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">con4mType</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span>
+             <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">;</span> <span class="Identifier">required</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">;</span>
+             <span class="Identifier">lockOnWrite</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">;</span> <span class="Identifier">v</span><span class="Other">:</span> <a href="types.html#FieldValidator"><span class="Identifier">FieldValidator</span></a> <span class="Other">=</span> <span class="Keyword">nil</span><span class="Other">;</span>
              <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 Same as <tt class="docutils literal"><span class="pre"><span class="Identifier">globalAddAttr</span></span></tt>, except for the first parameter being the section to put the attr into, not the global state.  We're going to fix this :(
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L157"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L155"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L157" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L155" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="addGlobalAttr,ConfigSpec,string,string,Option[Box],bool,bool,FieldValidator,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#addGlobalAttr%2CConfigSpec%2Cstring%2Cstring%2COption%5BBox%5D%2Cbool%2Cbool%2CFieldValidator%2Cstring"><span class="Identifier">addGlobalAttr</span></a><span class="Other">(</span><span class="Identifier">spec</span><span class="Other">:</span> <a href="con4m_types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">con4mType</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span>
-                   <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="con4m_types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="con4m_types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">;</span> <span class="Identifier">required</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">;</span>
-                   <span class="Identifier">lockOnWrite</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">;</span> <span class="Identifier">v</span><span class="Other">:</span> <a href="con4m_types.html#FieldValidator"><span class="Identifier">FieldValidator</span></a> <span class="Other">=</span> <span class="Keyword">nil</span><span class="Other">;</span>
+<dt><pre><span class="Keyword">proc</span> <a href="#addGlobalAttr%2CConfigSpec%2Cstring%2Cstring%2COption%5BBox%5D%2Cbool%2Cbool%2CFieldValidator%2Cstring"><span class="Identifier">addGlobalAttr</span></a><span class="Other">(</span><span class="Identifier">spec</span><span class="Other">:</span> <a href="types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">con4mType</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span>
+                   <span class="Identifier">default</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">;</span> <span class="Identifier">required</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">;</span>
+                   <span class="Identifier">lockOnWrite</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">;</span> <span class="Identifier">v</span><span class="Other">:</span> <a href="types.html#FieldValidator"><span class="Identifier">FieldValidator</span></a> <span class="Other">=</span> <span class="Keyword">nil</span><span class="Other">;</span>
                    <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -227,31 +230,31 @@ class="link-seesrc" target="_blank">Source</a>
 <p>The <tt class="docutils literal"><span class="pre"><span class="Identifier">doc</span></span></tt> parameter is for doc strings, which is currently not used, but will be used down the road when we merge in supporting command-line argument handling, and start providing help messages.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L33"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L31"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L33" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L31" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="addSection,SectionSpec,string,string,seq[string],seq[string],bool">
-<dt><pre><span class="Keyword">proc</span> <a href="#addSection%2CSectionSpec%2Cstring%2Cstring%2Cseq%5Bstring%5D%2Cseq%5Bstring%5D%2Cbool"><span class="Identifier">addSection</span></a><span class="Other">(</span><span class="Identifier">parent</span><span class="Other">:</span> <a href="con4m_types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
+<dt><pre><span class="Keyword">proc</span> <a href="#addSection%2CSectionSpec%2Cstring%2Cstring%2Cseq%5Bstring%5D%2Cseq%5Bstring%5D%2Cbool"><span class="Identifier">addSection</span></a><span class="Other">(</span><span class="Identifier">parent</span><span class="Other">:</span> <a href="types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
                 <span class="Identifier">requiredSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span>
-                <span class="Identifier">validSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">allowCustomAttrs</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a> {.
+                <span class="Identifier">validSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">allowCustomAttrs</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 Same as above, but just delegates to the associatedSpec field to allow these things to be chained.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L143"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L141"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L143" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L141" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="addSection,ConfigSpec,string,string,seq[string],seq[string],bool">
-<dt><pre><span class="Keyword">proc</span> <a href="#addSection%2CConfigSpec%2Cstring%2Cstring%2Cseq%5Bstring%5D%2Cseq%5Bstring%5D%2Cbool"><span class="Identifier">addSection</span></a><span class="Other">(</span><span class="Identifier">spec</span><span class="Other">:</span> <a href="con4m_types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
+<dt><pre><span class="Keyword">proc</span> <a href="#addSection%2CConfigSpec%2Cstring%2Cstring%2Cseq%5Bstring%5D%2Cseq%5Bstring%5D%2Cbool"><span class="Identifier">addSection</span></a><span class="Other">(</span><span class="Identifier">spec</span><span class="Other">:</span> <a href="types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">doc</span><span class="Other">:</span> <span class="Identifier">string</span> <span class="Other">=</span> <span class="StringLit">&quot;&quot;</span><span class="Other">;</span>
                 <span class="Identifier">requiredSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span>
-                <span class="Identifier">validSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">allowCustomAttrs</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a> {.
+                <span class="Identifier">validSubSecs</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">string</span><span class="Other">]</span> <span class="Other">=</span> <span class="Operator">@</span><span class="Other">[</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">allowCustomAttrs</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="types.html#SectionSpec"><span class="Identifier">SectionSpec</span></a> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -280,26 +283,26 @@ Adds information about the section to our specification.  Note that currently, w
 <p>The <tt class="docutils literal"><span class="pre"><span class="Identifier">doc</span></span></tt> parameter is for doc strings, which is currently not used, but will be used down the road when we merge in supporting command-line argument handling, and start providing help messages.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L75"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L73"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L75" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L73" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="addSpec,ConfigState,ConfigSpec">
-<dt><pre><span class="Keyword">proc</span> <a href="#addSpec%2CConfigState%2CConfigSpec"><span class="Identifier">addSpec</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="con4m_types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">spec</span><span class="Other">:</span> <a href="con4m_types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#addSpec%2CConfigState%2CConfigSpec"><span class="Identifier">addSpec</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">spec</span><span class="Other">:</span> <a href="types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 Associate a ConfigSpec object with an existing state object.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L487"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L512"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L487" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L512" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="getAllSectionSTs,ConfigState">
-<dt><pre><span class="Keyword">proc</span> <a href="#getAllSectionSTs%2CConfigState"><span class="Identifier">getAllSectionSTs</span></a><span class="Other">(</span><span class="Identifier">ctx</span><span class="Other">:</span> <a href="con4m_types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Con4mSectInfo</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#getAllSectionSTs%2CConfigState"><span class="Identifier">getAllSectionSTs</span></a><span class="Other">(</span><span class="Identifier">ctx</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Con4mSectInfo</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 <p>Returns a sequence of tuples, one per section provided in a config file that's been read in.</p>
@@ -307,14 +310,14 @@ class="link-seesrc" target="_blank">Source</a>
 <p>Where scope is an object of type <tt class="docutils literal"><span class="pre"><span class="Identifier">Con4mScope</span></span></tt></p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L472"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L497"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L472" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L497" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="getConfigVar,ConfigState,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#getConfigVar%2CConfigState%2Cstring"><span class="Identifier">getConfigVar</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="con4m_types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">field</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="con4m_types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> {.
+<dt><pre><span class="Keyword">proc</span> <a href="#getConfigVar%2CConfigState%2Cstring"><span class="Identifier">getConfigVar</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">field</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -322,14 +325,27 @@ class="link-seesrc" target="_blank">Source</a>
 <p>The contents of <tt class="docutils literal"><span class="pre"><span class="Identifier">field</span></span></tt> use standard object dot notation.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L436"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L422"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L436" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L422" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="lockConfigVar,ConfigState,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#lockConfigVar%2CConfigState%2Cstring"><span class="Identifier">lockConfigVar</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">field</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+This prevents the variable from being written.  Returns false if the variable doesn't exist in the scope, which will generally imply a programmer error.
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L444"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L444" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="newConfigSpec,bool">
-<dt><pre><span class="Keyword">proc</span> <a href="#newConfigSpec%2Cbool"><span class="Identifier">newConfigSpec</span></a><span class="Other">(</span><span class="Identifier">customTopLevelOk</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span>
+<dt><pre><span class="Keyword">proc</span> <a href="#newConfigSpec%2Cbool"><span class="Identifier">newConfigSpec</span></a><span class="Other">(</span><span class="Identifier">customTopLevelOk</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">false</span><span class="Other">)</span><span class="Other">:</span> <a href="types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span>
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -337,30 +353,30 @@ class="link-seesrc" target="_blank">Source</a>
 <p>By default, the top-level section will not accept new user-defined attributes added to it.  Users get variables, so generally they shouldn't need it in the top-level space.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L21"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L21"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L21" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
-<div id="newConfigState,Con4mScope,ConfigSpec,bool">
-<dt><pre><span class="Keyword">proc</span> <a href="#newConfigState%2CCon4mScope%2CConfigSpec%2Cbool"><span class="Identifier">newConfigState</span></a><span class="Other">(</span><span class="Identifier">scope</span><span class="Other">:</span> <a href="con4m_types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">;</span> <span class="Identifier">spec</span><span class="Other">:</span> <a href="con4m_types.html#ConfigSpec"><span class="Identifier">ConfigSpec</span></a> <span class="Other">=</span> <span class="Keyword">nil</span><span class="Other">;</span>
-                    <span class="Identifier">addBuiltins</span><span class="Other">:</span> <span class="Identifier">bool</span> <span class="Other">=</span> <span class="Identifier">true</span><span class="Other">)</span><span class="Other">:</span> <a href="con4m_types.html#ConfigState"><span class="Identifier">ConfigState</span></a> {.
-    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">]</span><span class="Other">,</span>
-    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ReadEnvEffect</span><span class="Other">,</span> <span class="Identifier">ExecIOEffect</span><span class="Other">,</span> <span class="Identifier">ReadIOEffect</span><span class="Other">,</span> <span class="Identifier">RootEffect</span><span class="Other">]</span></span>.}</pre></dt>
+<div id="setOverride,ConfigState,string,Box">
+<dt><pre><span class="Keyword">proc</span> <a href="#setOverride%2CConfigState%2Cstring%2CBox"><span class="Identifier">setOverride</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">field</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">value</span><span class="Other">:</span> <a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-Return a new <tt class="docutils literal"><span class="pre"><span class="Identifier">ConfigState</span></span></tt> object, optionally setting the <tt class="docutils literal"><span class="pre"><span class="Identifier">spec</span></span></tt> object, and, if requested via <tt class="docutils literal"><span class="pre"><span class="Identifier">addBuiltins</span></span></tt>, installs the default set of builtin functions.
+<p>This indicates that, while the executing config file might be able to write to a field, some higher power (generally a command-line flag) is going to clobber with this value, as soon as execution completes.</p>
+<p>Will return false if the specified variable doesn't exist in the scope, which will generally imply a programmer error.</p>
+
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L421"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L459"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L421" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L459" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="validateConfig,ConfigState">
-<dt><pre><span class="Keyword">proc</span> <a href="#validateConfig%2CConfigState"><span class="Identifier">validateConfig</span></a><span class="Other">(</span><span class="Identifier">config</span><span class="Other">:</span> <a href="con4m_types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
-    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#validateConfig%2CConfigState"><span class="Identifier">validateConfig</span></a><span class="Other">(</span><span class="Identifier">config</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">bool</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 <p>This function validates the executed configuration file against the specification set in the <tt class="docutils literal"><span class="pre"><span class="Identifier">config</span></span></tt> variable (which you should have already set with <tt class="docutils literal"><span class="pre"><span class="Identifier">addSpec</span><span class="Punctuation">(</span><span class="Punctuation">)</span></span></tt>).</p>
@@ -368,7 +384,7 @@ class="link-seesrc" target="_blank">Source</a>
 <p>This makes it easier you to decide whether you want to error outright, or overcome the mistakes somehow, as we don't bail on our work in the middle of it.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.1/src/con4m/spec.nim#L365"
+href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/spec.nim#L365"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/spec.nim#L365" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -384,7 +400,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-09 02:22:43 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-19 06:48:56 UTC</small>
       </div>
     </div>
   </div>

@@ -49,7 +49,7 @@ proc boxDict*[K, V](value: TableRef[K, V]): Box =
   ## because Nim doesn't seem to be able to distinguish between this
   ## and box[T] with dictionaries, even though they're generic types
   ## w/ two type parameters :)
-  let empty = if len(value) != 0: false else: true  
+  let empty = if len(value) != 0: false else: true
   var dictbox = DictBox[K, V](contents: value, empty: empty)
   return Box(kind: TypeDict, d: cast[RootRef](dictbox))
 
@@ -87,3 +87,5 @@ proc unboxDict*[K, V](box: Box): TableRef[K, V] =
   # Don't instantiate something generic where the LHS is dotted.
   #
   # echo getDict[string, int](n)
+
+
