@@ -10,6 +10,8 @@ import strformat
 import strutils
 import streams
 import tables
+import box
+import json
 
 import ./types
 
@@ -126,17 +128,6 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
     fmtNt($(self.token.get()))
   of NodeIdentifier: fmtT("Identifier")
 
-proc `$`*(self: Box): string =
-  case self.kind
-  of TypeBool: return $(self.b)
-  of TypeString: return self.s
-  of TypeInt: return $(self.i)
-  of TypeFloat: return $(self.f)
-  of TypeList: return "some list"
-  of TypeDict: return "some dict"
-  of TypeProc: return "some proc"
-  else: unreachable
-
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   const
     typeTemplate = " -- type: {typeRepr}"
@@ -154,6 +145,100 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     let subitem = item.`$`(i + 2)
     result = indentTemplate.fmt()
 
+proc `$`*(b: Box): string =
+  case b.kind
+  of TypeBool:
+    return $(unbox[bool](b))
+  of TypeString:
+    return $(unbox[string](b))
+  of TypeInt:
+    return $(unbox[int](b))
+  of TypeFloat:
+    return $(unbox[float](b))
+  of TypeList:
+    var
+      subs: seq[string]
+      l = unboxList[Box](b)
+    for item in l:
+      subs.add($(item))
+    return "[" & subs.join(", ") & "]"
+  of TypeDict:
+    let sig = b.getDictSignature()
+    if sig.keyType.kind == TypeString:
+      var
+        d = unboxDict[string, Box](b)
+        pairs: seq[string] = @[]
+
+      for k, v in d:
+        pairs.add(k & " : " & $(v))
+      return "{" & pairs.join(", ") & "}"
+    else:
+      var
+        d = unboxDict[int, Box](b)
+        pairs: seq[string] = @[]
+
+      for k, v in d:
+        pairs.add($(k) & " : " & $(v))
+      return "{" & pairs.join(", ") & "}"
+  else:
+    return "<repr unsupported>"
+
+proc boxToJson*(b: Box): string =
+  case b.kind
+  of TypeBool, TypeInt, TypeFloat:
+    return $(b)
+  of TypeString:
+    return escapeJson(unbox[string](b))
+  of TypeList:
+    var
+      items: seq[string] = @[]
+      l = unboxList[Box](b)
+    for item in l:
+      items.add(item.boxToJson())
+    return "[" & items.join(", ") & "]"
+  of TypeDict:
+    var
+      items: seq[string] = @[]
+      sig = b.getDictSignature()
+    if sig.keyType.kind == TypeString:
+      var
+        d = unboxDict[string, Box](b)
+        pairs: seq[string] = @[]
+      for k, v in d:
+        pairs.add(fmt""""{k}" : {boxToJson(v)}""")
+      return "{ " & pairs.join(", ") & " }"
+    else:
+      var
+        d = unboxDict[int, Box](b)
+        pairs: seq[string] = @[]
+      for k, v in d:
+        pairs.add(fmt""""{k}" : {boxToJson(v)}""")
+      return "{ " & pairs.join(", ") & " }"
+  else:
+    unreachable
+
+## The indent field doesn't try to pretty-print unless it is set
+## to a positive value.
+const nullstr = "\"null\""
+proc scopeToJson*(scope: Con4mScope): string =
+  var kvpairs: seq[string] = @[]
+  var b: Box
+
+  for k, st in scope.entries:
+    if st.subscope.isSome():
+      kvpairs.add(fmt""""{k}" : scopeToJson(st.subscope.get())""")
+      continue
+    if st.override.isSome():
+      b = st.override.get()
+    elif st.value.isSome():
+      b = st.value.get()
+    else:
+      kvpairs.add(fmt""""{k}" : {nullstr}""")
+      continue
+    kvpairs.add(fmt(""""{k}" : {b.boxToJson()}"""))
+
+  return "{ " & kvpairs.join(", ") & "}"
+
 proc `$`*(scope: Con4mScope, indent: int): string =
   let pad = " ".repeat(indent + 2)
 
@@ -161,7 +246,7 @@ proc `$`*(scope: Con4mScope, indent: int): string =
     let s = $(v.tInfo)
     result = "{result}{pad}{k}: {s}".fmt()
     if v.value.isSome():
-      result = "{result} {$(v.value.get())}\n".fmt()
+      result = "{result} = {$(v.value.get())}\n".fmt()
     else:
       result = "{result} (no value)\n".fmt()
 

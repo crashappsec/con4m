@@ -50,7 +50,8 @@ proc runtimeVarLookup*(frames: VarStack,
         if entry.value.isSome():
           return entry.value.get()
         else:
-          raise newException(Con4mError, fmt"Variable {name} used before being defined")
+          raise newException(Con4mError,
+              fmt"Variable {name} used before being defined")
     if s.parent.isSome():
       s = s.parent.get()
     else:
@@ -433,15 +434,13 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         kt = node.children[0].typeInfo.keyType
         containerBox = node.children[0].value
         indexBox = node.children[1].value
-
       case kt.kind
       of TypeInt:
         let
           d = unboxDict[int, Box](containerBox)
           i = unbox[int](indexBox)
-
         if not d.contains(i):
-          fatal("Runtime error in config: dict key {i} not found.".fmt(), node)
+          fatal(fmt"Runtime error in config: dict key {i} not found.", node)
         node.value = d[i]
       of TypeString:
         let
@@ -475,7 +474,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = ret.get()
   of NodeDictLit:
     node.evalKids(s)
-
     case node.typeInfo.keyType.kind
     of TypeString:
       var dict = newTable[string, Box]()
@@ -485,7 +483,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
           boxedVal = kvpair.children[1].value
           s = unbox[string](boxedKey)
         dict[s] = boxedVal
-      node.value = boxDict[string, Box](dict)
+      node.value = boxDict[string, Box](dict, node.typeInfo)
     of TypeInt:
       var dict = newTable[int, Box]()
       for kvpair in node.children:
@@ -494,7 +492,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
           boxedVal = kvpair.children[1].value
           s = unbox[int](boxedKey)
         dict[s] = boxedVal
-      node.value = boxDict[int, Box](dict)
+      node.value = boxDict[int, Box](dict, node.typeInfo)
     else:
       unreachable # Should already be restricted to ints and strings
   of NodeKVPair:
@@ -504,7 +502,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     var l: seq[Box]
     for item in node.children:
       l.add(item.value)
-      node.value = boxList[Box](l)
+    node.value = boxList[Box](l)
   of NodeTupleLit:
     node.evalKids(s)
     var l: seq[Box]
@@ -629,7 +627,6 @@ proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
   return some(state)
 
 proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
-
   ## Given the config file as a string, this will load and parse the
   ## file, then execute it, returning both the state object created,
   ## as well as the top-level symbol table for attributes, both
@@ -645,6 +642,20 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
       scopes = tree.scopes.get()
 
     return some((state, scopes.attrs))
+
+proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
+  let tree = parse(filename)
+
+  if tree == nil: return none(Con4mScope)
+  tree.checkTree(s)
+
+  s.pushRuntimeFrame()
+  try:
+    tree.evalNode(s)
+  finally:
+    discard s.popRuntimeFrame()
+
+  return some(tree.scopes.get().attrs)
 
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
 

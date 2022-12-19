@@ -10,6 +10,7 @@ import streams
 import tables
 import options
 import sugar
+import macros
 
 type
   ## Enumeration of all possible lexical tokens. Should not be exposed
@@ -82,6 +83,7 @@ type
   DictBox*[K, V] = ref object
     contents*: TableRef[K, V]
     empty*: bool
+    tinfo*: Con4mType
 
   Box* = ref object
     ## This type is used in cases where a specification allows
@@ -90,6 +92,9 @@ type
     ##
     ## The macros remove the need to explicitly use boxing when you do
     ## pre-specify types.
+    ##
+    ## Note that tuples in Nim are represented as lists of boxes,
+    ## so this isn't its own option from the nim-side.
     case kind*: Con4mTypeKind
     of TypeBool: b*: bool
     of TypeString: s*: string
@@ -278,4 +283,15 @@ template unreachable*() =
   finally:
     discard
 
+macro getOrElseActual(x: untyped, y: untyped): untyped =
+  return quote do:
+    if `x`.isSome():
+      `x`.get()
+    else:
+      `y`
+
+proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
+  ## Allows us to derefenrece an Option[] type if it isSome(),
+  ## and if not, set a default value instead.
+  getOrElseActual(x, y)
 

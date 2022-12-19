@@ -14,19 +14,6 @@ import ./types
 import lex
 import dollars
 
-macro getOrElseActual(x: untyped, y: untyped): untyped =
-  return quote do:
-    if `x`.isSome():
-      `x`.get()
-    else:
-      `y`
-
-proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
-  ## Allows us to derefenrece an Option[] type if it isSome(),
-  ## and if not, set a default value instead.
-  getOrElseActual(x, y)
-
-
 type Con4mError* = object of CatchableError
 
 proc fatal*(msg: string, token: Con4mToken) =
@@ -68,9 +55,14 @@ proc isSkipped(self: Con4mToken): bool =
 
 proc curTok(ctx: ParseCtx): Con4mToken {.inline.} =
   while true:
+    if ctx.curTokIx >= len(ctx.tokens):
+      return ctx.tokens[^1]
     if ctx.tokens[ctx.curTokIx].isSkipped():
-      ctx.curTokIx.inc()
-      continue
+      if ctx.curTokIx < len(ctx.tokens):
+        ctx.curTokIx.inc()
+        continue
+      else:
+        return ctx.tokens[^1]
     if ctx.nlWatch: break
     if ctx.tokens[ctx.curTokIx].kind == TtNewLine:
       ctx.curTokIx.inc()
@@ -658,7 +650,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
   result.children.add(ctx.expression())
 
   case ctx.consume().kind
-  of TtSemi, TtNewLine:
+  of TtSemi, TtNewLine, TtEOF:
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
   else:
     parseError("Newline needed after variable assignment")
@@ -676,7 +668,7 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
   result.children.add(ctx.expression())
 
   case ctx.consume().kind
-  of TtSemi, TtNewLine:
+  of TtSemi, TtNewLine, TtEOF:
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
   else:
     parseError("Newline needed after attribute assignment")
