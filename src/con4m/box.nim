@@ -44,17 +44,17 @@ proc boxList*[T](value: seq[T]): Box =
   var listbox = ListBox[T](contents: value, empty: empty)
   return Box(kind: TypeList, l: cast[RootRef](listbox))
 
-proc boxDict*[K, V](value: TableRef[K, V]): Box =
+proc boxDict*[K, V](value: TableRef[K, V], t: Con4mType): Box =
   ## Converts a Tableref to a box object.  This has to be named,
   ## because Nim doesn't seem to be able to distinguish between this
   ## and box[T] with dictionaries, even though they're generic types
   ## w/ two type parameters :)
   let empty = if len(value) != 0: false else: true
-  var dictbox = DictBox[K, V](contents: value, empty: empty)
+  var dictbox = DictBox[K, V](contents: value, empty: empty, tinfo: t)
   return Box(kind: TypeDict, d: cast[RootRef](dictbox))
 
 proc unbox*[T](box: Box): T =
-  ## Generically unboxes any data type.
+  ## Generically unboxes any primitive data type.
 
   when T is Box:
     return box
@@ -88,4 +88,7 @@ proc unboxDict*[K, V](box: Box): TableRef[K, V] =
   #
   # echo getDict[string, int](n)
 
+proc getDictSignature*(box: Box): Con4mType =
+  let d = cast[DictBox[Box, Box]](box.d)
 
+  return d.tinfo

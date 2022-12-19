@@ -99,7 +99,7 @@ proc builtinLToB*(args: seq[Box],
                   unused3: Con4mScope): Option[Box] =
   ## Cast lists of any type to booleans (testing for empty lists).
   ## Exposed as `bool(s)` by default.
-  let l = unbox[seq[Box]](args[0])
+  let l = unboxList[Box](args[0])
 
   if len(l) == 0:
     return some(box(false))
@@ -115,7 +115,7 @@ proc builtinDToB*(args: seq[Box],
 
   # Note that the key type should NOT be boxed when we unpack, but we
   # use Box to denote that we don't care about the parameter type.
-  let d = unbox[seq[(Box, Box)]](args[0])
+  let d = unboxDict[Box, Box](args[0])
 
   if len(d) == 0:
     return some(box(false))
@@ -176,7 +176,7 @@ proc builtinEcho*(args: seq[Box],
   for item in args:
     outStr = outStr & unbox[string](item)
 
-  echo outStr
+  stderr.writeLine(outStr)
 
 proc builtinEnv*(args: seq[Box],
                  unused1: Con4mScope,
@@ -213,12 +213,12 @@ proc builtinEnvAll*(args: seq[Box],
                     unused3: Con4mScope): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
-  var s = newTable[string, string]()
+  var s = newTable[string, Box]()
 
   for (k, v) in envPairs():
-    s[k] = v
+    s[k] = box(v)
 
-  return some(boxDict[string, string](s))
+  return some(boxDict[string, Box](s, toCon4mType("{ string : string }")))
 
 proc builtinStrip*(args: seq[Box],
                    unused1: Con4mScope,
@@ -411,7 +411,7 @@ proc builtInListLen*(args: seq[Box],
                      unused2: VarStack,
                      unused3: Con4mScope): Option[Box] =
   ## Returns the number of elements in the list.
-  var list = unbox[seq[Box]](args[0])
+  var list = unboxList[Box](args[0])
 
   return some(box(len(list)))
 
@@ -429,9 +429,49 @@ proc builtInDictLen*(args: seq[Box],
                      unused2: VarStack,
                      unused3: Con4mScope): Option[Box] =
   ## Returns the number of k,v pairs in a dictionary.
-  var dict = unbox[TableRef[Box, Box]](args[0])
+  var dict = unboxDict[Box, Box](args[0])
 
   return some(box(len(dict)))
+
+proc builtInStrDictKeys*(args: seq[Box],
+                         unused1: Con4mScope,
+                         unused2: VarStack,
+                         unused3: Con4mScope): Option[Box] =
+  var
+    dict = unboxDict[string, Box](args[0])
+    keys: seq[Box] = @[]
+
+  for k, _ in dict:
+    keys.add(box(k))
+
+  return some(boxList[Box](keys))
+
+proc builtInIntDictKeys*(args: seq[Box],
+                         unused1: Con4mScope,
+                         unused2: VarStack,
+                         unused3: Con4mScope): Option[Box] =
+  var
+    dict = unboxDict[int, Box](args[0])
+    keys: seq[Box] = @[]
+
+  for k, _ in dict:
+    keys.add(box(k))
+
+  return some(boxList[Box](keys))
+
+proc builtInPad*(args: seq[Box],
+                 unused1: Con4mScope,
+                 unused2: VarStack,
+                 unused3: Con4mScope): Option[Box] =
+  let
+    topad = unbox[string](args[0])
+    width = unbox[int](args[1])
+
+  if len(topad) >= width:
+    return some(box(topad))
+
+  return some(box(topad & repeat(' ', width - len(topad))))
+
 
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
@@ -612,6 +652,9 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("len", builtInListLen, "f([@x]) -> int")
   s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
   s.newBuiltIn("format", builtInFormat, "f(string) -> string")
+  s.newBuiltIn("keys", builtInStrDictKeys, "f({string : @x}) -> [string]")
+  s.newBuiltIn("keys", builtInIntDictKeys, "f({int : @x}) -> [int]")
+  s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
 
   when defined(posix):
     s.newBuiltIn("run", builtinCmd, "f(string) -> string")

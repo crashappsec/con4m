@@ -647,6 +647,52 @@ proc buildTypeDecls(ctx: MacroState): NimNode =
 
   return defList
 
+proc con4mTypeToNodes(t: Con4mType): NimNode =
+  case t.kind
+  of TypeInt:
+    return quote do: intType
+  of TypeFloat:
+    return quote do: floatType
+  of TypeBool:
+    return quote do: boolType
+  of TypeString:
+    return quote do: stringType
+  of TypeBottom:
+    return quote do: bottomType
+  of TypeList:
+    let itemTypeNode = con4mTypeToNodes(t.itemType)
+    return quote do:
+      Con4mType(kind: TypeList, itemType: `itemTypeNode`)
+  of TypeDict:
+    let
+      ktNode = con4mTypeToNodes(t.keyType)
+      vtNode = con4mTypeToNodes(t.valType)
+    return quote do:
+        Con4mType(kind: TypeDict, keyType: `ktNode`, valType: `vtNode`)
+  of TypeTuple:
+    var
+      itemTypesNodes = nnkBracket.newTree()
+      seqNodes = nnkPrefix.newTree(newIdentNode("@"), itemTypesNodes)
+    
+    for item in t.itemTypes:
+      itemTypesNodes.add(con4mTypeToNodes(item))
+    return quote do:
+      Con4mType(kind: TypeTuple, itemTypes: `seqNodes`)
+  of TypeTvar:
+    if t.link.isSome():
+      return con4mTypeToNodes(t.link.get())
+    else:
+      let varnum = newLit(t.varNum)
+      return quote do:
+          Con4mType(kind: TypeTVar,
+                    varNum: `varnum`,
+                    link: none(Con4mType),
+                    linksin: @[],
+                    cycle: false,
+                    constraints: {})
+  else:
+    error("Cannot box dictionary values of that type")
+    
 proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   ## When the config file parser loads up fields, it does not have any
   ## notion of what the "right" type is for each attribute. In some
@@ -667,7 +713,7 @@ proc handleBoxing(t: Con4mType, v: NimNode): NimNode =
   of TypeList:
     return nnkCall.newTree(newIdentNode("boxList"), v)
   of TypeDict:
-    return nnkCall.newTree(newIdentNode("boxDict"), v)
+    return nnkCall.newTree(newIdentNode("boxDict"), v, con4mTypeToNodes(t))
   of TypeTuple:
     # We just box tuples using the generic box; there's only one type parameter not two.
     return nnkCall.newTree(newIdentNode("box"), v)
