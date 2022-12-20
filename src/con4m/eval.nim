@@ -84,9 +84,7 @@ proc runtimeVarSet*(state: ConfigState,
     else:
       break
 
-  # If we didn't find this already set in a parent scope,
-  # then it must have been a local.
-  state.frames[n][name] = val
+  raise newException(Con4mError, fmt"{name} not found in scope at runtime")
 
 proc getFuncBySig(s: ConfigState,
                   name: string,
@@ -647,6 +645,7 @@ proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
   let tree = parse(filename)
 
   if tree == nil: return none(Con4mScope)
+  s.errors = @[]
   tree.checkTree(s)
 
   s.pushRuntimeFrame()

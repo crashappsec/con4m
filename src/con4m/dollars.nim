@@ -226,7 +226,7 @@ proc scopeToJson*(scope: Con4mScope): string =
 
   for k, st in scope.entries:
     if st.subscope.isSome():
-      kvpairs.add(fmt""""{k}" : scopeToJson(st.subscope.get())""")
+      kvpairs.add(fmt""""{k}" : {scopeToJson(st.subscope.get())}""")
       continue
     if st.override.isSome():
       b = st.override.get()

@@ -85,7 +85,6 @@ proc addEntry*(scope: Con4mScope,
                tinfo = newTypeVar(),
                subscope: bool = false): Option[STEntry] =
   if scope.entries.contains(name):
-    echo "That's already there.  Returning none"
     return
   let e = STEntry(tinfo: tinfo, firstDef: firstDef)
   if subscope:
