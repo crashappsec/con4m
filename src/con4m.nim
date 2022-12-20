@@ -56,7 +56,8 @@ when defined(testCases):
     export dollars
 
 when isMainModule:
-  import os, parseopt, options, streams, con4m/dollars, json
+  import os, parseopt, options, streams, strutils, strformat, json
+  import con4m/dollars
 
   proc showResults(fstream: Stream,
                    scope:
@@ -72,17 +73,55 @@ when isMainModule:
     else:
       echo parseJson(scope.scopeTojson()).pretty()
 
+  proc printCompilerError(fname: string, msg: string, debug: bool) =
+    let
+      parts = msg.split(":")
+      me = getAppFileName().splitPath().tail
+      f = msg.find("(thrown")
+
+    var modmsg: string
+
+    if len(parts) > 2 and f == -1:
+      modmsg = msg
+    else:
+      let f2 = msg.find("): ") + 4
+
+      modmsg = if (len(parts) > 2) and (f == -1): msg
+               else: msg[0 ..< f].strip() & " " & msg[f2 .. ^1]
+
+    stderr.writeLine(fmt"{me}:{fname}:{modmsg}")
+
+    if len(parts) > 2:
+      let
+        line = parseInt(parts[0]) - 1
+        offset = parseInt(parts[1])
+        f = newFileStream(fname, fmRead)
+        src = f.readAll()
+        lines = src.split("\n")
+        pad = repeat(' ', offset + 2)
+
+      stderr.writeLine("  " & lines[line])
+      stderr.writeline(pad & "^")
+    if debug:
+      raise
+
   proc showHelp() {.noreturn.} =
     echo """
-con4m [-ahv] [--help] [--verbose] [--ascii] [--o:outfile] first.config ...
+con4m [flags] first.config ...
       Evaluates your configuration file, dumping a JSON string with the results.
 
-      Writes to standard output.  If multiple config files are provided, 
+      Writes to standard output by default.  If multiple config files are provided, 
       they are executed 'stacked', in command-line order.
-      The -a / --ascii flag outputs in text instead of JSON.
 
       Note that this interface currently does not support callbacks,
       and loads the default functions only. 
+
+      FLAGS:
+      -a, --ascii              Output text instead of JSON
+      -v, --verbose            Output (to stderr) additional information.
+      -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
+      -d, --debug              Throw NIM exceptions instead of printing error messages
+      -h, --help               This help message      
 """
 
     quit()
@@ -93,12 +132,13 @@ con4m [-ahv] [--help] [--verbose] [--ascii] [--o:outfile] first.config ...
     conffiles: seq[string] = @[]
     verbose: bool = false
     ascii: bool = false
+    debug: bool = false
     outstream: Stream
 
 
   for kind, k, v in getopt(argv,
-                           {'h', 'v', 'a'},
-                           @["help", "verbose", "ascii"]):
+                           {'h', 'v', 'a', 'd'},
+                           @["help", "verbose", "ascii", "debug"]):
     case kind
     of cmdArgument:
       conffiles.add(k)
@@ -106,6 +146,8 @@ con4m [-ahv] [--help] [--verbose] [--ascii] [--o:outfile] first.config ...
       case k
       of "help", "h":
         showHelp()
+      of "debug", "d":
+        debug = true
       of "verbose", "v":
         verbose = true
       of "outfile", "o":
@@ -135,7 +177,12 @@ con4m [-ahv] [--help] [--verbose] [--ascii] [--o:outfile] first.config ...
   var
     state: ConfigState
     scope: Con4mScope
+    opt: Option[(ConfigState, Con4mScope)]
+
+  try:
     opt = evalConfig(conffiles[0])
+  except:
+    printCompilerError(conffiles[0], getCurrentExceptionMsg(), debug)
 
   if opt.isNone():
     echo "Failed to load: " & conffiles[0]
@@ -148,9 +195,19 @@ con4m [-ahv] [--help] [--verbose] [--ascii] [--o:outfile] first.config ...
 
   # Now, load the rest of the conf files, using the same scope.
   for filename in conffiles[1 .. ^1]:
+    var scopeOpt: Option[Con4mScope]
+
     if verbose:
       echo "Loading config file: " & filename
-    let scopeOpt = state.stackConfig(filename)
+    try:
+      scopeOpt = state.stackConfig(filename)
+    except:
+      printCompilerError(filename, getCurrentExceptionMsg(), debug)
+
+    if scopeOpt.isNone():
+      echo "Failed to load: " & filename
+      quit()
+
     scope = scopeOpt.get()
 
     if verbose or filename == conffiles[^1]:

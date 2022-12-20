@@ -27,6 +27,11 @@ import typecheck
 import box
 import dollars
 
+proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
+  let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
+
+  fatal(err & extra, n)
+  
 proc addFuncDef(s: ConfigState, fd: FuncTableEntry): bool =
   # This func detects adding duplicates; but we only need it to run on the
   # first pass.  On the second pass we want to ignore it.
@@ -54,11 +59,14 @@ proc binOpTypeCheck(node: Con4mNode,
     tv = newTypeVar(constraints)
     paramCheck = unify(node.children[0], node.children[1])
 
-  if paramCheck.isBottom(): fatal(e1, node)
+  if paramCheck.isBottom(): fatal2Type(e1,
+                                       node,
+                                       node.children[0].typeInfo,
+                                       node.children[1].typeInfo)
 
   node.typeInfo = unify(tv, paramCheck)
 
-  if node.typeInfo.isBottom(): fatal(e2, node)
+  if node.typeInfo.isBottom(): fatal2Type(e2, node, tv, paramCheck)
 
 proc printFuncTable(s: ConfigState) =
   for key, entrySet in s.funcTable:
@@ -304,7 +312,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       else:
         let t = unify(entry.tinfo, node.children[0].typeInfo)
         if t.isBottom():
-          fatal("Inconsistent return type for function", node.children[0])
+          fatal2Type("Inconsistent return type for function",
+                     node.children[0],
+                     entry.tInfo,
+                     node.children[0].typeInfo)
         entry.tinfo = t
   of NodeEnum:
     if not s.secondPass:
@@ -381,7 +392,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           "for attributes", node)
 
       if scopes.vars.lookupAttr(name).isSome():
-        fatal("Attribute {name} conflicts with existing user variable".fmt(),
+        fatal(fmt"Attribute {name} conflicts with existing user variable",
               node.children[0])
 
     let existing = scopes.attrs.lookupAttr(name)
@@ -393,10 +404,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         entry = existing.get()
         t = unify(tinfo, entry.tinfo)
       if t.isBottom():
-        let s = fmt"{`$`(tinfo)} != {`$`(entry.tinfo)}"
-
-        fatal(fmt"Unexpected error in assignment of {name}: new val {s}",
-              node.children[1])
+        fatal2Type(fmt"Attribute assignment of {name} doesn't match previous type",
+                   node.children[1], tinfo, entry.tinfo)
       else:
         entry.tinfo = t
 
@@ -441,9 +450,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
               node.children[0])
 
       if t.isBottom():
-        let s = fmt"{`$`(t)} != {`$`(entry.tinfo)}"
-        fatal(fmt"Unexpected error in assignment of {name}: new val {s}",
-              node.children[1])
+        fatal2Type(fmt"Variable assignment of {name} doesn't match " &
+                   "previous type",
+                   node.children[1], tinfo, entry.tinfo)
   of NodeUnpack:
     let
       tup = node.children[^1]
@@ -473,9 +482,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           fatal(fmt"Cannot unpack to (locked) variable {name}.",
                 node.children[i])
         if t.isBottom():
-          fatal(fmt"Type of value assigned to {name} conflicts with " &
+          fatal2Type(fmt"Type of value assigned to {name} conflicts w/ " &
             "the exiting type",
-            node.children[1])
+            node.children[1],
+            tv,
+            entry.tinfo)
         else:
           entry.tinfo = t
 

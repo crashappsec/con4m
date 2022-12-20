@@ -93,14 +93,21 @@ proc unconsume(ctx: ParseCtx) =
     ctx.curTokIx.dec()
     if not ctx.curTok().isSkipped(): return
 
-template parseError(msg: string, backup = true) =
+template parseError(msg: string, backup: bool = true) =
   let info = instantiationInfo()
 
   if backup: ctx.unconsume()
-  fatal("Parse error (thrown at " & info.filename & ":" & $(info.line) &
+  fatal(" Parse error: (thrown at " & info.filename & ":" & $(info.line) &
     "): \n" & msg,
               ctx.curTok())
 
+template parseError(msg: string, tok: Con4mToken) =
+  let info = instantiationInfo()
+  
+  fatal(" Parse error: (thrown at " & info.filename & ":" & $(info.line) &
+    "): \n" & msg,
+              tok)
+  
 # These productions need to be forward referenced.
 # Other expression productions do as well, but that gets done
 # in the exprProds template below.
@@ -200,11 +207,12 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
     return
 
   while true:
+    let tok = ctx.lookAhead() # For error reporting
     try:
       actuals.children.add(ctx.expression())
     except:
-      parseError("Invalid expression for call argument after:", false)
-
+      raise # Maybe add something here if the error message is wonky
+      
     case ctx.consume().kind
     of TtRParen:
       ctx.nlWatch = watch
@@ -261,15 +269,15 @@ proc dictLiteral(ctx: ParseCtx): Con4mNode =
     try:
       kvPair.children.add(ctx.expression())
     except:
-      parseError("Invalid dictionary key", false)
+      parseError("Expected dictionary key / value pair", kvPair.token.get())
 
     if ctx.consume().kind != TtColon:
-      parseError("Expected ':' in dict literal")
+      parseError("Expected colon in dict literal")
 
     try:
       kvPair.children.add(ctx.expression())
     except:
-      parseError("Invalid value", false)
+      parseError("Invalid dictionary syntax", false)
 
     case ctx.consume().kind
     of TtRBrace:
@@ -303,6 +311,8 @@ proc listLiteral(ctx: ParseCtx): Con4mNode =
       return
     of TtComma:
       continue
+    of TtEOF:
+      parseError("After list literal, expecting ']'")
     else:
       unreachable
 
@@ -319,7 +329,7 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
     try:
       result.children.add(ctx.expression())
     except:
-      parseError("Invalid list item", false)
+      parseError("Invalid tuple item", false)
 
     case ctx.consume().kind
     of TtRParen:
@@ -334,6 +344,8 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
         return
     of TtComma:
       continue
+    of TtEOF:
+      parseError("Expect ')' at end of tuple")
     else:
       unreachable
 
@@ -394,7 +406,7 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
 
   case ctx.curTok().kind
   of TtPlus, TtMinus:
-    parseError("Two unarys in a row not allowed")
+    parseError("Two unarys in a row not allowed", false)
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull, TtLBrace,
      TtLBracket, TtLParen:
     res = ctx.literal()
@@ -403,7 +415,7 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
   of TtNot:
     parseError("Unary before ! disallowed")
   else:
-    parseError("Invalid expression start after unary operator")
+    parseError("Invalid expression start after unary operator", false)
 
   return Con4mNode(kind: NodeUnary, token: some(tok), children: @[res])
 
@@ -419,7 +431,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtIdentifier:
     return ctx.accessExpr()
   else:
-    parseError("Invalid expression start", false)
+    parseError("Expected an expression", false)
 
 proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   let
@@ -452,9 +464,9 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
         formals.children.add(Con4mNode(kind: NodeIdentifier,
                                        token: some(param)))
       else:
-        parseError("Invalid parameter specification")
+        parseError("Invalid parameter specification", true)
   else:
-    parseError("Invalid parameter specification")
+    parseError("Invalid parameter specification", false)
 
   if ctx.consume().kind != TtLBrace:
     parseError("Expected '{' to start function body")
@@ -478,7 +490,10 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
     discard ctx.consume()
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
   else:
-    result.children.add(ctx.expression())
+    try:
+      result.children.add(ctx.expression())
+    except:
+      parseError("Expected valid expression after return")
     case ctx.consume().kind
     of TtSemi, TtNewLine:
       while ctx.curTok().kind == TtSemi: discard ctx.consume()
@@ -586,12 +601,14 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       return
 
 proc section(ctx: ParseCtx): Con4mNode =
+  var i = -1
   result = Con4mNode(kind: NodeSection, typeInfo: bottomType,
                      token: some(ctx.curTok()))
 
   result.children.add(Con4mNode(kind: NodeIdentifier,
                                token: some(ctx.consume())))
   while true:
+    i = i + 1
     let tok = ctx.consume()
     case tok.kind
     of TtStringLit:
@@ -601,7 +618,15 @@ proc section(ctx: ParseCtx): Con4mNode =
     of TtLBrace:
       break
     else:
-      parseError("Expected { or more block labels")
+      if i == 0:
+        ctx.unconsume()
+        parseError("Expected either a function call or a section start")
+      elif i == 1:
+        ctx.unconsume()
+        parseError("Either need '( before this, for func call, " &
+                   "or '{' after for section start")
+      else:
+        parseError("Expected section start or more more section tags")
 
   result.children.add(ctx.body())
   ctx.nlWatch = true
@@ -718,7 +743,9 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         try:
           ctx.nlWatch = true
           result.children.add(ctx.expression())
-        except: parseError("Expected an assignment, block start or expression")
+        except:
+          raise # Might want to special case here if we don't
+                # like the errors.
     of TtIf:
       result.children.add(ctx.ifStmt())
     of TtFor:
@@ -742,6 +769,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         parseError("Functions and callbacks are only allowed at the top level",
                    false)
     else:
+      let t = ctx.curTok()
       try:
         result.children.add(ctx.expression())
         case ctx.consume().kind
@@ -752,7 +780,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
           parseError("Expect a newline (or ;) at end of a body expression")
 
       except:
-        parseError("Expected an assignment, block start or expression")
+        parseError("Expected an assignment, unpack (no parens), block start, or expression", t)
 
 
 proc body(ctx: ParseCtx): Con4mNode =
