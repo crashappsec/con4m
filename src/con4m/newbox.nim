@@ -82,32 +82,29 @@ proc unpack*[T](box: Box, result: var T) =
 proc unpack*(box: BoxAtom): auto =
   result = box
 
-proc pack*(x: int): Box =
-  result = Box(kind: MkInt, i: x)
-
-proc pack*(x: float): Box =
-  result = Box(kind: MkFloat, f: x)
-
-proc pack*(x: bool): Box =
-  result = Box(kind: MkBool, b: x)
-
-proc pack*(x: string): Box =
-  result = Box(kind: MkStr, s: x)
-
-proc pack*(x: RootRef): Box =
-  result = Box(kind: MkObj, o: x, typename: $(x.type))
-
-proc pack*(x: seq[Box]): Box =
-  let c = ListCrate(s: newSeq[Box](), typename: $(x.type))
-  result = Box(kind: MkSeq, c: c)
-
-  for item in x:
-    c.s.add(item)
-
-proc pack*(x: SomeTableRef): Box =
-  result = Box(kind: MkObj,
-               o: TableCrate[typeof(x)](t: x),
-               typename: $(x.type))
+proc pack*[T](x: T): Box =
+  when T is SomeInteger:
+    result = Box(kind: MkInt, i: cast[int64](x))
+  elif T is SomeFloat:
+    result = Box(kind: MkFloat, f: cast[float64](x))
+  elif T is bool:
+    result = Box(kind: MkBool, b: x)
+  elif T is string:
+    result = Box(kind: MkStr, s: x)
+  elif T is RootRef:
+    result = Box(kind: MkObj, o: x, typename: $(x.type))
+  elif T is seq[Box]:
+    let c = ListCrate(s: newSeq[Box](), typename: $(x.type))
+    result = Box(kind: MkSeq, c: c)
+    for item in x:
+      c.s.add(item)
+  elif T is SomeTableRef:
+    result = Box(kind: MkObj,
+                 o: TableCrate[typeof(x)](t: x),
+                 typename: $(x.type))
+  else:
+    raise newException(ValueError, "Bad type to pack: " & $(T.type))
+    
 
 proc `$`*(x: Box): string =
   case x.kind
