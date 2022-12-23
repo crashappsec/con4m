@@ -20,11 +20,11 @@ import unicode
 import streams
 import tables
 
+import box
 import ./types
 import st
 import parse # just for fatal()
 import typecheck
-import box
 import dollars
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
@@ -332,7 +332,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         let
           entry = scopes.vars.addEntry(name, some(kid), tinfo).get()
 
-        entry.value = some(box(i))
+        entry.value = some(pack(i))
         entry.locked = true
         # Setting locked ensures that the user cannot assign to an enum;
         # it will pass the syntax check, but fail when we look at the
@@ -519,11 +519,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       node.typeInfo = stringType
       node.checkStringLit()
       var s = node.getTokenText()
-      node.value = box(s)
+      node.value = pack(s)
     of TTIntLit:
       node.typeInfo = intType
       try:
-        node.value = box(node.getTokenText().parseInt())
+        node.value = pack(node.getTokenText().parseInt())
       except:
         fatal("Number too large for int type.", node)
     of TTFloatLit:
@@ -593,13 +593,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       value = value + float(intPartI)
       value = value * pow(10.0, float(expPartI))
 
-      node.value = box(value)
+      node.value = pack(value)
     of TtTrue:
       node.typeInfo = boolType
-      node.value = box(true)
+      node.value = pack(true)
     of TtFalse:
       node.typeInfo = boolType
-      node.value = box(false)
+      node.value = pack(false)
     of TtNull:
       node.typeInfo = newTypeVar()
     else:
@@ -630,7 +630,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if v == nil:
         fatal("Tuple index must be an integer literal for " &
               "static type checking", node.children[1])
-      let i = unbox[int](v)
+      let i = unpack[int](v)
 
       if i < 0 or i >= node.children[0].typeInfo.itemTypes.len():
         fatal("Tuple index out of bounds", node.children[1])

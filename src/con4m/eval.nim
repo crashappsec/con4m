@@ -129,7 +129,6 @@ proc sCallBuiltin(s: ConfigState,
     scopeOpt = node.scopes
     n: Con4mNode = node
 
-
   while scopeOpt.isNone():
     n = n.parent.get()
     scopeOpt = n.scopes
@@ -142,7 +141,8 @@ proc sCallBuiltin(s: ConfigState,
     vars = nil
 
   try:
-    return fInfo.builtin(a1, attrs, s.frames, vars)
+    var x = fInfo.builtin(a1, attrs, s.frames, vars)
+    return x
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
@@ -170,7 +170,8 @@ proc sCall*(s: ConfigState,
 
   case fInfo.kind
   of FnBuiltIn:
-    return s.sCallBuiltin(name, a1, fInfo, nodeOpt.get())
+    var x = s.sCallBuiltin(name, a1, fInfo, nodeOpt.get())
+    return x
   else:
     let callback = fInfo.kind == FnCallback
     return s.sCallUserDef(name, a1, callback, fInfo.impl)
@@ -202,24 +203,24 @@ template cmpWork(typeWeAreComparing: typedesc, op: untyped) =
   ## comparison operators like >=.  We unbox, apply the operator, then
   ## box the result.
   let
-    v1 = unbox[typeWeAreComparing](node.children[0].value)
-    v2 = unbox[typeWeAreComparing](node.children[1].value)
+    v1 = unpack[typeWeAreComparing](node.children[0].value)
+    v2 = unpack[typeWeAreComparing](node.children[1].value)
   if op(v1, v2):
-    node.value = box(true)
+    node.value = pack(true)
   else:
-    node.value = box(false)
+    node.value = pack(false)
 
 template binaryOpWork(typeWeAreOping: typedesc,
                       returnType: typedesc,
                       op: untyped) =
   ## Similar thing, but with binary operators like +, -, /, etc.
   let
-    v1 = unbox[typeWeAreOping](node.children[0].value)
-    v2 = unbox[typeWeAreOping](node.children[1].value)
+    v1 = unpack[typeWeAreOping](node.children[0].value)
+    v2 = unpack[typeWeAreOping](node.children[1].value)
 
   var ret: returnType = cast[returnType](op(v1, v2))
 
-  node.value = box(ret)
+  node.value = pack(ret)
 
 proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
@@ -235,12 +236,12 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     raise newException(Con4mError, "return")
   of NodeActuals, NodeBody:
     node.evalKids(s)
-    node.value = box(false)
+    node.value = pack(false)
   of NodeElse:
     s.pushRuntimeFrame()
     try:
       node.evalKids(s)
-      node.value = box(false)
+      node.value = pack(false)
     finally:
       discard s.popRuntimeFrame()
   of NodeSimpLit, NodeEnum, NodeFormalList:
@@ -297,9 +298,10 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.children[^1].evalNode(s)
     let
       boxedTup = node.children[^1].value
-      tup = unboxList[Box](boxedTup)
+      tup = unpack[seq[Box]](boxedTup)
       scope = node.getVarScope()
 
+    # Each item is still a Box; we did not unbox all layers, only one.
     for i, item in tup:
       let name = node.children[i].getTokenText()
 
@@ -311,7 +313,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     # true.
     for n in node.children:
       n.evalNode(s)
-      if unbox[bool](n.value):
+      if unpack[bool](n.value):
         return
   of NodeConditional:
     # First, evaluate the conditional expression.  If it's true, then
@@ -319,7 +321,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     # where the conditional evaluates to false.
     node.children[0].evalNode(s)
     node.value = node.children[0].value
-    if unbox[bool](node.value):
+    if unpack[bool](node.value):
       s.pushRuntimeFrame()
       try:
         node.children[1].evalNode(s)
@@ -338,8 +340,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.children[1].evalNode(s)
     node.children[2].evalNode(s)
 
-    start = unbox[int](node.children[1].value)
-    stop = unbox[int](node.children[2].value)
+    start = unpack[int](node.children[1].value)
+    stop = unpack[int](node.children[2].value)
     i = start
 
     if start < stop:
@@ -349,7 +351,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     s.pushRuntimeFrame()
     while i != (stop + incr):
-      s.runtimeVarSet(scope, name, box(i))
+      s.runtimeVarSet(scope, name, pack(i))
       i = i + incr
       try:
         node.children[3].evalNode(s)
@@ -380,9 +382,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     case node.children[0].typeinfo.kind
     of TypeInt:
-      node.value = box(-unbox[int](bx))
+      node.value = pack(-unpack[int](bx))
     of TypeFloat:
-      node.value = box(-unbox[float](bx))
+      node.value = pack(-unpack[float](bx))
     else:
       unreachable
   of NodeNot:
@@ -390,7 +392,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     let bx = node.children[0].value
 
-    node.value = box(not unbox[bool](bx))
+    node.value = pack(not unpack[bool](bx))
   of NodeMember:
     # Unreachable, because I haven't implemented it yet.
     unreachable
@@ -414,15 +416,15 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     case node.children[0].getBaseType()
     of TypeTuple:
       let
-        l = unboxList[Box](containerBox)
-        i = unbox[int](indexBox)
+        l = unpack[seq[Box]](containerBox)
+        i = unpack[int](indexBox)
       if i >= l.len() or i < 0:
         fatal("Runtime error in config: array index out of bounds", node)
       node.value = l[i]
     of TypeList:
       let
-        l = unboxList[Box](containerBox)
-        i = unbox[int](indexBox)
+        l = unpack[seq[Box]](containerBox)
+        i = unpack[int](indexBox)
 
       if i >= l.len() or i < 0:
         fatal("Runtime error in config: array index out of bounds", node)
@@ -435,15 +437,15 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       case kt.kind
       of TypeInt:
         let
-          d = unboxDict[int, Box](containerBox)
-          i = unbox[int](indexBox)
+          d = unpack[Con4mDict[int, Box]](containerBox)
+          i = unpack[int](indexBox)
         if not d.contains(i):
           fatal(fmt"Runtime error in config: dict key {i} not found.", node)
         node.value = d[i]
       of TypeString:
         let
-          d = unboxDict[string, Box](containerBox)
-          s = unbox[string](indexBox)
+          d = unpack[Con4mDict[string, Box]](containerBox)
+          s = unpack[string](indexBox)
 
         if not d.contains(s):
           fatal("Runtime error in config: dict key {s} not found.".fmt(), node)
@@ -462,37 +464,27 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       fname = node.children[0].getTokenText()
       funcSig = node.children[1].typeInfo
 
-    var args: seq[Box]
+    var args: seq[Box] = @[]
 
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    let ret = s.sCall(fname, args, funcSig, some(node.children[0]))
-    if ret.isSome():
+    var ret = s.sCall(fname, args, funcSig, some(node.children[0]))
+    if ret.isSome(): 
       node.value = ret.get()
   of NodeDictLit:
     node.evalKids(s)
     case node.typeInfo.keyType.kind
-    of TypeString:
-      var dict = newTable[string, Box]()
+    of TypeString, TypeInt, TypeBool, TypeFloat:
+      var dict = newCon4mDict[Box, Box]()
       for kvpair in node.children:
         let
           boxedKey = kvpair.children[0].value
           boxedVal = kvpair.children[1].value
-          s = unbox[string](boxedKey)
-        dict[s] = boxedVal
-      node.value = boxDict[string, Box](dict, node.typeInfo)
-    of TypeInt:
-      var dict = newTable[int, Box]()
-      for kvpair in node.children:
-        let
-          boxedKey = kvpair.children[0].value
-          boxedVal = kvpair.children[1].value
-          s = unbox[int](boxedKey)
-        dict[s] = boxedVal
-      node.value = boxDict[int, Box](dict, node.typeInfo)
+        dict[boxedKey] = boxedVal
+      node.value = pack(dict)
     else:
-      unreachable # Should already be restricted to ints and strings
+      unreachable # Should already be restricted to primitive types
   of NodeKVPair:
     node.evalKids(s)
   of NodeListLit:
@@ -500,23 +492,23 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     var l: seq[Box]
     for item in node.children:
       l.add(item.value)
-    node.value = boxList[Box](l)
+    node.value = pack[seq[Box]](l)
   of NodeTupleLit:
     node.evalKids(s)
     var l: seq[Box]
     for kid in node.children:
       l.add(kid.value)
-    node.value = boxList[Box](l)
+    node.value = pack[seq[Box]](l)
   of NodeOr:
     node.children[0].evalNode(s)
     node.value = node.children[0].value
-    if not unbox[bool](node.value):
+    if not unpack[bool](node.value):
       node.children[1].evalNode(s)
       node.value = node.children[1].value
   of NodeAnd:
     node.children[0].evalNode(s)
     node.value = node.children[0].value
-    if unbox[bool](node.value):
+    if unpack[bool](node.value):
       node.children[1].evalNode(s)
       node.value = node.children[1].value
   of NodeNe:
