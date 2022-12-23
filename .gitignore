@@ -2,4 +2,3 @@ nimcache/
 nimblecache/
 htmldocs/
 tests/t[^.]*[^m]
-con4m

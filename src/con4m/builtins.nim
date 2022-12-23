@@ -25,14 +25,18 @@ when defined(posix):
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
 
+let
+  trueRet = some(pack(true))
+  falseRet = some(pack(false))
+
 proc builtinIToS*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
                   unused2 = cast[VarStack](nil),
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast integers to strings.  Exposed as `string(i)` by default.
-  let i = unbox[int](args[0])
+  let i = unpack[int](args[0])
   var s = $(i)
-  var b = box(s)
+  var b = pack(s)
 
   return some(b)
 
@@ -41,21 +45,21 @@ proc builtinBToS*(args: seq[Box],
                   unused2 = cast[VarStack](nil),
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast bools to strings.  Exposed as `string(b)` by default.
-  let b = unbox[bool](args[0])
+  let b = unpack[bool](args[0])
   if b:
-    return some(box("true"))
+    return some(pack("true"))
   else:
-    return some(box("false"))
+    return some(pack("false"))
 
 proc builtinFToS*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
                   unused2 = cast[VarStack](nil),
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast floats to strings.  Exposed as `string(f)` by default.
-  let f = unbox[float](args[0])
+  let f = unpack[float](args[0])
   var s = $(f)
 
-  return some(box(s))
+  return some(pack(s))
 
 proc builtinItoB*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -63,11 +67,11 @@ proc builtinItoB*(args: seq[Box],
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast integers to booleans (testing for non-zero).  Exposed as
   ## `bool(i)` by default.
-  let i = unbox[int](args[0])
+  let i = unpack[int](args[0])
   if i != 0:
-    return some(box(true))
+    return trueRet
   else:
-    return some(box(false))
+    return falseRet
 
 proc builtinFtoB*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -75,11 +79,11 @@ proc builtinFtoB*(args: seq[Box],
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast floats to booleans (testing for non-zero).  Exposed as
   ## `bool(f)` by default.
-  let f = unbox[float](args[0])
+  let f = unpack[float](args[0])
   if f != 0:
-    return some(box(true))
+    return trueRet
   else:
-    return some(box(false))
+    return falseRet
 
 proc builtinStoB*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -87,11 +91,11 @@ proc builtinStoB*(args: seq[Box],
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast strings to booleans (testing for empty strings).  Exposed as
   ## `bool(s)` by default.
-  let s = unbox[string](args[0])
+  let s = unpack[string](args[0])
   if s != "":
-    return some(box(true))
+    return trueRet
   else:
-    return some(box(false))
+    return falseRet
 
 proc builtinLToB*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -99,12 +103,14 @@ proc builtinLToB*(args: seq[Box],
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast lists of any type to booleans (testing for empty lists).
   ## Exposed as `bool(s)` by default.
-  let l = unboxList[Box](args[0])
+
+  # We don't care what types are in the list, so don't unbox them.
+  let l = unpack[seq[Box]](args[0])
 
   if len(l) == 0:
-    return some(box(false))
+    return falseRet
   else:
-    return some(box(true))
+    return trueRet
 
 proc builtinDToB*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -115,12 +121,12 @@ proc builtinDToB*(args: seq[Box],
 
   # Note that the key type should NOT be boxed when we unpack, but we
   # use Box to denote that we don't care about the parameter type.
-  let d = unboxDict[Box, Box](args[0])
+  let d = unpack[Con4mDict[Box, Box]](args[0])
 
   if len(d) == 0:
-    return some(box(false))
+    return falseRet
   else:
-    return some(box(true))
+    return trueRet
 
 proc builtinIToF*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -128,10 +134,10 @@ proc builtinIToF*(args: seq[Box],
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Cast an integer to a float.  Exposed as `float(i)` by default.
   let
-    i = unbox[int](args[0])
+    i = unpack[int](args[0])
     f = float(i)
 
-  return some(box(f))
+  return some(pack(f))
 
 proc builtinFToI*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -140,10 +146,10 @@ proc builtinFToI*(args: seq[Box],
   ## Cast an float to an int (truncating).  Exposed as `int(f)` by
   ## default.
   let
-    f = unbox[float](args[0])
+    f = unpack[float](args[0])
     i = int(f)
 
-  return some(box(i))
+  return some(pack(i))
 
 proc builtinSplit*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -157,11 +163,11 @@ proc builtinSplit*(args: seq[Box],
   # top-level, not the items.
 
   var
-    big = unbox[string](args[0])
-    small = unbox[string](args[1])
+    big = unpack[string](args[0])
+    small = unpack[string](args[1])
     l = big.split(small)
 
-  return some(boxList[string](l))
+  return some(pack[seq[string]](l))
 
 proc builtinEcho*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
@@ -174,7 +180,7 @@ proc builtinEcho*(args: seq[Box],
   var outStr: string
 
   for item in args:
-    outStr = outStr & unbox[string](item)
+    outStr = outStr & unpack[string](item)
 
   stderr.writeLine(outStr)
 
@@ -188,9 +194,9 @@ proc builtinEnv*(args: seq[Box],
   ## the environment variable not being set, or the variable being set
   ## to the empty string, use `builtinEnvExists`.
 
-  let arg = unbox[string](args[0])
+  let arg = unpack[string](args[0])
 
-  return some(box(getEnv(arg)))
+  return some(pack(getEnv(arg)))
 
 proc builtinEnvExists*(args: seq[Box],
                        unused1 = cast[Con4mScope](nil),
@@ -203,9 +209,9 @@ proc builtinEnvExists*(args: seq[Box],
   ## Note that this can be used to distinguish between the variable
   ## not existing, and the variable being set explicitly to the empty
   ## string.
-  let arg = unbox[string](args[0])
+  let arg = unpack[string](args[0])
 
-  return some(box(existsEnv(arg)))
+  return some(pack(existsEnv(arg)))
 
 proc builtinEnvAll*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
@@ -213,12 +219,13 @@ proc builtinEnvAll*(args: seq[Box],
                     unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
-  var s = newTable[string, Box]()
+  var s = newCon4mDict[string, string]()
 
   for (k, v) in envPairs():
-    s[k] = box(v)
+    s[k] = v
 
-  return some(boxDict[string, Box](s, toCon4mType("{ string : string }")))
+  var packed = pack(s)
+  return some(packed)
 
 proc builtinStrip*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -227,10 +234,10 @@ proc builtinStrip*(args: seq[Box],
   ## Remove leading and trailing white space from a string.
   ## Exposed by default as `strip(s)`
   let
-    arg = unbox[string](args[0])
+    arg = unpack[string](args[0])
     stripped = arg.strip()
 
-  return some(box(stripped))
+  return some(pack(stripped))
 
 proc builtinContainsStrStr*(args: seq[Box],
                             unused1 = cast[Con4mScope](nil),
@@ -239,11 +246,11 @@ proc builtinContainsStrStr*(args: seq[Box],
   ## Returns true if `s1` contains the substring `s2`.
   ## Exposed by default as `contains(s1, s2)`
   let
-    arg1 = unbox[string](args[0])
-    arg2 = unbox[string](args[1])
+    arg1 = unpack[string](args[0])
+    arg2 = unpack[string](args[1])
     res = arg1.contains(arg2)
 
-  return some(box(res))
+  return some(pack(res))
 
 proc builtinFindFromStart*(args: seq[Box],
                            unused1 = cast[Con4mScope](nil),
@@ -254,11 +261,11 @@ proc builtinFindFromStart*(args: seq[Box],
   ## `find(s1, s2)`
 
   let
-    s = unbox[string](args[0])
-    sub = unbox[string](args[1])
+    s = unpack[string](args[0])
+    sub = unpack[string](args[1])
     res = s.find(sub)
 
-  return some(box(res))
+  return some(pack(res))
 
 proc builtinSlice*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -273,10 +280,10 @@ proc builtinSlice*(args: seq[Box],
   ## usually exposed as `slice(s, start, end)`
 
   let
-    s = unbox[string](args[0])
+    s = unpack[string](args[0])
   var
-    startix = unbox[int](args[1])
-    endix = unbox[int](args[2])
+    startix = unpack[int](args[1])
+    endix = unpack[int](args[2])
 
   if startix < 0:
     startix += s.len()
@@ -284,9 +291,9 @@ proc builtinSlice*(args: seq[Box],
     endix += s.len()
 
   try:
-    return some(box(s[startix .. endix]))
+    return some(pack(s[startix .. endix]))
   except:
-    return some(box(""))
+    return some(pack(""))
 
 proc builtinSliceToEnd*(args: seq[Box],
                         unused1 = cast[Con4mScope](nil),
@@ -301,19 +308,19 @@ proc builtinSliceToEnd*(args: seq[Box],
   ## usually exposed as `slice(s, start)`
 
   let
-    s = unbox[string](args[0])
+    s = unpack[string](args[0])
     endix = s.len() - 1
   var
-    startix = unbox[int](args[1])
+    startix = unpack[int](args[1])
 
 
   if startix < 0:
     startix += s.len()
 
   try:
-    return some(box(s[startix .. endix]))
+    return some(pack(s[startix .. endix]))
   except:
-    return some(box(""))
+    return some(pack(""))
 
 proc builtInFormat*(args: seq[Box],
                     attrs: Con4mScope,
@@ -324,7 +331,7 @@ proc builtInFormat*(args: seq[Box],
   ## raised, SCall will call fatal().
 
   var
-    s = unbox[string](args[0])
+    s = unpack[string](args[0])
     res = newStringOfCap(len(s)*2)
     optEntry: Option[StEntry]
     key: string
@@ -361,17 +368,17 @@ proc builtInFormat*(args: seq[Box],
       else:
         let boxed = vars.runtimeVarLookup(key, localScope)
         case boxed.kind
-        of TypeString:
-          res.add(unbox[string](boxed))
-        of TypeInt:
-          res.add($(unbox[int](boxed)))
-        of TypeFloat:
-          res.add($(unbox[float](boxed)))
-        of Typebool:
-          res.add($(unbox[bool](boxed)))
+        of MkStr:
+          res.add(unpack[string](boxed))
+        of MkInt:
+          res.add($(unpack[int](boxed)))
+        of MkFloat:
+          res.add($(unpack[float](boxed)))
+        of MkBool:
+          res.add($(unpack[bool](boxed)))
         else:
           raise newException(Con4mError, "Error: Invalid type for format " &
-            "argument, can't do lists or dicts")
+            "argument, Don't currently do lists, tuples or dicts")
         continue
 
       if optEntry.isNone():
@@ -381,21 +388,21 @@ proc builtInFormat*(args: seq[Box],
 
       case entry.tInfo.kind
       of TypeString:
-        res.add(unbox[string](entry.value.get()))
+        res.add(unpack[string](entry.value.get()))
       of TypeInt:
-        res.add($(unbox[int](entry.value.get())))
+        res.add($(unpack[int](entry.value.get())))
       of TypeFloat:
-        res.add($(unbox[float](entry.value.get())))
+        res.add($(unpack[float](entry.value.get())))
       of TypeBool:
-        res.add($(unbox[bool](entry.value.get())))
+        res.add($(unpack[bool](entry.value.get())))
       else:
         raise newException(Con4mError, "Error: Invalid type for format " &
-          "argument, can't do lists or dicts")
+          "argument, can't do lists, tuples or dicts")
     else:
       res.add(s[i])
       i = i + 1
 
-  return some(box(res))
+  return some(pack(res))
 
 
 proc builtInAbort*(args: seq[Box],
@@ -411,66 +418,57 @@ proc builtInListLen*(args: seq[Box],
                      unused2 = cast[VarStack](nil),
                      unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Returns the number of elements in the list.
-  var list = unboxList[Box](args[0])
+  var list = unpack[seq[Box]](args[0])
 
-  return some(box(len(list)))
+  return some(pack(len(list)))
 
 proc builtInStrLen*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
                     unused2 = cast[VarStack](nil),
                     unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Returns the number of bytes in a string.
-  var s = unbox[string](args[0])
+  var s = unpack[string](args[0])
 
-  return some(box(len(s)))
+  return some(pack(len(s)))
 
 proc builtInDictLen*(args: seq[Box],
                      unused1 = cast[Con4mScope](nil),
                      unused2 = cast[VarStack](nil),
                      unused3 = cast[Con4mScope](nil)): Option[Box] =
   ## Returns the number of k,v pairs in a dictionary.
-  var dict = unboxDict[Box, Box](args[0])
+  var dict = unpack[Con4mDict[Box, Box]](args[0])
 
-  return some(box(len(dict)))
+  return some(pack(len(dict)))
 
-proc builtInStrDictKeys*(args: seq[Box],
-                         unused1 = cast[Con4mScope](nil),
-                         unused2 = cast[VarStack](nil),
-                         unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc builtInDictKeys*(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+
   var
-    dict = unboxDict[string, Box](args[0])
-    keys: seq[Box] = @[]
+    keys: seq[Box] = newSeq[Box]()
+    box = args[0]
 
-  for k, _ in dict:
-    keys.add(box(k))
-
-  return some(boxList[Box](keys))
-
-proc builtInIntDictKeys*(args: seq[Box],
-                         unused1 = cast[Con4mScope](nil),
-                         unused2 = cast[VarStack](nil),
-                         unused3 = cast[Con4mScope](nil)): Option[Box] =
   var
-    dict = unboxDict[int, Box](args[0])
-    keys: seq[Box] = @[]
+    d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
 
-  for k, _ in dict:
-    keys.add(box(k))
+  for k, _ in d:
+    keys.add(k)
 
-  return some(boxList[Box](keys))
+  return some(pack[seq[Box]](keys))
 
 proc builtInPad*(args: seq[Box],
                  unused1 = cast[Con4mScope](nil),
                  unused2 = cast[VarStack](nil),
                  unused3 = cast[Con4mScope](nil)): Option[Box] =
   let
-    topad = unbox[string](args[0])
-    width = unbox[int](args[1])
+    topad = unpack[string](args[0])
+    width = unpack[int](args[1])
 
   if len(topad) >= width:
-    return some(box(topad))
+    return some(pack(topad))
 
-  return some(box(topad & repeat(' ', width - len(topad))))
+  return some(pack(topad & repeat(' ', width - len(topad))))
 
 
 when defined(posix):
@@ -497,7 +495,7 @@ when defined(posix):
     ## Since they can never be returned to a process once dropped,
     ## that might require a fork and a pipe?
     var
-      cmd = unbox[string](args[0])
+      cmd = unpack[string](args[0])
     let
       uid = getuid()
       euid = geteuid()
@@ -512,7 +510,7 @@ when defined(posix):
       (output, exitCode) = execCmdEx(cmd)
       exitAsStr = $(exitCode)
 
-    result = some(box(output))
+    result = some(pack(output))
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
@@ -525,7 +523,7 @@ when defined(posix):
     ##
     ## like `run` except returns a tuple containing the output and the exit code.
     var
-      cmd = unbox[string](args[0])
+      cmd = unpack[string](args[0])
     let
       uid = getuid()
       euid = geteuid()
@@ -540,10 +538,10 @@ when defined(posix):
 
     var outlist: seq[Box] = @[]
 
-    outlist.add(box(output))
-    outlist.add(box(exitCode))
+    outlist.add(pack(output))
+    outlist.add(pack(exitCode))
 
-    result = some(boxList[Box](outlist))
+    result = some(pack(outlist))
 
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
@@ -559,13 +557,11 @@ else:
                    unused3 = cast[Con4mScope](nil)): Option[Box] =
     ## An unsafe version of this for non-posix OSes.  On such machines,
     ## it is NOT a default builtin.
-    var cmd: string = unbox(args[0])
+    var cmd = unpack[string](args[0])
 
-    let
-      (output, exitCode) = execCmdEx(cmd)
-      exitAsStr = $(exitCode)
+    let (output, _) = execCmdEx(cmd)
 
-    return some(box("{exitAsStr}:{output}".fmt()))
+    return some(pack(output))
 
 proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
   ## Allows you to associate a NIM function with the correct signature
@@ -652,8 +648,8 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("len", builtInListLen, "f([@x]) -> int")
   s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
   s.newBuiltIn("format", builtInFormat, "f(string) -> string")
-  s.newBuiltIn("keys", builtInStrDictKeys, "f({string : @x}) -> [string]")
-  s.newBuiltIn("keys", builtInIntDictKeys, "f({int : @x}) -> [int]")
+  s.newBuiltIn("keys", builtInDictKeys, "f({int : @y}) -> [string]")
+  s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")
   s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
 
   when defined(posix):

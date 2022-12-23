@@ -11,6 +11,7 @@ import tables
 import options
 import sugar
 import macros
+import box
 
 type
   ## Enumeration of all possible lexical tokens. Should not be exposed
@@ -76,35 +77,9 @@ type
 
     else: discard
 
-  ListBox*[T] = ref object
-    contents*: seq[T]
-    empty*: bool
-
-  DictBox*[K, V] = ref object
-    contents*: TableRef[K, V]
-    empty*: bool
-    tinfo*: Con4mType
-
-  Box* = ref object
-    ## This type is used in cases where a specification allows
-    ## multiple types to be stored.  This shouldn't happen often, but
-    ## hey, here you go.
-    ##
-    ## The macros remove the need to explicitly use boxing when you do
-    ## pre-specify types.
-    ##
-    ## Note that tuples in Nim are represented as lists of boxes,
-    ## so this isn't its own option from the nim-side.
-    case kind*: Con4mTypeKind
-    of TypeBool: b*: bool
-    of TypeString: s*: string
-    of TypeInt: i*: int
-    of TypeFloat: f*: float
-    of TypeList: l*: RootRef
-    of TypeDict: d*: RootRef
-    else:
-      nil
-
+  # So I can switch between ordered and not without hardship.
+  Con4mDict*[K, V] = TableRef[K, V]
+  
   STEntry* = ref object
     ## Internal; our symbol table data structure.
     tInfo*: Con4mType
@@ -295,3 +270,5 @@ proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
   ## and if not, set a default value instead.
   getOrElseActual(x, y)
 
+proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
+  return newTable[K, V]()
