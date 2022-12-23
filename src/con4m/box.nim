@@ -24,9 +24,6 @@ import strutils
 import tables
 import json
 
-# This is the clever trick to get the type of the array/seq item...
-# call arrItemType to decompose.  You just call typeof() on this
-# result.
 type
     MixedKind* = enum
         MkInt, MkStr, MkFloat, MkSeq, MkBool, MkTable, MkObj
@@ -175,12 +172,7 @@ proc pack*[T](x: T): Box =
         result = Box(kind: MkSeq, c: c)
     elif T is SomeTableRef:
         var newdict: OrderedTableRef[Box, Box] = newOrderedTable[Box, Box]()
-        var kt = ""
-        var vt = ""
         for k, v in x:
-            if kt == "":
-                kt = $(k.type)
-                vt = $(v.type)
             newdict[pack(k)] = pack(v)
         result = Box(kind: MkTable, t: TableCrate(t: newDict))
     elif T is Packable:
@@ -196,8 +188,9 @@ proc `$`*(x: Box): string =
         return $(x.i)
     of MkTable:
         var addComma: bool = false
-
+        
         result = "{"
+        
         for k, val in x.t.t:
             if addComma: result = result & ", " else: addComma = true
             result = result & $(k) & " : " & $(val)
@@ -251,11 +244,9 @@ when isMainModule:
 
     echo a1
     echo unpack[string](a1)
-    echo "Cool."
     b1 = pack(l1)
     echo b1
     echo unpack[seq[string]](b1)
-    echo "Let's go deeper."
     b123 = pack(l123)
     echo b123
     echo typeof(b123)
@@ -298,6 +289,7 @@ when isMainModule:
     echo "Here it is unpacked (should have quotes): ", newDict
     echo "Here it is, boxed, as Json: ", boxToJson(dictBox)
 
+    # This shouldn't work w/o a custom handler.
     # import sugar
     # var v: ()->int
     # unpack[()->int](b123, v)
