@@ -100,25 +100,25 @@ proc unpack*[T](box: Box): T =
             result = newOrderedTable[typeof(genericParamDummy[0]),
                                      typeof(genericParamDummy[1])]()
             for k, v in box.t.t:
-              dstKey = unpack[typeof(genericParamDummy[0])](k)
-              dstVal = unpack[typeof(genericParamDummy[1])](v)
-              result[dstKey] = dstVal
+                dstKey = unpack[typeof(genericParamDummy[0])](k)
+                dstVal = unpack[typeof(genericParamDummy[1])](v)
+                result[dstKey] = dstVal
         else:
             result = newTable[typeof(genericParamDummy[0]),
                               typeof(genericParamDummy[1])]()
             for k, v in box.t.t:
-              dstKey = unpack[typeof(genericParamDummy[0])](k)
-              dstVal = unpack[typeof(genericParamDummy[1])](v)
-              result[dstKey] = dstVal
-        # The first t is the TableCrate, the second get to the actual table 
+                dstKey = unpack[typeof(genericParamDummy[0])](k)
+                dstVal = unpack[typeof(genericParamDummy[1])](v)
+                result[dstKey] = dstVal
+        # The first t is the TableCrate, the second get to the actual table
     elif T is Packable:
         var res: T
         customUnpack[T](box, res)
         result = res
     elif T is Box:
-      return box
+        return box
     else:
-      raise newException(ValueError, "Destination type is not boxable.")
+        raise newException(ValueError, "Destination type is not boxable.")
 
 proc unpack*[T](box: Box, result: var T) =
     ## This really isn't necessary, but sometimes you might want to
@@ -188,9 +188,9 @@ proc `$`*(x: Box): string =
         return $(x.i)
     of MkTable:
         var addComma: bool = false
-        
+
         result = "{"
-        
+
         for k, val in x.t.t:
             if addComma: result = result & ", " else: addComma = true
             result = result & $(k) & " : " & $(val)
@@ -264,7 +264,7 @@ when isMainModule:
     myDict["you"] = @["d"]
 
     import streams
-    
+
     let
         f = newFileStream("box.nim", fmRead)
         contents = f.readAll()[0 .. 20]
@@ -272,8 +272,8 @@ when isMainModule:
     myDict["file"] = @[contents]
 
     let
-      dictBox = pack(myDict)
-      listbox = pack(l1)
+        dictBox = pack(myDict)
+        listbox = pack(l1)
 
     var outlist: l1.type
     unpack(listbox, outlist)

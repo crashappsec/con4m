@@ -470,7 +470,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       args.add(kid.value)
 
     var ret = s.sCall(fname, args, funcSig, some(node.children[0]))
-    if ret.isSome(): 
+    if ret.isSome():
       node.value = ret.get()
   of NodeDictLit:
     node.evalKids(s)

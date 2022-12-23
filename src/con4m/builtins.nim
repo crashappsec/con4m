@@ -445,17 +445,17 @@ proc builtInDictKeys*(args: seq[Box],
                       unused2 = cast[VarStack](nil),
                       unused3 = cast[Con4mScope](nil)): Option[Box] =
 
-    var
-      keys: seq[Box] = newSeq[Box]()
-      box = args[0]
+  var
+    keys: seq[Box] = newSeq[Box]()
+    box = args[0]
 
-    var
-      d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
+  var
+    d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
 
-    for k, _ in d:
-      keys.add(k)
+  for k, _ in d:
+    keys.add(k)
 
-    return some(pack[seq[Box]](keys))
+  return some(pack[seq[Box]](keys))
 
 proc builtInPad*(args: seq[Box],
                  unused1 = cast[Con4mScope](nil),
@@ -649,7 +649,7 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
   s.newBuiltIn("format", builtInFormat, "f(string) -> string")
   s.newBuiltIn("keys", builtInDictKeys, "f({int : @y}) -> [string]")
-  s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")  
+  s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")
   s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
 
   when defined(posix):
