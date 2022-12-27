@@ -223,10 +223,11 @@ proc boxToJson*(b: Box): string =
             result = result & item.boxToJSon()
         result = result & "]"
     of MkTable:
+        result = "{ "
         for k, val in b.t.t:
             if addComma: result = result & ", " else: addComma = true
             result = result & boxToJson(k) & " : " & boxToJson(val)
-        result = result & "}"
+        result = result & " }"
     else:
         return "null" # Boxed objects not supported
 
