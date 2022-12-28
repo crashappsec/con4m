@@ -10,10 +10,10 @@ import strformat
 import strutils
 import streams
 import tables
-import box
 import json
 
-import ./types
+import types
+import nimutils/box
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.

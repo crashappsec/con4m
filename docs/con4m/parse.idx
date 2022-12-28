@@ -1,4 +1,3 @@
-getOrElse	con4m/parse.html#getOrElse,Option[T],T	parse: getOrElse[T](x: Option[T]; y: T): T	
 Con4mError	con4m/parse.html#Con4mError	parse: Con4mError	
 fatal	con4m/parse.html#fatal,string,Con4mToken	parse: fatal(msg: string; token: Con4mToken)	
 fatal	con4m/parse.html#fatal,string,Con4mNode	parse: fatal(msg: string; node: Con4mNode = nil)	

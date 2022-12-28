@@ -10,12 +10,12 @@ import strutils
 import unicode
 import strformat
 
-import box
-import ./types
+import types
 import st
 import typecheck
-import unicodeident
 import dollars
+import nimutils/box
+import nimutils/unicodeid
 
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =

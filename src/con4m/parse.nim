@@ -10,9 +10,10 @@ import options
 import streams
 import macros
 
-import ./types
+import types
 import lex
 import dollars
+import nimutils
 
 type Con4mError* = object of CatchableError
 

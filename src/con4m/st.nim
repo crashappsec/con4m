@@ -18,8 +18,7 @@ import unicode
 import strutils
 import strformat
 import parse # only for fatal()
-
-import ./types
+import types
 
 
 var tVarNum: int

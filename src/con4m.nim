@@ -9,6 +9,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
+import nimutils
+
 import con4m/parse
 export fatal, parse.parse, Con4mError
 
@@ -26,16 +28,8 @@ export types
 import con4m/eval
 export evalTree, evalConfig
 
-import con4m/box
-export box
-
 import con4m/builtins
-export builtinIToS, builtinBToS, builtinFToS, builtInItoB, builtinFtoB,
-       builtinStoB, builtinLToB, builtinDToB, builtinIToF, builtinFtoI,
-       builtinSplit, builtinEcho, builtinEnv, builtinEnvExists,
-       builtinEnvAll, builtinStrip, builtinContainsStrStr,
-       builtinFindFromStart, builtinSlice, builtinSliceToEnd, builtInAbort,
-       builtinCmd, newBuiltIn, addDefaultBuiltins
+export builtins
 
 
 # Post-runtime (spec checking)

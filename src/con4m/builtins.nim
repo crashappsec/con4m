@@ -5,12 +5,12 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import ./types
+import types
 import typecheck
 import st
-import box
 import parse # just for fatal()
 import eval
+import nimutils/box
 
 import os
 import tables

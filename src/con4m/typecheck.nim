@@ -4,7 +4,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import ./types
+import types
 import st
 
 import dollars

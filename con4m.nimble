@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.3.2"
+version       = "0.3.3"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for lightweight scripting. Inspired by HCL, but far more straightforward.  Yet far more functional than UCL."
 license       = "Apache-2.0"
@@ -10,7 +10,7 @@ installExt    = @["nim"]
 
 # Dependencies
 requires "nim >= 1.6.8"
-requires "unicodedb >= 0.11.1"
+requires "https://github.com/crashappsec/nimutils >= 0.1.0"
 
 task tests, "Run test cases (passes flags needed to expose private symbols)":
   exec "nimble test --define:testCases"

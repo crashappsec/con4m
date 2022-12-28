@@ -114,8 +114,6 @@ window.addEventListener('DOMContentLoaded', main);
     title="`$`(scope: Con4mScope; goDown = true): string">`$`(scope: Con4mScope; goDown = true): string</a></li>
   <li><a class="reference" href="#%24%2CCon4mScope%2Cint"
     title="`$`(scope: Con4mScope; indent: int): string">`$`(scope: Con4mScope; indent: int): string</a></li>
-  <li><a class="reference" href="#%24%2CBox"
-    title="`$`(self: Box): string">`$`(self: Box): string</a></li>
   <li><a class="reference" href="#%24%2CCon4mNode%2Cint"
     title="`$`(self: Con4mNode; i: int = 0): string">`$`(self: Con4mNode; i: int = 0): string</a></li>
   <li><a class="reference" href="#%24%2CAttrSpec"
@@ -126,6 +124,11 @@ window.addEventListener('DOMContentLoaded', main);
     title="`$`(tok: Con4mToken): string">`$`(tok: Con4mToken): string</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">scopeToJson
+      <li><a class="reference" href="#scopeToJson%2CCon4mScope"
+    title="scopeToJson(scope: Con4mScope): string">scopeToJson(scope: Con4mScope): string</a></li>
+
+  </ul>
 
   </ul>
 </li>
@@ -134,7 +137,7 @@ window.addEventListener('DOMContentLoaded', main);
 
   </div>
   &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L1"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L1"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L1" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -143,7 +146,7 @@ class="link-seesrc" target="_blank">Source</a>
   
   <p class="module-desc">Functions to represent various data types as strings.  For the things mapping to internal data structures, these are pretty much all just used for debugging.<table class="docinfo" frame="void" rules="none"><col class="docinfo-name" /><col class="docinfo-content" /><tbody valign="top"><tr><th class="docinfo-name">Author:</th><td>John Viega (john@crashoverride.com)</td></tr>
 <tr><th class="docinfo-name">Copyright:</th><td>2022</td></tr>
-</tbody></table></p>
+</tbody></table>The indent field doesn't try to pretty-print unless it is set to a positive value.</p>
   <div class="section" id="6">
 <h1><a class="toc-backref" href="#6">Imports</a></h1>
 <dl class="item">
@@ -158,9 +161,9 @@ class="link-seesrc" target="_blank">Source</a>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L203"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L217"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L203" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L217" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -169,11 +172,11 @@ class="link-seesrc" target="_blank">Source</a>
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
-
+If you want to print subscopes, leave the goDown flag as true.  Otherwise, set the goDown flag to false.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L177"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L189"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L177" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L189" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -184,21 +187,9 @@ class="link-seesrc" target="_blank">Source</a>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L157"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L170"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L157" class="link-seesrc" target="_blank" >Edit</a>
-
-</dd>
-</div>
-<div id="$,Box">
-<dt><pre><span class="Keyword">proc</span> <a href="#%24%2CBox"><span class="Identifier">`$`</span></a><span class="Other">(</span><span class="Identifier">self</span><span class="Other">:</span> <a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
-<dd>
-
-
-&nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L129"
-class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L129" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L170" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -210,9 +201,9 @@ class="link-seesrc" target="_blank">Source</a>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L96"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L98"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L96" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L98" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -222,9 +213,9 @@ class="link-seesrc" target="_blank">Source</a>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L192"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L206"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L192" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L206" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -234,9 +225,9 @@ class="link-seesrc" target="_blank">Source</a>
 
 Prints a type object the way it should be written for input, with the exception of the bottom type, which prints as its mathematical symbol (<tt class="docutils literal"><span class="pre"><span class="Identifier">⊥</span></span></tt>)
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L46"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L48"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L46" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L48" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -247,9 +238,21 @@ class="link-seesrc" target="_blank">Source</a>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/dollars.nim#L26"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L28"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L26" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L28" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="scopeToJson,Con4mScope">
+<dt><pre><span class="Keyword">proc</span> <a href="#scopeToJson%2CCon4mScope"><span class="Identifier">scopeToJson</span></a><span class="Other">(</span><span class="Identifier">scope</span><span class="Other">:</span> <a href="types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">string</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/dollars.nim#L151"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/dollars.nim#L151" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -263,7 +266,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-19 06:48:55 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-28 14:50:24 UTC</small>
       </div>
     </div>
   </div>

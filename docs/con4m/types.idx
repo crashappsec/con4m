@@ -107,9 +107,7 @@ TypeTVar	con4m/types.html#TypeTVar	Con4mTypeKind.TypeTVar
 TypeBottom	con4m/types.html#TypeBottom	Con4mTypeKind.TypeBottom	
 Con4mTypeKind	con4m/types.html#Con4mTypeKind	types: Con4mTypeKind	
 Con4mType	con4m/types.html#Con4mType	types: Con4mType	
-ListBox	con4m/types.html#ListBox	types: ListBox	
-DictBox	con4m/types.html#DictBox	types: DictBox	
-Box	con4m/types.html#Box	types: Box	
+Con4mDict	con4m/types.html#Con4mDict	types: Con4mDict	
 STEntry	con4m/types.html#STEntry	types: STEntry	
 RuntimeFrame	con4m/types.html#RuntimeFrame	types: RuntimeFrame	
 VarStack	con4m/types.html#VarStack	types: VarStack	
@@ -135,4 +133,4 @@ boolType	con4m/types.html#boolType	types: boolType
 intType	con4m/types.html#intType	types: intType	
 floatType	con4m/types.html#floatType	types: floatType	
 bottomType	con4m/types.html#bottomType	types: bottomType	
-unreachable	con4m/types.html#unreachable.t	types: unreachable()	
+newCon4mDict	con4m/types.html#newCon4mDict	types: newCon4mDict[K, V](): Con4mDict[K, V]	

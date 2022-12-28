@@ -1,5 +1,7 @@
 import unittest, logging
 import con4m
+import nimutils
+import nimutils/box
 import options
 import streams
 
@@ -68,6 +70,6 @@ test "hello, world":
   for item in ctx.errors:
     echo item
 
-  check unbox[int](ctx.getConfigVar("item.okay.foo").get()) == 2
-  check unbox[string](ctx.getConfigVar("s").get()) == "set an example!"
+  check unpack[int](ctx.getConfigVar("item.okay.foo").get()) == 2
+  check unpack[string](ctx.getConfigVar("s").get()) == "set an example!"
 

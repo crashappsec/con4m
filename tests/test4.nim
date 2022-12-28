@@ -1,5 +1,5 @@
 import unittest, logging
-import con4m
+import con4m, nimutils
 import streams
 import options
 
