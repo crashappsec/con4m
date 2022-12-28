@@ -130,8 +130,8 @@ window.addEventListener('DOMContentLoaded', main);
 
   </ul>
   <ul class="simple nested-toc-section">runtimeVarLookup
-      <li><a class="reference" href="#runtimeVarLookup%2CVarStack%2Cstring"
-    title="runtimeVarLookup(frames: VarStack; name: string): Box">runtimeVarLookup(frames: VarStack; name: string): Box</a></li>
+      <li><a class="reference" href="#runtimeVarLookup%2CVarStack%2Cstring%2CCon4mScope"
+    title="runtimeVarLookup(frames: VarStack; name: string; scope: Con4mScope): Box">runtimeVarLookup(frames: VarStack; name: string; scope: Con4mScope): Box</a></li>
 
   </ul>
   <ul class="simple nested-toc-section">runtimeVarSet
@@ -146,6 +146,11 @@ window.addEventListener('DOMContentLoaded', main);
       nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box]</a></li>
 
   </ul>
+  <ul class="simple nested-toc-section">stackConfig
+      <li><a class="reference" href="#stackConfig%2CConfigState%2Cstring"
+    title="stackConfig(s: ConfigState; filename: string): Option[Con4mScope]">stackConfig(s: ConfigState; filename: string): Option[Con4mScope]</a></li>
+
+  </ul>
 
   </ul>
 </li>
@@ -154,7 +159,7 @@ window.addEventListener('DOMContentLoaded', main);
 
   </div>
   &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L1"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L1"
 class="link-seesrc" target="_blank">Source</a>
 &nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L1" class="link-seesrc" target="_blank" >Edit</a>
 
@@ -167,7 +172,7 @@ class="link-seesrc" target="_blank">Source</a>
   <div class="section" id="6">
 <h1><a class="toc-backref" href="#6">Imports</a></h1>
 <dl class="item">
-<a class="reference external" href="types.html">types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="box.html">box</a>, <a class="reference external" href="parse.html">parse</a>, <a class="reference external" href="treecheck.html">treecheck</a>, <a class="reference external" href="typecheck.html">typecheck</a>
+<a class="reference external" href="types.html">types</a>, <a class="reference external" href="st.html">st</a>, <a class="reference external" href="parse.html">parse</a>, <a class="reference external" href="treecheck.html">treecheck</a>, <a class="reference external" href="typecheck.html">typecheck</a>
 </dl></div>
 <div class="section" id="12">
 <h1><a class="toc-backref" href="#12">Procs</a></h1>
@@ -180,84 +185,84 @@ class="link-seesrc" target="_blank">Source</a>
 
 Given the config file as a string, this will load and parse the file, then execute it, returning both the state object created, as well as the top-level symbol table for attributes, both assuming the operation was successful.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L609"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L620"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L609" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L620" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="evalNode,Con4mNode,ConfigState">
-<dt><pre><span class="Keyword">proc</span> <a href="#evalNode%2CCon4mNode%2CConfigState"><span class="Identifier">evalNode</span></a><span class="Other">(</span><span class="Identifier">node</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">;</span> <span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span>
-    <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">]</span><span class="Other">,</span>
-    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">,</span> <span class="Identifier">ReadIOEffect</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#evalNode%2CCon4mNode%2CConfigState"><span class="Identifier">evalNode</span></a><span class="Other">(</span><span class="Identifier">node</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">;</span> <span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">)</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Con4mError</span><span class="Other">,</span>
+    <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span>
+    <span class="Identifier">Con4mError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">,</span> <span class="Identifier">ReadIOEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 This does the bulk of the work.  Typically, it will descend into the tree to evaluate, and then take whatever action is apporpriate after, if any.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L203"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L226"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L203" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L226" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="evalTree,Con4mNode">
 <dt><pre><span class="Keyword">proc</span> <a href="#evalTree%2CCon4mNode"><span class="Identifier">evalTree</span></a><span class="Other">(</span><span class="Identifier">node</span><span class="Other">:</span> <a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">]</span> {.<span class="Identifier">inline</span><span class="Other">,</span> <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span>
-    <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span>
-    <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span>
+    <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span>
     <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">,</span> <span class="Identifier">ReadIOEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 This runs the evaluator on a tree that has already been parsed and type-checked.
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L593"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L604"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L593" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L604" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="runCallback,ConfigState,string,seq[Box],Option[Con4mType]">
-<dt><pre><span class="Keyword">proc</span> <a href="#runCallback%2CConfigState%2Cstring%2Cseq%5BBox%5D%2COption%5BCon4mType%5D"><span class="Identifier">runCallback</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">args</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span><span class="Other">;</span>
-                 <span class="Identifier">tinfo</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> {.
+<dt><pre><span class="Keyword">proc</span> <a href="#runCallback%2CConfigState%2Cstring%2Cseq%5BBox%5D%2COption%5BCon4mType%5D"><span class="Identifier">runCallback</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">args</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">Box</span><span class="Other">]</span><span class="Other">;</span>
+                 <span class="Identifier">tinfo</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">)</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><span class="Identifier">Box</span><span class="Other">]</span> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L157"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L180"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L157" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L180" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
-<div id="runtimeVarLookup,VarStack,string">
-<dt><pre><span class="Keyword">proc</span> <a href="#runtimeVarLookup%2CVarStack%2Cstring"><span class="Identifier">runtimeVarLookup</span></a><span class="Other">(</span><span class="Identifier">frames</span><span class="Other">:</span> <a href="types.html#VarStack"><span class="Identifier">VarStack</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <a href="types.html#Box"><span class="Identifier">Box</span></a> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span>
-    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<div id="runtimeVarLookup,VarStack,string,Con4mScope">
+<dt><pre><span class="Keyword">proc</span> <a href="#runtimeVarLookup%2CVarStack%2Cstring%2CCon4mScope"><span class="Identifier">runtimeVarLookup</span></a><span class="Other">(</span><span class="Identifier">frames</span><span class="Other">:</span> <a href="types.html#VarStack"><span class="Identifier">VarStack</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">scope</span><span class="Other">:</span> <a href="types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Box</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L33"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L32"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L33" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L32" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="runtimeVarSet,ConfigState,Con4mScope,string,Box">
-<dt><pre><span class="Keyword">proc</span> <a href="#runtimeVarSet%2CConfigState%2CCon4mScope%2Cstring%2CBox"><span class="Identifier">runtimeVarSet</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">scope</span><span class="Other">:</span> <a href="types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">)</span> {.
-    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
+<dt><pre><span class="Keyword">proc</span> <a href="#runtimeVarSet%2CConfigState%2CCon4mScope%2Cstring%2CBox"><span class="Identifier">runtimeVarSet</span></a><span class="Other">(</span><span class="Identifier">state</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">scope</span><span class="Other">:</span> <a href="types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">val</span><span class="Other">:</span> <span class="Identifier">Box</span><span class="Other">)</span> {.
+    <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L47"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L69"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L47" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L69" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
 <div id="sCall,ConfigState,string,seq[Box],Con4mType,Option[Con4mNode]">
-<dt><pre><span class="Keyword">proc</span> <a href="#sCall%2CConfigState%2Cstring%2Cseq%5BBox%5D%2CCon4mType%2COption%5BCon4mNode%5D"><span class="Identifier">sCall</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">a1</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">tinfo</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">;</span>
-           <span class="Identifier">nodeOpt</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Box"><span class="Identifier">Box</span></a><span class="Other">]</span> {.
+<dt><pre><span class="Keyword">proc</span> <a href="#sCall%2CConfigState%2Cstring%2Cseq%5BBox%5D%2CCon4mType%2COption%5BCon4mNode%5D"><span class="Identifier">sCall</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">name</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">;</span> <span class="Identifier">a1</span><span class="Other">:</span> <span class="Identifier">seq</span><span class="Other">[</span><span class="Identifier">Box</span><span class="Other">]</span><span class="Other">;</span> <span class="Identifier">tinfo</span><span class="Other">:</span> <a href="types.html#Con4mType"><span class="Identifier">Con4mType</span></a><span class="Other">;</span>
+           <span class="Identifier">nodeOpt</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">]</span> <span class="Other">=</span> <span class="Identifier">none</span><span class="Other">(</span><a href="types.html#Con4mNode"><span class="Identifier">Con4mNode</span></a><span class="Other">)</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><span class="Identifier">Box</span><span class="Other">]</span> {.
     <span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">]</span><span class="Other">,</span> <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">RootEffect</span><span class="Other">]</span></span>.}</pre></dt>
 <dd>
 
@@ -265,9 +270,24 @@ class="link-seesrc" target="_blank">Source</a>
 <p>The node parameter will be the node from the caller's scope, if present.</p>
 
 &nbsp;&nbsp;<a
-href="https://github.com/crashappsec/con4m.git/tree/v0.2.3/src/con4m/eval.nim#L130"
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L152"
 class="link-seesrc" target="_blank">Source</a>
-&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L130" class="link-seesrc" target="_blank" >Edit</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L152" class="link-seesrc" target="_blank" >Edit</a>
+
+</dd>
+</div>
+<div id="stackConfig,ConfigState,string">
+<dt><pre><span class="Keyword">proc</span> <a href="#stackConfig%2CConfigState%2Cstring"><span class="Identifier">stackConfig</span></a><span class="Other">(</span><span class="Identifier">s</span><span class="Other">:</span> <a href="types.html#ConfigState"><span class="Identifier">ConfigState</span></a><span class="Other">;</span> <span class="Identifier">filename</span><span class="Other">:</span> <span class="Identifier">string</span><span class="Other">)</span><span class="Other">:</span> <span class="Identifier">Option</span><span class="Other">[</span><a href="types.html#Con4mScope"><span class="Identifier">Con4mScope</span></a><span class="Other">]</span> {.<span><span class="Other pragmadots">...</span></span><span class="pragmawrap"><span class="Identifier">raises</span><span class="Other">:</span> <span class="Other">[</span>
+    <span class="Identifier">Con4mError</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">,</span> <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">Con4mError</span><span class="Other">,</span>
+    <span class="Identifier">ValueError</span><span class="Other">,</span> <span class="Identifier">Exception</span><span class="Other">,</span> <span class="Identifier">IOError</span><span class="Other">,</span> <span class="Identifier">OSError</span><span class="Other">,</span> <span class="Identifier">KeyError</span><span class="Other">]</span><span class="Other">,</span>
+    <span class="Identifier">tags</span><span class="Other">:</span> <span class="Other">[</span><span class="Identifier">ReadIOEffect</span><span class="Other">,</span> <span class="Identifier">RootEffect</span><span class="Other">,</span> <span class="Identifier">WriteIOEffect</span><span class="Other">]</span></span>.}</pre></dt>
+<dd>
+
+
+&nbsp;&nbsp;<a
+href="https://github.com/crashappsec/con4m.git/tree/v0.3.3/src/con4m/eval.nim#L637"
+class="link-seesrc" target="_blank">Source</a>
+&nbsp;&nbsp;<a href="https://github.com/crashappsec/con4m.git/edit/devel/src/con4m/eval.nim#L637" class="link-seesrc" target="_blank" >Edit</a>
 
 </dd>
 </div>
@@ -281,7 +301,7 @@ class="link-seesrc" target="_blank">Source</a>
       <div class="twelve-columns footer">
         <span class="nim-sprite"></span>
         <br/>
-        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-19 06:48:55 UTC</small>
+        <small style="color: var(--hint);">Made with Nim. Generated: 2022-12-28 14:50:24 UTC</small>
       </div>
     </div>
   </div>

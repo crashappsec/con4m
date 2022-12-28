@@ -9,6 +9,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
+import nimutils
+
 import con4m/parse
 export fatal, parse.parse, Con4mError
 
