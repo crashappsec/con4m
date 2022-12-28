@@ -20,12 +20,13 @@ import unicode
 import streams
 import tables
 
-import box
-import ./types
+import types
 import st
 import parse # just for fatal()
 import typecheck
 import dollars
+import nimutils
+import nimutils/box
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"

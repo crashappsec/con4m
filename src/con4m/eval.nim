@@ -5,12 +5,13 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import ./types
+import types
 import st
-import box
 import parse
 import treecheck
 import typecheck
+import nimutils
+import nimutils/box
 
 import options
 import tables

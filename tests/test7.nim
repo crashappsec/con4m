@@ -1,7 +1,8 @@
 import unittest, logging
+import nimutils
+import nimutils/box
 import con4m
 import con4m/types
-import con4m/box
 import con4m/st
 import options
 import streams
@@ -231,44 +232,44 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
   tmpBox = ctx.getConfigVar("config_path").get()
 
-  let config_path_box_seq_str = unboxList[Box](tmpBox)
+  let config_path_box_seq_str = unpack[seq[Box]](tmpBox)
   var config_path_seq_str: seq[string] = @[]
 
   for item in config_path_box_seq_str:
-    config_path_seq_str.add(unbox[string](item))
+    config_path_seq_str.add(unpack[string](item))
 
   result.config_path = config_path_seq_str
 
   tmpBox = ctx.getConfigVar("config_filename").get()
-  result.config_filename = unbox[string](tmpBox)
+  result.config_filename = unpack[string](tmpBox)
 
   tmpBox = ctx.getConfigVar("color").get()
-  result.color = unbox[bool](tmpBox)
+  result.color = unpack[bool](tmpBox)
 
   tmpBox = ctx.getConfigVar("log_level").get()
-  result.log_level = unbox[string](tmpBox)
+  result.log_level = unpack[string](tmpBox)
 
   tmpBox = ctx.getConfigVar("dry_run").get()
-  result.dry_run = unbox[bool](tmpBox)
+  result.dry_run = unpack[bool](tmpBox)
 
   tmpBox = ctx.getConfigVar("artifact_search_path").get()
 
-  let artifact_search_path_box_seq_str = unboxList[Box](tmpBox)
+  let artifact_search_path_box_seq_str = unpack[seq[Box]](tmpBox)
   var artifact_search_path_seq_str: seq[string] = @[]
 
   for item in artifact_search_path_box_seq_str:
-    artifact_search_path_seq_str.add(unbox[string](item))
+    artifact_search_path_seq_str.add(unpack[string](item))
 
   result.artifact_search_path = artifact_search_path_seq_str
 
   tmpBox = ctx.getConfigVar("recursive").get()
-  result.recursive = unbox[bool](tmpBox)
+  result.recursive = unpack[bool](tmpBox)
 
   tmpBox = ctx.getConfigVar("output_dir").get()
-  result.output_dir = unbox[string](tmpBox)
+  result.output_dir = unpack[string](tmpBox)
 
   tmpBox = ctx.getConfigVar("output_file").get()
-  result.output_file = unbox[string](tmpBox)
+  result.output_file = unpack[string](tmpBox)
 
   let sectionInfo = ctx.getAllSectionSTs()
 
@@ -282,111 +283,111 @@ proc loadSamiConfig(ctx: ConfigState): SamiConf =
 
     stEntry = v.lookupAttr("required").get()
     tmpBox = stEntry.value.get()
-    sectionData.required = unbox[bool](tmpBox)
+    sectionData.required = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("missing_action").get()
     tmpBox = stEntry.value.get()
-    sectionData.missing_action = unbox[string](tmpBox)
+    sectionData.missing_action = unpack[string](tmpBox)
 
     stEntry = v.lookupAttr("system").get()
     tmpBox = stEntry.value.get()
-    sectionData.system = unbox[bool](tmpBox)
+    sectionData.system = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("squash").get()
     tmpBox = stEntry.value.get()
-    sectionData.squash = unbox[bool](tmpBox)
+    sectionData.squash = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("standard").get()
     tmpBox = stEntry.value.get()
-    sectionData.standard = unbox[bool](tmpBox)
+    sectionData.standard = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("must_force").get()
     tmpBox = stEntry.value.get()
-    sectionData.must_force = unbox[bool](tmpBox)
+    sectionData.must_force = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("plugin_ok").get()
     tmpBox = stEntry.value.get()
-    sectionData.plugin_ok = unbox[bool](tmpBox)
+    sectionData.plugin_ok = unpack[bool](tmpBox)
 
     stEntry = v.lookupAttr("skip").get()
     tmpBox = stEntry.value.get()
-    sectionData.skip = unbox[bool](tmpBox)
+    sectionData.skip = unpack[bool](tmpBox)
 
     entryOpt = v.lookupAttr("priority")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
       if stEntry.value.isSome():
         tmpBox = stEntry.value.get()
-        sectionData.priority = some(unbox[int](tmpBox))
+        sectionData.priority = some(unpack[int](tmpBox))
 
     entryOpt = v.lookupAttr("since")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
       tmpBox = stEntry.value.get()
-      sectionData.since = some(unbox[string](tmpBox))
+      sectionData.since = some(unpack[string](tmpBox))
 
     stEntry = v.lookupAttr("type").get()
     tmpBox = stEntry.value.get()
-    sectionData.`type` = unbox[string](tmpBox)
+    sectionData.`type` = unpack[string](tmpBox)
 
     entryOpt = v.lookupAttr("value")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
       if stEntry.value.isSome():
         tmpBox = stEntry.value.get()
-        sectionData.value = some(unbox[Box](tmpBox))
+        sectionData.value = some(unpack[Box](tmpBox))
 
     stEntry = v.lookupAttr("codec").get()
     tmpBox = stEntry.value.get()
-    sectionData.codec = unbox[bool](tmpBox)
+    sectionData.codec = unpack[bool](tmpBox)
 
     entryOpt = v.lookupAttr("docstring")
     if entryOpt.isSome():
       stEntry = entryOpt.get()
       if stEntry.value.isSome():
         tmpBox = stEntry.value.get()
-        sectionData.docstring = some(unbox[string](tmpBox))
+        sectionData.docstring = some(unpack[string](tmpBox))
 
 test "samiconf":
   addHandler(newConsoleLogger(fmtStr = "$appname: $levelname: "))
 
   var spec = newConfigSpec()
   var
-    defaultCfgPathSpec = @[box("."), box("~")]
-    defaultArtPathSpec = @[box(".")]
+    defaultCfgPathSpec = pack(@[".", "~"])
+    defaultArtPathSpec = pack(@["."])
 
   spec.addGlobalAttr("config_path",
                      "[string]",
-                     some(boxList[Box](defaultCfgPathSpec)))
+                     some(defaultCfgPathSpec))
   spec.addGlobalAttr("config_filename", "string",
-                     some(box("sami.conf")))
-  spec.addGlobalAttr("color", "bool", some(box(false)))
-  spec.addGlobalAttr("log_level", "string", some(box("warn")))
-  spec.addGlobalAttr("dry_run", "string", some(box(false)))
+                     some(pack("sami.conf")))
+  spec.addGlobalAttr("color", "bool", some(pack(false)))
+  spec.addGlobalAttr("log_level", "string", some(pack("warn")))
+  spec.addGlobalAttr("dry_run", "string", some(pack(false)))
   spec.addGlobalAttr("artifact_search_path", "[string]",
-                     some(boxList[Box](defaultArtPathSpec)))
-  spec.addGlobalAttr("recursive", "bool", some(box(true)))
-  spec.addGlobalAttr("output_dir", "string", some(box(".")))
+                     some(defaultArtPathSpec))
+  spec.addGlobalAttr("recursive", "bool", some(pack(true)))
+  spec.addGlobalAttr("output_dir", "string", some(pack(".")))
   spec.addGlobalAttr("output_file",
                      "string",
-                     some(box("sami-extractions.json")))
+                     some(pack("sami-extractions.json")))
 
   var sectKey = spec.addSection("key", validSubSecs =
     @["*", "*.json", "*.binary"])
 
-  sectKey.addAttr("required", "bool", some(box(false)))
-  sectKey.addAttr("missing_action", "string", some(box("warn")))
-  sectKey.addAttr("system", "bool", some(box(false)))
-  sectKey.addAttr("squash", "bool", some(box(true)))
-  sectKey.addAttr("standard", "bool", some(box(false)))
-  sectKey.addAttr("must_force", "bool", some(box(false)))
-  sectKey.addAttr("plugin_ok", "bool", some(box(true)))
-  sectKey.addAttr("skip", "bool", some(box(false)))
+  sectKey.addAttr("required", "bool", some(pack(false)))
+  sectKey.addAttr("missing_action", "string", some(pack("warn")))
+  sectKey.addAttr("system", "bool", some(pack(false)))
+  sectKey.addAttr("squash", "bool", some(pack(true)))
+  sectKey.addAttr("standard", "bool", some(pack(false)))
+  sectKey.addAttr("must_force", "bool", some(pack(false)))
+  sectKey.addAttr("plugin_ok", "bool", some(pack(true)))
+  sectKey.addAttr("skip", "bool", some(pack(false)))
   sectKey.addAttr("priority", "int", required = false)
   sectKey.addAttr("since", "string", required = false)
   sectKey.addAttr("type", "string", required = true)
   sectKey.addAttr("value", "@x", required = false)
-  sectKey.addAttr("codec", "bool", some(box(false)))
+  sectKey.addAttr("codec", "bool", some(pack(false)))
   sectKey.addAttr("docstring", "string", required = false)
 
   let

@@ -1,4 +1,4 @@
-import unittest, logging
+import unittest, logging, nimutils
 import con4m
 import streams
 

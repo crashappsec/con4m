@@ -11,7 +11,7 @@ import tables
 import options
 import sugar
 import macros
-import box
+import nimutils/box
 
 type
   ## Enumeration of all possible lexical tokens. Should not be exposed
@@ -242,33 +242,6 @@ let
   intType* = Con4mType(kind: TypeInt)
   floatType* = Con4mType(kind: TypeFloat)
   bottomType* = Con4mType(kind: TypeBottom)
-
-template unreachable*() =
-  let info = instantiationInfo()
-
-  ## We use this to be explicit about case statements that are
-  ## necessary to cover all cases, but should be impossible to
-  ## execute.  That way, if they do execute, we know we made a
-  ## mistake.
-  try:
-    echo "Reached code that was supposed to be unreachable.  Stack trace:"
-    echo "REACHED UNREACHABLE CODE AT: " & info.filename & ":" & $(info.line)
-    echo getStackTrace()
-    doAssert(false, "Reached code the programmer thought was unreachable :(")
-  finally:
-    discard
-
-macro getOrElseActual(x: untyped, y: untyped): untyped =
-  return quote do:
-    if `x`.isSome():
-      `x`.get()
-    else:
-      `y`
-
-proc getOrElse*[T](x: Option[T], y: T): T {.inline.} =
-  ## Allows us to derefenrece an Option[] type if it isSome(),
-  ## and if not, set a default value instead.
-  getOrElseActual(x, y)
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
   return newTable[K, V]()

@@ -1,6 +1,6 @@
 import unittest, logging, streams
 
-import con4m
+import con4m, nimutils
 
 
 let s = """

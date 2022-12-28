@@ -6,8 +6,9 @@
 import streams
 import unicode
 
-import ./types
-import unicodeident
+import types
+import nimutils
+import nimutils/unicodeid
 
 template tok(k: Con4mTokenKind) =
   toks.add(Con4mToken(startPos: startPos,
@@ -295,7 +296,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "callback": tok(TtCallback)
       else: tok(TtIdentifier)
 
-  unreachable()
+  unreachable
 
 when isMainModule:
   let s = """
