@@ -208,7 +208,6 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
     return
 
   while true:
-    let tok = ctx.lookAhead() # For error reporting
     try:
       actuals.children.add(ctx.expression())
     except:
@@ -437,7 +436,6 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
 proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   let
     t = ctx.consume()
-    callback = if t.kind == TtCallback: true else: false
     id = ctx.consume()
 
   if id.kind != TtIdentifier:

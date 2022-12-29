@@ -53,10 +53,6 @@ proc getBaseType*(t: Con4mType): Con4mTypeKind =
 proc getBaseType*(node: Con4mNode): Con4mTypeKind =
   return node.typeInfo.getBaseType()
 
-const allConstraints: set[Con4mTypeKind] = {
-  TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict
-  }
-
 # Just in case someone manages to clone a singleton, we
 # always check against the .kind field, instead of looking at
 # object equivolence for singletons (e.g., int, bottom)

@@ -69,15 +69,16 @@ proc binOpTypeCheck(node: Con4mNode,
 
   if node.typeInfo.isBottom(): fatal2Type(e2, node, tv, paramCheck)
 
-proc printFuncTable(s: ConfigState) =
-  for key, entrySet in s.funcTable:
-    for entry in entrySet:
-      echo "{reprSig(key, entry.tinfo)}: {`$`(entry.kind)}".fmt()
-      case entry.kind
-      of FnUserDefined, FnCallback:
-        echo $(entry.impl)
-      else:
-        discard
+when false:
+  proc printFuncTable(s: ConfigState) =
+    for key, entrySet in s.funcTable:
+      for entry in entrySet:
+        echo "{reprSig(key, entry.tinfo)}: {`$`(entry.kind)}".fmt()
+        case entry.kind
+        of FnUserDefined, FnCallback:
+          echo $(entry.impl)
+        else:
+          discard
 
 template pushVarScope() =
   if not s.secondPass:
@@ -302,7 +303,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if entry.firstDef.isNone():
         entry.tinfo = bottomType
     else:
-      var scopes = node.scopes.get()
       node.children[0].checkNode(s)
       let
         scope = node.getVarScope()

@@ -507,8 +507,7 @@ when defined(posix):
       discard setegid(gid)
 
     let
-      (output, exitCode) = execCmdEx(cmd)
-      exitAsStr = $(exitCode)
+      (output, _) = execCmdEx(cmd)
 
     result = some(pack(output))
 

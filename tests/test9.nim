@@ -22,7 +22,8 @@ for i from 1 to 10 {
 """
 
 ## Shouldn't blow up ever
-let s = """
+when false:
+  let s = """
 
 func doFact(f) {
   return fact(f)

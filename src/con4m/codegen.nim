@@ -876,7 +876,6 @@ proc loadOneAttr(ctx: MacroState,
   ## type-dependent.
 
   var
-    node: NimNode
     stVariableNode = ctx.currentStIdent
     attrLitNode = newLit(attrName)
     attrIdNode = safeIdent(attrName)
