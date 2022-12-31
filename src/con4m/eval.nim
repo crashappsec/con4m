@@ -117,6 +117,8 @@ proc sCallUserDef(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), nodeOpt.get())
   except:
+    echo getCurrentException().getStacktrace()
+    echo getCurrentExceptionMsg()
     fatal(fmt"Unhandled error when running builtin call: {name}",
           nodeOpt.get())
 
@@ -475,17 +477,20 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = ret.get()
   of NodeDictLit:
     node.evalKids(s)
-    case node.typeInfo.keyType.kind
-    of TypeString, TypeInt, TypeBool, TypeFloat:
-      var dict = newCon4mDict[Box, Box]()
-      for kvpair in node.children:
-        let
-          boxedKey = kvpair.children[0].value
-          boxedVal = kvpair.children[1].value
-        dict[boxedKey] = boxedVal
-      node.value = pack(dict)
+    if node.typeInfo.kind == TypeTVar:
+      node.value = pack(newCon4mDict[Box, Box]())
     else:
-      unreachable # Should already be restricted to primitive types
+      case node.typeInfo.keyType.kind
+      of TypeString, TypeInt, TypeBool, TypeFloat:
+        var dict = newCon4mDict[Box, Box]()
+        for kvpair in node.children:
+          let
+            boxedKey = kvpair.children[0].value
+            boxedVal = kvpair.children[1].value
+          dict[boxedKey] = boxedVal
+          node.value = pack(dict)
+      else:
+        unreachable # Should already be restricted to primitive types
   of NodeKVPair:
     node.evalKids(s)
   of NodeListLit:
