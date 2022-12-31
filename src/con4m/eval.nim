@@ -23,10 +23,10 @@ when (NimMajor, NimMinor) >= (1, 7):
 const breakMsg = "b"
 const continueMsg = "c"
 
-proc pushRuntimeFrame(s: ConfigState) {.inline.} =
+proc pushRuntimeFrame*(s: ConfigState) {.inline.} =
   s.frames.add(RuntimeFrame())
 
-proc popRuntimeFrame(s: ConfigState): RuntimeFrame {.inline.} =
+proc popRuntimeFrame*(s: ConfigState): RuntimeFrame {.inline.} =
   return s.frames.pop()
 
 proc runtimeVarLookup*(frames: VarStack,
@@ -633,21 +633,6 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
       scopes = tree.scopes.get()
 
     return some((state, scopes.attrs))
-
-proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
-  let tree = parse(filename)
-
-  if tree == nil: return none(Con4mScope)
-  s.errors = @[]
-  tree.checkTree(s)
-
-  s.pushRuntimeFrame()
-  try:
-    tree.evalNode(s)
-  finally:
-    discard s.popRuntimeFrame()
-
-  return some(tree.scopes.get().attrs)
 
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
 

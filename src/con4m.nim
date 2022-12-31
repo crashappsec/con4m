@@ -16,6 +16,8 @@ export fatal, parse.parse, Con4mError
 ## kicks off the parser by entering the top-level production (body),
 ## and prints out any error message that happened during parsing.
 
+import nimutils
+
 import con4m/treecheck
 export checkTree
 
@@ -34,7 +36,7 @@ export builtins
 import con4m/spec
 export newConfigSpec, addGlobalAttr, addSection, addAttr, validateConfig,
        newConfigState, getConfigVar, getAllSectionSTs, addSpec, lockConfigVar,
-       setOverride
+       setOverride, stackConfig
 
 # Simplification via complexity
 import con4m/codegen

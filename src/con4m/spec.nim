@@ -11,8 +11,11 @@ import unicode
 import strformat
 
 import types
+import parse
 import st
+import treecheck
 import typecheck
+import eval
 import dollars
 import nimutils/box
 import nimutils/unicodeid
@@ -418,6 +421,25 @@ proc validateConfig*(config: ConfigState): bool =
   if config.errors.len() == 0:
     return true
 
+proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
+  let tree = parse(filename)
+
+  if tree == nil: return none(Con4mScope)
+  s.errors = @[]
+  tree.checkTree(s)
+
+  s.pushRuntimeFrame()
+  try:
+    tree.evalNode(s)
+  finally:
+    discard s.popRuntimeFrame()
+
+  if s.spec.isSome():
+    if not s.validateConfig():
+      return none(Con4mScope)
+
+  return some(tree.scopes.get().attrs)
+    
 
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   ## This interface allows you to look up individual fields to get
