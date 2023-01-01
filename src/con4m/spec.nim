@@ -9,6 +9,7 @@ import tables
 import strutils
 import unicode
 import strformat
+import streams
 
 import types
 import parse
@@ -421,9 +422,7 @@ proc validateConfig*(config: ConfigState): bool =
   if config.errors.len() == 0:
     return true
 
-proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
-  let tree = parse(filename)
-
+proc stackBase(s: ConfigState, tree: Con4mNode): Option[Con4mScope] =
   if tree == nil: return none(Con4mScope)
   s.errors = @[]
   tree.checkTree(s)
@@ -439,6 +438,15 @@ proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
       return none(Con4mScope)
 
   return some(tree.scopes.get().attrs)
+  
+proc stackConfig*(s: ConfigState,
+                  stream: Stream,
+                  filename: string): Option[Con4mScope] =
+  stackBase(s, parse(stream, filename))
+
+
+proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
+  stackBase(s, parse(filename))
     
 
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
