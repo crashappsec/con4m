@@ -149,6 +149,8 @@ proc sCallBuiltin(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
+    echo getCurrentException().getStacktrace()
+    echo getCurrentExceptionMsg()
     fatal("Unhandled error when running builtin call: {name}".fmt(), node)
 
 proc sCall*(s: ConfigState,
@@ -606,11 +608,12 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       fatal("Variable was referenced before assignment", node)
 
 
-proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
+proc evalTree*(node: Con4mNode,
+               addBuiltins = false): Option[ConfigState] {.inline.} =
   ## This runs the evaluator on a tree that has already been parsed
   ## and type-checked.
 
-  let state = node.checkTree()
+  let state = node.checkTree(addBuiltins)
   if node == nil:
     return
 
@@ -622,7 +625,8 @@ proc evalTree*(node: Con4mNode): Option[ConfigState] {.inline.} =
 
   return some(state)
 
-proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
+proc evalConfig*(filename: string,
+                 addBuiltins = false): Option[(ConfigState, Con4mScope)] =
   ## Given the config file as a string, this will load and parse the
   ## file, then execute it, returning both the state object created,
   ## as well as the top-level symbol table for attributes, both
@@ -630,7 +634,7 @@ proc evalConfig*(filename: string): Option[(ConfigState, Con4mScope)] =
 
   let
     tree = parse(filename)
-    confOpt = tree.evalTree()
+    confOpt = tree.evalTree(addBuiltins)
 
   if confOpt.isSome():
     let

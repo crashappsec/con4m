@@ -10,6 +10,7 @@ import typecheck
 import st
 import parse # just for fatal()
 import eval
+import nimutils
 import nimutils/box
 
 import os
@@ -18,6 +19,7 @@ import osproc
 import strformat
 import strutils
 import options
+import streams
 
 when defined(posix):
   import posix
@@ -457,6 +459,61 @@ proc builtInDictKeys*(args: seq[Box],
 
   return some(pack[seq[Box]](keys))
 
+proc builtinListDir*(args: seq[Box], 
+                     unused1 = cast[Con4mScope](nil),
+                     unused2 = cast[VarStack](nil),
+                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+  var res: seq[string] = @[]
+
+  let dir = if len(args) == 0: "." else: resolvePath(unpack[string](args[0]))
+
+  for item in walkdir(dir):
+    res.add(item.path)
+
+  return some(pack[seq[string]](res))
+
+proc builtinReadFile*(args: seq[Box],
+                     unused1 = cast[Con4mScope](nil),
+                     unused2 = cast[VarStack](nil),
+                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+  let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
+  if f == nil: return some(pack(""))
+
+  result = some(pack(f.readAll()))
+  f.close()
+
+proc builtinWriteFile(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+  try:
+    let f = newFileStream(resolvePath(unpack[string](args[0])), fmWrite)
+    f.write(unpack[string](args[1]))
+    f.close()
+    return trueRet
+  except:
+    return falseRet
+
+proc builtinJoinPath(args: seq[Box],
+                     unused1 = cast[Con4mScope](nil),
+                     unused2 = cast[VarStack](nil),
+                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+  let res = joinPath(unpack[string](args[0]), unpack[string](args[1]))
+  return some(pack(res))
+
+proc builtinCwd(args: seq[Box],
+                     unused1 = cast[Con4mScope](nil),
+                     unused2 = cast[VarStack](nil),
+                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+  return some(pack(getCurrentDir()))
+
+proc builtinChdir(args: seq[Box],
+                  unused1 = cast[Con4mScope](nil),
+                  unused2 = cast[VarStack](nil),
+                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+  setCurrentDir(unpack[string](args[0]))
+  return none(Box)
+
 proc builtInPad*(args: seq[Box],
                  unused1 = cast[Con4mScope](nil),
                  unused2 = cast[VarStack](nil),
@@ -469,7 +526,6 @@ proc builtInPad*(args: seq[Box],
     return some(pack(topad))
 
   return some(pack(topad & repeat(' ', width - len(topad))))
-
 
 when defined(posix):
   proc builtinCmd*(args: seq[Box],
@@ -650,7 +706,13 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("keys", builtInDictKeys, "f({int : @y}) -> [string]")
   s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")
   s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
-
+  s.newBuiltIn("listDir", builtInListDir, "f() -> [string]")
+  s.newBuiltIn("listDir", builtInListDir, "f(string) -> [string]")
+  s.newBuiltIn("readFile", builtinReadFile, "f(string) -> string")
+  s.newBuiltIn("writeFile", builtinWriteFile, "f(string, string) -> bool")
+  s.newBuiltIn("joinPath", builtinJoinPath, "f(string, string) -> string")
+  s.newBuiltin("cwd", builtinCwd, "f()->string")
+  s.newBuiltin("chdir", builtinChdir, "f(string)")
   when defined(posix):
     s.newBuiltIn("run", builtinCmd, "f(string) -> string")
     s.newBuiltIn("system", builtinSystem, "f(string) -> (string, int)")
