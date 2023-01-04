@@ -174,7 +174,7 @@ con4m [flags] first.config ...
     opt: Option[(ConfigState, Con4mScope)]
 
   try:
-    opt = evalConfig(conffiles[0])
+    opt = evalConfig(conffiles[0], addBuiltins = true)
   except:
     printCompilerError(conffiles[0], getCurrentExceptionMsg(), debug)
 

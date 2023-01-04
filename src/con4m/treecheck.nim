@@ -1032,7 +1032,7 @@ proc newConfigState*(scope: Con4mScope,
                      spec: ConfigSpec = nil,
                      addBuiltins: bool = true): ConfigState
 
-proc checkTree*(node: Con4mNode): ConfigState =
+proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
   ## anything we can easily find before execution).  This version
   ## returns a new `ConfigState` object, that can be used for
@@ -1043,7 +1043,7 @@ proc checkTree*(node: Con4mNode): ConfigState =
   ## Adds all default builtins.
   node.scopes = some(newRootScope())
 
-  result = newConfigState(node.scopes.get().attrs)
+  result = newConfigState(node.scopes.get().attrs, addBuiltins=addBuiltins)
 
   node.checkTree(result)
 
