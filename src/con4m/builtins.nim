@@ -482,7 +482,7 @@ proc builtinReadFile*(args: seq[Box],
   result = some(pack(f.readAll()))
   f.close()
 
-proc builtinWriteFile(args: seq[Box],
+proc builtinWriteFile*(args: seq[Box],
                       unused1 = cast[Con4mScope](nil),
                       unused2 = cast[VarStack](nil),
                       unused3 = cast[Con4mScope](nil)): Option[Box] =
@@ -494,25 +494,207 @@ proc builtinWriteFile(args: seq[Box],
   except:
     return falseRet
 
-proc builtinJoinPath(args: seq[Box],
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc builtinJoinPath*(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
   let res = joinPath(unpack[string](args[0]), unpack[string](args[1]))
   return some(pack(res))
 
-proc builtinCwd(args: seq[Box],
+proc builtinCopyFile*(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+
+    let
+      src = unpack[string](args[0])
+      dst = unpack[string](args[1])
+
+    try:
+      copyFile(src, dst)
+    except:
+      return falseRet
+      
+    return trueRet
+
+proc builtinResolvePath*(args: seq[Box],
+                         unused1 = cast[Con4mScope](nil),
+                         unused2 = cast[VarStack](nil),
+                         unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(resolvePath(unpack[string](args[0]))))
+
+proc builtinCwd*(args: seq[Box],
+                 unused1 = cast[Con4mScope](nil),
+                 unused2 = cast[VarStack](nil),
+                 unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(getCurrentDir())) 
+
+proc builtinChdir*(args: seq[Box],
+                   unused1 = cast[Con4mScope](nil),
+                   unused2 = cast[VarStack](nil),
+                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let path = unpack[string](args[0])
+    try:
+      setCurrentDir(path)
+      return trueRet
+    except:
+      return falseRet
+
+proc builtinMkdir*(args: seq[Box],
+                   unused1 = cast[Con4mScope](nil),
+                   unused2 = cast[VarStack](nil),
+                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let path = unpack[string](args[0])
+    try:
+      createDir(path)
+      return trueRet
+    except:
+      return falseRet
+
+proc builtinSetEnv*(args: seq[Box],
+                    unused1 = cast[Con4mScope](nil),
+                    unused2 = cast[VarStack](nil),
+                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let
+      key = unpack[string](args[0])
+      val = unpack[string](args[1])
+    try:
+      putEnv(key, val)
+      return trueRet
+    except:
+      return falseRet
+
+proc builtinIsDir*(args: seq[Box],
+                   unused1 = cast[Con4mScope](nil),
+                   unused2 = cast[VarStack](nil),
+                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let path = unpack[string](args[0])
+
+    try:
+      if getFileInfo(path, false).kind == pcDir:
+        return trueRet
+      else:
+        return falseRet
+    except:
+        return falseRet
+
+proc builtinIsFile*(args: seq[Box],
+                    unused1 = cast[Con4mScope](nil),
+                    unused2 = cast[VarStack](nil),
+                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let path = unpack[string](args[0])
+
+    try:
+      if getFileInfo(path, false).kind == pcFile:
+        return trueRet
+      else:
+        return falseRet
+    except:
+      return falseRet
+      
+proc builtinIsLink*(args: seq[Box],
+                    unused1 = cast[Con4mScope](nil),
+                    unused2 = cast[VarStack](nil),
+                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+
+    try:
+      let
+        path = unpack[string](args[0])
+        kind = getFileInfo(path, false).kind
+
+      if kind == pcLinkToDir or kind == pcLinkToFile:
+        return trueRet
+      else:
+        return falseRet
+    except:
+      return falseRet
+
+proc builtinChmod*(args: seq[Box],
+                   unused1 = cast[Con4mScope](nil),
+                   unused2 = cast[VarStack](nil),
+                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+    let
+      path = unpack[string](args[0])
+      mode = cast[FilePermission](unpack[int](args[0]))
+
+    try:
+      setFilePermissions(path, cast[set[FilePermission]](mode))
+      return trueRet
+    except:
+      return falseRet
+
+proc builtinGetPid*(args: seq[Box],
+                    unused1 = cast[Con4mScope](nil),
+                    unused2 = cast[VarStack](nil),
+                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(getCurrentProcessId()))
+
+proc builtinFileLen*(args: seq[Box],
                      unused1 = cast[Con4mScope](nil),
                      unused2 = cast[VarStack](nil),
                      unused3 = cast[Con4mScope](nil)): Option[Box] =
-  return some(pack(getCurrentDir()))
+    let path = unpack[string](args[0])
 
-proc builtinChdir(args: seq[Box],
+    try:
+      return some(pack(getFileSize(path)))
+    except:
+      return some(pack(-1))
+
+proc builtinMove*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
                   unused2 = cast[VarStack](nil),
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
-  setCurrentDir(unpack[string](args[0]))
-  return none(Box)
+
+    try:
+      let
+        src = unpack[string](args[0])
+        dst = unpack[string](args[1])
+        kind = getFileInfo(src, false).kind
+
+      if kind == pcDir or kind == pcLinkToDir:
+          moveDir(src, dst)
+          return trueRet
+      else:
+        moveFile(src, dst)
+        return trueRet
+    except:
+      return falseRet
+
+proc builtinQuote*(args: seq[Box],
+                   unused1 = cast[Con4mScope](nil),
+                   unused2 = cast[VarStack](nil),
+                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(quoteShell(unpack[string](args[0]))))
+
+proc builtinRm*(args: seq[Box],
+                unused1 = cast[Con4mScope](nil),
+                unused2 = cast[VarStack](nil),
+                unused3 = cast[Con4mScope](nil)): Option[Box] =
+    try:
+      let
+        path = unpack[string](args[0])
+        kind = getFileInfo(path, false).kind
+
+      if kind == pcDir or kind == pcLinkToDir:
+          removeDir(path, true)
+          return trueRet
+      else:
+        removeFile(path)
+        return trueRet
+    except:
+      return falseRet
+
+proc splitPath*(args: seq[Box],
+                unused1 = cast[Con4mScope](nil),
+                unused2 = cast[VarStack](nil),
+                unused3 = cast[Con4mScope](nil)): Option[Box] =
+    var s: seq[string]
+
+    let (head, tail) = splitPath(unpack[string](args[0]))
+    s.add(head)
+    s.add(tail)
+
+    return some(pack(s))    
 
 proc builtInPad*(args: seq[Box],
                  unused1 = cast[Con4mScope](nil),
@@ -601,6 +783,18 @@ when defined(posix):
     if (uid != euid): discard seteuid(euid)
     if (gid != egid): discard setegid(egid)
 
+  proc builtinGetUid*(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(getuid()))
+
+  proc builtinGetEuid*(args: seq[Box],
+                       unused1 = cast[Con4mScope](nil),
+                       unused2 = cast[VarStack](nil),
+                       unused3 = cast[Con4mScope](nil)): Option[Box] =
+    return some(pack(geteuid()))
+    
 else:
   ## I don't know the permissions models on any non-posix OS, so
   ## this might be wildly insecure on such systems, as far as I know.
@@ -706,15 +900,32 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("keys", builtInDictKeys, "f({int : @y}) -> [string]")
   s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")
   s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
-  s.newBuiltIn("listDir", builtInListDir, "f() -> [string]")
-  s.newBuiltIn("listDir", builtInListDir, "f(string) -> [string]")
+  s.newBuiltIn("listDir", builtinListDir, "f() -> [string]")
+  s.newBuiltIn("listDir", builtinListDir, "f(string) -> [string]")
   s.newBuiltIn("readFile", builtinReadFile, "f(string) -> string")
   s.newBuiltIn("writeFile", builtinWriteFile, "f(string, string) -> bool")
+  s.newBuiltIn("copyFile", builtInCopyFile, "f(string)->bool") #
   s.newBuiltIn("joinPath", builtinJoinPath, "f(string, string) -> string")
+  s.newBuiltIn("resolvePath", builtinResolvePath, "f(string)->string")
   s.newBuiltin("cwd", builtinCwd, "f()->string")
-  s.newBuiltin("chdir", builtinChdir, "f(string)")
+  s.newBuiltin("chdir", builtinChdir, "f(string) -> bool")
+  s.newBuiltIn("mkdir", builtinMkdir, "f(string) -> bool") # on down
+  s.newBuiltIn("setEnv", builtinSetEnv, "f(string, string) -> bool")
+  s.newBuiltIn("isDir", builtinIsDir, "f(string) -> bool")
+  s.newBuiltIn("isFile", builtinIsFile, "f(string) -> bool")
+  s.newBuiltIn("isLink", builtinIsFile, "f(string) -> bool")  
+  s.newBuiltIn("chmod", builtinChmod, "f(string, int) -> bool")
+  s.newBuiltIn("getpid", builtinGetPid, "f() -> int")
+  s.newBuiltIn("fileLen", builtinFileLen, "f(string) -> int")
+  s.newBuiltIn("move", builtinMove, "f(string) -> bool")
+  s.newBuiltIn("quote", builtinQuote, "f(string)->string")
+  s.newBuiltIn("rm", builtinRm, "f(string)->bool")
+  s.newBuiltIn("splitPath", builtinSplit, "f(string) -> (string, string)")
+  
   when defined(posix):
     s.newBuiltIn("run", builtinCmd, "f(string) -> string")
     s.newBuiltIn("system", builtinSystem, "f(string) -> (string, int)")
+    s.newBuiltIn("getuid", builtinGetUid, "f() -> int")
+    s.newBuiltIn("geteuid", builtinGetEuid, "f() -> int")
 
 
