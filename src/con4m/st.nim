@@ -148,12 +148,9 @@ proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
 
   return dottedLookup(entry.subscope.get(), rest)
 
-# This does NOT accept generics, as we don't support them across the
-# call boundary. Except it currently does, for my own testing.
-#
-# Similarly, it does not accept bottom, other than you can leave off the
+# This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
-
+# 
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   var n = unicode.strip(s).toLower()
 
@@ -166,6 +163,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   if n.startsWith("float"): return (Con4mType(kind: TypeFloat),
                                               n["float".len() .. ^1])
 
+  if n.len() == 0:
+    raise newException(ValueError, "Cannot convert a null string to a type")
   if n[0] == '@':
     let vname = $n[1]
     if not tv.contains(vname): tv[vname] = newTypeVar(len(tv))
@@ -173,6 +172,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   elif n[0] == '[':
     var (contained, rest) = n[1 .. ^1].toCon4mType(tv)
     n = unicode.strip(rest)
+    if n.len() == 0:
+      raise newException(ValueError, "Unterminated list type")
     if n[0] != ']':
       raise newException(ValueError, "Unterminated list type")
     return (newListType(contained), n[1 .. ^1])
@@ -183,6 +184,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       raise newException(ValueError, "Expected : in dict type")
     var (valT, rest2) = n[1 .. ^1].toCon4mType(tv)
     n = unicode.strip(rest2)
+    if n.len() == 0:
+      raise newException(ValueError, "Unterminated dict type")
     if n[0] != '}':
       raise newException(ValueError, "Unterminated dict type")
     return (newDictType(keyT, valT), n[1 .. ^1])
@@ -197,6 +200,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       (oneArgType, n) = n.toCon4mType(tv)
       argTypes.add(oneArgType)
       n = unicode.strip(n[0 .. ^1])
+      if n.len() == 0:
+        raise newException(ValueError, "Unterminated tuple type")
       case n[0]
       of ',':
         n = unicode.strip(n[1 .. ^1])
@@ -206,7 +211,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
         n = unicode.strip(n[1 .. ^1])
         return (Con4mType(kind: TypeTuple, itemTypes: argTypes), n)
       else:
-        raise newException(ValueError, "Invalid function type spec")
+        raise newException(ValueError, "Invalid tuple type spec")
   elif n[0] == 'f':
     var
       params: seq[Con4mType]
@@ -219,7 +224,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
       raise newException(ValueError, "Function types are written: f() -> ...")
 
     n = unicode.strip(n[1 .. ^1])
-
+    if n.len() == 0:
+      raise newException(ValueError, "Unterminated function parameter spec")
     if n[0] == ')':
       n = unicode.strip(n[1 .. ^1])
     else:
@@ -234,6 +240,8 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
         (oneParam, n) = n.toCon4mType(tv)
         params.add(oneParam)
         n = unicode.strip(n[0 .. ^1])
+        if n.len() == 0:
+          raise newException(ValueError, "Unterminated function parameter spec")
         case n[0]
         of ',':
           if va:
@@ -268,12 +276,12 @@ proc toCon4mType*(s: string): Con4mType =
   try:
     (v, n) = s.toCon4mType(newTable[string, Con4mType]())
   except:
-    raise newException(ValueError, "Incomplete type specification")
+    raise newException(ValueError, 
+                       "Incomplete type specification (no closing paren)")
 
   if unicode.strip(n).len() != 0:
     raise newException(ValueError,
                        "Extraneous text after parsed type: {n}".fmt())
-
   return v
 
 

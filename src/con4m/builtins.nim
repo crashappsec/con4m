@@ -20,7 +20,6 @@ import strformat
 import strutils
 import options
 import streams
-
 when defined(posix):
   import posix
 
@@ -450,14 +449,44 @@ proc builtInDictKeys*(args: seq[Box],
   var
     keys: seq[Box] = newSeq[Box]()
     box = args[0]
-
-  var
     d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
 
   for k, _ in d:
     keys.add(k)
 
   return some(pack[seq[Box]](keys))
+
+proc builtInDictValues*(args: seq[Box],
+                      unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+
+  var
+    values: seq[Box] = newSeq[Box]()
+    box = args[0]
+    d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
+
+  for _, v in d:
+    values.add(v)
+
+  return some(pack[seq[Box]](values))
+
+proc builtInDictItems*(args: seq[Box], unused1 = cast[Con4mScope](nil),
+                      unused2 = cast[VarStack](nil),
+                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+  var
+    items: seq[Box] = newSeq[Box]()
+    box = args[0]
+    tup: seq[Box] # For the output tuples.
+    d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
+  
+  for k, v in d:
+    tup = newSeq[Box]()
+    tup.add(k)
+    tup.add(v)
+    items.add(pack[seq[Box]](tup))
+  
+  return some(pack[seq[Box]](items))
 
 proc builtinListDir*(args: seq[Box], 
                      unused1 = cast[Con4mScope](nil),
@@ -467,8 +496,9 @@ proc builtinListDir*(args: seq[Box],
 
   let dir = if len(args) == 0: "." else: resolvePath(unpack[string](args[0]))
 
-  for item in walkdir(dir):
-    res.add(item.path)
+  unprivileged:
+    for item in walkdir(dir):
+      res.add(item.path)
 
   return some(pack[seq[string]](res))
 
@@ -476,11 +506,14 @@ proc builtinReadFile*(args: seq[Box],
                      unused1 = cast[Con4mScope](nil),
                      unused2 = cast[VarStack](nil),
                      unused3 = cast[Con4mScope](nil)): Option[Box] =
-  let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
-  if f == nil: return some(pack(""))
 
-  result = some(pack(f.readAll()))
-  f.close()
+  unprivileged:
+    let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
+    if f == nil: 
+      result = some(pack(""))
+    else:
+      result = some(pack(f.readAll()))
+      f.close()
 
 proc builtinWriteFile*(args: seq[Box],
                       unused1 = cast[Con4mScope](nil),
@@ -510,12 +543,12 @@ proc builtinCopyFile*(args: seq[Box],
       src = unpack[string](args[0])
       dst = unpack[string](args[1])
 
-    try:
-      copyFile(src, dst)
-    except:
-      return falseRet
-      
-    return trueRet
+    unprivileged:
+      try:
+        copyFile(src, dst)
+        result = trueRet
+      except:
+        result = falseRet
 
 proc builtinResolvePath*(args: seq[Box],
                          unused1 = cast[Con4mScope](nil),
@@ -534,22 +567,24 @@ proc builtinChdir*(args: seq[Box],
                    unused2 = cast[VarStack](nil),
                    unused3 = cast[Con4mScope](nil)): Option[Box] =
     let path = unpack[string](args[0])
-    try:
-      setCurrentDir(path)
-      return trueRet
-    except:
-      return falseRet
+    unprivileged:
+      try:
+        setCurrentDir(path)
+        result = trueRet
+      except:
+        result = falseRet
 
 proc builtinMkdir*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
                    unused2 = cast[VarStack](nil),
                    unused3 = cast[Con4mScope](nil)): Option[Box] =
     let path = unpack[string](args[0])
-    try:
-      createDir(path)
-      return trueRet
-    except:
-      return falseRet
+    unprivileged:
+      try:
+        createDir(path)
+        result = trueRet
+      except:
+        result = falseRet
 
 proc builtinSetEnv*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
@@ -558,11 +593,12 @@ proc builtinSetEnv*(args: seq[Box],
     let
       key = unpack[string](args[0])
       val = unpack[string](args[1])
-    try:
-      putEnv(key, val)
-      return trueRet
-    except:
-      return falseRet
+    unprivileged:
+      try:
+        putEnv(key, val)
+        result = trueRet
+      except:
+        result = falseRet
 
 proc builtinIsDir*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -570,13 +606,14 @@ proc builtinIsDir*(args: seq[Box],
                    unused3 = cast[Con4mScope](nil)): Option[Box] =
     let path = unpack[string](args[0])
 
-    try:
-      if getFileInfo(path, false).kind == pcDir:
-        return trueRet
-      else:
-        return falseRet
-    except:
-        return falseRet
+    unprivileged:
+      try:
+        if getFileInfo(path, false).kind == pcDir:
+          result = trueRet
+        else:
+          result = falseRet
+      except:
+          result = falseRet
 
 proc builtinIsFile*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
@@ -584,30 +621,32 @@ proc builtinIsFile*(args: seq[Box],
                     unused3 = cast[Con4mScope](nil)): Option[Box] =
     let path = unpack[string](args[0])
 
-    try:
-      if getFileInfo(path, false).kind == pcFile:
-        return trueRet
-      else:
-        return falseRet
-    except:
-      return falseRet
+    unprivileged:
+      try:
+        if getFileInfo(path, false).kind == pcFile:
+          result = trueRet
+        else:
+          result = falseRet
+      except:
+        result = falseRet
       
 proc builtinIsLink*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
                     unused2 = cast[VarStack](nil),
                     unused3 = cast[Con4mScope](nil)): Option[Box] =
 
-    try:
-      let
-        path = unpack[string](args[0])
-        kind = getFileInfo(path, false).kind
+    unprivileged:
+      try:
+        let
+          path = unpack[string](args[0])
+          kind = getFileInfo(path, false).kind
 
-      if kind == pcLinkToDir or kind == pcLinkToFile:
-        return trueRet
-      else:
-        return falseRet
-    except:
-      return falseRet
+        if kind == pcLinkToDir or kind == pcLinkToFile:
+          result = trueRet
+        else:
+          result = falseRet
+      except:
+        result = falseRet
 
 proc builtinChmod*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -617,11 +656,12 @@ proc builtinChmod*(args: seq[Box],
       path = unpack[string](args[0])
       mode = cast[FilePermission](unpack[int](args[0]))
 
-    try:
-      setFilePermissions(path, cast[set[FilePermission]](mode))
-      return trueRet
-    except:
-      return falseRet
+    unprivileged:
+      try:
+        setFilePermissions(path, cast[set[FilePermission]](mode))
+        result = trueRet
+      except:
+        result = falseRet
 
 proc builtinGetPid*(args: seq[Box],
                     unused1 = cast[Con4mScope](nil),
@@ -635,30 +675,32 @@ proc builtinFileLen*(args: seq[Box],
                      unused3 = cast[Con4mScope](nil)): Option[Box] =
     let path = unpack[string](args[0])
 
-    try:
-      return some(pack(getFileSize(path)))
-    except:
-      return some(pack(-1))
+    unprivileged:
+      try:
+        result = some(pack(getFileSize(path)))
+      except:
+        result = some(pack(-1))
 
 proc builtinMove*(args: seq[Box],
                   unused1 = cast[Con4mScope](nil),
                   unused2 = cast[VarStack](nil),
                   unused3 = cast[Con4mScope](nil)): Option[Box] =
 
-    try:
-      let
-        src = unpack[string](args[0])
-        dst = unpack[string](args[1])
-        kind = getFileInfo(src, false).kind
+    unprivileged:
+      try:
+        let
+          src = unpack[string](args[0])
+          dst = unpack[string](args[1])
+          kind = getFileInfo(src, false).kind
 
-      if kind == pcDir or kind == pcLinkToDir:
+        if kind == pcDir or kind == pcLinkToDir:
           moveDir(src, dst)
-          return trueRet
-      else:
-        moveFile(src, dst)
-        return trueRet
-    except:
-      return falseRet
+          result = trueRet
+        else:
+          moveFile(src, dst)
+          result = trueRet
+      except:
+        result = falseRet
 
 proc builtinQuote*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
@@ -684,7 +726,7 @@ proc builtinRm*(args: seq[Box],
     except:
       return falseRet
 
-proc splitPath*(args: seq[Box],
+proc builtinSplitPath*(args: seq[Box],
                 unused1 = cast[Con4mScope](nil),
                 unused2 = cast[VarStack](nil),
                 unused3 = cast[Con4mScope](nil)): Option[Box] =
@@ -734,23 +776,10 @@ when defined(posix):
     ## that might require a fork and a pipe?
     var
       cmd = unpack[string](args[0])
-    let
-      uid = getuid()
-      euid = geteuid()
-      gid = getgid()
-      egid = getegid()
 
-    if (uid != euid) or (gid != egid):
-      discard seteuid(uid)
-      discard setegid(gid)
-
-    let
-      (output, _) = execCmdEx(cmd)
-
-    result = some(pack(output))
-
-    if (uid != euid): discard seteuid(euid)
-    if (gid != egid): discard setegid(egid)
+    unprivileged:
+      let (output, _) = execCmdEx(cmd)
+      result = some(pack(output))
 
   proc builtinSystem*(args: seq[Box],
                       unused1 = cast[Con4mScope](nil),
@@ -759,29 +788,16 @@ when defined(posix):
     ## Generally exposed as `system(s)`
     ##
     ## like `run` except returns a tuple containing the output and the exit code.
-    var
+    var 
       cmd = unpack[string](args[0])
-    let
-      uid = getuid()
-      euid = geteuid()
-      gid = getgid()
-      egid = getegid()
+      outlist: seq[Box] = @[]    
 
-    if (uid != euid) or (gid != egid):
-      discard seteuid(uid)
-      discard setegid(gid)
-
-    let (output, exitCode) = execCmdEx(cmd)
-
-    var outlist: seq[Box] = @[]
-
-    outlist.add(pack(output))
-    outlist.add(pack(exitCode))
+    unprivileged:
+      let (output, exitCode) = execCmdEx(cmd)
+      outlist.add(pack(output))
+      outlist.add(pack(exitCode))
 
     result = some(pack(outlist))
-
-    if (uid != euid): discard seteuid(euid)
-    if (gid != egid): discard setegid(egid)
 
   proc builtinGetUid*(args: seq[Box],
                       unused1 = cast[Con4mScope](nil),
@@ -856,10 +872,20 @@ proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
     s.funcTable[name].add(b)
 
 proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
-  newCoreFunc(s, name, tinfo, fn)
+  try:
+    newCoreFunc(s, name, tinfo, fn)
+  except:
+    let msg = getCurrentExceptionMsg()
+    raise newException(ValueError, 
+                       fmt"When adding builtin '{name}({tinfo})': {msg}")
 
 proc newCallback*(s: ConfigState, name: string, tinfo: string) =
-  newCoreFunc(s, name, tinfo, nil)
+  try:
+    newCoreFunc(s, name, tinfo, nil)
+  except:
+    let msg = getCurrentExceptionMsg()
+    raise newException(ValueError, 
+                       fmt"When adding callback '{name}({tinfo})': {msg}")
 
 proc addDefaultBuiltins*(s: ConfigState) =
   ## This function loads existing default builtins. It gets called
@@ -871,10 +897,11 @@ proc addDefaultBuiltins*(s: ConfigState) =
   ##
   ## Instead, you probably should just use `newBuiltIn()` to add your
   ## own calls, unless you want to remove or rename things.
-
-  s.newBuiltIn("string", builtinBToS, "f(bool) -> string")
-  s.newBuiltIn("string", builtinIToS, "f(int) -> string")
-  s.newBuiltIn("string", builtinFToS, "f(float) -> string")
+  ## These calls are grouped here in categories, matching the documentation.
+  ## The ordering in the code above does not currently match; it is closer to
+  ## the historical order in which things were added.
+  
+  # Type conversion operations
   s.newBuiltIn("bool", builtinIToB, "f(int) -> bool")
   s.newBuiltIn("bool", builtinFToB, "f(float) -> bool")
   s.newBuiltIn("bool", builtinSToB, "f(string) -> bool")
@@ -882,45 +909,57 @@ proc addDefaultBuiltins*(s: ConfigState) =
   s.newBuiltIn("bool", builtinDToB, "f({@x : @y}) -> bool")
   s.newBuiltIn("float", builtinItoF, "f(int) -> float")
   s.newBuiltIn("int", builtinFtoI, "f(float) -> int")
-  s.newBuiltIn("split", builtinSplit, "f(string, string) -> [string]")
-  s.newBuiltIn("echo", builtinEcho, "f(*string)")
-  s.newBuiltIn("env", builtinEnv, "f(string) -> string")
-  s.newBuiltIn("envExists", builtinEnvExists, "f(string) -> bool")
-  s.newBuiltIn("env", builtinEnvAll, "f() -> {string : string}")
-  s.newBuiltIn("strip", builtinStrip, "f(string) -> string")
+  s.newBuiltIn("string", builtinBToS, "f(bool) -> string")
+  s.newBuiltIn("string", builtinIToS, "f(int) -> string")
+  s.newBuiltIn("string", builtinFToS, "f(float) -> string")
+
+  # String manipulation functions.
   s.newBuiltIn("contains", builtinContainsStrStr, "f(string, string) -> bool")
   s.newBuiltIn("find", builtinFindFromStart, "f(string, string) -> int")
-  s.newBuiltIn("slice", builtinSlice, "f(string, int, int) -> string")
-  s.newBuiltIn("slice", builtinSliceToEnd, "f(string, int) -> string")
-  s.newBuiltIn("abort", builtInAbort, "f(string)")
+  s.newBuiltIn("format", builtInFormat, "f(string) -> string")
   s.newBuiltIn("len", builtInStrLen, "f(string) -> int")
+  s.newBuiltIn("slice", builtinSliceToEnd, "f(string, int) -> string")
+  s.newBuiltIn("slice", builtinSlice, "f(string, int, int) -> string")
+  s.newBuiltIn("split", builtinSplit, "f(string, string) -> [string]")
+  s.newBuiltIn("strip", builtinStrip, "f(string) -> string")
+  s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
+
+  # Container (list and dict) basics.
   s.newBuiltIn("len", builtInListLen, "f([@x]) -> int")
   s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
-  s.newBuiltIn("format", builtInFormat, "f(string) -> string")
-  s.newBuiltIn("keys", builtInDictKeys, "f({int : @y}) -> [string]")
-  s.newBuiltIn("keys", builtInDictKeys, "f({string : @y}) -> [string]")
-  s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
+  s.newBuiltIn("keys", builtInDictKeys, "f({@x : @y}) -> [@x]")
+  s.newBuiltIn("values", builtinDictValues, "f({@x: @y}) -> [@y]")
+  s.newBuiltIn("items", builtInDictItems, "f({@x: @y}) -> [(@x, @y)]")
+
+  # File system routines
   s.newBuiltIn("listDir", builtinListDir, "f() -> [string]")
   s.newBuiltIn("listDir", builtinListDir, "f(string) -> [string]")
   s.newBuiltIn("readFile", builtinReadFile, "f(string) -> string")
   s.newBuiltIn("writeFile", builtinWriteFile, "f(string, string) -> bool")
-  s.newBuiltIn("copyFile", builtInCopyFile, "f(string)->bool") #
+  s.newBuiltIn("copyFile", builtInCopyFile, "f(string, string) -> bool")
+  s.newBuiltIn("moveFile", builtinMove, "f(string, string) -> bool")
+  s.newBuiltIn("rmFile", builtinRm, "f(string)->bool")
   s.newBuiltIn("joinPath", builtinJoinPath, "f(string, string) -> string")
   s.newBuiltIn("resolvePath", builtinResolvePath, "f(string)->string")
+  s.newBuiltIn("splitPath", builtinSplitPath, "f(string) -> (string, string)")
   s.newBuiltin("cwd", builtinCwd, "f()->string")
   s.newBuiltin("chdir", builtinChdir, "f(string) -> bool")
-  s.newBuiltIn("mkdir", builtinMkdir, "f(string) -> bool") # on down
-  s.newBuiltIn("setEnv", builtinSetEnv, "f(string, string) -> bool")
+  s.newBuiltIn("mkdir", builtinMkdir, "f(string) -> bool")
   s.newBuiltIn("isDir", builtinIsDir, "f(string) -> bool")
   s.newBuiltIn("isFile", builtinIsFile, "f(string) -> bool")
   s.newBuiltIn("isLink", builtinIsFile, "f(string) -> bool")  
   s.newBuiltIn("chmod", builtinChmod, "f(string, int) -> bool")
-  s.newBuiltIn("getpid", builtinGetPid, "f() -> int")
   s.newBuiltIn("fileLen", builtinFileLen, "f(string) -> int")
-  s.newBuiltIn("move", builtinMove, "f(string) -> bool")
+
+  # System routines
+  s.newBuiltIn("echo", builtinEcho, "f(*string)")
+  s.newBuiltIn("abort", builtInAbort, "f(string)")
+  s.newBuiltIn("env", builtinEnvAll, "f() -> {string : string}")
+  s.newBuiltIn("env", builtinEnv, "f(string) -> string")
+  s.newBuiltIn("envExists", builtinEnvExists, "f(string) -> bool")
+  s.newBuiltIn("setEnv", builtinSetEnv, "f(string, string) -> bool")
+  s.newBuiltIn("getpid", builtinGetPid, "f() -> int")
   s.newBuiltIn("quote", builtinQuote, "f(string)->string")
-  s.newBuiltIn("rm", builtinRm, "f(string)->bool")
-  s.newBuiltIn("splitPath", builtinSplit, "f(string) -> (string, string)")
   
   when defined(posix):
     s.newBuiltIn("run", builtinCmd, "f(string) -> string")
