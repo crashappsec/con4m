@@ -80,12 +80,12 @@ when isMainModule:
     else:
       let f2 = msg.find("): ") + 4
 
-      modmsg = if (len(parts) > 2) and (f == -1): msg
+      modmsg = if f == -1: msg
                else: msg[0 ..< f].strip() & " " & msg[f2 .. ^1]
 
-    stderr.writeLine(fmt"{me}:{fname}:{modmsg}")
+    stderr.writeLine(fmt"{me}:{fname}: {modmsg}")
 
-    if len(parts) > 2:
+    if len(parts) > 2 and (parts[0][0] in "0123456789"):
       let
         line = parseInt(parts[0]) - 1
         offset = parseInt(parts[1])

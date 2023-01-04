@@ -347,13 +347,15 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     start = unpack[int](node.children[1].value)
     stop = unpack[int](node.children[2].value)
-    i = start
 
     if start < stop:
       incr = 1
+      stop = stop - 1
     else:
       incr = -1
+      start = start - 1
 
+    i = start
     s.pushRuntimeFrame()
     while i != (stop + incr):
       s.runtimeVarSet(scope, name, pack(i))
@@ -606,7 +608,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = s.runtimeVarLookup(name, scopes.vars)
     except:
       fatal("Variable was referenced before assignment", node)
-
 
 proc evalTree*(node: Con4mNode,
                addBuiltins = false): Option[ConfigState] {.inline.} =

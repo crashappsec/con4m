@@ -6,6 +6,7 @@
 
 import types
 import st
+import tables
 
 import dollars
 import options
@@ -53,10 +54,15 @@ proc getBaseType*(t: Con4mType): Con4mTypeKind =
 proc getBaseType*(node: Con4mNode): Con4mTypeKind =
   return node.typeInfo.getBaseType()
 
+# Uncomment this if you need a trace of unify() calls,
+# rename unify below to unifyactual, and then
+# uncomment the debug wrapper for unify below. 
+# proc unify*(param1: Con4mType, param2: Con4mType): Con4mType 
+
+
 # Just in case someone manages to clone a singleton, we
 # always check against the .kind field, instead of looking at
 # object equivolence for singletons (e.g., int, bottom)
-
 proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
   let
     t1 = param1.resolveTypeVars()
@@ -184,13 +190,15 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
       else:
         return bottomType
 
-#proc debugunify*(param1: Con4mType, param2: Con4mType): Con4mType =
-# If you want to use this, rename unify* above to unifyActual,
-# Change the name of this to unify*, and then add a prototype
-# for this function above unifyActual...
-#
+# If you need a trace of unify calls, follow the instructions above, then
+# uncomment the blow wrapper.
+# import strformat
+# proc unify*(param1: Con4mType, param2: Con4mType): Con4mType =
+#  let 
+#    s1 = $(param1)
+#    s2 = $(param2)
 #  result = unifyActual(param1, param2)
-#  echo fmt"{`$`(param1)} ⋃ {`$`(param2)} = {`$`(result)}"
+#  echo fmt"{s1} ⋃ {s2} = {`$`(result)}"
 
 proc isBottom*(t: Con4mType): bool =
   return t.kind == TypeBottom
@@ -230,46 +238,54 @@ proc hasTypeVar*(t: Con4mType): bool =
   else:
     return false
 
-proc copyType*(t: Con4mType): Con4mType =
+proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
   case t.kind
   of TypeTVar:
+    if t.varNum in cache:
+      return cache[t.varNum]
     if t.link.isSome():
-      return copyType(t.link.get())
+      result = copyType(t.link.get(), cache)
+      cache[t.varNum] = result
     else:
       result = newTypeVar(t.constraints)
       result.cycle = false
+      cache[t.varNum] = result
   of TypeList:
     if t.itemType.hasTypeVar():
       result = Con4mType(kind: TypeList)
-      result.itemType = copyType(t.itemType)
+      result.itemType = copyType(t.itemType, cache)
     else:
       return t
   of TypeDict:
     # Right now, we constrain keys to string or int
     if t.hasTypeVar():
       result = Con4mType(kind: TypeDict)
-      result.keyType = copyType(t.keyType)
-      result.valType = copyType(t.valType)
+      result.keyType = copyType(t.keyType, cache)
+      result.valType = copyType(t.valType, cache)
     else:
       return t
   of TypeTuple:
     if t.hasTypeVar():
       result = Con4mType(kind: TypeTuple)
       for param in t.itemTypes:
-        result.itemTypes.add(param.copyType())
+        result.itemTypes.add(param.copyType(cache))
     else:
       return t
   of TypeProc:
     if t.hasTypeVar():
       result = Con4mType(kind: TypeProc)
       for param in t.params:
-        result.params.add(param.copyType())
+        result.params.add(param.copyType(cache))
       result.va = t.va
-      result.retType = t.retType.copyType()
+      result.retType = t.retType.copyType(cache)
     else:
       return t
   else:
     return t
+
+proc copyType*(t: Con4mType): Con4mType =
+  var tVarCache = newTable[int, Con4mType]()
+  return copytype(t, tVarCache)
 
 proc reprSig*(name: string, t: Con4mType): string =
   return name & (($(t))[1 .. ^1])
