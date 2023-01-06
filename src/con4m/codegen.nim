@@ -1349,7 +1349,7 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   #   assert config.host[1].ip == "10.12.1.10"
   var
     tree = parse(newStringStream(confstr))
-    opt = tree.evalTree()
+    opt = tree.evalTree(true)
 
   if not opt.isSome():
     echo "Error: invalid configuration file."
@@ -1363,4 +1363,4 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
     for err in `ctx nameBase Conf`.errors:
       echo "Error: ", err
     quit()
-  `ctx nameBase Conf`.loadSamiConfig()
+  `ctx nameBase Conf`.`load nameBase Config`()

@@ -460,6 +460,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       scopes = node.getBothScopes()
 
     tup.checkNode(s)
+    if tup.getBaseType() == TypeTVar and not s.secondPass:
+      for i in 0 ..< node.children.len() - 1:
+        node.children[i].checkNode(s)
+      return # Figure it out in the second pass.
+
     if tup.getBaseType() != TypeTuple:
       fatal("Trying to unpack a value that is not a tuple.", tup)
     if tup.typeInfo.itemTypes.len() != node.children.len() - 1:
