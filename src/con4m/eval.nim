@@ -87,9 +87,9 @@ proc runtimeVarSet*(state: ConfigState,
 
   raise newException(Con4mError, fmt"{name} not found in scope at runtime")
 
-proc getFuncBySig(s: ConfigState,
-                  name: string,
-                  t: Con4mType): Option[FuncTableEntry] =
+proc getFuncBySig*(s: ConfigState,
+                   name: string,
+                   t: Con4mType): Option[FuncTableEntry] =
   if not s.funcTable.contains(name):
     return
 
