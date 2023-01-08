@@ -233,7 +233,7 @@ type
     secondPass*: bool
     frames*: VarStack
 
-const
+let
   # These are just shared instances for types that aren't
   # parameterized, instead of having to instantiate multiple
   # instances.  Should not be exposed to the user.
