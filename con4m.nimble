@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.4.3"
+version       = "0.4.4"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for lightweight scripting. Inspired by HCL, but far more straightforward.  Yet far more functional than UCL."
 license       = "Apache-2.0"
