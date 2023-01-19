@@ -915,6 +915,7 @@ const defaultBuiltins = [
   (106, "split",    builtinSplit,          "f(string, string) -> [string]"),
   (107, "strip",    builtinStrip,          "f(string) -> string"),
   (108, "pad",      builtInPad,            "f(string, int) -> string"),
+  (109, "format",    builtInFormat,        "f(string) -> string"), 
 
   # Container (list and dict) basics.
   (200, "len",    builtInListLen,    "f([@x]) -> int"),
@@ -956,7 +957,7 @@ const defaultBuiltins = [
 # I'm sure it has something to do w/ dependencies that prevents Nim
 # from auto-casting to closures?
 #
-#  (109, "format",       builtInFormat,      "f(string) -> string"),  
+#  (109, "format",       builtInFormat,      "f(string) -> string"), 
 #  (301, "listDir",      builtinListDir,     "f() -> [string]"),
 #  (302, "listDir",      builtinListDir,     "f(string) -> [string]"),
 #  (303, "readFile",     builtinReadFile,    "f(string) -> string"),
