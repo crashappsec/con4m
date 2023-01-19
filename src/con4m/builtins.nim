@@ -323,20 +323,20 @@ proc builtinSliceToEnd*(args: seq[Box],
   except:
     return some(pack(""))
 
-proc builtInFormat*(args: seq[Box],
-                    attrs: Con4mScope,
-                    vars: VarStack,
+proc builtInFormat*(args:       seq[Box],
+                    attrs:      Con4mScope,
+                    vars:       VarStack,
                     localScope: Con4mScope
                    ): Option[Box] =
   ## We don't error check on string bounds; when an exception gets
   ## raised, SCall will call fatal().
-
   var
-    s = unpack[string](args[0])
+    s   = unpack[string](args[0])
     res = newStringOfCap(len(s)*2)
+    i   = 0
     optEntry: Option[StEntry]
-    key: string
-    i = 0
+    key:     string
+      
   while i < s.len():
     case s[i]
     of '}':
@@ -405,7 +405,12 @@ proc builtInFormat*(args: seq[Box],
 
   return some(pack(res))
 
-
+proc callFmt(args:   seq[Box],
+             proxy1: Con4mScope,
+             proxy2: VarStack,
+             proxy3: Con4mScope): Option[Box] =
+    return builtinFormat(args, proxy1, proxy2, proxy3)
+  
 proc builtInAbort*(args: seq[Box],
                    unused1 = cast[Con4mScope](nil),
                    unused2 = cast[VarStack](nil),
@@ -887,7 +892,95 @@ proc newCallback*(s: ConfigState, name: string, tinfo: string) =
     raise newException(ValueError, 
                        fmt"When adding callback '{name}({tinfo})': {msg}")
 
-proc addDefaultBuiltins*(s: ConfigState) =
+const defaultBuiltins = [
+  
+  # Type conversion operations
+  (1,   "bool",   builtinIToB, "f(int) -> bool"),
+  (2,   "bool",   builtinFToB, "f(float) -> bool"),
+  (3,   "bool",   builtinSToB, "f(string) -> bool"),
+  (4,   "bool",   builtinLToB, "f([@x]) -> bool"),
+  (5,   "bool",   builtinDToB, "f({@x : @y}) -> bool"),
+  (6,   "float",  builtinItoF, "f(int) -> float"),
+  (7,   "int",    builtinFtoI, "f(float) -> int"),
+  (8,   "string", builtinBToS, "f(bool) -> string"),
+  (9,   "string", builtinIToS, "f(int) -> string"),
+  (10,  "string", builtinFToS, "f(float) -> string"),
+
+  # String manipulation functions.
+  (101, "contains", builtinContainsStrStr, "f(string, string) -> bool"),
+  (102, "find",     builtinFindFromStart,  "f(string, string) -> int"),
+  (103, "len",      builtInStrLen,         "f(string) -> int"),
+  (104, "slice",    builtinSliceToEnd,     "f(string, int) -> string"),
+  (105, "slice",    builtinSlice,          "f(string, int, int) -> string"),
+  (106, "split",    builtinSplit,          "f(string, string) -> [string]"),
+  (107, "strip",    builtinStrip,          "f(string) -> string"),
+  (108, "pad",      builtInPad,            "f(string, int) -> string"),
+
+  # Container (list and dict) basics.
+  (200, "len",    builtInListLen,    "f([@x]) -> int"),
+  (201, "len",    builtInDictLen,    "f({@x : @y}) -> int"),
+  (202, "keys",   builtInDictKeys,   "f({@x : @y}) -> [@x]"),
+  (203, "values", builtinDictValues, "f({@x: @y}) -> [@y]"),
+  (204, "items",  builtInDictItems,  "f({@x: @y}) -> [(@x, @y)]"),
+
+  # File system routines
+  (304, "writeFile",    builtinWriteFile,   "f(string, string) -> bool"),
+  (305, "copyFile",     builtInCopyFile,    "f(string, string) -> bool"),
+  (306, "moveFile",     builtinMove,        "f(string, string) -> bool"),
+  (307, "rmFile",       builtinRm,          "f(string)->bool"),
+  (310, "splitPath",    builtinSplitPath,   "f(string) -> (string, string)"),
+  (311, "cwd",          builtinCwd,         "f()->string"),
+  (312, "chdir",        builtinChdir,       "f(string) -> bool"),
+  (313, "mkdir",        builtinMkdir,       "f(string) -> bool"),
+  (314, "isDir",        builtinIsDir,       "f(string) -> bool"),
+  (315, "isFile",       builtinIsFile,      "f(string) -> bool"),
+  (316, "isLink",       builtinIsFile,      "f(string) -> bool"),
+  (317, "chmod",        builtinChmod,       "f(string, int) -> bool"),
+  (318, "fileLen",      builtinFileLen,     "f(string) -> int"),
+
+  # System routines
+  (401, "echo",      builtinEcho,      "f(*string)"),
+  (402, "abort",     builtInAbort,     "f(string)"),
+  (403, "env",       builtinEnvAll,    "f() -> {string : string}"),
+  (404, "env",       builtinEnv,       "f(string) -> string"),
+  (405, "envExists", builtinEnvExists, "f(string) -> bool"),
+  (406, "setEnv",    builtinSetEnv,    "f(string, string) -> bool"),
+  (407, "getpid",    builtinGetPid,    "f() -> int"),
+  (408, "quote",     builtinQuote,     "f(string)->string")
+]
+
+# When I put these in an array, it gives me a type mismatch that
+# makes no sense, that no casting or trickery seems to resolve.
+# So we take it out for now, and add these in manually below.
+#
+# I'm sure it has something to do w/ dependencies that prevents Nim
+# from auto-casting to closures?
+#
+#  (109, "format",       builtInFormat,      "f(string) -> string"),  
+#  (301, "listDir",      builtinListDir,     "f() -> [string]"),
+#  (302, "listDir",      builtinListDir,     "f(string) -> [string]"),
+#  (303, "readFile",     builtinReadFile,    "f(string) -> string"),
+#  (308, "joinPath",     builtinJoinPath,    "f(string, string) -> string"),
+#  (309, "resolvePath",  builtinResolvePath, "f(string)->string"),
+
+when defined(posix):
+  const posixBuiltins = [
+    (901, "run",     builtinCmd,     "f(string) -> string"),
+    (902, "system",  builtinSystem,  "f(string) -> (string, int)"),
+    (903, "getuid",  builtinGetUid,  "f() -> int"),
+    (904, "geteuid", builtinGetEuid, "f() -> int")
+   ]
+
+proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
+  for item in bi:
+    let (id, name, impl, sig) = item
+
+    if id in exclusions:
+      continue
+
+    s.newBuiltIn(name, impl, sig)
+
+proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
   ## This function loads existing default builtins. It gets called
   ## automatically if you ever call `newConfigState()`, `checkTree(node)`,
   ## `evalTree()`, `evalConfig()`, or `con4m()`.
@@ -900,71 +993,30 @@ proc addDefaultBuiltins*(s: ConfigState) =
   ## These calls are grouped here in categories, matching the documentation.
   ## The ordering in the code above does not currently match; it is closer to
   ## the historical order in which things were added.
-  
-  # Type conversion operations
-  s.newBuiltIn("bool", builtinIToB, "f(int) -> bool")
-  s.newBuiltIn("bool", builtinFToB, "f(float) -> bool")
-  s.newBuiltIn("bool", builtinSToB, "f(string) -> bool")
-  s.newBuiltIn("bool", builtinLToB, "f([@x]) -> bool")
-  s.newBuiltIn("bool", builtinDToB, "f({@x : @y}) -> bool")
-  s.newBuiltIn("float", builtinItoF, "f(int) -> float")
-  s.newBuiltIn("int", builtinFtoI, "f(float) -> int")
-  s.newBuiltIn("string", builtinBToS, "f(bool) -> string")
-  s.newBuiltIn("string", builtinIToS, "f(int) -> string")
-  s.newBuiltIn("string", builtinFToS, "f(float) -> string")
+  ##
+  ## You can pass exclusions into the second parameter, identifying
+  ## the unique ID of functions you want to exclude.  If you pass in
+  ## invalid values, they're ignored.
 
-  # String manipulation functions.
-  s.newBuiltIn("contains", builtinContainsStrStr, "f(string, string) -> bool")
-  s.newBuiltIn("find", builtinFindFromStart, "f(string, string) -> int")
-  s.newBuiltIn("format", builtInFormat, "f(string) -> string")
-  s.newBuiltIn("len", builtInStrLen, "f(string) -> int")
-  s.newBuiltIn("slice", builtinSliceToEnd, "f(string, int) -> string")
-  s.newBuiltIn("slice", builtinSlice, "f(string, int, int) -> string")
-  s.newBuiltIn("split", builtinSplit, "f(string, string) -> [string]")
-  s.newBuiltIn("strip", builtinStrip, "f(string) -> string")
-  s.newBuiltIn("pad", builtInPad, "f(string, int) -> string")
+  s.addBuiltinSet(defaultBuiltins, exclusions)
 
-  # Container (list and dict) basics.
-  s.newBuiltIn("len", builtInListLen, "f([@x]) -> int")
-  s.newBuiltIn("len", builtInDictLen, "f({@x : @y}) -> int")
-  s.newBuiltIn("keys", builtInDictKeys, "f({@x : @y}) -> [@x]")
-  s.newBuiltIn("values", builtinDictValues, "f({@x: @y}) -> [@y]")
-  s.newBuiltIn("items", builtInDictItems, "f({@x: @y}) -> [(@x, @y)]")
-
-  # File system routines
-  s.newBuiltIn("listDir", builtinListDir, "f() -> [string]")
-  s.newBuiltIn("listDir", builtinListDir, "f(string) -> [string]")
-  s.newBuiltIn("readFile", builtinReadFile, "f(string) -> string")
-  s.newBuiltIn("writeFile", builtinWriteFile, "f(string, string) -> bool")
-  s.newBuiltIn("copyFile", builtInCopyFile, "f(string, string) -> bool")
-  s.newBuiltIn("moveFile", builtinMove, "f(string, string) -> bool")
-  s.newBuiltIn("rmFile", builtinRm, "f(string)->bool")
-  s.newBuiltIn("joinPath", builtinJoinPath, "f(string, string) -> string")
-  s.newBuiltIn("resolvePath", builtinResolvePath, "f(string)->string")
-  s.newBuiltIn("splitPath", builtinSplitPath, "f(string) -> (string, string)")
-  s.newBuiltin("cwd", builtinCwd, "f()->string")
-  s.newBuiltin("chdir", builtinChdir, "f(string) -> bool")
-  s.newBuiltIn("mkdir", builtinMkdir, "f(string) -> bool")
-  s.newBuiltIn("isDir", builtinIsDir, "f(string) -> bool")
-  s.newBuiltIn("isFile", builtinIsFile, "f(string) -> bool")
-  s.newBuiltIn("isLink", builtinIsFile, "f(string) -> bool")  
-  s.newBuiltIn("chmod", builtinChmod, "f(string, int) -> bool")
-  s.newBuiltIn("fileLen", builtinFileLen, "f(string) -> int")
-
-  # System routines
-  s.newBuiltIn("echo", builtinEcho, "f(*string)")
-  s.newBuiltIn("abort", builtInAbort, "f(string)")
-  s.newBuiltIn("env", builtinEnvAll, "f() -> {string : string}")
-  s.newBuiltIn("env", builtinEnv, "f(string) -> string")
-  s.newBuiltIn("envExists", builtinEnvExists, "f(string) -> bool")
-  s.newBuiltIn("setEnv", builtinSetEnv, "f(string, string) -> bool")
-  s.newBuiltIn("getpid", builtinGetPid, "f() -> int")
-  s.newBuiltIn("quote", builtinQuote, "f(string)->string")
-  
   when defined(posix):
-    s.newBuiltIn("run", builtinCmd, "f(string) -> string")
-    s.newBuiltIn("system", builtinSystem, "f(string) -> (string, int)")
-    s.newBuiltIn("getuid", builtinGetUid, "f() -> int")
-    s.newBuiltIn("geteuid", builtinGetEuid, "f() -> int")
+    s.addBuiltinSet(posixBuiltins, exclusions)
+
+  # See above note about this BS.
+  if 109 notin exclusions:
+     s.newBuiltIn("format",      builtInFormat,   "f(string) -> string")
+  if 301 notin exclusions:
+     s.newBuiltIn("listDir",     builtinListDir,  "f() -> [string]")
+  if 302 notin exclusions:
+     s.newBuiltIn("listDir",     builtinListDir,  "f(string) -> [string]")
+  if 303 notin exclusions:
+     s.newBuiltIn("readFile",    builtinReadFile, "f(string) -> string")
+  if 308 notin exclusions:
+     s.newBuiltIn("joinPath",    builtinJoinPath, "f(string, string) -> string")
+  if 309 notin exclusions:
+     s.newBuiltIn("resolvePath", builtinResolvePath, "f(string)->string")
+     
+
 
 
