@@ -1338,7 +1338,8 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
   #   """
   #   var config = con4m(test, s):
   #     attr(max_hosts, int, required = false) # required = true is the default.
-  #     attr(use_ipsec, bool, true) # defaultVal = works too, but positional params work
+  #     attr(use_ipsec, bool, true) # defaultVal = works too,
+  #                                 # but positional params work
   #     # Section should take a single argument, no sub-dots.
   #     section(host, allowedSubSections = @["*"]):
   #       attr(ip, string, required = true)
@@ -1365,35 +1366,25 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
     quit()
   `ctx nameBase Conf`.`load nameBase Config`()
 
-template con4mWcustomBuiltins*(nameBase: untyped,
-                               confstr:  string,
-                               builtins: openarray[(string, BuiltinFn, string)],
-                               exclude:  openarray[int],
-                               rest:     untyped): untyped =
-  ## Exactly the same as the con4m() macro, except that it accepts two
-  ## additional parameters:
-  ##
-  ## 1) a list of additional built-ins to add.
-  ## 2) a list of default built-ins to exclude from the runtime.
-  ##
-  ## The change is simply the call to evalTree(); should
-  ## do some macro inception to avoid future brittleness.
-    
-  var
-    tree = parse(newStringStream(confstr))
-    opt = tree.evalTree(builtins, exclude)
-
-  if not opt.isSome():
-    echo "Error: invalid configuration file."
-    quit()
-
-  var `ctx nameBase Conf` {.inject.} = opt.get()
-
+template con4mDef*(nameBase: untyped, rest: untyped) =
+  ## This version does the declaration, and declares a procedure for you
+  ## that you can call when you're ready.
   configDef(nameBase, rest)
-  `ctx nameBase Conf`.addSpec(`confSpec nameBase`)
-  if not `ctx nameBase Conf`.validateConfig():
-    for err in `ctx nameBase Conf`.errors:
-      echo "Error: ", err
-    quit()
-  `ctx nameBase Conf`.`load nameBase Config`()
   
+  proc `first nameBase Run`*(confstr:   string,
+                             builtins:  openarray[(string, BuiltinFn, string)],
+                             exclude:   openarray[int],
+                             callbacks: openarray[(string, string)]): auto =
+    var
+      tree    = parse(newStringStream(confstr))
+      opt     = tree.evalTree(builtins, exclude, callbacks)
+      confObj = opt.get()
+
+    if not opt.isSome():
+      echo "Error: invalid configuration file."
+      quit()
+    confObj.addSpec(`confSpec nameBase`)
+    if not confObj.validateConfig():
+      return (confObj, `nameBase Config`(nil))
+    else:
+      return (confObj, confObj.`load nameBase Config`())

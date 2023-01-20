@@ -1059,10 +1059,12 @@ proc callNewBuiltIn(s: ConfigState,
                     name: string,
                     fn: BuiltinFn,
                     t: string) {.inline.}
+proc callNewCallback(s: ConfigState, name: string, con4mType: string) {.inline.}
 
-proc checkTree*(node:    Con4mNode,
-                fns:     openarray[(string, BuiltinFn, string)] = [],
-                exclude: openarray[int] = []): ConfigState =
+proc checkTree*(node:      Con4mNode,
+                fns:       openarray[(string, BuiltinFn, string)] = [],
+                exclude:   openarray[int] = [],
+                callbacks: openarray[(string, string)] = []): ConfigState =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
   ## anything we can easily find before execution).  This version
   ## returns a new `ConfigState` object, that can be used for
@@ -1080,6 +1082,9 @@ proc checkTree*(node:    Con4mNode,
     let (name, fn, tinfo) = item
     result.callNewBuiltIn(name, fn, tinfo)
 
+  for (n, t) in callbacks:
+    result.callNewCallback(n, t)
+
   node.checkTree(result)
   
 import builtins
@@ -1089,6 +1094,12 @@ proc callNewBuiltIn(s:    ConfigState,
                     fn:   BuiltinFn,
                     t:    string) {.inline.} =
   s.newBuiltIn(name, fn, t)
+
+proc callNewCallback(s:         ConfigState,
+                     name:      string,
+                     con4mType: string) {.inline.} =
+  s.newCallback(name, con4mType)
+
 
 proc newConfigState*(scope:       Con4mScope,
                      spec:        ConfigSpec     = nil,

@@ -5,21 +5,9 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import types
-import typecheck
-import st
-import parse # just for fatal()
-import eval
-import nimutils
-import nimutils/box
+import os, tables, osproc, strformat, strutils, options, streams
+import types, typecheck, st, parse, eval, nimutils
 
-import os
-import tables
-import osproc
-import strformat
-import strutils
-import options
-import streams
 when defined(posix):
   import posix
 
@@ -27,13 +15,13 @@ when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
 
 let
-  trueRet = some(pack(true))
+  trueRet  = some(pack(true))
   falseRet = some(pack(false))
 
-proc builtinIToS*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mIToS*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast integers to strings.  Exposed as `string(i)` by default.
   let i = unpack[int](args[0])
   var s = $(i)
@@ -41,10 +29,10 @@ proc builtinIToS*(args: seq[Box],
 
   return some(b)
 
-proc builtinBToS*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mBToS*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast bools to strings.  Exposed as `string(b)` by default.
   let b = unpack[bool](args[0])
   if b:
@@ -52,20 +40,20 @@ proc builtinBToS*(args: seq[Box],
   else:
     return some(pack("false"))
 
-proc builtinFToS*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mFToS*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast floats to strings.  Exposed as `string(f)` by default.
   let f = unpack[float](args[0])
   var s = $(f)
 
   return some(pack(s))
 
-proc builtinItoB*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mItoB*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast integers to booleans (testing for non-zero).  Exposed as
   ## `bool(i)` by default.
   let i = unpack[int](args[0])
@@ -74,10 +62,10 @@ proc builtinItoB*(args: seq[Box],
   else:
     return falseRet
 
-proc builtinFtoB*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mFtoB*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast floats to booleans (testing for non-zero).  Exposed as
   ## `bool(f)` by default.
   let f = unpack[float](args[0])
@@ -86,10 +74,10 @@ proc builtinFtoB*(args: seq[Box],
   else:
     return falseRet
 
-proc builtinStoB*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mStoB*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast strings to booleans (testing for empty strings).  Exposed as
   ## `bool(s)` by default.
   let s = unpack[string](args[0])
@@ -98,10 +86,10 @@ proc builtinStoB*(args: seq[Box],
   else:
     return falseRet
 
-proc builtinLToB*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mLToB*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast lists of any type to booleans (testing for empty lists).
   ## Exposed as `bool(s)` by default.
 
@@ -113,10 +101,10 @@ proc builtinLToB*(args: seq[Box],
   else:
     return trueRet
 
-proc builtinDToB*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mDToB*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast dicitonaries of any type to booleans (testing for empty
   ## lists).  Exposed as `bool(s)` by default.
 
@@ -129,10 +117,10 @@ proc builtinDToB*(args: seq[Box],
   else:
     return trueRet
 
-proc builtinIToF*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mIToF*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast an integer to a float.  Exposed as `float(i)` by default.
   let
     i = unpack[int](args[0])
@@ -140,10 +128,10 @@ proc builtinIToF*(args: seq[Box],
 
   return some(pack(f))
 
-proc builtinFToI*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mFToI*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Cast an float to an int (truncating).  Exposed as `int(f)` by
   ## default.
   let
@@ -152,10 +140,10 @@ proc builtinFToI*(args: seq[Box],
 
   return some(pack(i))
 
-proc builtinSplit*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mSplit*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
   ## This should work as expected from other languages.
@@ -164,16 +152,16 @@ proc builtinSplit*(args: seq[Box],
   # top-level, not the items.
 
   var
-    big = unpack[string](args[0])
+    big   = unpack[string](args[0])
     small = unpack[string](args[1])
-    l = big.split(small)
+    l     = big.split(small)
 
   return some(pack[seq[string]](l))
 
-proc builtinEcho*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mEcho*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
   ## Exposed as `echo(*s)` by default.  Prints the parameters to
   ## stdout, followed by a newline at the end.  Note that this does
   ## NOT add spaces between arguments for you.
@@ -185,24 +173,24 @@ proc builtinEcho*(args: seq[Box],
 
   stderr.writeLine(outStr)
 
-proc builtinEnv*(args: seq[Box],
-                 unused1 = cast[Con4mScope](nil),
-                 unused2 = cast[VarStack](nil),
-                 unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mEnv*(args:     seq[Box],
+             unused1 = Con4mScope(nil),
+             unused2 = VarStack(@[]),
+             unused3 = Con4mScope(nil)): Option[Box] =
   ## Exposed as `env(s)` by default.  Returns the value of the
   ## requested environment variable.  If the environment variable is
   ## NOT set, it will return the empty string.  To distingush between
   ## the environment variable not being set, or the variable being set
-  ## to the empty string, use `builtinEnvExists`.
+  ## to the empty string, use `c4mEnvExists`.
 
   let arg = unpack[string](args[0])
 
   return some(pack(getEnv(arg)))
 
-proc builtinEnvExists*(args: seq[Box],
-                       unused1 = cast[Con4mScope](nil),
-                       unused2 = cast[VarStack](nil),
-                       unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mEnvExists*(args:     seq[Box],
+                   unused1 = Con4mScope(nil),
+                   unused2 = VarStack(@[]),
+                   unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns true if the requested variable name is set in the
   ## environment, false if it's not.  Exposed as `envExists(s)` by
   ## default.
@@ -214,10 +202,10 @@ proc builtinEnvExists*(args: seq[Box],
 
   return some(pack(existsEnv(arg)))
 
-proc builtinEnvAll*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mEnvAll*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
   var s = newCon4mDict[string, string]()
@@ -228,10 +216,10 @@ proc builtinEnvAll*(args: seq[Box],
   var packed = pack(s)
   return some(packed)
 
-proc builtinStrip*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mStrip*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
   ## Remove leading and trailing white space from a string.
   ## Exposed by default as `strip(s)`
   let
@@ -240,10 +228,10 @@ proc builtinStrip*(args: seq[Box],
 
   return some(pack(stripped))
 
-proc builtinContainsStrStr*(args: seq[Box],
-                            unused1 = cast[Con4mScope](nil),
-                            unused2 = cast[VarStack](nil),
-                            unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mContainsStrStr*(args:     seq[Box],
+                        unused1 = Con4mScope(nil),
+                        unused2 = VarStack(@[]),
+                        unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns true if `s1` contains the substring `s2`.
   ## Exposed by default as `contains(s1, s2)`
   let
@@ -253,10 +241,10 @@ proc builtinContainsStrStr*(args: seq[Box],
 
   return some(pack(res))
 
-proc builtinFindFromStart*(args: seq[Box],
-                           unused1 = cast[Con4mScope](nil),
-                           unused2 = cast[VarStack](nil),
-                           unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mFindFromStart*(args:     seq[Box],
+                       unused1 = Con4mScope(nil),
+                       unused2 = VarStack(@[]),
+                       unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
   ## string `s1`, or -1 if it does not appear.  Exposed by default as
   ## `find(s1, s2)`
@@ -268,10 +256,10 @@ proc builtinFindFromStart*(args: seq[Box],
 
   return some(pack(res))
 
-proc builtinSlice*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mSlice*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, not
   ## including index `end`.  The semantics of this are Pythonic, where
   ## -1 works as expected.
@@ -281,10 +269,10 @@ proc builtinSlice*(args: seq[Box],
   ## usually exposed as `slice(s, start, end)`
 
   let
-    s = unpack[string](args[0])
+    s       = unpack[string](args[0])
   var
     startix = unpack[int](args[1])
-    endix = unpack[int](args[2])
+    endix   = unpack[int](args[2])
 
   if startix < 0:
     startix += s.len()
@@ -296,10 +284,10 @@ proc builtinSlice*(args: seq[Box],
   except:
     return some(pack(""))
 
-proc builtinSliceToEnd*(args: seq[Box],
-                        unused1 = cast[Con4mScope](nil),
-                        unused2 = cast[VarStack](nil),
-                        unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mSliceToEnd*(args:     seq[Box],
+                    unused1 = Con4mScope(nil),
+                    unused2 = VarStack(@[]),
+                    unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, until the
   ## end of the string. The semantics of this are Pythonic, where -1
   ## works as expected (to index from the back).
@@ -309,8 +297,8 @@ proc builtinSliceToEnd*(args: seq[Box],
   ## usually exposed as `slice(s, start)`
 
   let
-    s = unpack[string](args[0])
-    endix = s.len() - 1
+    s       = unpack[string](args[0])
+    endix   = s.len() - 1
   var
     startix = unpack[int](args[1])
 
@@ -323,11 +311,11 @@ proc builtinSliceToEnd*(args: seq[Box],
   except:
     return some(pack(""))
 
-proc builtInFormat*(args:       seq[Box],
-                    attrs:      Con4mScope,
-                    vars:       VarStack,
-                    localScope: Con4mScope
-                   ): Option[Box] =
+proc c4mFormat*(args:       seq[Box],
+                attrs:      Con4mScope,
+                vars:       VarStack,
+                localScope: Con4mScope): Option[Box] =
+
   ## We don't error check on string bounds; when an exception gets
   ## raised, SCall will call fatal().
   var
@@ -405,55 +393,49 @@ proc builtInFormat*(args:       seq[Box],
 
   return some(pack(res))
 
-proc callFmt(args:   seq[Box],
-             proxy1: Con4mScope,
-             proxy2: VarStack,
-             proxy3: Con4mScope): Option[Box] =
-    return builtinFormat(args, proxy1, proxy2, proxy3)
-  
-proc builtInAbort*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mAbort*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
   ## Stops the entire program (not just the configuration file).
   ## Generally exposed as `abort()`
   quit()
 
-proc builtInListLen*(args: seq[Box],
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mListLen*(args:     seq[Box],
+                 unused1 = Con4mScope(nil),
+                 unused2 = VarStack(@[]),
+                 unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the number of elements in the list.
   var list = unpack[seq[Box]](args[0])
 
   return some(pack(len(list)))
 
-proc builtInStrLen*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mStrLen*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the number of bytes in a string.
   var s = unpack[string](args[0])
 
   return some(pack(len(s)))
 
-proc builtInDictLen*(args: seq[Box],
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mDictLen*(args:     seq[Box],
+                 unused1 = Con4mScope(nil),
+                 unused2 = VarStack(@[]),
+                 unused3 = Con4mScope(nil)): Option[Box] =
   ## Returns the number of k,v pairs in a dictionary.
   var dict = unpack[Con4mDict[Box, Box]](args[0])
 
   return some(pack(len(dict)))
 
-proc builtInDictKeys*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
-
+proc c4mDictKeys*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
+    
   var
-    keys: seq[Box] = newSeq[Box]()
-    box = args[0]
+    keys: seq[Box]               = newSeq[Box]()
+    box                          = args[0]
     d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
 
   for k, _ in d:
@@ -461,14 +443,14 @@ proc builtInDictKeys*(args: seq[Box],
 
   return some(pack[seq[Box]](keys))
 
-proc builtInDictValues*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mDictValues*(args:     seq[Box],
+                    unused1 = Con4mScope(nil),
+                    unused2 = VarStack(@[]),
+                    unused3 = Con4mScope(nil)): Option[Box] =
 
   var
-    values: seq[Box] = newSeq[Box]()
-    box = args[0]
+    values: seq[Box]             = newSeq[Box]()
+    box                          = args[0]
     d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
 
   for _, v in d:
@@ -476,13 +458,14 @@ proc builtInDictValues*(args: seq[Box],
 
   return some(pack[seq[Box]](values))
 
-proc builtInDictItems*(args: seq[Box], unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mDictItems*(args:     seq[Box],
+                   unused1 = Con4mScope(nil),
+                   unused2 = VarStack(@[]),
+                   unused3 = Con4mScope(nil)): Option[Box] =
   var
-    items: seq[Box] = newSeq[Box]()
-    box = args[0]
-    tup: seq[Box] # For the output tuples.
+    tup:   seq[Box] # For the output tuples.
+    items: seq[Box]              = newSeq[Box]()
+    box                          = args[0]
     d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
   
   for k, v in d:
@@ -493,13 +476,14 @@ proc builtInDictItems*(args: seq[Box], unused1 = cast[Con4mScope](nil),
   
   return some(pack[seq[Box]](items))
 
-proc builtinListDir*(args: seq[Box], 
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mListDir*(args:     seq[Box], 
+                 unused1 = Con4mScope(nil),
+                 unused2 = VarStack(@[]),
+                 unused3 = Con4mScope(nil)): Option[Box] =
   var res: seq[string] = @[]
 
-  let dir = if len(args) == 0: "." else: resolvePath(unpack[string](args[0]))
+  let dir = if len(args) == 0: "."
+            else: resolvePath(unpack[string](args[0]))
 
   unprivileged:
     for item in walkdir(dir):
@@ -507,10 +491,10 @@ proc builtinListDir*(args: seq[Box],
 
   return some(pack[seq[string]](res))
 
-proc builtinReadFile*(args: seq[Box],
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mReadFile*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
 
   unprivileged:
     let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
@@ -520,10 +504,10 @@ proc builtinReadFile*(args: seq[Box],
       result = some(pack(f.readAll()))
       f.close()
 
-proc builtinWriteFile*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mWriteFile*(args:     seq[Box],
+                   unused1 = Con4mScope(nil),
+                   unused2 = VarStack(@[]),
+                   unused3 = Con4mScope(nil)): Option[Box] =
   try:
     let f = newFileStream(resolvePath(unpack[string](args[0])), fmWrite)
     f.write(unpack[string](args[1]))
@@ -532,17 +516,17 @@ proc builtinWriteFile*(args: seq[Box],
   except:
     return falseRet
 
-proc builtinJoinPath*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mJoinPath*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
   let res = joinPath(unpack[string](args[0]), unpack[string](args[1]))
   return some(pack(res))
 
-proc builtinCopyFile*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mCopyFile*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
 
     let
       src = unpack[string](args[0])
@@ -555,22 +539,22 @@ proc builtinCopyFile*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinResolvePath*(args: seq[Box],
-                         unused1 = cast[Con4mScope](nil),
-                         unused2 = cast[VarStack](nil),
-                         unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mResolvePath*(args:     seq[Box],
+                     unused1 = Con4mScope(nil),
+                     unused2 = VarStack(@[]),
+                     unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(resolvePath(unpack[string](args[0]))))
 
-proc builtinCwd*(args: seq[Box],
-                 unused1 = cast[Con4mScope](nil),
-                 unused2 = cast[VarStack](nil),
-                 unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mCwd*(args:     seq[Box],
+             unused1 = Con4mScope(nil),
+             unused2 = VarStack(@[]),
+             unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(getCurrentDir())) 
 
-proc builtinChdir*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mChdir*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     let path = unpack[string](args[0])
     unprivileged:
       try:
@@ -579,10 +563,10 @@ proc builtinChdir*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinMkdir*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mMkdir*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     let path = unpack[string](args[0])
     unprivileged:
       try:
@@ -591,10 +575,10 @@ proc builtinMkdir*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinSetEnv*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mSetEnv*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
     let
       key = unpack[string](args[0])
       val = unpack[string](args[1])
@@ -605,10 +589,10 @@ proc builtinSetEnv*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinIsDir*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mIsDir*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     let path = unpack[string](args[0])
 
     unprivileged:
@@ -620,10 +604,10 @@ proc builtinIsDir*(args: seq[Box],
       except:
           result = falseRet
 
-proc builtinIsFile*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mIsFile*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
     let path = unpack[string](args[0])
 
     unprivileged:
@@ -635,10 +619,10 @@ proc builtinIsFile*(args: seq[Box],
       except:
         result = falseRet
       
-proc builtinIsLink*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mIsLink*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
 
     unprivileged:
       try:
@@ -653,10 +637,10 @@ proc builtinIsLink*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinChmod*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mChmod*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     let
       path = unpack[string](args[0])
       mode = cast[FilePermission](unpack[int](args[0]))
@@ -668,16 +652,16 @@ proc builtinChmod*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinGetPid*(args: seq[Box],
-                    unused1 = cast[Con4mScope](nil),
-                    unused2 = cast[VarStack](nil),
-                    unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mGetPid*(args:     seq[Box],
+                unused1 = Con4mScope(nil),
+                unused2 = VarStack(@[]),
+                unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(getCurrentProcessId()))
-
-proc builtinFileLen*(args: seq[Box],
-                     unused1 = cast[Con4mScope](nil),
-                     unused2 = cast[VarStack](nil),
-                     unused3 = cast[Con4mScope](nil)): Option[Box] =
+    
+proc c4mFileLen*(args:     seq[Box],
+                 unused1 = Con4mScope(nil),
+                 unused2 = VarStack(@[]),
+                 unused3 = Con4mScope(nil)): Option[Box] =
     let path = unpack[string](args[0])
 
     unprivileged:
@@ -686,10 +670,10 @@ proc builtinFileLen*(args: seq[Box],
       except:
         result = some(pack(-1))
 
-proc builtinMove*(args: seq[Box],
-                  unused1 = cast[Con4mScope](nil),
-                  unused2 = cast[VarStack](nil),
-                  unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mMove*(args:     seq[Box],
+              unused1 = Con4mScope(nil),
+              unused2 = VarStack(@[]),
+              unused3 = Con4mScope(nil)): Option[Box] =
 
     unprivileged:
       try:
@@ -707,16 +691,16 @@ proc builtinMove*(args: seq[Box],
       except:
         result = falseRet
 
-proc builtinQuote*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mQuote*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(quoteShell(unpack[string](args[0]))))
 
-proc builtinRm*(args: seq[Box],
-                unused1 = cast[Con4mScope](nil),
-                unused2 = cast[VarStack](nil),
-                unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mRm*(args:     seq[Box],
+            unused1 = Con4mScope(nil),
+            unused2 = VarStack(@[]),
+            unused3 = Con4mScope(nil)): Option[Box] =
     try:
       let
         path = unpack[string](args[0])
@@ -731,10 +715,10 @@ proc builtinRm*(args: seq[Box],
     except:
       return falseRet
 
-proc builtinSplitPath*(args: seq[Box],
-                unused1 = cast[Con4mScope](nil),
-                unused2 = cast[VarStack](nil),
-                unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mSplitPath*(args:     seq[Box],
+                   unused1 = Con4mScope(nil),
+                   unused2 = VarStack(@[]),
+                   unused3 = Con4mScope(nil)): Option[Box] =
     var s: seq[string]
 
     let (head, tail) = splitPath(unpack[string](args[0]))
@@ -743,10 +727,10 @@ proc builtinSplitPath*(args: seq[Box],
 
     return some(pack(s))    
 
-proc builtInPad*(args: seq[Box],
-                 unused1 = cast[Con4mScope](nil),
-                 unused2 = cast[VarStack](nil),
-                 unused3 = cast[Con4mScope](nil)): Option[Box] =
+proc c4mPad*(args:     seq[Box],
+             unused1 = Con4mScope(nil),
+             unused2 = VarStack(@[]),
+             unused3 = Con4mScope(nil)): Option[Box] =
   let
     topad = unpack[string](args[0])
     width = unpack[int](args[1])
@@ -757,10 +741,10 @@ proc builtInPad*(args: seq[Box],
   return some(pack(topad & repeat(' ', width - len(topad))))
 
 when defined(posix):
-  proc builtinCmd*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+  proc c4mCmd*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     ## Generally exposed as `run(s)`
     ##
     ## Essentially calls the posix `system()` call, except that, a)
@@ -786,15 +770,16 @@ when defined(posix):
       let (output, _) = execCmdEx(cmd)
       result = some(pack(output))
 
-  proc builtinSystem*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+  proc c4mSystem*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
     ## Generally exposed as `system(s)`
     ##
-    ## like `run` except returns a tuple containing the output and the exit code.
+    ## like `run` except returns a tuple containing the output and the
+    ## exit code.
     var 
-      cmd = unpack[string](args[0])
+      cmd               = unpack[string](args[0])
       outlist: seq[Box] = @[]    
 
     unprivileged:
@@ -804,16 +789,16 @@ when defined(posix):
 
     result = some(pack(outlist))
 
-  proc builtinGetUid*(args: seq[Box],
-                      unused1 = cast[Con4mScope](nil),
-                      unused2 = cast[VarStack](nil),
-                      unused3 = cast[Con4mScope](nil)): Option[Box] =
+  proc c4mGetUid*(args:     seq[Box],
+                  unused1 = Con4mScope(nil),
+                  unused2 = VarStack(@[]),
+                  unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(getuid()))
 
-  proc builtinGetEuid*(args: seq[Box],
-                       unused1 = cast[Con4mScope](nil),
-                       unused2 = cast[VarStack](nil),
-                       unused3 = cast[Con4mScope](nil)): Option[Box] =
+  proc c4mGetEuid*(args:     seq[Box],
+                   unused1 = Con4mScope(nil),
+                   unused2 = VarStack(@[]),
+                   unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(geteuid()))
     
 else:
@@ -821,10 +806,10 @@ else:
   ## this might be wildly insecure on such systems, as far as I know.
   ## to that end, when posix is not defined, this command is removed
   ## from the defaults.
-  proc builtinCmd*(args: seq[Box],
-                   unused1 = cast[Con4mScope](nil),
-                   unused2 = cast[VarStack](nil),
-                   unused3 = cast[Con4mScope](nil)): Option[Box] =
+  proc c4mCmd*(args:     seq[Box],
+               unused1 = Con4mScope(nil),
+               unused2 = VarStack(@[]),
+               unused3 = Con4mScope(nil)): Option[Box] =
     ## An unsafe version of this for non-posix OSes.  On such machines,
     ## it is NOT a default builtin.
     var cmd = unpack[string](args[0])
@@ -833,7 +818,7 @@ else:
 
     return some(pack(output))
 
-proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
+proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
   ## the parameter used to specify the name exposed to con4m.  `tinfo`
@@ -848,19 +833,19 @@ proc newCoreFunc(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
                        "is not a function signature.")
 
   let b = if fn == nil:
-            FuncTableEntry(kind: FnCallback,
-                           tinfo: tinfo,
-                           impl: none(Con4mNode),
-                           name: name,
+            FuncTableEntry(kind:        FnCallback,
+                           tinfo:       tinfo,
+                           impl:        none(Con4mNode),
+                           name:        name,
                            cannotCycle: false,
-                           locked: false)
+                           locked:      false)
           else:
             # We intentionally don't set cannotCycle, seenThisCheck
             # or locked because they shouldn't be used for builtins.
-            FuncTableEntry(kind: FnBuiltIn,
-                           tinfo: tinfo,
+            FuncTableEntry(kind:    FnBuiltIn,
+                           tinfo:   tinfo,
                            builtin: fn,
-                           name: name)
+                           name:    name)
 
   if fn == nil:
     if tinfo.retType.isBottom():
@@ -892,84 +877,76 @@ proc newCallback*(s: ConfigState, name: string, tinfo: string) =
     raise newException(ValueError, 
                        fmt"When adding callback '{name}({tinfo})': {msg}")
 
+type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.   
 const defaultBuiltins = [
-  
   # Type conversion operations
-  (1,   "bool",   builtinIToB, "f(int) -> bool"),
-  (2,   "bool",   builtinFToB, "f(float) -> bool"),
-  (3,   "bool",   builtinSToB, "f(string) -> bool"),
-  (4,   "bool",   builtinLToB, "f([@x]) -> bool"),
-  (5,   "bool",   builtinDToB, "f({@x : @y}) -> bool"),
-  (6,   "float",  builtinItoF, "f(int) -> float"),
-  (7,   "int",    builtinFtoI, "f(float) -> int"),
-  (8,   "string", builtinBToS, "f(bool) -> string"),
-  (9,   "string", builtinIToS, "f(int) -> string"),
-  (10,  "string", builtinFToS, "f(float) -> string"),
-
+  (1,   "bool",     BiFn(c4mIToB),           "f(int) -> bool"),
+  (2,   "bool",     BiFn(c4mFToB),           "f(float) -> bool"),
+  (3,   "bool",     BiFn(c4mSToB),           "f(string) -> bool"),
+  (4,   "bool",     BiFn(c4mLToB),           "f([@x]) -> bool"),
+  (5,   "bool",     BiFn(c4mDToB),           "f({@x : @y}) -> bool"),
+  (6,   "float",    BiFn(c4mItoF),           "f(int) -> float"),
+  (7,   "int",      BiFn(c4mFtoI),           "f(float) -> int"),
+  (8,   "string",   BiFn(c4mBToS),           "f(bool) -> string"),
+  (9,   "string",   BiFn(c4mIToS),           "f(int) -> string"),
+  (10,  "string",   BiFn(c4mFToS),           "f(float) -> string"),
+  
   # String manipulation functions.
-  (101, "contains", builtinContainsStrStr, "f(string, string) -> bool"),
-  (102, "find",     builtinFindFromStart,  "f(string, string) -> int"),
-  (103, "len",      builtInStrLen,         "f(string) -> int"),
-  (104, "slice",    builtinSliceToEnd,     "f(string, int) -> string"),
-  (105, "slice",    builtinSlice,          "f(string, int, int) -> string"),
-  (106, "split",    builtinSplit,          "f(string, string) -> [string]"),
-  (107, "strip",    builtinStrip,          "f(string) -> string"),
-  (108, "pad",      builtInPad,            "f(string, int) -> string"),
-  (109, "format",    builtInFormat,        "f(string) -> string"), 
+  (101, "contains", BiFn(c4mContainsStrStr), "f(string, string) -> bool"),
+  (102, "find",     BiFn(c4mFindFromStart),  "f(string, string) -> int"),
+  (103, "len",      BiFn(c4mStrLen),         "f(string) -> int"),
+  (104, "slice",    BiFn(c4mSliceToEnd),     "f(string, int) -> string"),
+  (105, "slice",    BiFn(c4mSlice),          "f(string, int, int) -> string"),
+  (106, "split",    BiFn(c4mSplit),          "f(string, string) -> [string]"),
+  (107, "strip",    BiFn(c4mStrip),          "f(string) -> string"),
+  (108, "pad",      BiFn(c4mPad),            "f(string, int) -> string"),
+  (109, "format",   BiFn(c4mFormat),         "f(string) -> string"), 
 
   # Container (list and dict) basics.
-  (200, "len",    builtInListLen,    "f([@x]) -> int"),
-  (201, "len",    builtInDictLen,    "f({@x : @y}) -> int"),
-  (202, "keys",   builtInDictKeys,   "f({@x : @y}) -> [@x]"),
-  (203, "values", builtinDictValues, "f({@x: @y}) -> [@y]"),
-  (204, "items",  builtInDictItems,  "f({@x: @y}) -> [(@x, @y)]"),
+  (200, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
+  (201, "len",      BiFn(c4mDictLen),         "f({@x : @y}) -> int"),
+  (202, "keys",     BiFn(c4mDictKeys),        "f({@x : @y}) -> [@x]"),
+  (203, "values",   BiFn(c4mDictValues),      "f({@x: @y}) -> [@y]"),
+  (204, "items",    BiFn(c4mDictItems),       "f({@x: @y}) -> [(@x, @y)]"),
 
   # File system routines
-  (304, "writeFile",    builtinWriteFile,   "f(string, string) -> bool"),
-  (305, "copyFile",     builtInCopyFile,    "f(string, string) -> bool"),
-  (306, "moveFile",     builtinMove,        "f(string, string) -> bool"),
-  (307, "rmFile",       builtinRm,          "f(string)->bool"),
-  (310, "splitPath",    builtinSplitPath,   "f(string) -> (string, string)"),
-  (311, "cwd",          builtinCwd,         "f()->string"),
-  (312, "chdir",        builtinChdir,       "f(string) -> bool"),
-  (313, "mkdir",        builtinMkdir,       "f(string) -> bool"),
-  (314, "isDir",        builtinIsDir,       "f(string) -> bool"),
-  (315, "isFile",       builtinIsFile,      "f(string) -> bool"),
-  (316, "isLink",       builtinIsFile,      "f(string) -> bool"),
-  (317, "chmod",        builtinChmod,       "f(string, int) -> bool"),
-  (318, "fileLen",      builtinFileLen,     "f(string) -> int"),
+  (301, "listDir",     BiFn(c4mListDir),      "f() -> [string]"),
+  (302, "listDir",     BiFn(c4mListDir),      "f(string) -> [string]"),
+  (303, "readFile",    BiFn(c4mReadFile),     "f(string) -> string"),
+  (304, "writeFile",   BiFn(c4mWriteFile),    "f(string, string) -> bool"),
+  (305, "copyFile",    BiFn(c4mCopyFile),     "f(string, string) -> bool"),
+  (306, "moveFile",    BiFn(c4mMove),         "f(string, string) -> bool"),
+  (307, "rmFile",      BiFn(c4mRm),           "f(string)->bool"),
+  (308, "joinPath",    BiFn(c4mJoinPath),     "f(string, string) -> string"),
+  (309, "resolvePath", BiFn(c4mResolvePath),  "f(string) -> string"),
+  (310, "splitPath",   BiFn(c4mSplitPath),    "f(string) -> (string, string)"),
+  (311, "cwd",         BiFn(c4mCwd),          "f()->string"),
+  (312, "chdir",       BiFn(c4mChdir),        "f(string) -> bool"),
+  (313, "mkdir",       BiFn(c4mMkdir),        "f(string) -> bool"),
+  (314, "isDir",       BiFn(c4mIsDir),        "f(string) -> bool"),
+  (315, "isFile",      BiFn(c4mIsFile),       "f(string) -> bool"),
+  (316, "isLink",      BiFn(c4mIsFile),       "f(string) -> bool"),
+  (317, "chmod",       BiFn(c4mChmod),        "f(string, int) -> bool"),
+  (318, "fileLen",     BiFn(c4mFileLen),      "f(string) -> int"),
 
   # System routines
-  (401, "echo",      builtinEcho,      "f(*string)"),
-  (402, "abort",     builtInAbort,     "f(string)"),
-  (403, "env",       builtinEnvAll,    "f() -> {string : string}"),
-  (404, "env",       builtinEnv,       "f(string) -> string"),
-  (405, "envExists", builtinEnvExists, "f(string) -> bool"),
-  (406, "setEnv",    builtinSetEnv,    "f(string, string) -> bool"),
-  (407, "getpid",    builtinGetPid,    "f() -> int"),
-  (408, "quote",     builtinQuote,     "f(string)->string")
+  (401, "echo",        BiFn(c4mEcho),         "f(*string)"),
+  (402, "abort",       BiFn(c4mAbort),        "f(string)"),
+  (403, "env",         BiFn(c4mEnvAll),       "f() -> {string : string}"),
+  (404, "env",         BiFn(c4mEnv),          "f(string) -> string"),
+  (405, "envExists",   BiFn(c4mEnvExists),    "f(string) -> bool"),
+  (406, "setEnv",      BiFn(c4mSetEnv),       "f(string, string) -> bool"),
+  (407, "getpid",      BiFn(c4mGetPid),       "f() -> int"),
+  (408, "quote",       BiFn(c4mQuote),        "f(string)->string")
 ]
 
-# When I put these in an array, it gives me a type mismatch that
-# makes no sense, that no casting or trickery seems to resolve.
-# So we take it out for now, and add these in manually below.
-#
-# I'm sure it has something to do w/ dependencies that prevents Nim
-# from auto-casting to closures?
-#
-#  (109, "format",       builtInFormat,      "f(string) -> string"), 
-#  (301, "listDir",      builtinListDir,     "f() -> [string]"),
-#  (302, "listDir",      builtinListDir,     "f(string) -> [string]"),
-#  (303, "readFile",     builtinReadFile,    "f(string) -> string"),
-#  (308, "joinPath",     builtinJoinPath,    "f(string, string) -> string"),
-#  (309, "resolvePath",  builtinResolvePath, "f(string)->string"),
 
 when defined(posix):
   const posixBuiltins = [
-    (901, "run",     builtinCmd,     "f(string) -> string"),
-    (902, "system",  builtinSystem,  "f(string) -> (string, int)"),
-    (903, "getuid",  builtinGetUid,  "f() -> int"),
-    (904, "geteuid", builtinGetEuid, "f() -> int")
+    (901, "run",       BiFn(c4mCmd),          "f(string) -> string"),
+    (902, "system",    BiFn(c4mSystem),       "f(string) -> (string, int)"),
+    (903, "getuid",    BiFn(c4mGetUid),       "f() -> int"),
+    (904, "geteuid",   BiFn(c4mGetEuid),      "f() -> int")
    ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
@@ -1003,21 +980,5 @@ proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
 
   when defined(posix):
     s.addBuiltinSet(posixBuiltins, exclusions)
-
-  # See above note about this BS.
-  if 109 notin exclusions:
-     s.newBuiltIn("format",      builtInFormat,   "f(string) -> string")
-  if 301 notin exclusions:
-     s.newBuiltIn("listDir",     builtinListDir,  "f() -> [string]")
-  if 302 notin exclusions:
-     s.newBuiltIn("listDir",     builtinListDir,  "f(string) -> [string]")
-  if 303 notin exclusions:
-     s.newBuiltIn("readFile",    builtinReadFile, "f(string) -> string")
-  if 308 notin exclusions:
-     s.newBuiltIn("joinPath",    builtinJoinPath, "f(string, string) -> string")
-  if 309 notin exclusions:
-     s.newBuiltIn("resolvePath", builtinResolvePath, "f(string)->string")
-     
-
 
 

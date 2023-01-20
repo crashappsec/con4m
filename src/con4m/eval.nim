@@ -630,14 +630,16 @@ proc evalTree*(node:         Con4mNode,
   evalTreeBase(node):
       node.checkTree(addBuiltins)
 
-proc evalTree*(node:    Con4mNode,
-               fns:     openarray[(string, BuiltinFn, string)] = [],
-               exclude: openarray[int] = []): Option[ConfigState] {.inline.} =
+proc evalTree*(node:      Con4mNode,
+               fns:       openarray[(string, BuiltinFn, string)] = [],
+               exclude:   openarray[int] = [],
+               callbacks: openarray[(string, string)] = []):
+                 Option[ConfigState] {.inline.} =
   ## This is the same as above, but always has checkTree() add the
   ## default builtins, minus explicitly excluded ones, and
   ## additionally allows for installing custom ones.
   evalTreeBase(node):
-      node.checkTree(fns, exclude)
+      node.checkTree(fns, exclude, callbacks)
                
 proc evalConfig*(filename: string,
                  addBuiltins = false): Option[(ConfigState, Con4mScope)] =
