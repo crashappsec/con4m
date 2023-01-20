@@ -7,7 +7,7 @@
 ## The external interface should either be via macros of
 ## `getConfigVar()`, which lives in spec.nim just due to
 ## cross-file dependencies.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -150,7 +150,7 @@ proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
 
 # This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
-# 
+#
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   var n = unicode.strip(s).toLower()
 
@@ -276,12 +276,10 @@ proc toCon4mType*(s: string): Con4mType =
   try:
     (v, n) = s.toCon4mType(newTable[string, Con4mType]())
   except:
-    raise newException(ValueError, 
+    raise newException(ValueError,
                        "Incomplete type specification (no closing paren)")
 
   if unicode.strip(n).len() != 0:
     raise newException(ValueError,
                        "Extraneous text after parsed type: {n}".fmt())
   return v
-
-

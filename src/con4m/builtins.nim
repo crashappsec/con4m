@@ -324,7 +324,7 @@ proc c4mFormat*(args:       seq[Box],
     i   = 0
     optEntry: Option[StEntry]
     key:     string
-      
+
   while i < s.len():
     case s[i]
     of '}':
@@ -432,7 +432,7 @@ proc c4mDictKeys*(args:     seq[Box],
                   unused1 = Con4mScope(nil),
                   unused2 = VarStack(@[]),
                   unused3 = Con4mScope(nil)): Option[Box] =
-    
+
   var
     keys: seq[Box]               = newSeq[Box]()
     box                          = args[0]
@@ -467,16 +467,16 @@ proc c4mDictItems*(args:     seq[Box],
     items: seq[Box]              = newSeq[Box]()
     box                          = args[0]
     d: OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](box)
-  
+
   for k, v in d:
     tup = newSeq[Box]()
     tup.add(k)
     tup.add(v)
     items.add(pack[seq[Box]](tup))
-  
+
   return some(pack[seq[Box]](items))
 
-proc c4mListDir*(args:     seq[Box], 
+proc c4mListDir*(args:     seq[Box],
                  unused1 = Con4mScope(nil),
                  unused2 = VarStack(@[]),
                  unused3 = Con4mScope(nil)): Option[Box] =
@@ -498,7 +498,7 @@ proc c4mReadFile*(args:     seq[Box],
 
   unprivileged:
     let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
-    if f == nil: 
+    if f == nil:
       result = some(pack(""))
     else:
       result = some(pack(f.readAll()))
@@ -549,7 +549,7 @@ proc c4mCwd*(args:     seq[Box],
              unused1 = Con4mScope(nil),
              unused2 = VarStack(@[]),
              unused3 = Con4mScope(nil)): Option[Box] =
-    return some(pack(getCurrentDir())) 
+    return some(pack(getCurrentDir()))
 
 proc c4mChdir*(args:     seq[Box],
                unused1 = Con4mScope(nil),
@@ -618,7 +618,7 @@ proc c4mIsFile*(args:     seq[Box],
           result = falseRet
       except:
         result = falseRet
-      
+
 proc c4mIsLink*(args:     seq[Box],
                 unused1 = Con4mScope(nil),
                 unused2 = VarStack(@[]),
@@ -657,7 +657,7 @@ proc c4mGetPid*(args:     seq[Box],
                 unused2 = VarStack(@[]),
                 unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(getCurrentProcessId()))
-    
+
 proc c4mFileLen*(args:     seq[Box],
                  unused1 = Con4mScope(nil),
                  unused2 = VarStack(@[]),
@@ -725,7 +725,7 @@ proc c4mSplitPath*(args:     seq[Box],
     s.add(head)
     s.add(tail)
 
-    return some(pack(s))    
+    return some(pack(s))
 
 proc c4mPad*(args:     seq[Box],
              unused1 = Con4mScope(nil),
@@ -778,9 +778,9 @@ when defined(posix):
     ##
     ## like `run` except returns a tuple containing the output and the
     ## exit code.
-    var 
+    var
       cmd               = unpack[string](args[0])
-      outlist: seq[Box] = @[]    
+      outlist: seq[Box] = @[]
 
     unprivileged:
       let (output, exitCode) = execCmdEx(cmd)
@@ -800,7 +800,7 @@ when defined(posix):
                    unused2 = VarStack(@[]),
                    unused3 = Con4mScope(nil)): Option[Box] =
     return some(pack(geteuid()))
-    
+
 else:
   ## I don't know the permissions models on any non-posix OS, so
   ## this might be wildly insecure on such systems, as far as I know.
@@ -866,7 +866,7 @@ proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
     newCoreFunc(s, name, tinfo, fn)
   except:
     let msg = getCurrentExceptionMsg()
-    raise newException(ValueError, 
+    raise newException(ValueError,
                        fmt"When adding builtin '{name}({tinfo})': {msg}")
 
 proc newCallback*(s: ConfigState, name: string, tinfo: string) =
@@ -874,10 +874,10 @@ proc newCallback*(s: ConfigState, name: string, tinfo: string) =
     newCoreFunc(s, name, tinfo, nil)
   except:
     let msg = getCurrentExceptionMsg()
-    raise newException(ValueError, 
+    raise newException(ValueError,
                        fmt"When adding callback '{name}({tinfo})': {msg}")
 
-type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.   
+type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.
 const defaultBuiltins = [
   # Type conversion operations
   (1,   "bool",     BiFn(c4mIToB),           "f(int) -> bool"),
@@ -890,7 +890,7 @@ const defaultBuiltins = [
   (8,   "string",   BiFn(c4mBToS),           "f(bool) -> string"),
   (9,   "string",   BiFn(c4mIToS),           "f(int) -> string"),
   (10,  "string",   BiFn(c4mFToS),           "f(float) -> string"),
-  
+
   # String manipulation functions.
   (101, "contains", BiFn(c4mContainsStrStr), "f(string, string) -> bool"),
   (102, "find",     BiFn(c4mFindFromStart),  "f(string, string) -> int"),
@@ -900,7 +900,7 @@ const defaultBuiltins = [
   (106, "split",    BiFn(c4mSplit),          "f(string, string) -> [string]"),
   (107, "strip",    BiFn(c4mStrip),          "f(string) -> string"),
   (108, "pad",      BiFn(c4mPad),            "f(string, int) -> string"),
-  (109, "format",   BiFn(c4mFormat),         "f(string) -> string"), 
+  (109, "format",   BiFn(c4mFormat),         "f(string) -> string"),
 
   # Container (list and dict) basics.
   (200, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
@@ -980,5 +980,3 @@ proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
 
   when defined(posix):
     s.addBuiltinSet(posixBuiltins, exclusions)
-
-

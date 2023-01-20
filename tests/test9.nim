@@ -9,7 +9,7 @@ func fact(f) {
   if (f <= 1) {
     result := f
     return
-  } 
+  }
   return fact(f - 1) * f
 }
 

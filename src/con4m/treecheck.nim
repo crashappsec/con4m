@@ -1,14 +1,14 @@
 ## This module is doing three things:
-## 
+##
 ## 1) Type-checking the program, using the standard unifcation
 ##    algorithm, which itself lives in typecheck.nim
 ##
 ## 2) Putting symbol tables into each node, inserting variables (and
 ##    constants) into the proper symbol tables as it goes.
 ##
-## 3) Setting values from string literals.  Dict/list literals are 
+## 3) Setting values from string literals.  Dict/list literals are
 ##    done at eval time.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -32,7 +32,7 @@ proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
 
   fatal(err & extra, n)
-  
+
 proc addFuncDef(s: ConfigState, fd: FuncTableEntry): bool =
   # This func detects adding duplicates; but we only need it to run on the
   # first pass.  On the second pass we want to ignore it.
@@ -1054,7 +1054,7 @@ proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
 
 # Nim's issues w/ cross-module dependencies are bad. I can't prototype an
 # external function so I have to prototype an inline proxy to it before
-# I import it.  
+# I import it.
 proc callNewBuiltIn(s: ConfigState,
                     name: string,
                     fn: BuiltinFn,
@@ -1086,7 +1086,7 @@ proc checkTree*(node:      Con4mNode,
     result.callNewCallback(n, t)
 
   node.checkTree(result)
-  
+
 import builtins
 
 proc callNewBuiltIn(s:    ConfigState,

@@ -1,7 +1,7 @@
 ## Functions to represent various data types as strings.  For the
 ## things mapping to internal data structures, these are pretty much
 ## all just used for debugging.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 

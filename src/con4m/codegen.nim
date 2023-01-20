@@ -1,6 +1,6 @@
 ## Macros for abstracting away config file specification, parsing,
 ## validation and loading.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -1370,7 +1370,7 @@ template con4mDef*(nameBase: untyped, rest: untyped) =
   ## This version does the declaration, and declares a procedure for you
   ## that you can call when you're ready.
   configDef(nameBase, rest)
-  
+
   proc `first nameBase Run`*(confstr:   string,
                              builtins:  openarray[(string, BuiltinFn, string)],
                              exclude:   openarray[int],

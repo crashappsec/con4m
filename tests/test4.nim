@@ -58,4 +58,3 @@ test "hello, world":
     echo item
 
   check len(ctx.errors) == 2
-

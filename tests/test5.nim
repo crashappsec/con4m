@@ -72,4 +72,3 @@ test "hello, world":
 
   check unpack[int](ctx.getConfigVar("item.okay.foo").get()) == 2
   check unpack[string](ctx.getConfigVar("s").get()) == "set an example!"
-

@@ -2,7 +2,7 @@
 ## This is a simple recursive descent parser.  Note that I've explicitly
 ## factored the grammar for right recursion, so in the expression grammar
 ## there is a bit of tree jockeying to get the tree to look natural.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -104,11 +104,11 @@ template parseError(msg: string, backup: bool = true) =
 
 template parseError(msg: string, tok: Con4mToken) =
   let info = instantiationInfo()
-  
+
   fatal(" Parse error: (thrown at " & info.filename & ":" & $(info.line) &
     "): \n" & msg,
               tok)
-  
+
 # These productions need to be forward referenced.
 # Other expression productions do as well, but that gets done
 # in the exprProds template below.
@@ -212,7 +212,7 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
       actuals.children.add(ctx.expression())
     except:
       raise # Maybe add something here if the error message is wonky
-      
+
     case ctx.consume().kind
     of TtRParen:
       ctx.nlWatch = watch
@@ -847,4 +847,3 @@ proc parse*(filename: string): Con4mNode =
       result = s.parse(filename)
     finally:
       s.close()
-

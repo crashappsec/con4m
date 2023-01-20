@@ -1,6 +1,6 @@
 ## Routines for specifying a config file schema, and for checking an
 ## executed config against that schema.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -438,7 +438,7 @@ proc stackBase(s: ConfigState, tree: Con4mNode): Option[Con4mScope] =
       return none(Con4mScope)
 
   return some(tree.scopes.get().attrs)
-  
+
 proc stackConfig*(s: ConfigState,
                   stream: Stream,
                   filename: string): Option[Con4mScope] =
@@ -447,7 +447,7 @@ proc stackConfig*(s: ConfigState,
 
 proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
   stackBase(s, parse(filename))
-    
+
 
 proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
   ## This interface allows you to look up individual fields to get
@@ -542,4 +542,3 @@ proc getAllSectionSTs*(ctx: ConfigState): Con4mSectInfo =
 proc addSpec*(s: ConfigState, spec: ConfigSpec) =
   ## Associate a ConfigSpec object with an existing state object.
   s.spec = some(spec)
-
