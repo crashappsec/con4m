@@ -145,6 +145,7 @@ type
     value*: Box
 
   BuiltInFn* = ((seq[Box], Con4mScope, VarStack, Con4mScope) -> Option[Box])
+
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 

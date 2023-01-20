@@ -816,7 +816,9 @@ proc parse*(s: Stream, filename: string = ""): Con4mNode =
 
   # if s is a file, avoid unnecessary seeking by converting
   # to a stringStream
-  let (valid, tokens) = s.readAll().newStringStream().lex()
+  let toParse = s.readAll()
+  echo toParse
+  let (valid, tokens) = toParse.newStringStream().lex()
 
   if valid:
     return tokens.parse(filename)

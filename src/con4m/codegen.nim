@@ -1364,3 +1364,36 @@ template con4m*(nameBase: untyped, confstr: string, rest: untyped): untyped =
       echo "Error: ", err
     quit()
   `ctx nameBase Conf`.`load nameBase Config`()
+
+template con4mWcustomBuiltins*(nameBase: untyped,
+                               confstr:  string,
+                               builtins: openarray[(string, BuiltinFn, string)],
+                               exclude:  openarray[int],
+                               rest:     untyped): untyped =
+  ## Exactly the same as the con4m() macro, except that it accepts two
+  ## additional parameters:
+  ##
+  ## 1) a list of additional built-ins to add.
+  ## 2) a list of default built-ins to exclude from the runtime.
+  ##
+  ## The change is simply the call to evalTree(); should
+  ## do some macro inception to avoid future brittleness.
+    
+  var
+    tree = parse(newStringStream(confstr))
+    opt = tree.evalTree(builtins, exclude)
+
+  if not opt.isSome():
+    echo "Error: invalid configuration file."
+    quit()
+
+  var `ctx nameBase Conf` {.inject.} = opt.get()
+
+  configDef(nameBase, rest)
+  `ctx nameBase Conf`.addSpec(`confSpec nameBase`)
+  if not `ctx nameBase Conf`.validateConfig():
+    for err in `ctx nameBase Conf`.errors:
+      echo "Error: ", err
+    quit()
+  `ctx nameBase Conf`.`load nameBase Config`()
+  

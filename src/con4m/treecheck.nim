@@ -1033,9 +1033,10 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     s.cycleCheck()
 
 
-proc newConfigState*(scope: Con4mScope,
-                     spec: ConfigSpec = nil,
-                     addBuiltins: bool = true): ConfigState
+proc newConfigState*(scope:       Con4mScope,
+                     spec:        ConfigSpec     = nil,
+                     addBuiltins: bool           = true,
+                     exclude:     openarray[int] = []): ConfigState
 
 proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
@@ -1045,19 +1046,54 @@ proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
   ## back to checkTree when loading a file being layered on top of
   ## what we've already read.
   ##
-  ## Adds all default builtins.
+  ## Adds all default builtins, by default.
   node.scopes = some(newRootScope())
-
-  result = newConfigState(node.scopes.get().attrs, addBuiltins=addBuiltins)
+  result      = newConfigState(node.scopes.get().attrs, addBuiltins=addBuiltins)
 
   node.checkTree(result)
 
+# Nim's issues w/ cross-module dependencies are bad. I can't prototype an
+# external function so I have to prototype an inline proxy to it before
+# I import it.  
+proc callNewBuiltIn(s: ConfigState,
+                    name: string,
+                    fn: BuiltinFn,
+                    t: string) {.inline.}
+
+proc checkTree*(node:    Con4mNode,
+                fns:     openarray[(string, BuiltinFn, string)] = [],
+                exclude: openarray[int] = []): ConfigState =
+  ## Checks a parse tree rooted at `node` for static errors (i.e.,
+  ## anything we can easily find before execution).  This version
+  ## returns a new `ConfigState` object, that can be used for
+  ## querying, dumped to a data structure (via our macros), or sent
+  ## back to checkTree when loading a file being layered on top of
+  ## what we've already read.
+  ##
+  ## Adds all default builtins, as well as any custom ones.
+  node.scopes = some(newRootScope())
+  result      = newConfigState(node.scopes.get().attrs,
+                               addBuiltins=true,
+                               exclude=exclude)
+
+  for item in fns:
+    let (name, fn, tinfo) = item
+    result.callNewBuiltIn(name, fn, tinfo)
+
+  node.checkTree(result)
+  
 import builtins
 
-proc newConfigState*(scope: Con4mScope,
-                     spec: ConfigSpec = nil,
-                     addBuiltins: bool = true
-                    ): ConfigState =
+proc callNewBuiltIn(s:    ConfigState,
+                    name: string,
+                    fn:   BuiltinFn,
+                    t:    string) {.inline.} =
+  s.newBuiltIn(name, fn, t)
+
+proc newConfigState*(scope:       Con4mScope,
+                     spec:        ConfigSpec     = nil,
+                     addBuiltins: bool           = true,
+                     exclude:     openarray[int] = []): ConfigState =
   ## Return a new `ConfigState` object, optionally setting the `spec`
   ## object, and, if requested via `addBuiltins`, installs the default
   ## set of builtin functions.
@@ -1067,9 +1103,7 @@ proc newConfigState*(scope: Con4mScope,
     result = ConfigState(st: scope)
 
   if addBuiltins:
-    result.addDefaultBuiltins()
-
-
+    result.addDefaultBuiltins(exclude)
 
 when isMainModule:
   proc tT(s: string): Con4mType =

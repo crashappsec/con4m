@@ -609,12 +609,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     except:
       fatal("Variable was referenced before assignment", node)
 
-proc evalTree*(node: Con4mNode,
-               addBuiltins = false): Option[ConfigState] {.inline.} =
-  ## This runs the evaluator on a tree that has already been parsed
-  ## and type-checked.
-
-  let state = node.checkTree(addBuiltins)
+template evalTreeBase(node: untyped, param: untyped): untyped =
+  let state = param
+  
   if node == nil:
     return
 
@@ -625,7 +622,23 @@ proc evalTree*(node: Con4mNode,
     discard state.popRuntimeFrame()
 
   return some(state)
+  
+proc evalTree*(node:         Con4mNode,
+               addBuiltins = false): Option[ConfigState] {.inline.} =
+  ## This runs the evaluator on a tree that has already been parsed
+  ## and type-checked.
+  evalTreeBase(node):
+      node.checkTree(addBuiltins)
 
+proc evalTree*(node:    Con4mNode,
+               fns:     openarray[(string, BuiltinFn, string)] = [],
+               exclude: openarray[int] = []): Option[ConfigState] {.inline.} =
+  ## This is the same as above, but always has checkTree() add the
+  ## default builtins, minus explicitly excluded ones, and
+  ## additionally allows for installing custom ones.
+  evalTreeBase(node):
+      node.checkTree(fns, exclude)
+               
 proc evalConfig*(filename: string,
                  addBuiltins = false): Option[(ConfigState, Con4mScope)] =
   ## Given the config file as a string, this will load and parse the
