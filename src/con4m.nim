@@ -5,7 +5,7 @@
 ## customization using the con4m language, which is built in a way
 ## that guarantees termination (e.g., no while loops, for loop index
 ## variables are immutible to the programmer).
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -76,18 +76,18 @@ when isMainModule:
 con4m [flags] first.config ...
       Evaluates your configuration file, dumping a JSON string with the results.
 
-      Writes to standard output by default.  If multiple config files are provided, 
+      Writes to standard output by default.  If multiple config files are provided,
       they are executed 'stacked', in command-line order.
 
       Note that this interface currently does not support callbacks,
-      and loads the default functions only. 
+      and loads the default functions only.
 
       FLAGS:
       -a, --ascii              Output text instead of JSON
       -v, --verbose            Output (to stderr) additional information.
       -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
       -d, --debug              Throw NIM exceptions instead of printing error messages
-      -h, --help               This help message      
+      -h, --help               This help message
 """
 
     quit()

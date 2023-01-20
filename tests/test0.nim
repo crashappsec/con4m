@@ -15,6 +15,5 @@ test "manual inspection":
   let
     tree = parse(prog.newStringStream())
     ctx = tree.evalTree().getOrElse(nil)
-    
-  check ctx != nil
 
+  check ctx != nil

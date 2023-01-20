@@ -1,6 +1,6 @@
 ## Our implementation of the good ol' unifcation algorithm, with
 ## Con4m's current type rules codified.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -56,8 +56,8 @@ proc getBaseType*(node: Con4mNode): Con4mTypeKind =
 
 # Uncomment this if you need a trace of unify() calls,
 # rename unify below to unifyactual, and then
-# uncomment the debug wrapper for unify below. 
-# proc unify*(param1: Con4mType, param2: Con4mType): Con4mType 
+# uncomment the debug wrapper for unify below.
+# proc unify*(param1: Con4mType, param2: Con4mType): Con4mType
 
 
 # Just in case someone manages to clone a singleton, we
@@ -194,7 +194,7 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
 # uncomment the blow wrapper.
 # import strformat
 # proc unify*(param1: Con4mType, param2: Con4mType): Con4mType =
-#  let 
+#  let
 #    s1 = $(param1)
 #    s2 = $(param2)
 #  result = unifyActual(param1, param2)
@@ -289,4 +289,3 @@ proc copyType*(t: Con4mType): Con4mType =
 
 proc reprSig*(name: string, t: Con4mType): string =
   return name & (($(t))[1 .. ^1])
-

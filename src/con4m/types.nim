@@ -1,7 +1,7 @@
 ## Data types used across the project.  We generally try to keep types
 ## out of this file if they're only used in one module (particularly
 ## true in macros.nim, which is all compile-time).
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -79,7 +79,7 @@ type
 
   # So I can switch between ordered and not without hardship.
   Con4mDict*[K, V] = TableRef[K, V]
-  
+
   STEntry* = ref object
     ## Internal; our symbol table data structure.
     tInfo*: Con4mType

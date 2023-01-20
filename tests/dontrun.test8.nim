@@ -254,5 +254,3 @@ test "samiconf":
       echo "  Docstring: <none>"
 
   check ctxSamiConf != nil
-
-

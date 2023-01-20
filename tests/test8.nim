@@ -31,4 +31,3 @@ test "manual inspection":
     tree = parse(s.newStringStream())
     ctx = tree.evalTree().getOrElse(nil)
   check ctx != nil
-
