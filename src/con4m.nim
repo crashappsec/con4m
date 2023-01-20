@@ -18,36 +18,8 @@ export fatal, parse.parse, Con4mError
 
 import nimutils
 
-import con4m/treecheck
-export checkTree
-
-# Runtime bits
-import con4m/types
-export types
-
-import con4m/eval
-export evalTree, evalConfig
-
-import con4m/builtins
-export builtins
-
-
-# Post-runtime (spec checking)
-import con4m/spec
-export newConfigSpec, addGlobalAttr, addSection, addAttr, validateConfig,
-       newConfigState, getConfigVar, getAllSectionSTs, addSpec, lockConfigVar,
-       setOverride, stackConfig
-
-# Simplification via complexity
-import con4m/codegen
-export codegen.con4m, configDef
-
-when defined(testCases):
-  # There are really just exposed for our tests.  Should change that.
-    import con4m/st
-    export lookupAttr
-    import con4m/dollars
-    export dollars
+import con4m/[treecheck, types, eval, builtins, spec, codegen, st, dollars]
+export treecheck, types, eval, builtins, spec, codegen, st, dollars
 
 when isMainModule:
   import os, parseopt, options, streams, strutils, strformat, json
