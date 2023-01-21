@@ -12,21 +12,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import math
-import options
-import strformat
-import strutils
-import unicode
-import streams
-import tables
-
-import types
-import st
-import parse # just for fatal()
-import typecheck
-import dollars
-import nimutils
-import nimutils/box
+import math, options, strformat, strutils, unicode, streams, tables
+import types, st, parse, typecheck, dollars, nimutils
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
@@ -208,11 +195,11 @@ proc checkStringLit(node: Con4mNode) =
   let token = node.token.get()
 
   var
-    flag: bool
+    flag:      bool
     remaining: int
     codepoint: int
-    raw: string = newStringOfCap(token.endPos - token.startPos)
-    res: string = newStringOfCap(token.endPos - token.startPos)
+    raw:       string = newStringOfCap(token.endPos - token.startPos)
+    res:       string = newStringOfCap(token.endPos - token.startPos)
 
   token.stream.setPosition(token.startPos)
   raw = token.stream.readStr(token.endPos - token.startPos)
@@ -265,6 +252,7 @@ proc checkStringLit(node: Con4mNode) =
         remaining = 8
       else:
         res.add(r)
+        flag = false
     else:
       case r
       of Rune('\\'):
@@ -968,8 +956,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       varEntry = scopes.vars.lookup(name)
 
     if attrEntry.isNone() and varEntry.isNone():
-      if scopes.globals.lookup(name).isSome():
-        fatal("Global vars are not available from functions or callbacks", node)
+      let globalEntry = scopes.globals.lookup(name)
+      if globalEntry.isSome():
+        node.typeInfo = globalEntry.get().tinfo
+        return
+        
       fatal("Variable {name} used before definition".fmt(), node)
 
     let ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
