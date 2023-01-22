@@ -3,12 +3,98 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import streams
-import unicode
+import streams, unicode, types, nimutils, errmsg
 
-import types
-import nimutils
-import nimutils/unicodeid
+proc unescape(token: Con4mToken) =
+  # Turn a raw string into its intended representation.  Note that we
+  # do NOT currently accept hex or octal escapes, since strings
+  # theoretically should always be utf-8 only.
+  var
+    flag:      bool
+    remaining: int
+    codepoint: int
+    raw:       string = newStringOfCap(token.endPos - token.startPos)
+    res:       string = newStringOfCap(token.endPos - token.startPos)
+
+  token.stream.setPosition(token.startPos)
+  raw = token.stream.readStr(token.endPos - token.startPos)
+
+  for r in raw.runes():
+    if remaining > 0:
+      codepoint = codepoint shl 4
+      let o = ord(r)
+      case o
+      of int('0') .. int('9'):
+        codepoint = codepoint and (o - int('0'))
+      of int('a') .. int('f'):
+        codepoint = codepoint and (o - int('a') + 10)
+      of int('A') .. int('F'):
+        codepoint = codepoint and (o - int('A') + 10)
+      else:
+        var   st: string
+        const ii = instantiationInfo()
+        echo "??!"
+        when not defined(release):
+          st = getStackTrace()
+        else:
+          st = ""
+        fatal("Invalid unicode escape in string literal", token, st, ii)
+
+      remaining -= 1
+      if remaining == 0:
+        res.add(Rune(codepoint))
+        codepoint = 0
+    elif flag:
+      case r
+      of Rune('n'):
+        res.add('\n')
+        flag = false
+      of Rune('r'):
+        res.add('\r')
+        flag = false
+      of Rune('a'):
+        res.add('\a')
+        flag = false
+      of Rune('b'):
+        res.add('\b')
+        flag = false
+      of Rune('f'):
+        res.add('\f')
+        flag = false
+      of Rune('t'):
+        res.add('\t')
+        flag = false
+      of Rune('\\'):
+        res.add('\\')
+        flag = false
+      of Rune('u'):
+        flag = false
+        remaining = 4
+      of Rune('U'):
+        flag = false
+        remaining = 8
+      else:
+        res.add(r)
+        flag = false
+    else:
+      case r
+      of Rune('\\'):
+        flag = true
+      else:
+        res.add(r)
+
+  if flag or (remaining != 0):
+    var   st: string
+    const ii = instantiationInfo()
+
+    when not defined(release):
+      st = getStackTrace()
+    else:
+      st = ""
+      fatal("Unterminated escape sequence in string literal", token, st, ii)
+
+  token.unescaped = res
+
 
 template tok(k: Con4mTokenKind) =
   toks.add(Con4mToken(startPos: startPos,
@@ -20,15 +106,92 @@ template tok(k: Con4mTokenKind) =
 
 template tok(k: Con4mTokenKind, adjustment: int) =
   toks.add(Con4mToken(startPos: startPos + adjustment,
-                    endPos: s.getPosition() - adjustment,
-                    kind: k,
-                    stream: s,
-                    lineNo: tokenLine,
-                    lineOffset: tokenLineOffset))
+                      endPos: s.getPosition() - adjustment,
+                      kind: k,
+                      stream: s,
+                      lineNo: tokenLine,
+                      lineOffset: tokenLineOffset))
 
 template atNewLine() =
   lineNo.inc()
   lineStart = s.getPosition()
+
+proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
+  var
+    i      = 0
+    newtok: Con4mToken = nil
+  let
+    l  = len(intoks)
+    
+  result = @[]
+
+  if len(inToks) != 0:
+    let savedPos = inToks[0].stream.getPosition()
+    for tok in inToks:
+      if tok.kind == TtStringLit:
+        tok.unescape()
+    inToks[0].stream.setPosition(savedPos)
+
+  while i < len(inToks):
+   block outer:
+    var t = inToks[i]
+
+    case t.kind
+    of TtStringLit:
+      var j = i + 1
+      # (TtWhiteSpace* TtPlus (TtWhiteSpace|TtNewLine)* TtStringLit)*
+      while j < len(inToks):
+        block inner:
+          let t2 = inToks[j]
+          case t2.kind
+          of TtWhiteSpace:
+            j += 1
+            continue
+          of TtPlus:
+            j += 1
+            while j < len(inToks):
+              let t3 = inToks[j]
+              case t3.kind
+              of TtWhiteSpace, TtNewLine:
+                j += 1
+                continue
+              of TtStringLit:
+                if newTok == nil:
+                  newTok = Con4mToken(kind:       TtStringLit,
+                                      unescaped:  t.unescaped & t3.unescaped,
+                                      startPos:   t.startPos,
+                                      endPos:     t3.endPos,
+                                      lineNo:     t.lineNo,
+                                      lineOffset: t.lineOffset,
+                                      stream:     t.stream)
+                else:
+                  newTok.unescaped &= t3.unescaped
+                  newTok.endpos = t3.endpos
+                j = j + 1
+                i = j
+                break inner
+              else:
+                if newTok != nil:
+                  result.add(newTok)
+                  newTok = nil
+                  break outer
+                  
+                result.add(t)
+                i = i + 1
+                break outer
+          else:
+            if newTok != nil:
+              result.add(newTok)
+              newTok = nil
+              break outer
+            result.add(t)
+            i = i + 1
+            break outer
+          
+    else:
+      result.add(t)
+    i += 1
+
 
 proc lex*(s: Stream): (bool, seq[Con4mToken]) =
   ## Lexical analysis. Doesn't need to be exported.
@@ -251,7 +414,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
           continue
     of '\x00':
       tok(TtEOF)
-      return (true, toks)
+      return (true, processStrings(toks))
     else:
       var r: Rune
       if uint(c) < 128:

@@ -761,6 +761,9 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
+when defined(debugTokenStream):
+  import dollars
+
 proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),

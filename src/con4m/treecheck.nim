@@ -12,7 +12,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import math, options, strformat, strutils, unicode, streams, tables
+import math, options, strformat, strutils, tables
 import types, st, parse, typecheck, dollars, nimutils
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
@@ -188,82 +188,6 @@ when defined(disallowRecursion):
         stack = @[item]
         # If we got here, item.impl must exist.
         s.cyCheckOne(item.impl.get(), stack)
-
-proc checkStringLit(node: Con4mNode) =
-  # Note that we do NOT accept hex or octal escapes, since
-  # strings theoretically should always be utf-8 only.
-  let token = node.token.get()
-
-  var
-    flag:      bool
-    remaining: int
-    codepoint: int
-    raw:       string = newStringOfCap(token.endPos - token.startPos)
-    res:       string = newStringOfCap(token.endPos - token.startPos)
-
-  token.stream.setPosition(token.startPos)
-  raw = token.stream.readStr(token.endPos - token.startPos)
-
-  for r in raw.runes():
-    if remaining > 0:
-      codepoint = codepoint shl 4
-      let o = ord(r)
-      case o
-      of int('0') .. int('9'):
-        codepoint = codepoint and (o - int('0'))
-      of int('a') .. int('f'):
-        codepoint = codepoint and (o - int('a') + 10)
-      of int('A') .. int('F'):
-        codepoint = codepoint and (o - int('A') + 10)
-      else:
-        fatal("Invalid unicode escape in string literal", node)
-      remaining -= 1
-      if remaining == 0:
-        res.add(Rune(codepoint))
-        codepoint = 0
-    elif flag:
-      case r
-      of Rune('n'):
-        res.add('\n')
-        flag = false
-      of Rune('r'):
-        res.add('\r')
-        flag = false
-      of Rune('a'):
-        res.add('\a')
-        flag = false
-      of Rune('b'):
-        res.add('\b')
-        flag = false
-      of Rune('f'):
-        res.add('\f')
-        flag = false
-      of Rune('t'):
-        res.add('\t')
-        flag = false
-      of Rune('\\'):
-        res.add('\\')
-        flag = false
-      of Rune('u'):
-        flag = false
-        remaining = 4
-      of Rune('U'):
-        flag = false
-        remaining = 8
-      else:
-        res.add(r)
-        flag = false
-    else:
-      case r
-      of Rune('\\'):
-        flag = true
-      else:
-        res.add(r)
-
-  if flag or (remaining != 0):
-    fatal("Unterminated escape sequence in string literal", node)
-
-  token.unescaped = res
 
 proc getTokenType(node: Con4mNode): Con4mTokenKind {.inline.} =
   let token = node.token.get()
@@ -511,7 +435,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     case node.getTokenType()
     of TTStringLit:
       node.typeInfo = stringType
-      node.checkStringLit()
       var s = node.getTokenText()
       node.value = pack(s)
     of TTIntLit:
