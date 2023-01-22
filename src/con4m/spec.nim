@@ -4,23 +4,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options
-import tables
-import strutils
-import unicode
-import strformat
-import streams
-
-import types
-import parse
-import st
-import treecheck
-import typecheck
-import eval
-import dollars
-import nimutils/box
-import nimutils/unicodeid
-
+import options, tables, strutils, unicode, strformat, streams, nimutils
+import errmsg, types, parse, st, treecheck, typecheck, eval, dollars
 
 proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
   ## Returns a new, empty ConfigSpec object, which allows us to define
@@ -442,10 +427,12 @@ proc stackBase(s: ConfigState, tree: Con4mNode): Option[Con4mScope] =
 proc stackConfig*(s: ConfigState,
                   stream: Stream,
                   filename: string): Option[Con4mScope] =
+  setCurrentFileName(filename)
   stackBase(s, parse(stream, filename))
 
 
 proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
+  setCurrentFileName(filename)  
   stackBase(s, parse(filename))
 
 
