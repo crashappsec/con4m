@@ -1,3 +1,15 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Con4m: Configuration for Mortals](#con4m-configuration-for-mortals)
+- [Basic Example](#basic-example)
+- [Getting Started](#getting-started)
+- [More Information](#more-information)
+- [About](#about)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Con4m: Configuration for Mortals
 
 Con4m implements an Apache-like configuration file format, with the following benefits:
@@ -15,7 +27,7 @@ Currently, Con4m is built for Nim, but we intend to support other language envir
 Let’s imagine the user has provided a config file like this:
 
 ```python
-use_color: false 
+use_color: false
 
 host localhost {
       ip: "127.0.0.1"
@@ -40,7 +52,7 @@ Let’s say the application writer has loaded this configuration file into the v
 var config = con4m(MyApp, s):
   attr("max_timeout", int, required = false) # required = true is the default.
   attr("use_color", bool, true) # defaultVal = works too
-  section(host, allowedSubSections = @["*"]): 
+  section(host, allowedSubSections = @["*"]):
       attr("ip", string, required = true)
       attr("port", string, required = true)
       attr("use_tls", bool, defaultAttr = true)
@@ -64,7 +76,7 @@ for host in config.host:
 
 # Getting Started
 
-Conform is [written in Nim](https://nim-lang.org/), and currently requires it.  Nim is fast like C and Rust, but with a memory model closer to Rust’s, so nice and safe. It easily compiles to a single, statically (like Go).  Plus, it mostly looks like Python. 
+Conform is [written in Nim](https://nim-lang.org/), and currently requires it.  Nim is fast like C and Rust, but with a memory model closer to Rust’s, so nice and safe. It easily compiles to a single, statically (like Go).  Plus, it mostly looks like Python.
 
 If you have Nim installed, you can easily install the current version with nimble:
 

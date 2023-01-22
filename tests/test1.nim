@@ -90,17 +90,17 @@ defaults {
     }
   }
 
-  other = { 
+  other = {
    "XLOCAL_USER": run("uname -a"),
    "XFRAUD" : "false"
   }
-    
+
   custom {
     key "XSIGNATURE" {
       kind: "binary"
       force: true  # can't do --no-custom-x-signature
       command: "/usr/bin/sign ${artifact}"
-      default: "jo mama"   # Default value to add if 
+      default: "jo mama"   # Default value to add if
     }
   }
 """

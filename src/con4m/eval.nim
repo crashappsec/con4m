@@ -117,8 +117,6 @@ proc sCallUserDef(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), nodeOpt.get())
   except:
-    echo getCurrentException().getStacktrace()
-    echo getCurrentExceptionMsg()
     fatal(fmt"Unhandled error when running builtin call: {name}",
           nodeOpt.get())
 
@@ -149,8 +147,6 @@ proc sCallBuiltin(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
-    echo getCurrentException().getStacktrace()
-    echo getCurrentExceptionMsg()
     fatal("Unhandled error when running builtin call: {name}".fmt(), node)
 
 proc sCall*(s: ConfigState,
@@ -611,7 +607,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
 template evalTreeBase(node: untyped, param: untyped): untyped =
   let state = param
-  
+
   if node == nil:
     return
 
@@ -622,7 +618,7 @@ template evalTreeBase(node: untyped, param: untyped): untyped =
     discard state.popRuntimeFrame()
 
   return some(state)
-  
+
 proc evalTree*(node:         Con4mNode,
                addBuiltins = false): Option[ConfigState] {.inline.} =
   ## This runs the evaluator on a tree that has already been parsed
@@ -640,7 +636,7 @@ proc evalTree*(node:      Con4mNode,
   ## additionally allows for installing custom ones.
   evalTreeBase(node):
       node.checkTree(fns, exclude, callbacks)
-               
+
 proc evalConfig*(filename: string,
                  addBuiltins = false): Option[(ConfigState, Con4mScope)] =
   ## Given the config file as a string, this will load and parse the
@@ -678,7 +674,7 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
   try:
     node.children[2].evalNode(s)
   except Con4mError:
-    discard # Clean return
+    discard # Clean return.  Error message will have been published.
 
   let frame = s.popRuntimeFrame()
 
@@ -689,4 +685,3 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
     return some(node.value)
   else:
     return none(Box)
-

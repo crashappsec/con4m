@@ -1,4 +1,4 @@
-configDef	con4m/codegen.html#configDef.t,untyped,untyped	codegen: configDef(nameNode: untyped; rest: untyped)	
-con4m	con4m/codegen.html#con4m.t,untyped,string,untyped	codegen: con4m(nameBase: untyped; confstr: string; rest: untyped): untyped	
-The section command	con4m/codegen.html#the-nimsection-command	  The <tt class="docutils literal"><span class="pre"><span class="Identifier">section</span></span></tt> command	
-The attr command	con4m/codegen.html#the-nimattr-command	  The <tt class="docutils literal"><span class="pre"><span class="Identifier">attr</span></span></tt> command	
+configDef	con4m/codegen.html#configDef.t,untyped,untyped	codegen: configDef(nameNode: untyped; rest: untyped)
+con4m	con4m/codegen.html#con4m.t,untyped,string,untyped	codegen: con4m(nameBase: untyped; confstr: string; rest: untyped): untyped
+The section command	con4m/codegen.html#the-nimsection-command	  The <tt class="docutils literal"><span class="pre"><span class="Identifier">section</span></span></tt> command
+The attr command	con4m/codegen.html#the-nimattr-command	  The <tt class="docutils literal"><span class="pre"><span class="Identifier">attr</span></span></tt> command

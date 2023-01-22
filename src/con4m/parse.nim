@@ -2,44 +2,13 @@
 ## This is a simple recursive descent parser.  Note that I've explicitly
 ## factored the grammar for right recursion, so in the expression grammar
 ## there is a bit of tree jockeying to get the tree to look natural.
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options
-import streams
-import macros
-
-import types
-import lex
-import dollars
-import nimutils
-
-type Con4mError* = object of CatchableError
-
-proc fatal*(msg: string, token: Con4mToken) =
-  ## Raise a Con4mError, and add any context in the error message.
-  if (token == nil):
-    assert false, "Programmer error: token not provided"
-    raise newException(Con4mError,
-                       "Unrecoverable error in configuration file: " & msg)
-
-  if token.lineNo == -1:
-    raise newException(Con4mError, "(in user code): " & msg)
-  else:
-    raise newException(Con4mError, $(token.lineNo) & ":" &
-      $(token.lineOffset) & ":" & msg)
-
-
-proc fatal*(msg: string, node: Con4mNode = nil) =
-  ## Raise a Con4mError, and add any context in the error message.
-  if (node == nil):
-    raise newException(Con4mError,
-                       "Unrecoverable error in configuration file: " & msg)
-
-  let t = node.token.getOrElse(nil)
-
-  fatal(msg, t)
+import options, streams, types, lex, nimutils
+import errmsg
+export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
@@ -95,20 +64,24 @@ proc unconsume(ctx: ParseCtx) =
     if not ctx.curTok().isSkipped(): return
 
 template parseError(msg: string, backup: bool = true) =
-  let info = instantiationInfo()
+  const info = instantiationInfo()
+  var   st   = ""
+
+  when not defined(release):
+    st = getStackTrace()
 
   if backup: ctx.unconsume()
-  fatal(" Parse error: (thrown at " & info.filename & ":" & $(info.line) &
-    "): \n" & msg,
-              ctx.curTok())
+  fatal("Parse error: " & msg, ctx.curTok(), st, info)
 
 template parseError(msg: string, tok: Con4mToken) =
-  let info = instantiationInfo()
-  
-  fatal(" Parse error: (thrown at " & info.filename & ":" & $(info.line) &
-    "): \n" & msg,
-              tok)
-  
+  const info = instantiationInfo()
+  var   st   = ""
+
+  when not defined(release):
+    st = getStackTrace()
+
+  fatal("Parse error: " & msg, tok, st, info)
+
 # These productions need to be forward referenced.
 # Other expression productions do as well, but that gets done
 # in the exprProds template below.
@@ -123,7 +96,7 @@ template exprProds(exprName: untyped,
                    rhsName: untyped,
                    nextInChain: untyped,
                    tokKind: untyped,
-                   nodeType: untyped) =
+                   nodeType: untyped) {.dirty.} =
   proc exprName(ctx: ParseCtx): Option[Con4mNode]
 
   proc rhsName(ctx: ParseCtx): Con4mNode =
@@ -132,6 +105,8 @@ template exprProds(exprName: untyped,
       let optExpr = ctx.exprName()
       if optExpr.isSome():
         var r = optExpr.get()
+        if len(r.children) == 0:
+          parseError("Invalid expression start")
         r.children = @[n, r.children[0]]
         n = r
       else:
@@ -208,11 +183,7 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
     return
 
   while true:
-    try:
-      actuals.children.add(ctx.expression())
-    except:
-      raise # Maybe add something here if the error message is wonky
-      
+    actuals.children.add(ctx.expression())
     case ctx.consume().kind
     of TtRParen:
       ctx.nlWatch = watch
@@ -238,6 +209,7 @@ proc indexExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
 
   let watch = ctx.nlWatch
   ctx.nlWatch = false
+
   result.children.add(ctx.expression())
 
   if ctx.consume().kind != TtRBracket:
@@ -739,12 +711,8 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       of TtIdentifier, TtStringLit, TtLBrace:
         result.children.add(ctx.section())
       else:
-        try:
-          ctx.nlWatch = true
-          result.children.add(ctx.expression())
-        except:
-          raise # Might want to special case here if we don't
-                # like the errors.
+        ctx.nlWatch = true
+        result.children.add(ctx.expression())
     of TtIf:
       result.children.add(ctx.ifStmt())
     of TtFor:
@@ -801,6 +769,8 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
                      nesting: 0,
                      nlWatch: false)
 
+  setCurrentFileName(filename)
+
   when defined(debugTokenStream):
     for i, token in tokens:
       echo i, ": ", $token
@@ -840,11 +810,9 @@ proc parse*(filename: string): Con4mNode =
   var s = newFileStream(filename, fmRead)
 
   if s == nil:
-    raise newException(Con4mError, filename &
-      ": could not open file (permissions issue?)")
+    fatal("could not open file", Con4mToken(nil))
   else:
     try:
       result = s.parse(filename)
     finally:
       s.close()
-

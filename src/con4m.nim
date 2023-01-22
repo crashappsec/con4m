@@ -5,7 +5,7 @@
 ## customization using the con4m language, which is built in a way
 ## that guarantees termination (e.g., no while loops, for loop index
 ## variables are immutible to the programmer).
-## 
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
@@ -18,12 +18,15 @@ export fatal, parse.parse, Con4mError
 
 import nimutils
 
-import con4m/[treecheck, types, eval, builtins, spec, codegen, st, dollars]
-export treecheck, types, eval, builtins, spec, codegen, st, dollars
+import con4m/[treecheck, types, eval, builtins, spec, codegen, st, dollars],
+       con4m/errmsg
+export treecheck, types, eval, builtins, spec, codegen, st, dollars, errmsg
 
 when isMainModule:
-  import os, parseopt, options, streams, strutils, strformat, json
+  import os, parseopt, options, streams,json
   import con4m/dollars
+
+  discard subscribe(con4mTopic, defaultCon4mHook)
 
   proc showResults(fstream: Stream,
                    scope:
@@ -39,55 +42,23 @@ when isMainModule:
     else:
       echo parseJson(scope.scopeTojson()).pretty()
 
-  proc printCompilerError(fname: string, msg: string, debug: bool) =
-    let
-      parts = msg.split(":")
-      me = getAppFileName().splitPath().tail
-      f = msg.find("(thrown")
-
-    var modmsg: string
-
-    if len(parts) > 2 and f == -1:
-      modmsg = msg
-    else:
-      let f2 = msg.find("): ") + 4
-
-      modmsg = if f == -1: msg
-               else: msg[0 ..< f].strip() & " " & msg[f2 .. ^1]
-
-    stderr.writeLine(fmt"{me}:{fname}: {modmsg}")
-
-    if len(parts) > 2 and (parts[0][0] in "0123456789"):
-      let
-        line = parseInt(parts[0]) - 1
-        offset = parseInt(parts[1])
-        f = newFileStream(fname, fmRead)
-        src = f.readAll()
-        lines = src.split("\n")
-        pad = repeat(' ', offset + 2)
-
-      stderr.writeLine("  " & lines[line])
-      stderr.writeline(pad & "^")
-    if debug:
-      raise
-
   proc showHelp() {.noreturn.} =
     echo """
 con4m [flags] first.config ...
       Evaluates your configuration file, dumping a JSON string with the results.
 
-      Writes to standard output by default.  If multiple config files are provided, 
+      Writes to standard output by default.  If multiple config files are provided,
       they are executed 'stacked', in command-line order.
 
       Note that this interface currently does not support callbacks,
-      and loads the default functions only. 
+      and loads the default functions only.
 
       FLAGS:
       -a, --ascii              Output text instead of JSON
       -v, --verbose            Output (to stderr) additional information.
       -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
-      -d, --debug              Throw NIM exceptions instead of printing error messages
-      -h, --help               This help message      
+      -d, --debug              Throw NIM exceptions instead of printing error meessages
+      -h, --help               This help message
 """
 
     quit()
@@ -148,8 +119,7 @@ con4m [flags] first.config ...
   try:
     opt = evalConfig(conffiles[0], addBuiltins = true)
   except:
-    printCompilerError(conffiles[0], getCurrentExceptionMsg(), debug)
-
+    discard
   if opt.isNone():
     echo "Failed to load: " & conffiles[0]
     quit()
@@ -168,7 +138,7 @@ con4m [flags] first.config ...
     try:
       scopeOpt = state.stackConfig(filename)
     except:
-      printCompilerError(filename, getCurrentExceptionMsg(), debug)
+      discard
 
     if scopeOpt.isNone():
       echo "Failed to load: " & filename

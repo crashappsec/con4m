@@ -1,1 +1,1 @@
-lex	con4m/lex.html#lex,Stream	lex: lex(s: Stream): (bool, seq[Con4mToken])	
+lex	con4m/lex.html#lex,Stream	lex: lex(s: Stream): (bool, seq[Con4mToken])

@@ -1,8 +1,8 @@
-`$`	con4m/dollars.html#$,Con4mToken	dollars: `$`(tok: Con4mToken): string	
-`$`	con4m/dollars.html#$,Con4mType	dollars: `$`(t: Con4mType): string	
-`$`	con4m/dollars.html#$,Con4mNode,int	dollars: `$`(self: Con4mNode; i: int = 0): string	
-scopeToJson	con4m/dollars.html#scopeToJson,Con4mScope	dollars: scopeToJson(scope: Con4mScope): string	
-`$`	con4m/dollars.html#$,Con4mScope,int	dollars: `$`(scope: Con4mScope; indent: int): string	
-`$`	con4m/dollars.html#$,Con4mScope	dollars: `$`(scope: Con4mScope; goDown = true): string	
-`$`	con4m/dollars.html#$,AttrSpec	dollars: `$`(spec: AttrSpec): string	
-`$`	con4m/dollars.html#$,FieldAttrs	dollars: `$`(attrs: FieldAttrs): string	
+`$`	con4m/dollars.html#$,Con4mToken	dollars: `$`(tok: Con4mToken): string
+`$`	con4m/dollars.html#$,Con4mType	dollars: `$`(t: Con4mType): string
+`$`	con4m/dollars.html#$,Con4mNode,int	dollars: `$`(self: Con4mNode; i: int = 0): string
+scopeToJson	con4m/dollars.html#scopeToJson,Con4mScope	dollars: scopeToJson(scope: Con4mScope): string
+`$`	con4m/dollars.html#$,Con4mScope,int	dollars: `$`(scope: Con4mScope; indent: int): string
+`$`	con4m/dollars.html#$,Con4mScope	dollars: `$`(scope: Con4mScope; goDown = true): string
+`$`	con4m/dollars.html#$,AttrSpec	dollars: `$`(spec: AttrSpec): string
+`$`	con4m/dollars.html#$,FieldAttrs	dollars: `$`(attrs: FieldAttrs): string
