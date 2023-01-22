@@ -12,11 +12,21 @@
 
 # Con4m: Configuration for Mortals
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [Basic Example](#basic-example)
+- [Getting Started](#getting-started)
+- [More Information](#more-information)
+- [About](#about)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 Con4m implements an Apache-like configuration file format, with the following benefits:
 
 - The configuration file writer is able to write code in their configuration, giving a lot of flexibility, somewhat like HCL (but far less insane; Con4m is much simpler).
 - The programmer can load a config file and validate it, with a minimum of effort.
-- It’s designed to allow stacked configuration files.  For instance, the app can load its own, then layer a system-level config over it, then layer a local config on top.
+- It’s designed to allow stacked configuration files. For instance, the app can load its own, then layer a system-level config over it, then layer a local config on top.
 
 As Con4m develops, we expect it to do things like: handle command-line flags and arguments, allow callbacks into the config file after the config has loaded, and so on.
 
@@ -76,7 +86,7 @@ for host in config.host:
 
 # Getting Started
 
-Conform is [written in Nim](https://nim-lang.org/), and currently requires it.  Nim is fast like C and Rust, but with a memory model closer to Rust’s, so nice and safe. It easily compiles to a single, statically (like Go).  Plus, it mostly looks like Python.
+Conform is [written in Nim](https://nim-lang.org/), and currently requires it. Nim is fast like C and Rust, but with a memory model closer to Rust’s, so nice and safe. It easily compiles to a single, statically (like Go). Plus, it mostly looks like Python.
 
 If you have Nim installed, you can easily install the current version with nimble:
 

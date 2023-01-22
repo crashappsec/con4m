@@ -184,6 +184,7 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
 
   while true:
     actuals.children.add(ctx.expression())
+
     case ctx.consume().kind
     of TtRParen:
       ctx.nlWatch = watch

@@ -57,7 +57,8 @@ con4m [flags] first.config ...
       -a, --ascii              Output text instead of JSON
       -v, --verbose            Output (to stderr) additional information.
       -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
-      -d, --debug              Throw NIM exceptions instead of printing error meessages
+      -d, --debug              Throw NIM exceptions instead of printing error messages
+
       -h, --help               This help message
 """
 
