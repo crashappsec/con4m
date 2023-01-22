@@ -117,8 +117,6 @@ proc sCallUserDef(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), nodeOpt.get())
   except:
-    echo getCurrentException().getStacktrace()
-    echo getCurrentExceptionMsg()
     fatal(fmt"Unhandled error when running builtin call: {name}",
           nodeOpt.get())
 
@@ -149,8 +147,6 @@ proc sCallBuiltin(s: ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
-    echo getCurrentException().getStacktrace()
-    echo getCurrentExceptionMsg()
     fatal("Unhandled error when running builtin call: {name}".fmt(), node)
 
 proc sCall*(s: ConfigState,
@@ -678,7 +674,7 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
   try:
     node.children[2].evalNode(s)
   except Con4mError:
-    discard # Clean return
+    discard # Clean return.  Error message will have been published.
 
   let frame = s.popRuntimeFrame()
 

@@ -1,11 +1,11 @@
-newConfigSpec	con4m/spec.html#newConfigSpec,bool	spec: newConfigSpec(customTopLevelOk: bool = false): ConfigSpec	
-addGlobalAttr	con4m/spec.html#addGlobalAttr,ConfigSpec,string,string,Option[Box],bool,bool,FieldValidator,string	spec: addGlobalAttr(spec: ConfigSpec; name: string; con4mType: string;\n              default: Option[Box] = none(Box); required: bool = true;\n              lockOnWrite: bool = false; v: FieldValidator = nil;\n              doc: string = &quot;&quot;)	
-addSection	con4m/spec.html#addSection,ConfigSpec,string,string,seq[string],seq[string],bool	spec: addSection(spec: ConfigSpec; name: string; doc: string = &quot;&quot;;\n           requiredSubSecs: seq[string] = @[]; validSubSecs: seq[string] = @[];\n           allowCustomAttrs: bool = false): SectionSpec	
-addSection	con4m/spec.html#addSection,SectionSpec,string,string,seq[string],seq[string],bool	spec: addSection(parent: SectionSpec; name: string; doc: string = &quot;&quot;;\n           requiredSubSecs: seq[string] = @[]; validSubSecs: seq[string] = @[];\n           allowCustomAttrs: bool = false): SectionSpec	
-addAttr	con4m/spec.html#addAttr,SectionSpec,string,string,Option[Box],bool,bool,FieldValidator,string	spec: addAttr(section: SectionSpec; name: string; con4mType: string;\n        default: Option[Box] = none(Box); required: bool = true;\n        lockOnWrite: bool = false; v: FieldValidator = nil; doc: string = &quot;&quot;)	
-validateConfig	con4m/spec.html#validateConfig,ConfigState	spec: validateConfig(config: ConfigState): bool	
-getConfigVar	con4m/spec.html#getConfigVar,ConfigState,string	spec: getConfigVar(state: ConfigState; field: string): Option[Box]	
-lockConfigVar	con4m/spec.html#lockConfigVar,ConfigState,string	spec: lockConfigVar(state: ConfigState; field: string): bool	
-setOverride	con4m/spec.html#setOverride,ConfigState,string,Box	spec: setOverride(state: ConfigState; field: string; value: Box): bool	
-getAllSectionSTs	con4m/spec.html#getAllSectionSTs,ConfigState	spec: getAllSectionSTs(ctx: ConfigState): Con4mSectInfo	
-addSpec	con4m/spec.html#addSpec,ConfigState,ConfigSpec	spec: addSpec(s: ConfigState; spec: ConfigSpec)	
+newConfigSpec	con4m/spec.html#newConfigSpec,bool	spec: newConfigSpec(customTopLevelOk: bool = false): ConfigSpec
+addGlobalAttr	con4m/spec.html#addGlobalAttr,ConfigSpec,string,string,Option[Box],bool,bool,FieldValidator,string	spec: addGlobalAttr(spec: ConfigSpec; name: string; con4mType: string;\n              default: Option[Box] = none(Box); required: bool = true;\n              lockOnWrite: bool = false; v: FieldValidator = nil;\n              doc: string = &quot;&quot;)
+addSection	con4m/spec.html#addSection,ConfigSpec,string,string,seq[string],seq[string],bool	spec: addSection(spec: ConfigSpec; name: string; doc: string = &quot;&quot;;\n           requiredSubSecs: seq[string] = @[]; validSubSecs: seq[string] = @[];\n           allowCustomAttrs: bool = false): SectionSpec
+addSection	con4m/spec.html#addSection,SectionSpec,string,string,seq[string],seq[string],bool	spec: addSection(parent: SectionSpec; name: string; doc: string = &quot;&quot;;\n           requiredSubSecs: seq[string] = @[]; validSubSecs: seq[string] = @[];\n           allowCustomAttrs: bool = false): SectionSpec
+addAttr	con4m/spec.html#addAttr,SectionSpec,string,string,Option[Box],bool,bool,FieldValidator,string	spec: addAttr(section: SectionSpec; name: string; con4mType: string;\n        default: Option[Box] = none(Box); required: bool = true;\n        lockOnWrite: bool = false; v: FieldValidator = nil; doc: string = &quot;&quot;)
+validateConfig	con4m/spec.html#validateConfig,ConfigState	spec: validateConfig(config: ConfigState): bool
+getConfigVar	con4m/spec.html#getConfigVar,ConfigState,string	spec: getConfigVar(state: ConfigState; field: string): Option[Box]
+lockConfigVar	con4m/spec.html#lockConfigVar,ConfigState,string	spec: lockConfigVar(state: ConfigState; field: string): bool
+setOverride	con4m/spec.html#setOverride,ConfigState,string,Box	spec: setOverride(state: ConfigState; field: string; value: Box): bool
+getAllSectionSTs	con4m/spec.html#getAllSectionSTs,ConfigState	spec: getAllSectionSTs(ctx: ConfigState): Con4mSectInfo
+addSpec	con4m/spec.html#addSpec,ConfigState,ConfigSpec	spec: addSpec(s: ConfigState; spec: ConfigSpec)

@@ -1,3 +1,11 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Con4m builtin calls as of v0.3.4](#con4m-builtin-calls-as-of-v034)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Con4m builtin calls as of v0.3.4
 
 [Go back to the home page.](https://github.com/crashappsec/con4m)
@@ -48,7 +56,7 @@
 | isDir | (string) → bool | Returns true if the given file name exists at the time of the call, and is a directory. |
 | isFile | (string) → bool | Returns true if the given file name exists at the time of the call, and is a regular file. |
 | isLink | (string) → bool | Returns true if the given file name exists at the time of the call, and is a link. |
-| chmod | (string, int) → bool | Attempt to set the file permissions; returns true if successful. | 
+| chmod | (string, int) → bool | Attempt to set the file permissions; returns true if successful. |
 | filelen | (string) → int | Returns the number of bytes in the specified file, or -1 if there is an error (e.g., no file, or not readable) |
 | System |  |  |
 | echo | (string*) | Output a list of strings... to stderr, NOT stdout. A newline is added at the end, but no spaces are added between arguments. |

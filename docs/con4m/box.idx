@@ -1,9 +1,9 @@
-box	con4m/box.html#box,bool	box: box(value: bool): Box	
-box	con4m/box.html#box,string	box: box(value: string): Box	
-box	con4m/box.html#box,int	box: box(value: int): Box	
-box	con4m/box.html#box,float	box: box(value: float): Box	
-boxList	con4m/box.html#boxList,seq[T]	box: boxList[T](value: seq[T]): Box	
-boxDict	con4m/box.html#boxDict,TableRef[K,V]	box: boxDict[K, V](value: TableRef[K, V]): Box	
-unbox	con4m/box.html#unbox,Box	box: unbox[T](box: Box): T	
-unboxList	con4m/box.html#unboxList,Box	box: unboxList[T](box: Box): seq[T]	
-unboxDict	con4m/box.html#unboxDict,Box	box: unboxDict[K, V](box: Box): TableRef[K, V]	
+box	con4m/box.html#box,bool	box: box(value: bool): Box
+box	con4m/box.html#box,string	box: box(value: string): Box
+box	con4m/box.html#box,int	box: box(value: int): Box
+box	con4m/box.html#box,float	box: box(value: float): Box
+boxList	con4m/box.html#boxList,seq[T]	box: boxList[T](value: seq[T]): Box
+boxDict	con4m/box.html#boxDict,TableRef[K,V]	box: boxDict[K, V](value: TableRef[K, V]): Box
+unbox	con4m/box.html#unbox,Box	box: unbox[T](box: Box): T
+unboxList	con4m/box.html#unboxList,Box	box: unboxList[T](box: Box): seq[T]
+unboxDict	con4m/box.html#unboxDict,Box	box: unboxDict[K, V](box: Box): TableRef[K, V]

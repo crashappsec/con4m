@@ -1,3 +1,15 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Con4m: Configuration for Mortals](#con4m-configuration-for-mortals)
+- [Basic Example](#basic-example)
+- [Getting Started](#getting-started)
+- [More Information](#more-information)
+- [About](#about)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Con4m: Configuration for Mortals
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->

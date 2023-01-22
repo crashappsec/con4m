@@ -101,7 +101,7 @@ window.addEventListener('DOMContentLoaded', main);
 <li>
   <a class="reference reference-toplevel" href="#6" id="56">Imports</a>
   <ul class="simple simple-toc-section">
-    
+
   </ul>
 </li>
 <li>
@@ -157,7 +157,7 @@ class="link-seesrc" target="_blank">Source</a>
 
   <div class="nine columns" id="content">
   <div id="tocRoot"></div>
-  
+
   <p class="module-desc"><p>A type to allow us to store any value we might need for con4m, and defer type checking on those values (generally not until runtime, generally until later in the process).</p>
 <p>I know that Nim does have an <tt class="docutils literal"><span class="pre"><span class="Identifier">Any</span></span></tt> type, but this is simpler, and focused on the types that con4m allows.  Part of the reason I built my own here is because I intend to cache hash codes here eventually, so that dictionary keys can be arbitrary types.</p>
 <p>Plus, Nim Any types require some of the work here to avoid dangling references to sequences in particular.</p>

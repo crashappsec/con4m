@@ -1,3 +1,14 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+
+- [Con4m Language syntax reference](#con4m-language-syntax-reference)
+- [EBNF specification](#ebnf-specification)
+- [Major Lexical elements](#major-lexical-elements)
+- [Notes](#notes)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # Con4m Language syntax reference
 
 This document is a syntax reference for the Con4m language.   It’s a simple syntax that anyone with even minimal programming experience should be able to pick up.
@@ -17,11 +28,11 @@ body          ::= sectBodyItems *
 coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
                    breakStmt | returnStmt | expression (NL|";")+
 sectBodyItems ::= coreBodyItems | section
-enum          ::= "enum" ID ("," ID)*	   
+enum          ::= "enum" ID ("," ID)*
 attrAssign    ::= ID("." ID)* ("="|":") expression (NL|";")+
 varAssign     ::= ID ("," ID)* ":=" expression (NL|";")+
-section       ::= ID (STR | ID)* "{" body "}" 
-ifStmt        ::= "if" expression "{" body "}" 
+section       ::= ID (STR | ID)* "{" body "}"
+ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
 	 	              ("else" expression "{" body" "}")?
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
@@ -37,13 +48,13 @@ exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
 notExpr       ::= ("!" | "not") expression
 literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | NULL
-accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)* 
+accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)*
 tupleLiteral  ::= "(" expression ("," expression)*)+ ")"
 listLiteral   ::= "[" (expression ("," expression)* )? "]"
 dictLiteral   ::= "{" (expression ":" expression
                        ("," expression ":" expression)*) "}"
 parenExpr     ::= "(" expression ")"
-memberExpr    ::= "." ID 
+memberExpr    ::= "." ID
 indexExpr     ::= "[" expression "]"
 callActuals   ::= "(" (expression ("," expression)* )? ")"
 expression    ::= exprStart (orExpr*)
@@ -70,7 +81,7 @@ modExpr       ::= "%" modExprRHS | mulExpr
 modExprRHS    ::= exprStart (modExpr)*
 mulExpr       ::= "*" mulExprRHS | divExpr
 mulExprRHS    ::= exprStart (mulExpr)*
-divExpr       ::= "/" divExprRHS | accessExpr 
+divExpr       ::= "/" divExprRHS | accessExpr
 divExprRHS    ::= exprStart (divExpr)*
 # whileStmt     ::= "while" expression "{" body "}"
 ```
