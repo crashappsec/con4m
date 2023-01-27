@@ -47,10 +47,8 @@ proc binOpTypeCheck(node: Con4mNode,
     tv = newTypeVar(constraints)
     paramCheck = unify(node.children[0], node.children[1])
 
-  if paramCheck.isBottom(): fatal2Type(e1,
-                                       node,
-                                       node.children[0].typeInfo,
-                                       node.children[1].typeInfo)
+  if paramCheck.isBottom():
+    fatal2Type(e1, node, node.children[0].typeInfo, node.children[1].typeInfo)
 
   node.typeInfo = unify(tv, paramCheck)
 
@@ -68,46 +66,15 @@ when false:
           discard
 
 template pushVarScope() =
-  if not s.secondPass:
-    let scopeOpt = node.scopes
-    var scopes = scopeOpt.get()
-
-    scopes.vars = Con4mScope(parent: some(scopes.vars))
-    node.scopes = some(scopes)
+  if not s.secondPass: # Current value was already copied from parent
+    node.varScope = VarScope(parent: some(node.varScope))
 
 proc getTokenText*(node: Con4mNode): string {.inline.} =
   ## This returns the raw string associated with a token.  Internal.
   let token = node.token.get()
 
-  case token.kind
-  of TtStringLit:
-    return token.unescaped
-  else:
-    return $(token)
-
-proc getVarScope*(node: Con4mNode): Con4mScope =
-  ## Internal. Returns just the current variables scope, when we
-  ## already know it exists.
-  let scopes = node.scopes.get()
-  return scopes.vars
-
-proc getAttrScope*(node: Con4mNode): Con4mScope =
-  ## Internal. Returns just the current attributes scope, when we
-  ## already know it exists.
-  let scopes = node.scopes.get()
-  return scopes.attrs
-
-proc getGlobalScope(node: Con4mNode): Con4mScope =
-  ## Internal. Returns just the scope for global vars, when we
-  ## already know it exists.
-  let scopes = node.scopes.get()
-  return scopes.globals
-
-proc getBothScopes*(node: Con4mNode): CurScopes =
-  ## Internal. Returns both scopes when we know they exist.
-  ## The global var scope info is also in there, even though
-  ## outside a function it's part of the var scope.
-  return node.scopes.get()
+  if token.kind == TtStringLit: return token.unescaped
+  else:                         return $(token)
 
 when defined(disallowRecursion):
   proc cycleDetected(stack: var seq[FuncTableEntry]) =
@@ -194,11 +161,30 @@ proc getTokenType(node: Con4mNode): Con4mTokenKind {.inline.} =
 
   return token.kind
 
+proc nameConflictCheck(node:    Con4mNode,
+                       name:    string,
+                       s:       ConfigState,
+                       allowed: openarray[UseCtx]): UseCtx {.discardable.} =
+  result = node.nameUseContext(name, s)
+
+  if result notin allowed:
+    let msg = fmt"Can't re-define name {name}: Conflicts with existing "
+
+    case result
+    of ucFunc:
+      fatal(msg & "function")
+    of ucAttr:
+      fatal(msg & "in-scope attribute")
+    of ucVar:
+      fatal(msg & "variable")
+    else:
+      discard
+
 proc checkNode(node: Con4mNode, s: ConfigState) =
   # We take our scope from the parent by default.  If we're going to
   # have different scopes, the parent will tell us what our scope is.
-  if node.scopes.isNone():
-    node.scopes = node.parent.get().scopes
+  if node.varScope == nil:  node.varScope  = node.parent.get().varScope
+  if node.attrScope == nil: node.attrScope = node.parent.get().attrScope
 
   case node.kind
   of NodeBody, NodeIfStmt:
@@ -210,15 +196,15 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Return not allowed outside function or callback definition")
     if len(node.children) == 0:
       let
-        scope = node.getVarScope()
-        entry = scope.lookup("result").get()
+        entry = node.varUse("result").get()
       if entry.firstDef.isNone():
+        if entry.tinfo != bottomType and entry.tinfo != nil:
+          fatal("Return with no value, after a return with a value.", node)
         entry.tinfo = bottomType
     else:
       node.children[0].checkNode(s)
       let
-        scope = node.getVarScope()
-        entry = scope.lookup("result").get()
+        entry = node.varUse("result").get()
       if entry.firstDef.isNone():
         entry.tinfo = node.children[0].typeInfo
         entry.firstDef = some(node)
@@ -232,57 +218,41 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         entry.tinfo = t
   of NodeEnum:
     if not s.secondPass:
-      let
-        scopes = node.scopes.get()
-        tinfo = intType
+      let tinfo = intType
       for i, kid in node.children:
-        let name = node.children[i].getTokenText()
+        let name = kid.getTokenText()
 
-        if scopes.attrs.lookupAttr(name).isSome():
-          fatal(fmt"Value {name} conflicts w/ a toplevel attr", kid)
-        if scopes.vars.lookup(name).isSome():
-          fatal(fmt"Value {name} conflicts w/ an existing variable", kid)
-        let
-          entry = scopes.vars.addEntry(name, some(kid), tinfo).get()
+        node.nameConflictCheck(name, s, [ucNone])
 
-        entry.value = some(pack(i))
-        entry.locked = true
-        # Setting locked ensures that the user cannot assign to an enum;
-        # it will pass the syntax check, but fail when we look at the
-        # assignment.
+        let entry      = kid.addVariable(name)
+        entry.value    = some(pack(i))
+        entry.tinfo    = tinfo
+        entry.persists = true
+        entry.locked   = true
   of NodeSection:
     pushVarScope()
     if not s.secondPass:
-      var
-        scopes = node.scopes.get()
-        scope = scopes.attrs
-        entry: STEntry
-        scopename = "<root>"
+      var scope = node.attrScope
 
       if s.funcOrigin:
         fatal("Cannot introduce a section within a func or callback", node)
 
-      for kid in node.children[0 ..< ^1]:
+      for i, kid in node.children[0 ..< ^1]:
         if kid.kind == NodeSimpLit:
           kid.checkNode(s)
         let
-          secname = kid.getTokenText()
-          maybeEntry = scope.lookupAttr(secname, scopeOk = true)
-        scopename = scopename & "." & secname
-        if maybeEntry.isSome():
-          entry = maybeEntry.get()
-          if not entry.subscope.isSome():
-            fatal("Section declaration conflicted with a variable " &
-              "from another section", kid)
+          secname    = kid.getTokenText()
+          maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
+
+        if i == 0:
+          node.nameConflictCheck(secname, s, [ucAttr, ucNone])
+
+        if maybeEntry.isA(AttrErr):
+          fatal(maybeEntry.get(AttrErr).msg, kid)
         else:
-          entry = scope.addEntry(secname, some(kid), subscope = true).get()
-          scope = entry.subscope.get()
+          scope = maybeEntry.get(AttrOrSub).get(AttrScope)
 
-        scope = entry.subscope.get()
-        scopes.attrs = scope
-
-      scopes.attrs = scope
-      node.scopes = some(scopes)
+      node.attrScope = scope
 
     node.children[^1].checkNode(s)
 
@@ -295,8 +265,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     node.children[1].checkNode(s)
     let
-      name = node.children[0].getTokenText()
-      scopes = node.getBothScopes()
+      name  = node.children[0].getTokenText()
       tinfo = node.children[1].typeinfo
 
     if not s.secondPass:
@@ -304,23 +273,25 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal("'result' is a reserved word in con4m, and cannot be used " &
           "for attributes", node)
 
-      if scopes.vars.lookupAttr(name).isSome():
-        fatal(fmt"Attribute {name} conflicts with existing user variable",
-              node.children[0])
+    let `existing?` = node.attrScope.attrLookup([name], 0, vlAttrDef)
+    if `existing?`.isA(AttrErr):
+      fatal(`existing?`.get(AttrErr).msg, node)
 
-    let existing = scopes.attrs.lookupAttr(name)
-
-    if not existing.isSome():
-      discard scopes.attrs.addEntry(name, some(node), tinfo)
+    let entry = `existing?`.get(AttrOrSub).get(Attribute)
+    if entry.tInfo == nil:
+      entry.tInfo = tinfo
     else:
-      let
-        entry = existing.get()
-        t = unify(tinfo, entry.tinfo)
+      let t = unify(tinfo, entry.tinfo)
       if t.isBottom():
-        fatal2Type(fmt"Attribute assignment of {name} doesn't match previous type",
-                   node.children[1], tinfo, entry.tinfo)
+        fatal2Type(fmt"Attribute assignment of {name} doesn't " &
+                      "match previous type",
+                      node.children[1], tinfo, entry.tinfo)
       else:
-        entry.tinfo = t
+        entry.tInfo = t
+
+    if entry.locked:
+      fatal(fmt"You cannot assign to the (locked) attribute {name}.",
+            node.children[0])
 
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
@@ -330,46 +301,28 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.children[1].checkNode(s)
 
     let
-      name = node.children[0].getTokenText()
-      scopes = node.getBothScopes()
+      name  = node.children[0].getTokenText()
       tinfo = node.children[1].typeinfo
 
     if not s.secondPass:
       if name == "result" and not s.funcOrigin:
         fatal("Cannot assign to special variable 'result' outside a function " &
-          "definition.")
-      if scopes.attrs.lookupAttr(name).isSome():
-        fatal(fmt"Variable {name} conflicts with existing attribute",
-              node.children[0])
+              "definition.")
 
-    let existing = scopes.vars.lookup(name)
-
-    if not existing.isSome():
-      discard scopes.vars.addEntry(name, some(node), tinfo)
-    else:
-      let
-        entry = existing.get()
-        t = unify(tinfo, entry.tinfo)
-
-      # When the system injects variables into the scope, we may need to know
-      # if the user actually uses them (particularly, `result`)
-      if not entry.firstDef.isSome():
-        entry.firstDef = some(node)
-
-      if entry.locked:
-        # Could be a loop index, enum, or something a previous
-        # run locked.
-        fatal(fmt"You cannot assign to the (locked) value {name}.",
-              node.children[0])
-
-      if t.isBottom():
-        fatal2Type(fmt"Variable assignment of {name} doesn't match " &
-                   "previous type",
-                   node.children[1], tinfo, entry.tinfo)
-  of NodeUnpack:
+      node.nameConflictCheck(name, s, [ucVar, ucNone])
     let
-      tup = node.children[^1]
-      scopes = node.getBothScopes()
+      entry = node.addVariable(name)
+      t     = unify(tinfo, entry.tinfo)
+
+    if entry.locked:
+      # Could be a loop index or enum.
+        fatal(fmt"Cannot assign to the (locked) value {name}", node.children[0])
+
+    if t.isBottom():
+      fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
+                 node.children[1], tinfo, entry.tinfo)
+  of NodeUnpack:
+    let tup = node.children[^1]
 
     tup.checkNode(s)
     if tup.getBaseType() == TypeTVar and not s.secondPass:
@@ -384,30 +337,24 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     for i, tv in tup.typeInfo.itemTypes:
       let name = node.children[i].getTokenText()
-      if scopes.attrs.lookupAttr(name).isSome():
-        fatal("Variable {name} conflicts with existing attribute".fmt(),
-              node.children[0])
 
-      let existing = scopes.vars.lookup(name)
-      if not existing.isSome():
-        discard scopes.vars.addEntry(name, some(node), tv)
+      node.nameConflictCheck(name, s, [ucVar, ucNone])
+
+      if name == "result" and not s.funcOrigin:
+        fatal("Cannot assign to special variable 'result' outside a function " &
+              "definition.")
+
+      let
+        entry = node.addVariable(name)
+        t = unify(tv, entry.tinfo)
+
+      if entry.locked:
+        fatal(fmt"Cannot unpack to (locked) variable {name}.", node.children[i])
+      if t.isBottom():
+        fatal2Type(fmt"Assignment of {name} conflicts with its existing type",
+          node.children[1], tv, entry.tInfo)
       else:
-        let
-          entry = existing.get()
-          t = unify(tv, entry.tinfo)
-
-        if entry.locked:
-          fatal(fmt"Cannot unpack to (locked) variable {name}.",
-                node.children[i])
-        if t.isBottom():
-          fatal2Type(fmt"Type of value assigned to {name} conflicts w/ " &
-            "the exiting type",
-            node.children[1],
-            tv,
-            entry.tinfo)
-        else:
-          entry.tinfo = t
-
+        entry.tInfo = t
   of NodeElse:
     pushVarScope()
     node.checkKids(s)
@@ -421,9 +368,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if not s.secondPass:
       pushVarScope()
       let
-        scope = node.getVarScope()
-        name = node.children[0].getTokenText()
-        entry = scope.addEntry(name, some(node.children[0]), intType).get()
+        name  = node.children[0].getTokenText()
+        entry = node.varScope.varLookup(name, vlMask).get()
 
       entry.locked = true
 
@@ -569,44 +515,40 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Currently only support indexing on dicts and lists", node)
   of NodeFuncDef:
     let
-      rootscope = node.getGlobalScope()
-      name = node.children[0].getTokenText()
-      callback = if node.getTokenText() == "callback": true else: false
+      name      = node.children[0].getTokenText()
+      rootScope = node.varScope
 
     # The requirement for two type checking passes isn't universal...
     # it only happens when there is a forward reference.
     if not s.secondPass:
-      if rootscope.getEntry(name).isSome():
-        fatal(fmt"Attempted to redefine {name} as a function", node)
+      node.nameConflictCheck(name, s, [ucNone, ucFunc])
+      node.varScope = VarScope(parent: none(VarScope))
 
-      var scopes = node.scopes.get()
-      scopes.vars = Con4mScope(parent: none(Con4mScope))
-      node.scopes = some(scopes)
+      # Set up the function call's root scope.  We're explicitly
+      # removing global variables that do NOT persist across runs.
+      # Also, this function will only be able to see variables
+      # that are defined before we first reach this part of the parse.
+      # That is, we do not allow forward declarations.
+      #
+      # First, add in a result variable, which can be any type.
+      discard node.addVariable("result")
 
+      # This copies over items in the root scope that have the
+      # 'persists' flag set.
+      for k, v in rootScope.contents:
+        if v.persists:
+          node.varScope.contents[k] = v
 
-    let scope = node.getVarScope()
-
-    # Set up the function call's root scope.  We're explicitly
-    # removing old global variables.
-    if not s.secondPass:
-      # Add in a result variable, which can be any type.
-      discard scope.addEntry("result")
-
-      # This copies over items in the root scope that have a value
-      # set, which should be enumerated values.  These we keep around,
-      # because they're non-writable.  However, we do not migrate them
-      # if a new config gets layered on top of us.
-      for k, v in rootscope.entries:
-        if v.value.isSome():
-          scope.entries[k] = v
-
-      # Now add in the function's parameters.
+      # Now add in the function's parameters.  We will allow this
+      # to replace existing items from the global scope, but want
+      # to barf if a parameter name is reused.
       for node in node.children[1].children:
         let
           varname = node.getTokenText()
-          optEntry = scope.addEntry(varname)
-        if optEntry.isNone():
-          fatal("Duplicate parameter name when defining function", node)
+          `sym?`  = node.varScope.varLookup(varname, vlFormal)
+
+        if `sym?`.isNone():
+          fatal(fmt"In func decl: Duplicate parameter name: {varname}", node)
 
     s.funcOrigin = true
     node.children[2].checkNode(s)
@@ -617,7 +559,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # Note that, for now anyway, we are not accepting varargs functions.
     let
       tinfo = Con4mType(kind: TypeProc, va: false)
-      entry = scope.lookup("result").get()
+      entry = node.varScope.varLookup("result", vlUse).get()
 
     # If the return variable was never set, firstDef will be nothing,
     # and this method returns void.
@@ -631,22 +573,19 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for node in node.children[1].children:
       let
         varname = node.getTokenText()
-        entry = scope.lookup(varname).get()
+        entry   = node.varUse(varname).get()
 
       tinfo.params.add(entry.tinfo)
 
     # Now, that we have type info, we want to update the function table.
     if not s.funcTable.contains(name):
-      if callback:
-        fatal(fmt"Callback {name} is not a known callback you can define",
-              node)
       let f = FuncTableEntry(kind: FnUserDefined,
-                             tinfo: tinfo,
-                             name: name,
-                             onStack: false,
+                             tinfo:       tinfo,
+                             name:        name,
+                             onStack:     false,
                              cannotCycle: false,
-                             locked: false,
-                             impl: some(node))
+                             locked:      false,
+                             impl:        some(node))
       discard s.addFuncDef(f)
       s.funcTable[name] = @[f]
       return
@@ -662,14 +601,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       case item.kind
       of FnBuiltIn:
         fatal(fmt"Function name conflicts with a builtin function", node)
-      of FnCallback:
-        if not callback:
-          fatal("User-defined function has the same name as a callback." &
-            "If you intended for this to be a callback implementation, " &
-            "use 'callback' instead of 'func'", node)
-        elif not isBottom(tinfo, item.tinfo):
+      of FnCallback, FnUserDefined:
+        if not isBottom(tinfo, item.tinfo):
           if item.locked:
-            fatal("A callback is already installed, and is locked " &
+            fatal("An implementation is already installed, and is locked " &
                   "(i.e., has been marked so that it can not be replaced)",
                   node)
           else:
@@ -678,33 +613,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
               fatal(fmt"Duplicate implementation of function '{item.name}'",
                     node)
             return
-      of FnUserDefined:
-        if not isBottom(tinfo, item.tinfo):
-          if item.locked:
-            fatal("An implementation of this function exists and is " &
-              "locked (i.e., has been marked so that it can't be replaced)")
-          else:
-            item.impl = some(node)
-            if not s.addFuncDef(item):
-              fatal(fmt"Duplicate implementation of function '{item.name}'",
-                    node)
-            return
+
     # If we get here, the name was already defined, and none of the existing
-    # definitions match our signature.  If it's a user-defined function, that's
-    # great, add ourselves in.
-    #
-    # However, if it's a callback, then we've wasted everybody's
-    # time and should be sent packing.
-      if item.kind == FnCallback:
-        fatal("Callback implementation does not match expected callback " &
-          "signature")
-    let f = FuncTableEntry(kind: FnUserDefined,
-                           tinfo: tinfo,
-                           name: name,
-                           impl: some(node),
-                           onStack: false,
+    # definitions match our signature.  Add ourselves in.
+    let f = FuncTableEntry(kind:        FnUserDefined,
+                           tinfo:       tinfo,
+                           name:        name,
+                           impl:        some(node),
+                           onStack:     false,
                            cannotCycle: false,
-                           locked: false)
+                           locked:      false)
 
     fnList.add(f)
     if not s.addFuncDef(f):
@@ -759,36 +677,34 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             return
 
       # After looping through all entries and not finding it, we hope
-      # there is a future definition, but only if the existing items
-      # are of type FnUserDefined (otherwise, the system should have
-      # given us a signature).
-      if s.secondPass or entries[0].kind != FnUserDefined:
+      # there is a future definition.
+      if not s.secondPass:
+        let f = FuncTableEntry(kind:        FnUserDefined,
+                               tinfo:       bottomType,
+                               name:        fname,
+                               impl:        none(Con4mNode),
+                               onStack:     false,
+                               cannotCycle: false,
+                               locked:      false)
+        entries.add(f)
+        s.funcTable[fname] = entries
+        s.waitingForTypeInfo = true
+        return
+      else:
         fatal(fmt"No matching signature found for {fname}", node.children[0])
-
-      let f = FuncTableEntry(kind: FnUserDefined,
-                             tinfo: bottomType,
-                             name: fname,
-                             impl: none(Con4mNode),
-                             onStack: false,
-                             cannotCycle: false,
-                             locked: false)
-      entries.add(f)
-      s.funcTable[fname] = entries
-      s.waitingForTypeInfo = true
-      return
     else:
       if s.secondPass:
         fatal(fmt"No matching signature found for {fname}", node.children[0])
       # The call wasn't in the function table, so we hope it's defined
       # later in the config.
-      let f = FuncTableEntry(kind: FnUserDefined,
-                             tinfo: bottomType,
-                             name: fname,
-                             impl: none(Con4mNode),
-                             onStack: false,
+      let f = FuncTableEntry(kind:        FnUserDefined,
+                             tinfo:       bottomType,
+                             name:        fname,
+                             impl:        none(Con4mNode),
+                             onStack:     false,
                              cannotCycle: false,
-                             locked: false)
-      s.funcTable[fname] = @[f]
+                             locked:      false)
+      s.funcTable[fname]   = @[f]
       s.waitingForTypeInfo = true
       return
 
@@ -873,22 +789,25 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # current scope, not when it has to be in a specific scope (i.e.,
     # member access).
     let
-      scopes = node.getBothScopes()
-      name = node.getTokenText()
-      attrEntry = scopes.attrs.lookupAttr(name)
-      varEntry = scopes.vars.lookup(name)
+      name          = node.getTokenText()
+      `var?`        = node.varUse(name)
+      `localAttr?`  = node.attrScope.attrLookup([name], 0, vlAttrUse)
+      `globalAttr?` = s.attrs.attrLookup([name], 0, vlAttrUse)
 
-    if attrEntry.isNone() and varEntry.isNone():
-      let globalEntry = scopes.globals.lookup(name)
-      if globalEntry.isSome():
-        node.typeInfo = globalEntry.get().tinfo
-        return
+    if `var?`.isSome():
+      let entry     = `var?`.get()
+      node.typeInfo = entry.tInfo
 
-      fatal("Variable {name} used before definition".fmt(), node)
+    elif `localAttr?`.isA(AttrOrSub):
+      let entry     = `localAttr?`.get(AttrOrSub).get(Attribute)
+      node.typeInfo = entry.tInfo
 
-    let ent = if attrEntry.isSome(): attrEntry.get() else: varEntry.get()
+    elif `globalAttr?`.isA(AttrOrSub):
+      let entry     = `globalAttr?`.get(AttrOrSub).get(Attribute)
+      node.typeInfo = entry.tInfo
 
-    node.typeInfo = ent.tinfo
+    else:
+      fatal(fmt"Variable {name} used before definition", node)
 
 proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
@@ -898,16 +817,12 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## ones.
   ##
   ## It does need to create a new variable scope though!
-  var scopes = CurScopes(vars: Con4mScope(), attrs: s.st)
+  node.attrScope = AttrScope()
+  node.varScope  = VarScope(parent: none(VarScope))
 
-  scopes.globals = scopes.vars
-  node.scopes = some(scopes)
-
-
-  s.funcOrigin = false
-  s.moduleFuncDefs = @[]
+  s.funcOrigin      = false
+  s.moduleFuncDefs  = @[]
   s.moduleFuncImpls = @[]
-  s.errors = @[]
 
   for item in node.children:
     item.checkNode(s)
@@ -935,7 +850,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   # related.
   if s.waitingForTypeInfo:
     s.waitingForTypeInfo = false
-    s.secondPass = true
+    s.secondPass         = true
     for item in node.children:
       item.checkNode(s)
     for funcRoot in s.moduleFuncImpls:
@@ -947,7 +862,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     s.cycleCheck()
 
 
-proc newConfigState*(scope:       Con4mScope,
+proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,
                      addBuiltins: bool           = true,
                      exclude:     openarray[int] = []): ConfigState
@@ -961,18 +876,17 @@ proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
   ## what we've already read.
   ##
   ## Adds all default builtins, by default.
-  node.scopes = some(newRootScope())
-  result      = newConfigState(node.scopes.get().attrs, addBuiltins=addBuiltins)
+  result = newConfigState(node, addBuiltins = addBuiltins)
 
   node.checkTree(result)
 
 # Nim's issues w/ cross-module dependencies are bad. I can't prototype an
 # external function so I have to prototype an inline proxy to it before
 # I import it.
-proc callNewBuiltIn(s: ConfigState,
+proc callNewBuiltIn(s:    ConfigState,
                     name: string,
-                    fn: BuiltinFn,
-                    t: string) {.inline.}
+                    fn:   BuiltinFn,
+                    t:    string) {.inline.}
 proc callNewCallback(s: ConfigState, name: string, con4mType: string) {.inline.}
 
 proc checkTree*(node:      Con4mNode,
@@ -987,10 +901,7 @@ proc checkTree*(node:      Con4mNode,
   ## what we've already read.
   ##
   ## Adds all default builtins, as well as any custom ones.
-  node.scopes = some(newRootScope())
-  result      = newConfigState(node.scopes.get().attrs,
-                               addBuiltins=true,
-                               exclude=exclude)
+  result = newConfigState(node, addBuiltins = true, exclude = exclude)
 
   for item in fns:
     let (name, fn, tinfo) = item
@@ -1015,17 +926,23 @@ proc callNewCallback(s:         ConfigState,
   s.newCallback(name, con4mType)
 
 
-proc newConfigState*(scope:       Con4mScope,
+proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,
                      addBuiltins: bool           = true,
                      exclude:     openarray[int] = []): ConfigState =
+
+  node.attrScope = AttrScope()
+  node.varScope  = VarScope(parent: none(VarScope))
+
   ## Return a new `ConfigState` object, optionally setting the `spec`
   ## object, and, if requested via `addBuiltins`, installs the default
   ## set of builtin functions.
   if spec != nil:
-    result = ConfigState(st: scope, spec: some(spec))
+    result = ConfigState(attrs:   node.attrScope,
+                         globals: node.varScope,
+                         spec:    some(spec))
   else:
-    result = ConfigState(st: scope)
+    result = ConfigState(attrs: node.attrScope, globals: node.varScope)
 
   if addBuiltins:
     result.addDefaultBuiltins(exclude)

@@ -432,7 +432,7 @@ proc stackConfig*(s: ConfigState,
 
 
 proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
-  setCurrentFileName(filename)  
+  setCurrentFileName(filename)
   stackBase(s, parse(filename))
 
 

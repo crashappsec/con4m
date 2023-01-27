@@ -53,7 +53,7 @@ proc newProcType*(params: seq[Con4mType],
 
 proc newVarSym(name: string): VarSym =
   return VarSym(name: name, value: none(Box), firstDef: none(Con4mNode))
-  
+
 ## Symbol table lookups for variables start in a given scope, and then
 ## check up the tree, to see if the variable is defined in the current
 ## scope. It's all static scoping; parent scopes have no sense of
@@ -68,7 +68,7 @@ proc newVarSym(name: string): VarSym =
 ## you'd be able to mask a variable name that's in scope.
 ##
 ## So there are 3 kinds of lookups we might want to do:
-##    
+##
 ## 1) A "def" lookup, where we are looking to find the symbol, and
 ##    want to define it in the local scope if it's not in a parent
 ##    scope, or else use the one that's there.
@@ -77,12 +77,12 @@ proc newVarSym(name: string): VarSym =
 ## 3) A "mask" lookup for constructs that will mask the variable, but
 ##    if the *current* scope has the variable, that should be a problem
 ##    (and, in fact, until we add to the language, that will not be
-##    possible).    
-##       
+##    possible).
+##
 ## The first will always return a symbol; the second two will return
-## either a symbol or an error.  Since there is only a max of one error 
+## either a symbol or an error.  Since there is only a max of one error
 ## condition for each type of lookup, we model this with an Option.
-    
+
 proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
   if name in scope.contents:
     case op
@@ -90,28 +90,44 @@ proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
       return some(scope.contents[name])
     of vlMask:
       return none(VarSym)
-  else:
-    case op
-    of vlMask:
-      var sym              = newVarSym(name)
-      result               = some(sym)
-      scope.contents[name] = sym
-    of vlDef:
-      if scope.parent.isSome():
-        # it's a def lookup in OUR scope, but a use lookup in
-        # parent scopes, if we have to recurse.
-        let maybe = scope.parent.get().varLookup(name, vlUse)
-        if maybe.isSome():
-          return maybe
-
-      var sym              = newVarSym(name)
-      result               = some(sym)
-      scope.contents[name] = sym
-    of vlUse:
-      if scope.parent.isSome():
-        return scope.parent.get().varLookup(name, vlUse)
-      else:
+    of vlFormal:
+      let sym = scope.contents[name]
+      if not sym.persists:
         return none(VarSym)
+      # else fall through and stick in a new symbol.
+
+  case op
+  of vlMask, vlFormal:
+    var sym              = newVarSym(name)
+    result               = some(sym)
+    scope.contents[name] = sym
+  of vlDef:
+    if scope.parent.isSome():
+      # it's a def lookup in OUR scope, but a use lookup in
+      # parent scopes, if we have to recurse.
+      let maybe = scope.parent.get().varLookup(name, vlUse)
+      if maybe.isSome():
+        return maybe
+
+    var sym              = newVarSym(name)
+    result               = some(sym)
+    scope.contents[name] = sym
+  of vlUse:
+    if scope.parent.isSome():
+      return scope.parent.get().varLookup(name, vlUse)
+    else:
+      return none(VarSym)
+
+proc varUse*(node: Con4mNode, name: string): Option[VarSym] =
+  return varLookup(node.varScope, name, vlUse)
+
+proc addVariable*(node: Con4mNode, name: string): VarSym =
+  result = varLookup(node.varScope, name, vlDef).get()
+
+  if result.firstDef.isNone(): result.firstDef = some(node)
+  if node notin result.defs:
+    result.defs.add(node)
+
 
 ## With var scopes, we have a single name, where we are always
 ## searching back up a stack when we need to search.
@@ -135,6 +151,8 @@ proc attrLookup*(scope: AttrScope,
       if name in scope.contents:
         let item = scope.contents[name]
         case op
+        of vlExists:
+          return item
         of vlSecDef, vlSecUse:
           if item.isA(Attribute):
             let dotted = parts.join(".")
@@ -155,7 +173,7 @@ proc attrLookup*(scope: AttrScope,
         of vlSecDef:
           let sub     = AttrScope(contents: default(Table[string, AttrOrSub]))
           scope.contents[name] = either(sub)
-          
+
           return scope.contents[name]
         of vlAttrDef:
           let attrib           = Attribute()
@@ -173,7 +191,10 @@ proc attrLookup*(scope: AttrScope,
                                "have it as an attr")
     let newScope = item.get(AttrScope)
     return newScope.attrLookup(parts, ix + 1, op)
-  
+
+proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
+  return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
+
 proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   ## This is the interface for actually lookup up values at runtime.
   let
@@ -188,7 +209,7 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
     attr    = aOrS.get(Attribute)
     `val?`  = attr.value
     `over?` = attr.override
-    
+
   if `over?`.isSome():
     return `over?`
   elif `val?`.isSome():
@@ -202,7 +223,7 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
   let
     parts        = fqn.split(".")
-    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)    
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
 
   if possibleAttr.isA(AttrErr):
     return possibleAttr.get(AttrErr)
@@ -220,11 +241,21 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
 
   if hook != nil:
     hook(value)
-  
+
   return AttrErr(code: errOk)
 
 proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
   return attrSet(ctx.attrs, fqn, val)
+
+proc nameUseContext*(node: Con4mNode, name: string, ctx: ConfigState): UseCtx =
+  if name in ctx.funcTable:             return ucFunc
+  if node.attrScope.attrExists([name]): return ucAttr
+  if node.varUse(name).isSome():        return ucVar
+
+  if node.attrScope != ctx.attrs and ctx.attrs.attrExists([name]):
+    return ucAttr
+
+  return ucNone
 
 # This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
@@ -362,4 +393,4 @@ proc toCon4mType*(s: string): Con4mType =
                        "Extraneous text after parsed type: {n}".fmt())
   return v
 
-  
+

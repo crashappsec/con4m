@@ -120,7 +120,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
     i      = 0
     newtok: Con4mToken = nil
-    
+
   result = @[]
 
   if len(inToks) != 0:
@@ -173,7 +173,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
                   result.add(newTok)
                   newTok = nil
                   break outer
-                  
+
                 result.add(t)
                 i = i + 1
                 break outer
@@ -185,7 +185,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
             result.add(t)
             i = i + 1
             break outer
-          
+
     else:
       result.add(t)
     i += 1

@@ -93,14 +93,14 @@ type
   ##
   AttrScope* = ref object
     contents*: Table[string, AttrOrSub]
-    
+
   AttrOrSub*   = object
     case kind: bool
     of true:
       attr*: Attribute
     of false:
       scope*: AttrScope
-      
+
   AttrOrErr*   = object
     case kind: bool
     of true:
@@ -109,7 +109,7 @@ type
       err*: AttrErr
 
   AttrSetHook* = proc(i0: Box)
-  
+
   Attribute* = ref object
     tInfo*:    Con4mType
     value*:    Option[Box]
@@ -123,16 +123,19 @@ type
     tInfo*:    Con4mType
     value*:    Option[Box]
     persists*: bool
+    locked*:   bool
     firstDef*: Option[Con4mNode]
+    defs*:     seq[Con4mNode]
 
-  VLookupOp*   = enum vlDef, vlUse, vlMask
-  ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse
+  VLookupOp*   = enum vlDef, vlUse, vlMask, vlFormal
+  ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
   AttrErrEnum* = enum errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
+  UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
 
   AttrErr* = object
     code*:     AttrErrEnum
     msg*:      string
-    
+
   VarScope*  = ref object
     parent*:    Option[VarScope]
     contents*:  Table[string, VarSym]
@@ -229,7 +232,7 @@ type
     stateObjs*:          OrderedTable[string, SectionState]
     attrs*:              AttrScope
     globals*:            RuntimeFrame
-    frames*:             VarStack    
+    frames*:             VarStack
     spec*:               Option[ConfigSpec]
     funcTable*:          Table[string, seq[FuncTableEntry]]
     funcOrigin*:         bool
@@ -258,7 +261,7 @@ type
     # luMask is only for variables; luExpectAttr
     # luDeclareOnly is only for attrs.
     luExpect, luFindOrDeclare, luMask, luDeclareOnly
-                 
+
 template isA*(aos: AttrOrSub, t: typedesc): bool =
   when t is Attribute:
     aos.kind
@@ -288,7 +291,7 @@ template isA*(aoe: AttrOrErr, t: typedesc): bool =
     static:
       error("isA(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
     false
-    
+
 template get*(aoe: AttrOrErr, t: typedesc): untyped =
   when t is AttrOrSub:
     aoe.aos
@@ -298,7 +301,7 @@ template get*(aoe: AttrOrErr, t: typedesc): untyped =
     static:
       error("get(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
     nil
-    
+
 proc either*(attr: Attribute): AttrOrSub =
   result.kind = true
   result.attr = attr
@@ -326,5 +329,5 @@ converter attrToAttrOrErr*(aos: AttrOrSub): AttrOrErr =
 
 converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
   either(err)
-  
-    
+
+

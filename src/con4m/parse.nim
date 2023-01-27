@@ -21,13 +21,13 @@ type ParseCtx = ref object
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
   return Con4mNode(kind: k, token: t, children: c, parent: none(Con4mNode),
                    typeInfo: ti, varScope: nil, attrScope: nil, value: nil)
-  
+
 proc newNode(k,t: auto, c: seq[Con4mNode]= @[], ti: Con4mType= nil): Con4mNode =
     return nnbase(k, if t == nil: none(Con4mToken) else: some(t), c, ti)
 
 proc newNodeCopyToken(kind: Con4mNodeKind, borrowFrom: Con4mNode): Con4mNode =
   return nnbase(kind, borrowFrom.token, @[], nil)
-  
+
 proc isSkipped(self: Con4mToken): bool =
   if self.kind in [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]:
     return true
@@ -459,7 +459,7 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
 proc returnStmt(ctx: ParseCtx): Con4mNode =
   result      = newNode(NodeReturn, ctx.consume())
   ctx.nlWatch = true
-  
+
   case ctx.curTok().kind
   of TtSemi, TtNewLine:
     discard ctx.consume()
@@ -502,7 +502,7 @@ proc whileStmt(ctx: ParseCtx): Con4mNode =
 
 proc forStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeFor, ctx.consume(), ti = bottomType)
-  
+
   ctx.nlWatch = false
   let ixName = ctx.consume()
   if ixName.kind != TtIdentifier:
@@ -568,7 +568,7 @@ proc section(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeSection, ctx.curTok(), ti = bottomType)
 
   result.children.add(newNode(NodeIdentifier, ctx.consume()))
-  
+
   while true:
     i = i + 1
     let tok = ctx.consume()

@@ -147,6 +147,7 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
 
 ## The indent field doesn't try to pretty-print unless it is set
 ## to a positive value.
+#[
 const nullstr = "\"null\""
 proc scopeToJson*(scope: Con4mScope): string =
   var kvpairs: seq[string] = @[]
@@ -202,6 +203,7 @@ proc `$`*(scope: Con4mScope, goDown = true): string =
 
   else:
     return `$`(scope, 0)
+]#
 
 proc `$`*(spec: AttrSpec): string =
   result = "type: {spec.attrType}, required:".fmt()
