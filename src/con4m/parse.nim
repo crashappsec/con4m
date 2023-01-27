@@ -5,43 +5,28 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, streams, types, lex, nimutils
-import errmsg
+import options, streams, types, lex, nimutils, errmsg
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
 type ParseCtx = ref object
-  tokens: seq[Con4mToken]
-  curTokIx: int
-  root, current: Con4mNode
-  nlWatch: bool
-  nesting: int
+  tokens:        seq[Con4mToken]
+  curTokIx:       int
+  root, current:  Con4mNode
+  nlWatch:        bool
+  nesting:        int
 
-proc newNode(kind:     Con4mNodeKind,
-             token:    Con4mToken,
-             children: seq[Con4mNode] = @[],
-             typeInfo: Con4mType = nil): Con4mNode =
-    return Con4mNode(kind:      kind,
-                     token:     if token == nil: none(Con4mToken)
-                                else:            some(token),
-                     children:  children,
-                     parent:    none(Con4mNode),
-                     typeInfo:  typeInfo,
-                     varScope:  nil,
-                     attrScope: nil,
-                     value:     nil)
+
+proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
+  return Con4mNode(kind: k, token: t, children: c, parent: none(Con4mNode),
+                   typeInfo: ti, varScope: nil, attrScope: nil, value: nil)
+  
+proc newNode(k,t: auto, c: seq[Con4mNode]= @[], ti: Con4mType= nil): Con4mNode =
+    return nnbase(k, if t == nil: none(Con4mToken) else: some(t), c, ti)
 
 proc newNodeCopyToken(kind: Con4mNodeKind, borrowFrom: Con4mNode): Con4mNode =
-  result = Con4mNode(kind:      kind,
-                     token:     borrowFrom.token,
-                     children:  @[],
-                     parent:    none(Con4mNode),
-                     typeInfo:  nil,
-                     varScope:  nil,
-                     attrScope: nil,
-                     value:     nil)
-
+  return nnbase(kind, borrowFrom.token, @[], nil)
   
 proc isSkipped(self: Con4mToken): bool =
   if self.kind in [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]:
@@ -492,18 +477,18 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
 
 
 proc breakStmt(ctx: ParseCtx): Con4mNode =
-  result = newNode(NodeBreak, ctx.consume(), typeInfo = bottomType)
+  result = newNode(NodeBreak, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Break not allowed outside of a loop")
 
 proc continueStmt(ctx: ParseCtx): Con4mNode =
-  result = newNode(NodeContinue, ctx.consume(), typeInfo = bottomType)
+  result = newNode(NodeContinue, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Continue not allowed outside of a loop")
 
 #[
 proc whileStmt(ctx: ParseCtx): Con4mNode =
-  result = newNode(NodeWhile, ctx.consume(), typeInfo = bottomType)
+  result = newNode(NodeWhile, ctx.consume(), ti = bottomType)
   ctx.nlWatch = false
   result.children.add(ctx.expression())
   if ctx.consume().kind != TtLBrace:
@@ -516,7 +501,7 @@ proc whileStmt(ctx: ParseCtx): Con4mNode =
 ]#
 
 proc forStmt(ctx: ParseCtx): Con4mNode =
-  result = newNode(NodeFor, ctx.consume(), typeInfo = bottomType)
+  result = newNode(NodeFor, ctx.consume(), ti = bottomType)
   
   ctx.nlWatch = false
   let ixName = ctx.consume()
@@ -580,7 +565,7 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
 
 proc section(ctx: ParseCtx): Con4mNode =
   var i  = -1
-  result = newNode(NodeSection, ctx.curTok(), typeInfo = bottomType)
+  result = newNode(NodeSection, ctx.curTok(), ti = bottomType)
 
   result.children.add(newNode(NodeIdentifier, ctx.consume()))
   
@@ -689,7 +674,7 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     ctx.nlWatch = true
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
-  result = newNode(NodeBody, ctx.curTok(), typeInfo = bottomType)
+  result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
 
   while true:
     ctx.nlWatch = true
@@ -750,7 +735,8 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
           parseError("Expect a newline (or ;) at end of a body expression")
 
       except:
-        parseError("Expected an assignment, unpack (no parens), block start, or expression", t)
+        parseError("Expected an assignment, unpack (no parens), block " &
+                   "start, or expression", t)
 
 
 proc body(ctx: ParseCtx): Con4mNode =
