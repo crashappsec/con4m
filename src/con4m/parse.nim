@@ -18,6 +18,31 @@ type ParseCtx = ref object
   nlWatch: bool
   nesting: int
 
+proc newNode(kind:     Con4mNodeKind,
+             token:    Con4mToken,
+             children: seq[Con4mNode] = @[],
+             typeInfo: Con4mType = nil): Con4mNode =
+    return Con4mNode(kind:      kind,
+                     token:     if token == nil: none(Con4mToken)
+                                else:            some(token),
+                     children:  children,
+                     parent:    none(Con4mNode),
+                     typeInfo:  typeInfo,
+                     varScope:  nil,
+                     attrScope: nil,
+                     value:     nil)
+
+proc newNodeCopyToken(kind: Con4mNodeKind, borrowFrom: Con4mNode): Con4mNode =
+  result = Con4mNode(kind:      kind,
+                     token:     borrowFrom.token,
+                     children:  @[],
+                     parent:    none(Con4mNode),
+                     typeInfo:  nil,
+                     varScope:  nil,
+                     attrScope: nil,
+                     value:     nil)
+
+  
 proc isSkipped(self: Con4mToken): bool =
   if self.kind in [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]:
     return true
@@ -113,9 +138,7 @@ template exprProds(exprName: untyped,
 
   proc exprName(ctx: ParseCtx): Option[Con4mNode] =
     if ctx.curTok().kind == tokKind:
-      return some(Con4mNode(kind: nodeType,
-                           token: some(ctx.consume()),
-                           children: @[ctx.rhsName()]))
+      return some(newNode(nodeType,ctx.consume(), @[ctx.rhsName()]))
     return ctx.nextInChain()
 
 # These productions are straightforward translations of the grammar. If
@@ -135,34 +158,32 @@ proc divExprRHS(ctx: ParseCtx): Con4mNode =
 proc divExpr(ctx: ParseCtx): Option[Con4mNode] =
   case ctx.curTok().kind
   of TtDiv:
-    return some(Con4mNode(kind: NodeDiv,
-                         token: some(ctx.consume()),
-                         children: @[ctx.divExprRHS()]))
+    return some(newNode(NodeDiv, ctx.consume(), @[ctx.divExprRHS()]))
   of TtIdentifier, TtLParen:
     return some(ctx.accessExpr())
   else:
     return
 
-exprProds(mulExpr, mulExprRHS, divExpr, TtMul, NodeMul)
-exprProds(modExpr, modExprRHS, mulExpr, TtMod, NodeMod)
-exprProds(minusExpr, minusExprRHS, modExpr, TtMinus, NodeMinus)
-exprProds(plusExpr, plusExprRHS, minusExpr, TtPlus, NodePlus)
-exprProds(ltExpr, ltExprRHS, plusExpr, TtLt, NodeLt)
-exprProds(gtExpr, gtExprRHS, ltExpr, TtGt, NodeGt)
-exprProds(lteExpr, lteExprRHS, gtExpr, TtLte, NodeLte)
-exprProds(gteExpr, gteExprRHS, lteExpr, TtGte, NodeGte)
-exprProds(eqExpr, eqExprRHS, gteExpr, TtCmp, NodeCmp)
-exprProds(neExpr, neExprRHS, eqExpr, TtNeq, NodeNe)
-exprProds(andExpr, andExprRHS, neExpr, TtAnd, NodeAnd)
-exprProds(orExpr, expression, andExpr, TtOr, NodeOr)
+exprProds(mulExpr,   mulExprRHS,   divExpr,   TtMul,   NodeMul)
+exprProds(modExpr,   modExprRHS,   mulExpr,   TtMod,   NodeMod)
+exprProds(minusExpr, minusExprRHS, modExpr,   TtMinus, NodeMinus)
+exprProds(plusExpr,  plusExprRHS,  minusExpr, TtPlus,  NodePlus)
+exprProds(ltExpr,    ltExprRHS,    plusExpr , TtLt,    NodeLt)
+exprProds(gtExpr,    gtExprRHS,    ltExpr,    TtGt,    NodeGt)
+exprProds(lteExpr,   lteExprRHS,   gtExpr,    TtLte,   NodeLte)
+exprProds(gteExpr,   gteExprRHS,   lteExpr,   TtGte,   NodeGte)
+exprProds(eqExpr,    eqExprRHS,    gteExpr,   TtCmp,   NodeCmp)
+exprProds(neExpr,    neExprRHS,    eqExpr,    TtNeq,   NodeNe)
+exprProds(andExpr,   andExprRHS,   neExpr,    TtAnd,   NodeAnd)
+exprProds(orExpr,    expression,   andExpr,   TtOr,    NodeOr)
 
 proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
   let
-    actuals = Con4mNode(kind: NodeActuals, token: some(ctx.consume()))
-    watch = ctx.nlWatch
+    actuals = newNode(NodeActuals, ctx.consume())
+    watch   = ctx.nlWatch
 
   ctx.nlWatch = false
-  result = Con4mNode(kind: NodeCall, token: actuals.token)
+  result = newNodeCopyToken(NodeCall, actuals)
 
   # Convert x.foo(blah) to foo(x, blah)
   case lhs.kind
@@ -194,17 +215,17 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
       parseError("After call argument, expect ',' or ')'")
 
 proc memberExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
-  result = Con4mNode(kind: NodeMember, token: some(ctx.consume()))
+  result = newNode(NodeMember, ctx.consume())
   result.children.add(lhs)
 
   if ctx.curTok().kind != TtIdentifier:
     parseError(". operator must have an identifier on the right hand side")
 
-  let kid = Con4mNode(kind: NodeIdentifier, token: some(ctx.consume()))
+  let kid = newNode(NodeIdentifier, ctx.consume())
   result.children.add(kid)
 
 proc indexExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
-  result = Con4mNode(kind: NodeIndex, token: some(ctx.consume()))
+  result = newNode(NodeIndex, ctx.consume())
   result.children.add(lhs)
 
   let watch = ctx.nlWatch
@@ -223,7 +244,7 @@ proc parenExpr(ctx: ParseCtx): Con4mNode =
     parseError("Missing ')'")
 
 proc dictLiteral(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeDictLit, token: some(ctx.consume()))
+  result = newNode(NodeDictLit, ctx.consume())
 
   let watch = ctx.nlWatch
 
@@ -234,7 +255,7 @@ proc dictLiteral(ctx: ParseCtx): Con4mNode =
   ctx.nlWatch = false
 
   while true:
-    var kvPair = Con4mNode(kind: NodeKVPair, token: some(ctx.curTok()))
+    var kvPair = newNode(NodeKVPair, ctx.curTok())
 
     result.children.add(kvPair)
 
@@ -261,7 +282,7 @@ proc dictLiteral(ctx: ParseCtx): Con4mNode =
       parseError("After key/value pair, expect ',' or '}'")
 
 proc listLiteral(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeListLit, token: some(ctx.consume()))
+  result = newNode(NodeListLit, ctx.consume())
 
   let watch = ctx.nlWatch
 
@@ -289,7 +310,7 @@ proc listLiteral(ctx: ParseCtx): Con4mNode =
       unreachable
 
 proc tupleLiteral(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeTupleLit, token: some(ctx.consume()))
+  result = newNode(NodeTupleLit, ctx.consume())
   let watch = ctx.nlWatch
 
   if ctx.curTok().kind == TtRParen:
@@ -337,7 +358,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       lhs.token = t
       ctx.nlWatch = watch
     of TtIdentifier:
-      lhs = Con4mNode(kind: NodeIdentifier, token: some(tok))
+      lhs = newNode(NodeIdentifier, tok)
     else:
       unreachable
 
@@ -356,7 +377,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull:
-    return Con4mNode(kind: NodeSimpLit, token: some(ctx.consume()))
+    return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
     return ctx.dictLiteral()
   of TtLBracket:
@@ -370,7 +391,7 @@ proc notExpr(ctx: ParseCtx): Con4mNode =
   let tok = ctx.consume()
   let res = ctx.expression()
 
-  return Con4mNode(kind: NodeNot, token: some(tok), children: @[res])
+  return newNode(NodeNot, tok, @[res])
 
 proc unaryExpr(ctx: ParseCtx): Con4mNode =
   let tok = ctx.consume()
@@ -389,7 +410,7 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
   else:
     parseError("Invalid expression start after unary operator", false)
 
-  return Con4mNode(kind: NodeUnary, token: some(tok), children: @[res])
+  return newNode(NodeUnary, tok, @[res])
 
 proc exprStart(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
@@ -413,7 +434,7 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   if id.kind != TtIdentifier:
     parseError("Expected identifier to name function or callback")
 
-  let formals = Con4mNode(kind: NodeFormalList, token: some(ctx.curTok()))
+  let formals = newNode(NodeFormalList, ctx.curTok())
 
   if ctx.consume().kind != TtLParen:
     parseError("Expected '(' to start func or callback parameter defs")
@@ -422,8 +443,7 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   of TtRParen:
     discard ctx.consume()
   of TtIdentifier:
-    formals.children.add(Con4mNode(kind: NodeIdentifier,
-                                   token: some(ctx.consume())))
+    formals.children.add(newNode(NodeIdentifier, ctx.consume()))
     while true:
       case ctx.consume().kind
       of TtRParen:
@@ -432,8 +452,7 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
         let param = ctx.consume()
         if param.kind != TtIdentifier:
           parseError("Expected an identifier.", true)
-        formals.children.add(Con4mNode(kind: NodeIdentifier,
-                                       token: some(param)))
+        formals.children.add(newNode(NodeIdentifier, param))
       else:
         parseError("Invalid parameter specification", true)
   else:
@@ -442,8 +461,8 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   if ctx.consume().kind != TtLBrace:
     parseError("Expected '{' to start function body")
 
-  result = Con4mNode(kind: NodeFuncDef, token: some(t))
-  result.children.add(Con4mNode(kind: NodeIdentifier, token: some(id)))
+  result = newNode(NodeFuncDef, t)
+  result.children.add(newNode(NodeIdentifier, id))
   result.children.add(formals)
   result.children.add(ctx.body())
 
@@ -453,9 +472,9 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
     parseError("Expected '}' to end function body")
 
 proc returnStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeReturn,
-                    token: some(ctx.consume()))
+  result      = newNode(NodeReturn, ctx.consume())
   ctx.nlWatch = true
+  
   case ctx.curTok().kind
   of TtSemi, TtNewLine:
     discard ctx.consume()
@@ -473,24 +492,18 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
 
 
 proc breakStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeBreak,
-                    token: some(ctx.consume()),
-                    typeInfo: bottomType)
+  result = newNode(NodeBreak, ctx.consume(), typeInfo = bottomType)
   if ctx.nesting == 0:
     parseError("Break not allowed outside of a loop")
 
 proc continueStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeContinue,
-                    token: some(ctx.consume()),
-                    typeInfo: bottomType)
+  result = newNode(NodeContinue, ctx.consume(), typeInfo = bottomType)
   if ctx.nesting == 0:
     parseError("Continue not allowed outside of a loop")
 
 #[
 proc whileStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeWhile,
-                    token: some(ctx.consume()),
-                    typeInfo: bottomType)
+  result = newNode(NodeWhile, ctx.consume(), typeInfo = bottomType)
   ctx.nlWatch = false
   result.children.add(ctx.expression())
   if ctx.consume().kind != TtLBrace:
@@ -503,14 +516,13 @@ proc whileStmt(ctx: ParseCtx): Con4mNode =
 ]#
 
 proc forStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeFor,
-                    token: some(ctx.consume()),
-                    typeInfo: bottomType)
+  result = newNode(NodeFor, ctx.consume(), typeInfo = bottomType)
+  
   ctx.nlWatch = false
   let ixName = ctx.consume()
   if ixName.kind != TtIdentifier:
     parseError("For loop index must be an identifier")
-  result.children.add(Con4mNode(kind: NodeIdentifier, token: some(ixName)))
+  result.children.add(newNode(NodeIdentifier, ixName))
   if ctx.consume().kind != TtFrom:
     parseError("Expected 'from' after loop index variable")
   result.children.add(ctx.expression())
@@ -527,12 +539,12 @@ proc forStmt(ctx: ParseCtx): Con4mNode =
   ctx.nlWatch = true
 
 proc ifStmt(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeIfStmt, token: some(ctx.consume()))
+  result = newNode(NodeIfStmt, ctx.consume())
+
+  let tok     = result.token.get()
   ctx.nlWatch = false
-  var exp = Con4mNode(kind: NodeConditional,
-                     token: result.token,
-                     children: @[ctx.expression()],
-                     typeInfo: bottomType)
+  var
+    exp = newNode(NodeConditional, tok, @[ctx.expression()], bottomType)
 
   while true:
     if ctx.consume().kind != TtLBrace:
@@ -545,10 +557,8 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
 
     case ctx.curTok().kind
     of TtElif:
-      exp = Con4mNode(kind: NodeConditional,
-                     token: some(ctx.consume()),
-                     children: @[ctx.expression()],
-                     typeInfo: bottomType)
+      let kids = @[ctx.expression()]
+      exp      = newNode(NodeConditional, ctx.consume(), kids, bottomType)
       continue
     of TtElse:
       discard ctx.consume()
@@ -556,10 +566,7 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
         parseError("Expected { before else body")
 
       ctx.nlWatch = false
-      exp = Con4mNode(kind: NodeElse,
-                     token: some(ctx.curTok()),
-                     children: @[ctx.body()],
-                     typeInfo: bottomType)
+      exp         = newNode(NodeElse, ctx.curTok(), @[ctx.body()], bottomType)
       ctx.nlWatch = false # Should prob just always do this after body
 
       if ctx.consume().kind != TtRBrace:
@@ -572,20 +579,19 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       return
 
 proc section(ctx: ParseCtx): Con4mNode =
-  var i = -1
-  result = Con4mNode(kind: NodeSection, typeInfo: bottomType,
-                     token: some(ctx.curTok()))
+  var i  = -1
+  result = newNode(NodeSection, ctx.curTok(), typeInfo = bottomType)
 
-  result.children.add(Con4mNode(kind: NodeIdentifier,
-                               token: some(ctx.consume())))
+  result.children.add(newNode(NodeIdentifier, ctx.consume()))
+  
   while true:
     i = i + 1
     let tok = ctx.consume()
     case tok.kind
     of TtStringLit:
-      result.children.add(Con4mNode(kind: NodeSimpLit, token: some(tok)))
+      result.children.add(newNode(NodeSimpLit, tok))
     of TtIdentifier:
-      result.children.add(Con4mNode(kind: NodeIdentifier, token: some(tok)))
+      result.children.add(newNode(NodeIdentifier, tok))
     of TtLBrace:
       break
     else:
@@ -612,7 +618,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
     ids: seq[Con4mNode] = @[]
 
 
-  ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
+  ids.add(newNode(NodeIdentifier, t))
 
   # Second token could be a comma, if we're unpacking a tuple.
   # If it is, we need to check the assignment token after, because
@@ -624,7 +630,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
     let t = ctx.consume()
     if t.kind != TtIdentifier:
       parseError("Can only unpack into named variables")
-    ids.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
+    ids.add(newNode(NodeIdentifier, t))
     ctx.nlWatch = true
 
   case ctx.consume().kind
@@ -637,9 +643,9 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
     parseError("Expected := after list of identifiers for tuple unpack.", true)
 
   if len(ids) == 1:
-    result = Con4mNode(kind: NodeVarAssign, token: some(t))
+    result = newNode(NodeVarAssign, t)
   else:
-    result = Con4mNode(kind: NodeUnpack, token: some(t))
+    result = newNode(NodeUnpack, t)
 
   result.children = ids
   ctx.nlWatch = true
@@ -655,8 +661,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
 proc attrAssign(ctx: ParseCtx): Con4mNode =
   let t = ctx.consume()
 
-  result = Con4mNode(kind: NodeAttrAssign, token: some(t))
-  result.children.add(Con4mNode(kind: NodeIdentifier, token: some(t)))
+  result = newNode(NodeAttrAssign, t, @[newNode(NodeIdentifier, t)])
 
   # Second token is validated already.
   discard ctx.consume()
@@ -670,12 +675,12 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
     parseError("Newline needed after attribute assignment")
 
 proc enumeration(ctx: ParseCtx): Con4mNode =
-  result = Con4mNode(kind: NodeEnum, token: some(ctx.consume()))
+  result = newNode(NodeEnum, ctx.consume())
 
   while true:
     if ctx.curTok().kind != TtIdentifier:
       parseError("Expected an identifier")
-    let kid = Con4mNode(kind: NodeIdentifier, token: some(ctx.consume()))
+    let kid = newNode(NodeIdentifier, ctx.consume())
     result.children.add(kid)
     if ctx.curTok().kind != TtComma:
       return
@@ -684,9 +689,7 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     ctx.nlWatch = true
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
-  result = Con4mNode(kind: NodeBody,
-                     typeInfo: bottomType,
-                     token: some(ctx.curTok()))
+  result = newNode(NodeBody, ctx.curTok(), typeInfo = bottomType)
 
   while true:
     ctx.nlWatch = true
