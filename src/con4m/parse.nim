@@ -1,4 +1,3 @@
-##
 ## This is a simple recursive descent parser.  Note that I've explicitly
 ## factored the grammar for right recursion, so in the expression grammar
 ## there is a bit of tree jockeying to get the tree to look natural.

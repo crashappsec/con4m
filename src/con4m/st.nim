@@ -12,31 +12,9 @@
 ## :Copyright: 2022
 
 
-import tables
-import options
-import unicode
-import strutils
-import strformat
-import parse # only for fatal()
-import types
-
+import tables, options, unicode, strutils, strformat, nimutils, types
 
 var tVarNum: int
-
-template lookupError(m: string, symbol: string, entry: Option[STEntry]) =
-  if entry.isNone() or entry.get().firstDef.isNone():
-    let t = Con4mToken(kind: TTStringLit,
-                       unescaped: symbol,
-                       lineNo: -1,
-                       lineOffset: -1)
-    fatal("When looking up " & symbol & ": " & m, t)
-  else:
-    let t = entry.get().firstDef.get().token
-    if not t.isSome():
-      assert false, "Programmer error, no token provided"
-
-    fatal("When looking up " & symbol & ": " & m, t.get())
-
 
 proc newListType*(contained: Con4mType): Con4mType =
   return Con4mType(kind: TypeList, itemType: contained)
@@ -70,83 +48,183 @@ proc newProcType*(params: seq[Con4mType],
   else:
     return Con4mType(kind: TypeProc, retType: retType)
 
-proc newRootScope*(): CurScopes =
-  result = CurScopes(vars: Con4mScope(), attrs: Con4mScope())
-  result.globals = result.vars
 
-proc getEntry*(scope: Con4mScope, name: string): Option[STEntry] =
-  if not scope.entries.contains(name): return
-  return some(scope.entries[name])
-import dollars
-proc addEntry*(scope: Con4mScope,
-               name: string,
-               firstDef: Option[Con4mNode] = none(Con4mNode),
-               tinfo = newTypeVar(),
-               subscope: bool = false): Option[STEntry] =
-  if scope.entries.contains(name):
-    return
-  let e = STEntry(tinfo: tinfo, firstDef: firstDef)
-  if subscope:
-    let ss = Con4mScope(parent: some(scope))
-    e.subscope = some(ss)
-  scope.entries[name] = e
-  return some(e)
+##### New interface here.
 
-# This version of symbol lookup is meant to be used when evaluating a
-# non-dotted variable in a local scope. If a variable is not found in
-# one scope, then we check the parent scope, and we don't give up
-# until we get to the root scope and the item is still missing.
-proc lookup*(scope: Con4mScope, name: string): Option[STEntry] =
-  if scope.entries.contains(name):
-    if scope.entries[name].subscope.isSome():
-      lookupError("asked for a attribute, but this name refers to a section",
-                  name,
-                  some(scope.entries[name]))
+proc newVarSym(name: string): VarSym =
+  return VarSym(name: name, value: none(Box), firstDef: none(Con4mNode))
+  
+## Symbol table lookups for variables start in a given scope, and then
+## check up the tree, to see if the variable is defined in the current
+## scope. It's all static scoping; parent scopes have no sense of
+## child scopes.  The child basically is generally going to be looking
+## to see whether there is already a variable in scope, and if not,
+## and if the variable is the left hand side of an assignment, then
+## it'll be defined in the new scope.
+##
+## For the most part, we always prefer reusing a variable that's in
+## scope, with the exception of index variables on for loops, which
+## are scoped to the loop.  Currently there is no other case where
+## you'd be able to mask a variable name that's in scope.
+##
+## So there are 3 kinds of lookups we might want to do:
+##    
+## 1) A "def" lookup, where we are looking to find the symbol, and
+##    want to define it in the local scope if it's not in a parent
+##    scope, or else use the one that's there.
+## 2) A "use" lookup, where we exepct the variable is there, and if it
+##    isn't, there's definitely an error.
+## 3) A "mask" lookup for constructs that will mask the variable, but
+##    if the *current* scope has the variable, that should be a problem
+##    (and, in fact, until we add to the language, that will not be
+##    possible).    
+##       
+## The first will always return a symbol; the second two will return
+## either a symbol or an error.  Since there is only a max of one error 
+## condition for each type of lookup, we model this with an Option.
+    
+proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
+  if name in scope.contents:
+    case op
+    of vlDef, vlUse:
+      return some(scope.contents[name])
+    of vlMask:
+      return none(VarSym)
+  else:
+    case op
+    of vlMask:
+      var sym              = newVarSym(name)
+      result               = some(sym)
+      scope.contents[name] = sym
+    of vlDef:
+      if scope.parent.isSome():
+        # it's a def lookup in OUR scope, but a use lookup in
+        # parent scopes, if we have to recurse.
+        let maybe = scope.parent.get().varLookup(name, vlUse)
+        if maybe.isSome():
+          return maybe
 
-    return some(scope.entries[name])
-  if scope.parent.isSome():
-    return scope.parent.get().lookup(name)
+      var sym              = newVarSym(name)
+      result               = some(sym)
+      scope.contents[name] = sym
+    of vlUse:
+      if scope.parent.isSome():
+        return scope.parent.get().varLookup(name, vlUse)
+      else:
+        return none(VarSym)
 
-# This version of symbol lookup checks for an attribute in the local scope,
-# i.e., without dot notation.  This does NOT inherit from previous scopes,
-# they only do local or dot notation.
-proc lookupAttr*(scope: Con4mScope,
-                 name: string,
-                 scopeOk: bool = false): Option[STEntry] =
-  ## This method is exposed because it's used in the code generated
-  ## automatically by our macro library.  It's lower level, operating
-  ## on the scope data type that doesn't get exposed from the package
-  ## by default.  Instead, use `getConfigVar()`.
-  if scope.entries.contains(name):
-    if not scopeOk and scope.entries[name].subscope.isSome():
-      lookupError("asked for a attribute, but this name refers to a section",
-                  name,
-                  some(scope.entries[name]))
+## With var scopes, we have a single name, where we are always
+## searching back up a stack when we need to search.
+##
+## Attributes are top-down.  We start at some node in the tree, and if
+## we have more names, we keep descending.  We pass an index into the
+## dotted lookup array, so that if there's an error we can use the
+## topic ssytem to publish an appropriate error.
+##
+## Attributes do not support masking. But they do have more error
+## conditions!
+proc attrLookup*(scope: AttrScope,
+                 parts: openarray[string],
+                 ix:    int,
+                 op:    ALookupOp): AttrOrErr =
+  if ix >= len(parts):
+    return AttrErr(code: errNoAttr)
 
-    return some(scope.entries[name])
+  let name = parts[ix]
+  if ix == len(parts)-1:
+      if name in scope.contents:
+        let item = scope.contents[name]
+        case op
+        of vlSecDef, vlSecUse:
+          if item.isA(Attribute):
+            let dotted = parts.join(".")
+            return AttrErr(code: errBadSec,
+                           msg:  fmt"{dotted}: should be a section, but " &
+                                 "already have it as an attr")
+          return item
+        of vlAttrDef, vlAttrUse:
+          if item.isA(Attribute):
+            return item
+          else:
+            let dotted = parts.join(".")
+            return AttrErr(code: errBadAttr,
+                           msg:  fmt"{dotted}: should be an attr, but " &
+                                    "already have it as a section")
+      else:
+        case op
+        of vlSecDef:
+          let sub     = AttrScope(contents: default(Table[string, AttrOrSub]))
+          scope.contents[name] = either(sub)
+          
+          return scope.contents[name]
+        of vlAttrDef:
+          let attrib           = Attribute()
+          scope.contents[name] = either(attrib)
 
-# This version of symbol lookup is meant for dotted notation, when we
-# are essentially doing object access.  But, we don't have objects,
-# we have attribute scopes that can be nested.
-proc dottedLookup*(scope: Con4mScope, dotted: seq[string]): Option[STEntry] =
-  if dotted.len() == 0:
-    return
+          return scope.contents[name]
+        else:
+          return AttrErr(code: errNoAttr)
+  else:
+    let item = scope.contents[name]
+    if item.isA(Attribute):
+      let dotted = parts[0 .. ix].join(".")
+      return AttrErr(code: errBadSec,
+                     msg:  fmt"{dotted}: should be a section, but already "&
+                               "have it as an attr")
+    let newScope = item.get(AttrScope)
+    return newScope.attrLookup(parts, ix + 1, op)
+  
+proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
+  ## This is the interface for actually lookup up values at runtime.
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
+
+  if possibleAttr.isA(AttrErr):
+    return none(Box)
 
   let
-    name = dotted[0]
-    rest = dotted[1 .. ^1]
+    aOrS    = possibleAttr.get(AttrOrSub)
+    attr    = aOrS.get(Attribute)
+    `val?`  = attr.value
+    `over?` = attr.override
+    
+  if `over?`.isSome():
+    return `over?`
+  elif `val?`.isSome():
+    return `val?`
+  return none(Box)
 
-  if not (name in scope.entries):
-    return
-  let entry = scope.entries[name]
+proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
+  return attrLookup(ctx.attrs, fqn)
 
-  if rest.len() == 0:
-    return some(entry)
+proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
+  ## This is the interface for setting values at runtime.
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)    
 
-  if not entry.subscope.isSome():
-    return
+  if possibleAttr.isA(AttrErr):
+    return possibleAttr.get(AttrErr)
 
-  return dottedLookup(entry.subscope.get(), rest)
+  let
+    aOrS              = possibleAttr.get(AttrOrSub)
+    attr              = aOrS.get(Attribute)
+    `over?`           = attr.override
+    hook: AttrSetHook = attr.setHook
+
+  if `over?`.isSome() or attr.locked:
+    return AttrErr(code: errCantSet)
+
+  attr.value = some(value)
+
+  if hook != nil:
+    hook(value)
+  
+  return AttrErr(code: errOk)
+
+proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
+  return attrSet(ctx.attrs, fqn, val)
 
 # This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
@@ -283,3 +361,5 @@ proc toCon4mType*(s: string): Con4mType =
     raise newException(ValueError,
                        "Extraneous text after parsed type: {n}".fmt())
   return v
+
+  

@@ -78,58 +78,70 @@ type
   # So I can switch between ordered and not without hardship.
   Con4mDict*[K, V] = TableRef[K, V]
 
-  STEntry* = ref object
-    ## Internal; our symbol table data structure.
+  ## At any point in a Con4m program, there are two different scopes,
+  ## variable scopes (which change whenever we enter a new block
+  ## like in a for loop), and attribute scopes, which nest based on
+  ## sections.
+  ##
+  ## Conceptually, the program that loads the configuration file is
+  ## expected to only make use of the attributes; the variables are
+  ## private to the config file's execution.
+  ##
+  ## This helps make it easy for users to do computation, without
+  ## polluting the runtime namespace, or making validation more
+  ## challenging.
+  ##
+  AttrScope* = ref object
+    contents*: Table[string, AttrOrSub]
+    
+  AttrOrSub*   = object
+    case kind: bool
+    of true:
+      attr*: Attribute
+    of false:
+      scope*: AttrScope
+      
+  AttrOrErr*   = object
+    case kind: bool
+    of true:
+      aos*: AttrOrSub
+    of false:
+      err*: AttrErr
+
+  AttrSetHook* = proc(i0: Box)
+  
+  Attribute* = ref object
     tInfo*:    Con4mType
-    value*:    Option[Box] ## Note that local variables are not stored in an
-                           ## STEntry during execution.  Before execution, this
-                           ## value can hold default values.
-                           ##
-                           ## Attribute scopes persist though, so we *do* use
-                           ## this variable at runtime for attributes.
-    override*: Option[Box] ## If a command-line flag or the program set this
-                           ## value at runtime, then it will automatically be
-                           ## re-set after the configuration file loads.
-    subscope*: Option[Con4mScope]
-    firstDef*: Option[Con4mNode]
+    value*:    Option[Box]
+    override*: Option[Box]
     locked*:   bool
+    firstDef*: Option[Con4mNode]
+    setHook*:  AttrSetHook
+
+  VarSym*    = ref object
+    name*:     string
+    tInfo*:    Con4mType
+    value*:    Option[Box]
+    persists*: bool
+    firstDef*: Option[Con4mNode]
+
+  VLookupOp*   = enum vlDef, vlUse, vlMask
+  ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse
+  AttrErrEnum* = enum errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
+
+  AttrErr* = object
+    code*:     AttrErrEnum
+    msg*:      string
+    
+  VarScope*  = ref object
+    parent*:    Option[VarScope]
+    contents*:  Table[string, VarSym]
 
   ## Frame for holding local variables.  In a call, the caller
   ## does the pushing and popping.
-  RuntimeFrame* = TableRef[string, Box]
-  ##
-  ##
-  VarStack* = seq[RuntimeFrame]
-
-  Con4mScope* = ref object
-    ## Internal. It represents a single scope, only containing a
-    ## dictionary plus a link to out parent scope, if any.
-    parent*:  Option[Con4mScope]
-    entries*: OrderedTable[string, STEntry]
-
-  Con4mSectInfo* = seq[(string, Con4mScope)]
-
-  CurScopes* = object
-    ## At any point in a Con4m program, there are two different scopes,
-    ## variable scopes (which change whenever we enter a new block
-    ## like in a for loop), and attribute scopes, which nest based on
-    ## sections.
-    ##
-    ## Conceptually, the program that loads the configuration file is
-    ## expected to only make use of the attributes; the variables are
-    ## private to the config file's execution.
-    ##
-    ## This helps make it easy for users to do computation, without
-    ## polluting the runtime namespace, or making validation more
-    ## challenging.
-    ##
-    ## We also keep a separate record of globals, even though they are
-    ## a parent of var scopes, because in user-defined functions, we
-    ## are going to disallow access to global variables, so we want to
-    ## be able to give good error messages.
-    attrs*:   Con4mScope
-    vars*:    Con4mScope
-    globals*: Con4mScope
+  RuntimeFrame*  = TableRef[string, Box]
+  VarStack*      = seq[RuntimeFrame]
+  Con4mSectInfo* = seq[(string, AttrScope)]
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
@@ -138,11 +150,11 @@ type
     children*:     seq[Con4mNode]
     parent*:       Option[Con4mNode] # Root is nil
     typeInfo*:     Con4mType
-    scopes*:       Option[CurScopes]
-    formalScopes*: Option[CurScopes]
+    varScope*:     VarScope
+    attrScope*:    AttrScope
     value*:        Box
 
-  BuiltInFn* = ((seq[Box], Con4mScope, VarStack, Con4mScope) -> Option[Box])
+  BuiltInFn* = ((seq[Box], AttrScope, VarScope) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 
@@ -161,18 +173,13 @@ type
     of FnUserDefined, FnCallback:
       impl*:      Option[Con4mNode]
 
-  FieldValidator* = (seq[string], Box) -> bool
-  ## This isn't implemented fully yet, but will allow the program to
-  ## specify additional value checking to be done on a field before
-  ## accepting a configuration file.
-
   AttrSpec* = ref object
     ## Internal. This is the data structure holding specification data
     ## for individual attributes, used to check for well-formed config
     ## files, to plug in defaults, ...
     doc*:         string
     attrType*:    string
-    validator*:   Option[FieldValidator]
+    validator*:   Option[AttrSetHook]
     defaultVal*:  Option[Box]
     lockOnWrite*: bool
     required*:    bool
@@ -220,16 +227,16 @@ type
     ## Still, the end user should not need to access the members,
     ## except via API.
     stateObjs*:          OrderedTable[string, SectionState]
-    st*:                 Con4mScope
+    attrs*:              AttrScope
+    globals*:            RuntimeFrame
+    frames*:             VarStack    
     spec*:               Option[ConfigSpec]
-    errors*:             seq[string]
     funcTable*:          Table[string, seq[FuncTableEntry]]
     funcOrigin*:         bool
     waitingForTypeInfo*: bool
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
     moduleFuncImpls*:    seq[Con4mNode] # Passed from the parser.
     secondPass*:         bool
-    frames*:             VarStack
 
 let
   # These are just shared instances for types that aren't
@@ -243,3 +250,81 @@ let
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
   return newTable[K, V]()
+
+type
+  LookupErr* = enum
+    errBadSubscope, errNotFound, errBadSpec, errAlreadyExists
+  LookupKind* = enum
+    # luMask is only for variables; luExpectAttr
+    # luDeclareOnly is only for attrs.
+    luExpect, luFindOrDeclare, luMask, luDeclareOnly
+                 
+template isA*(aos: AttrOrSub, t: typedesc): bool =
+  when t is Attribute:
+    aos.kind
+  elif t is AttrScope:
+    not aos.kind
+  else:
+    static:
+      error("isA(AttrOrSub, t): t must be an Attribute or AttrScope")
+    false
+
+template get*(aos: AttrOrSub, t: typedesc): untyped =
+  when t is Attribute:
+    aos.attr
+  elif t is AttrScope:
+    aos.scope
+  else:
+    static:
+      error("get(AttrOrSub, t): t must be an Attribute or AttrScope")
+    nil
+
+template isA*(aoe: AttrOrErr, t: typedesc): bool =
+  when t is AttrOrSub:
+    aoe.kind
+  elif t is AttrErr:
+    not aoe.kind
+  else:
+    static:
+      error("isA(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
+    false
+    
+template get*(aoe: AttrOrErr, t: typedesc): untyped =
+  when t is AttrOrSub:
+    aoe.aos
+  elif t is AttrErr:
+    aoe.err
+  else:
+    static:
+      error("get(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
+    nil
+    
+proc either*(attr: Attribute): AttrOrSub =
+  result.kind = true
+  result.attr = attr
+
+proc either*(sub: AttrScope): AttrOrSub =
+  result.kind  = false
+  result.scope = sub
+
+proc either*(aos: AttrOrSub): AttrOrErr =
+  result.kind = true
+  result.aos  = aos
+
+proc either*(err: AttrErr): AttrOrErr =
+  result.kind = false
+  result.err  = err
+
+converter attrToAttrOrSub*(attr: Attribute): AttrOrSub =
+  either(attr)
+
+converter subToAttrOrSub*(sub: AttrScope): AttrOrSub =
+  either(sub)
+
+converter attrToAttrOrErr*(aos: AttrOrSub): AttrOrErr =
+  either(aos)
+
+converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
+  either(err)
+  
+    

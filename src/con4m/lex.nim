@@ -91,7 +91,7 @@ proc unescape(token: Con4mToken) =
       st = getStackTrace()
     else:
       st = ""
-      fatal("Unterminated escape sequence in string literal", token, st, ii)
+    fatal("Unterminated escape sequence in string literal", token, st, ii)
 
   token.unescaped = res
 
@@ -120,8 +120,6 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
     i      = 0
     newtok: Con4mToken = nil
-  let
-    l  = len(intoks)
     
   result = @[]
 
