@@ -24,11 +24,11 @@ proc newDictType*(keyType, valType: Con4mType): Con4mType =
 
 proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
   tVarNum.inc()
-  return Con4mType(kind: TypeTVar,
-                   varNum: tVarNum,
-                   link: none(Con4mType),
-                   linksin: @[],
-                   cycle: false,
+  return Con4mType(kind:        TypeTVar,
+                   varNum:      tVarNum,
+                   link:        none(Con4mType),
+                   linksin:     @[],
+                   cycle:       false,
                    constraints: constraints)
 
 # This should only be called when we know that the type variable
@@ -37,9 +37,9 @@ proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
 proc newTypeVar*(num: int): Con4mType =
   return Con4mType(kind: TypeTVar, varNum: num)
 
-proc newProcType*(params: seq[Con4mType],
+proc newProcType*(params:  seq[Con4mType],
                   retType: Con4mType,
-                  va: bool = false): Con4mType =
+                  va:      bool = false): Con4mType =
   if params.len() != 0:
     return Con4mType(kind: TypeProc,
                     params: params,

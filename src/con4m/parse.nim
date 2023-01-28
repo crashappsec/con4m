@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, streams, types, lex, nimutils, errmsg
+import options, streams, types, nimutils, errmsg, lex
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
 # See docs/grammar.md for the grammar.
@@ -16,7 +16,6 @@ type ParseCtx = ref object
   root, current:  Con4mNode
   nlWatch:        bool
   nesting:        int
-
 
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
   return Con4mNode(kind: k, token: t, children: c, parent: none(Con4mNode),
@@ -795,16 +794,3 @@ proc parse*(s: Stream, filename: string = ""): Con4mNode =
 
     fatal(msg, tok)
     return
-
-proc parse*(filename: string): Con4mNode =
-  ## This version takes in a file name, snarfs it up, tokenizes, then
-  ## parses.
-  var s = newFileStream(filename, fmRead)
-
-  if s == nil:
-    fatal("could not open file", Con4mToken(nil))
-  else:
-    try:
-      result = s.parse(filename)
-    finally:
-      s.close()

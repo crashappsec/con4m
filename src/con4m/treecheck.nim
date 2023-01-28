@@ -815,7 +815,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
   ## anything we can easily find before execution).  This version
-  ## accepts an "old" `ConfigState` object, so that you can keep an
+  ## accepts a `ConfigState` object, so that you can keep an
   ## old symbol table around, layering new choices on top of the old
   ## ones.
   ##
@@ -863,92 +863,6 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     # This cycle check waits until we are sure all forward references
     # are resolved.
     s.cycleCheck()
-
-
-proc newConfigState*(node:        Con4mNode,
-                     spec:        ConfigSpec     = nil,
-                     addBuiltins: bool           = true,
-                     exclude:     openarray[int] = []): ConfigState
-
-proc checkTree*(node: Con4mNode, addBuiltins = false): ConfigState =
-  ## Checks a parse tree rooted at `node` for static errors (i.e.,
-  ## anything we can easily find before execution).  This version
-  ## returns a new `ConfigState` object, that can be used for
-  ## querying, dumped to a data structure (via our macros), or sent
-  ## back to checkTree when loading a file being layered on top of
-  ## what we've already read.
-  ##
-  ## Adds all default builtins, by default.
-  result = newConfigState(node, addBuiltins = addBuiltins)
-
-  node.checkTree(result)
-
-# Nim's issues w/ cross-module dependencies are bad. I can't prototype an
-# external function so I have to prototype an inline proxy to it before
-# I import it.
-proc callNewBuiltIn(s:    ConfigState,
-                    name: string,
-                    fn:   BuiltinFn,
-                    t:    string) {.inline.}
-proc callNewCallback(s: ConfigState, name: string, con4mType: string) {.inline.}
-
-proc checkTree*(node:      Con4mNode,
-                fns:       openarray[(string, BuiltinFn, string)] = [],
-                exclude:   openarray[int] = [],
-                callbacks: openarray[(string, string)] = []): ConfigState =
-  ## Checks a parse tree rooted at `node` for static errors (i.e.,
-  ## anything we can easily find before execution).  This version
-  ## returns a new `ConfigState` object, that can be used for
-  ## querying, dumped to a data structure (via our macros), or sent
-  ## back to checkTree when loading a file being layered on top of
-  ## what we've already read.
-  ##
-  ## Adds all default builtins, as well as any custom ones.
-  result = newConfigState(node, addBuiltins = true, exclude = exclude)
-
-  for item in fns:
-    let (name, fn, tinfo) = item
-    result.callNewBuiltIn(name, fn, tinfo)
-
-  for (n, t) in callbacks:
-    result.callNewCallback(n, t)
-
-  node.checkTree(result)
-
-import builtins
-
-proc callNewBuiltIn(s:    ConfigState,
-                    name: string,
-                    fn:   BuiltinFn,
-                    t:    string) {.inline.} =
-  s.newBuiltIn(name, fn, t)
-
-proc callNewCallback(s:         ConfigState,
-                     name:      string,
-                     con4mType: string) {.inline.} =
-  s.newCallback(name, con4mType)
-
-
-proc newConfigState*(node:        Con4mNode,
-                     spec:        ConfigSpec     = nil,
-                     addBuiltins: bool           = true,
-                     exclude:     openarray[int] = []): ConfigState =
-
-  node.attrScope = AttrScope()
-  node.varScope  = VarScope(parent: none(VarScope))
-
-  ## Return a new `ConfigState` object, optionally setting the `spec`
-  ## object, and, if requested via `addBuiltins`, installs the default
-  ## set of builtin functions.
-  if spec != nil:
-    result = ConfigState(attrs:   node.attrScope,
-                         globals: RuntimeFrame(),
-                         spec:    some(spec))
-  else:
-    result = ConfigState(attrs: node.attrScope, globals: RuntimeFrame())
-
-  if addBuiltins:
-    result.addDefaultBuiltins(exclude)
 
 when isMainModule:
   proc tT(s: string): Con4mType =

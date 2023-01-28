@@ -17,14 +17,14 @@ proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
   ## generally they shouldn't need it in the top-level space.
   return ConfigSpec(customTopLevelOk: customTopLevelOk)
 
-proc addGlobalAttr*(spec: ConfigSpec,
-                    name: string,
-                    con4mType: string,
-                    default: Option[Box] = none(Box),
-                    required: bool = true,
+proc addGlobalAttr*(spec:        ConfigSpec,
+                    name:        string,
+                    con4mType:   string,
+                    default:     Option[Box] = none(Box),
+                    required:    bool = true,
                     lockOnWrite: bool = false,
-                    v: FieldValidator = nil,
-                    doc: string = "") =
+                    v:           AttrSetHook = nil,
+                    doc:         string = "") =
   ## This call specifies properties of specific attributes set in the
   ## global namespace. By default (unless you set `customTopLevelOK`
   ## to false when calling `newConfigSpec`), user-defined attributes
@@ -48,22 +48,22 @@ proc addGlobalAttr*(spec: ConfigSpec,
   if not name.isValidId():
     raise newException(ValueError, "Name is not a valid identifier")
 
-  let validator: Option[FieldValidator] = if v != nil: some(v)
-                                          else: none(FieldValidator)
-  let attr = AttrSpec(doc: doc,
-                      attrType: con4mType,
-    defaultVal: default,
-    lockOnWrite: lockOnWrite,
-    required: required,
-    validator: validator)
+  let validator: Option[AttrSetHook] = if v != nil: some(v)
+                                       else:        none(AttrSetHook)
+  let attr = AttrSpec(doc:         doc,
+                      attrType:    con4mType,
+                      defaultVal:  default,
+                      lockOnWrite: lockOnWrite,
+                      required:    required,
+                      validator:   validator)
 
   spec.globalAttrs[name] = attr
 
-proc addSection*(spec: ConfigSpec,
-                 name: string,
-                 doc: string = "",
-                 requiredSubSecs: seq[string] = @[],
-                 validSubSecs: seq[string] = @[],
+proc addSection*(spec:             ConfigSpec,
+                 name:             string,
+                 doc:              string = "",
+                 requiredSubSecs:  seq[string] = @[],
+                 validSubSecs:     seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
   ## Adds information about the section to our specification.  Note
   ## that currently, we limit section schema specs to the top-level
@@ -119,19 +119,19 @@ proc addSection*(spec: ConfigSpec,
   if not name.isValidId():
     raise newException(ValueError, "Name is not a valid identifier")
 
-  result = SectionSpec(doc: doc,
+  result = SectionSpec(doc:                 doc,
                        requiredSubsections: requiredSubSecs,
-                       allowedSubsections: validSubSecs,
-                       customAttrs: allowCustomAttrs,
-                       associatedSpec: spec)
+                       allowedSubsections:  validSubSecs,
+                       customAttrs:         allowCustomAttrs,
+                       associatedSpec:      spec)
 
   spec.secSpecs[name] = result
 
-proc addSection*(parent: SectionSpec,
-                 name: string,
-                 doc: string = "",
+proc addSection*(parent:          SectionSpec,
+                 name:            string,
+                 doc:             string = "",
                  requiredSubSecs: seq[string] = @[],
-                 validSubSecs: seq[string] = @[],
+                 validSubSecs:    seq[string] = @[],
                  allowCustomAttrs: bool = false): SectionSpec =
   ## Same as above, but just delegates to the associatedSpec field to
   ## allow these things to be chained.
@@ -141,14 +141,14 @@ proc addSection*(parent: SectionSpec,
                                           validSubSecs,
                                           allowCustomAttrs)
 
-proc addAttr*(section: SectionSpec,
-              name: string,
-              con4mType: string,
-              default: Option[Box] = none(Box),
-              required: bool = true,
+proc addAttr*(section:     SectionSpec,
+              name:        string,
+              con4mType:   string,
+              default:     Option[Box] = none(Box),
+              required:    bool = true,
               lockOnWrite: bool = false,
-              v: FieldValidator = nil,
-              doc: string = "") =
+              v:           AttrSetHook = nil,
+              doc:         string = "") =
   ## Same as `globalAddAttr`, except for the first parameter being the
   ## section to put the attr into, not the global state.  We're going
   ## to fix this :(
@@ -158,14 +158,14 @@ proc addAttr*(section: SectionSpec,
   if not name.isValidId():
     raise newException(ValueError, "Name is not a valid identifier")
 
-  let validator: Option[FieldValidator] = if v != nil: some(v)
-                                          else: none(FieldValidator)
-  let attr = AttrSpec(doc: doc,
-                      attrType: con4mType,
-    defaultVal: default,
-    lockOnWrite: lockOnWrite,
-    required: required,
-    validator: validator)
+  let validator: Option[AttrSetHook] = if v != nil: some(v)
+                                       else:        none(AttrSetHook)
+  let attr = AttrSpec(doc:         doc,
+                      attrType:    con4mType,
+                      defaultVal:  default,
+                      lockOnWrite: lockOnWrite,
+                      required:    required,
+                      validator:   validator)
 
   section.predefinedAttrs[name] = attr
 
@@ -219,10 +219,10 @@ proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
       if not thisScopeContainsData:
         return true
 
-proc validateAttr(ctx: ConfigState,
-                  stack: seq[string],
-                  entry: STEntry,
-                  fields: FieldAttrs,
+proc validateAttr(ctx:      ConfigState,
+                  stack:    seq[string],
+                  entry:    STEntry,
+                  fields:   FieldAttrs,
                   customOk: bool) =
 
 
@@ -269,9 +269,9 @@ proc validateAttr(ctx: ConfigState,
   if spec.lockOnWrite:
     entry.locked = true
 
-proc requiredFieldCheck(ctx: ConFigState,
-                        scope: Con4mScope,
-                        attrs: FieldAttrs,
+proc requiredFieldCheck(ctx:       ConFigState,
+                        scope:     Con4mScope,
+                        attrs:     FieldAttrs,
                         scopeName: string) =
   # Fill in fields tha were not provided, when there are defaults we
   # can fill in.  Otherwise, if fields are required, error.
@@ -308,9 +308,9 @@ proc requiredFieldCheck(ctx: ConFigState,
         entry.value = specEntry.defaultVal
         scope.entries[key] = entry
 
-proc validateScope(ctx: ConfigState,
-                   scope: Con4mScope,
-                   stack: seq[string],
+proc validateScope(ctx:     ConfigState,
+                   scope:   Con4mScope,
+                   stack:   seq[string],
                    myState: SectionState) =
   let sname = stack[0]
 
@@ -402,59 +402,11 @@ proc validateConfig*(config: ConfigState): bool =
         continue
       let parts = targetSection.split(".")
       if dottedLookup(scope, parts).isNone():
-        config.errors.add("Required section not provided: {targetSection}".fmt())
+        config.errors.add(fmt"Required section not provided: {targetSection}"))
 
   if config.errors.len() == 0:
     return true
 
-proc stackBase(s: ConfigState, tree: Con4mNode): Option[Con4mScope] =
-  if tree == nil: return none(Con4mScope)
-  s.errors = @[]
-  tree.checkTree(s)
-
-  s.pushRuntimeFrame()
-  try:
-    tree.evalNode(s)
-  finally:
-    discard s.popRuntimeFrame()
-
-  if s.spec.isSome():
-    if not s.validateConfig():
-      return none(Con4mScope)
-
-  return some(tree.scopes.get().attrs)
-
-proc stackConfig*(s: ConfigState,
-                  stream: Stream,
-                  filename: string): Option[Con4mScope] =
-  setCurrentFileName(filename)
-  stackBase(s, parse(stream, filename))
-
-
-proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
-  setCurrentFileName(filename)
-  stackBase(s, parse(filename))
-
-
-proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
-  ## This interface allows you to look up individual fields to get
-  ## their value as a Box (since the config schema doesn't need to be
-  ## static).
-  ##
-  ## The contents of `field` use standard object dot notation.
-  let
-    parts = field.split('.')
-    optEntry = state.st.dottedLookup(parts)
-
-  if optEntry.isNone():
-    return
-
-  let entry = optEntry.get()
-
-  if entry.override.isSome():
-    return entry.override
-
-  return entry.value
 
 type Con4mSectInfo = seq[(string, string, Con4mScope)]
 
@@ -493,9 +445,9 @@ proc setOverride*(state: ConfigState, field: string, value: Box): bool =
   return true
 
 proc walkSTForSects(toplevel: string,
-                    path: string,
-                    scope: Con4mScope,
-                    s: var Con4mSectInfo) =
+                    path:     string,
+                    scope:    Con4mScope,
+                    s:        var Con4mSectInfo) =
 
   if scope.containsFields():
     s.add((toplevel, path, scope))

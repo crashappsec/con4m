@@ -14,6 +14,8 @@ when (NimMajor, NimMinor) >= (1, 7):
 const breakMsg    = "b"
 const continueMsg = "c"
 
+proc evalNode*(node: Con4mNode, s: ConfigState)
+
 # Right now, we are not properly generating code, we are just evaluating
 # directly out of the tree. We still need a stack for execution, which
 # is the first parameter, here.
@@ -51,19 +53,6 @@ proc pushRuntimeFrame*(s: ConfigState, n: Con4mNode) {.inline.} =
   
   s.frames.add(newFrame)
 
-proc initStack*(s: ConfigState, n: Con4mNode) {.inline.} =
-  var topFrame = s.globals
-
-  if topFrame == nil:
-    topFrame = RuntimeFrame()
-
-  # TODO: validate lock state of globals across runs.
-  for k, sym in n.varScope.contents:
-    if k notin topFrame:
-      topFrame[k] = sym.value
-
-  s.frames = @[topFrame]
-
 proc popRuntimeFrame*(s: ConfigState): RuntimeFrame {.inline.} =
   return s.frames.pop()
 
@@ -95,7 +84,36 @@ proc getFuncBySig*(s:    ConfigState,
     if not isBottom(copyType(t), copyType(item.tinfo)):
       return some(item)
 
-proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box]
+proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
+  if args.len() != node.children[1].children.len():
+    raise newException(Con4mError, "Incorrect number of arugments")
+
+  let savedFrames = s.frames
+
+  s.frames = @[s.globals]
+  
+  s.pushRuntimeFrame(node)
+
+  for i, idNode in node.children[1].children:
+    let name = idNode.getTokenText()
+    s.runtimeVarSet(name, args[i])
+
+  try:
+    node.children[2].evalNode(s)
+  except Con4mError:
+    discard # Clean return.  Error message will have been published.
+
+  let frame = s.popRuntimeFrame()
+
+  s.frames = savedFrames
+
+  if "result" in frame:
+    result = frame["result"]
+    if result.isSome():
+      node.value = result.get()
+  else:
+    return none(Box)
+
 
 proc sCallUserDef(s:        ConfigState,
                   name:     string,
@@ -155,24 +173,6 @@ proc sCall*(s:       ConfigState,
   else:
     let callback = fInfo.kind == FnCallback
     return s.sCallUserDef(name, a1, callback, fInfo.impl)
-
-proc runCallback*(s:     ConfigState,
-                  name:  string,
-                  args:  seq[Box],
-                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
-  if tinfo.isSome():
-    return s.sCall(name, args, tinfo.get())
-  if not s.funcTable.contains(name):
-    # User did not supply the callback.
-    return
-  if len(s.funcTable[name]) > 0:
-    raise newException(ValueError,
-                       "When supporting callbacks with multiple signatures, " &
-                       "you must supply the type when calling runCallback()")
-  let impl = s.funcTable[name][0].impl
-  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
-
-proc evalNode*(node: Con4mNode, s: ConfigState)
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
@@ -580,75 +580,3 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = node.attrRef.value.get()
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
-
-template evalTreeBase(node: untyped, param: untyped): untyped =
-  let state = param
-
-  if node == nil:
-    return
-
-  state.initStack(node)
-  
-  try:
-    node.evalNode(state)
-  finally:
-    state.globals = state.frames[0]
-    discard state.popRuntimeFrame()
-
-  return some(state)
-
-proc evalTree*(node:         Con4mNode,
-               addBuiltins = false): Option[ConfigState] {.inline.} =
-  ## This runs the evaluator on a tree that has already been parsed
-  ## and type-checked.
-  evalTreeBase(node):
-      node.checkTree(addBuiltins)
-
-proc evalTree*(node:      Con4mNode,
-               fns:       openarray[(string, BuiltinFn, string)] = [],
-               exclude:   openarray[int] = [],
-               callbacks: openarray[(string, string)] = []):
-                 Option[ConfigState] {.inline.} =
-  ## This is the same as above, but always has checkTree() add the
-  ## default builtins, minus explicitly excluded ones, and
-  ## additionally allows for installing custom ones.
-  evalTreeBase(node):
-      node.checkTree(fns, exclude, callbacks)
-
-proc evalConfig*(filename:     string,
-                 addBuiltins = false): Option[ConfigState] =
-  ## Given the config file as a string, this will load and parse the
-  ## file, then execute it, returning both the state object created,
-  ## as well as the top-level symbol table for attributes, both
-  ## assuming the operation was successful.
-  return parse(filename).evalTree(addBuiltins)
-
-proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
-  if args.len() != node.children[1].children.len():
-    raise newException(Con4mError, "Incorrect number of arugments")
-
-  let savedFrames = s.frames
-
-  s.frames = @[s.globals]
-  
-  s.pushRuntimeFrame(node)
-
-  for i, idNode in node.children[1].children:
-    let name = idNode.getTokenText()
-    s.runtimeVarSet(name, args[i])
-
-  try:
-    node.children[2].evalNode(s)
-  except Con4mError:
-    discard # Clean return.  Error message will have been published.
-
-  let frame = s.popRuntimeFrame()
-
-  s.frames = savedFrames
-
-  if "result" in frame:
-    result = frame["result"]
-    if result.isSome():
-      node.value = result.get()
-  else:
-    return none(Box)
