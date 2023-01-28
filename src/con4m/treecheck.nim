@@ -797,14 +797,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if `var?`.isSome():
       let entry     = `var?`.get()
       node.typeInfo = entry.tInfo
+      node.attrRef  = nil
 
     elif `localAttr?`.isA(AttrOrSub):
       let entry     = `localAttr?`.get(AttrOrSub).get(Attribute)
       node.typeInfo = entry.tInfo
+      node.attrRef  = entry
 
     elif `globalAttr?`.isA(AttrOrSub):
       let entry     = `globalAttr?`.get(AttrOrSub).get(Attribute)
       node.typeInfo = entry.tInfo
+      node.attrRef  = entry
 
     else:
       fatal(fmt"Variable {name} used before definition", node)
@@ -939,10 +942,10 @@ proc newConfigState*(node:        Con4mNode,
   ## set of builtin functions.
   if spec != nil:
     result = ConfigState(attrs:   node.attrScope,
-                         globals: node.varScope,
+                         globals: RuntimeFrame(),
                          spec:    some(spec))
   else:
-    result = ConfigState(attrs: node.attrScope, globals: node.varScope)
+    result = ConfigState(attrs: node.attrScope, globals: RuntimeFrame())
 
   if addBuiltins:
     result.addDefaultBuiltins(exclude)

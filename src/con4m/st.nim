@@ -195,6 +195,17 @@ proc attrLookup*(scope: AttrScope,
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
 
+proc attrToVal*(attr: Attribute): Option[Box] =
+  let
+    `val?`  = attr.value
+    `over?` = attr.override
+
+  if `over?`.isSome():
+    return `over?`
+  elif `val?`.isSome():
+    return `val?`
+  return none(Box)
+  
 proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   ## This is the interface for actually lookup up values at runtime.
   let
@@ -207,18 +218,29 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   let
     aOrS    = possibleAttr.get(AttrOrSub)
     attr    = aOrS.get(Attribute)
-    `val?`  = attr.value
-    `over?` = attr.override
-
-  if `over?`.isSome():
-    return `over?`
-  elif `val?`.isSome():
-    return `val?`
-  return none(Box)
+    
+  return attrToVal(attr)
 
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
+proc attrSet*(attr: Attribute, value: Box): AttrErr =
+  let
+    `over?`           = attr.override
+    hook: AttrSetHook = attr.setHook
+
+  if `over?`.isSome() or attr.locked:
+    return AttrErr(code: errCantSet)
+
+
+  if hook != nil:
+    if not hook(value):
+      return AttrErr(code: errCustomDeny)
+
+  attr.value = some(value)
+
+  return AttrErr(code: errOk)
+  
 proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
   let
@@ -231,18 +253,8 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   let
     aOrS              = possibleAttr.get(AttrOrSub)
     attr              = aOrS.get(Attribute)
-    `over?`           = attr.override
-    hook: AttrSetHook = attr.setHook
 
-  if `over?`.isSome() or attr.locked:
-    return AttrErr(code: errCantSet)
-
-  attr.value = some(value)
-
-  if hook != nil:
-    hook(value)
-
-  return AttrErr(code: errOk)
+  return attr.attrSet(value)
 
 proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
   return attrSet(ctx.attrs, fqn, val)
@@ -393,4 +405,17 @@ proc toCon4mType*(s: string): Con4mType =
                        "Extraneous text after parsed type: {n}".fmt())
   return v
 
+proc runtimeVarLookup*(frames: VarStack, name: string): Box =
+  var n = frames.len()
+
+  while n != 0:
+    n         = n - 1
+    let frame = frames[n]
+
+    if name in frame:
+      let optRet = frame[name]
+      if not optRet.isSome():
+        raise newException(ValueError,
+                           fmt"Variable {name} used before assignment")
+  unreachable
 

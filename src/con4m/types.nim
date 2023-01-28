@@ -108,7 +108,7 @@ type
     of false:
       err*: AttrErr
 
-  AttrSetHook* = proc(i0: Box)
+  AttrSetHook* = proc(i0: Box): bool
 
   Attribute* = ref object
     tInfo*:    Con4mType
@@ -129,9 +129,10 @@ type
 
   VLookupOp*   = enum vlDef, vlUse, vlMask, vlFormal
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
-  AttrErrEnum* = enum errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
-
+  AttrErrEnum* = enum
+    errNoAttr, errBadSec, errBadAttr, errCantSet, errCustomDeny, errOk
+      
   AttrErr* = object
     code*:     AttrErrEnum
     msg*:      string
@@ -142,7 +143,7 @@ type
 
   ## Frame for holding local variables.  In a call, the caller
   ## does the pushing and popping.
-  RuntimeFrame*  = TableRef[string, Box]
+  RuntimeFrame*  = TableRef[string, Option[Box]]
   VarStack*      = seq[RuntimeFrame]
   Con4mSectInfo* = seq[(string, AttrScope)]
 
@@ -156,8 +157,9 @@ type
     varScope*:     VarScope
     attrScope*:    AttrScope
     value*:        Box
+    attrRef*:      Attribute
 
-  BuiltInFn* = ((seq[Box], AttrScope, VarScope) -> Option[Box])
+  BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 
@@ -240,6 +242,8 @@ type
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
     moduleFuncImpls*:    seq[Con4mNode] # Passed from the parser.
     secondPass*:         bool
+    nodeStash*:          Con4mNode # Tracked during builtin func calls, for
+                                   # now, just for the benefit of format()
 
 let
   # These are just shared instances for types that aren't
