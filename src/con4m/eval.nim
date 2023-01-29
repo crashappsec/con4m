@@ -115,11 +115,11 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
     return none(Box)
 
 
-proc sCallUserDef(s:        ConfigState,
-                  name:     string,
-                  a1:       seq[Box],
-                  callback: bool,
-                  nodeOpt:  Option[Con4mNode]): Option[Box] =
+proc sCallUserDef*(s:        ConfigState,
+                   name:     string,
+                   a1:       seq[Box],
+                   callback: bool,
+                   nodeOpt:  Option[Con4mNode]): Option[Box] =
 
   try:
     if nodeOpt.isNone():

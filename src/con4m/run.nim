@@ -4,7 +4,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022, 2023, Crash Override, Inc.
 
-import options, types, eval, st, spec, builtins
+import tables, options, streams, nimutils
+import errmsg, types, parse, treecheck, eval, spec, builtins
 
 proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,
@@ -13,15 +14,10 @@ proc newConfigState*(node:        Con4mNode,
   node.attrScope = AttrScope(parent: none(AttrScope))
   node.varScope  = VarScope(parent: none(VarScope))
 
-  ## Return a new `ConfigState` object, optionally setting the `spec`
-  ## object, and, if requested via `addBuiltins`, installs the default
-  ## set of builtin functions.
-  if spec != nil:
-    result = ConfigState(attrs:   node.attrScope,
-                         globals: RuntimeFrame(),
-                         spec:    some(spec))
-  else:
-    result = ConfigState(attrs: node.attrScope, globals: RuntimeFrame())
+  let specOpt = if spec == nil: none(ConfigSpec) else: some(spec)
+  result      = ConfigState(attrs:   node.attrScope,
+                            globals: RuntimeFrame(),
+                            spec:    specOpt)
 
   node.attrScope.config = result
   
@@ -47,7 +43,6 @@ proc postRun(state: ConfigState) =
 
 proc runBase(state: ConfigState, tree: Con4mNode): bool =
   if tree == nil: return false
-  state.errors = @[]
   tree.checkTree(state)
   tree.initRun(state)
   try:
@@ -55,8 +50,8 @@ proc runBase(state: ConfigState, tree: Con4mNode): bool =
   finally:
     state.postRun()
 
-  if s.spec.isSome():
-    return s.validateConfig()
+  if state.spec.isSome():
+    state.validateState()
     
   return true
   
@@ -71,8 +66,8 @@ proc firstRun*(stream:      Stream,
     setCurrentFileName(fileName)  
     # Parse throws an error if it doesn't succeed.
     var
-      tree   = parse(stream, filename)
-       state = newConfigState(tree, spec, addBuiltins, exclude)
+      tree  = parse(stream, filename)
+      state = newConfigState(tree, spec, addBuiltins, exclude)
 
     for (name, fn, tinfo) in customFuncs:
       state.newBuiltIn(name, fn, tinfo)
@@ -106,21 +101,17 @@ proc firstRun*(fileName:    string,
   return firstRun(newFileStream(fileName, fmRead), fileName, spec,
                   addBuiltins, customFuncs, exclude, callbacks)
   
-proc stackConfig*(s:        ConfigState,
-                  stream:   Stream,
-                  fileName: string): Option[Con4mScope] =
+proc stackConfig*(s: ConfigState, stream: Stream, fileName: string): bool =
   setCurrentFileName(fileName)
-  runBase(s, parse(stream, fileName))
+  return runBase(s, parse(stream, fileName))
 
-proc stackConfig*(s:        ConfigState,
-                  contents: string,
-                  filename: string): Option[Con4mScope] =
+proc stackConfig*(s: ConfigState, contents: string, filename: string): bool =
   setCurrentFileName(filename)
-  runBase(s, parse(newStringStream(filename), filename))
+  return runBase(s, parse(newStringStream(filename), filename))
 
-proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
+proc stackConfig*(s: ConfigState, filename: string): bool =
   setCurrentFileName(filename)
-  runBase(s, parse(newFileStream(filename), filename))
+  return runBase(s, parse(newFileStream(filename), filename))
 
 proc runCallback*(s:     ConfigState,
                   name:  string,

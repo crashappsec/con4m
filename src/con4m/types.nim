@@ -111,7 +111,7 @@ type
     of false:
       err*: AttrErr
 
-  AttrSetHook* = proc(i0: seq[string], i1: Box): bool
+  AttrSetHook* = (seq[string], Box) -> bool
 
   Attribute* = ref object
     name*:     string
@@ -182,60 +182,37 @@ type
     of FnUserDefined, FnCallback:
       impl*:      Option[Con4mNode]
 
-  AttrSpec* = ref object
-    ## Internal. This is the data structure holding specification data
-    ## for individual attributes, used to check for well-formed config
-    ## files, to plug in defaults, ...
-    doc*:         string
-    attrType*:    string
-    defaultVal*:  Option[Box]
-    lockOnWrite*: bool
-    required*:    bool
-
-  FieldAttrs* = OrderedTable[string, AttrSpec]
-  ## Internal.  Alias for the table in a section specification maping
-  ## its fields to attribute specifications.
-
-  SectionSpec* = ref object
-    ## Internal. This holds specification data for a top-level
-    ## section.
-    requiredSubsections*: seq[string]
-    allowedSubsections*:  seq[string]
-    predefinedAttrs*:     FieldAttrs
-    customAttrs*:         bool
-    doc*:                 string
-    associatedSpec*:      ConfigSpec ## Don't use this, it's only temporary to
-                                     ## support having *some* code in place
-                                     ## for seprately typed subsections.
+  ExtendedTypeKind* = enum TypePrimitive, TypeSection
+                           
+  ExtendedType* = ref object
+    case kind*: ExtendedTypeKind
+    of TypePrimitive:
+      tinfo*: Con4mType
+    of TypeSection:
+      sinfo*: Con4mSectionType
+  
+  FieldSpec* = ref object
+    extType*:      ExtendedType
+    minRequired*:  int
+    maxRequired*:  int
+    lock*:         bool
+    
+  Con4mSectionType* = ref object
+    typeName*:      string
+    singleton*:     bool
+    fields*:        Table[string, FieldSpec]
+    backref*:       ConfigSpec
 
   ConfigSpec* = ref object
-    ## The main user-level abstraction for holding specification data
-    ## for a config file schema.  Fill it with calls to `addAttr()`,
-    ## `addSection()`, etc (or, better yet, through the `con4m()`
-    ## macro).
-    ##
-    ## The spec will be used to ensure the config file is well formed
-    ## enough to work with, by comparing it against the results of
-    ## execution.
-    secSpecs*:         OrderedTable[string, SectionSpec]
-    globalAttrs*:      FieldAttrs
-    customTopLevelOk*: bool
-
-  SectionState* = ref object
-    ## Internal. This holds the overall information about a single
-    ## section's evauluation state, for use primarily in checking
-    ## to make sure required sections are present.
-    isLocked*:     bool
-    substateObjs*: OrderedTable[string, SectionState]
-    beenSeen*:     bool
-
+    secSpecs*: Table[string, Con4mSectionType]
+    rootSpec*: Con4mSectionType
+    
   ConfigState* = ref object
     ## The top-level representation of a configuration's runtime
     ## state. The symbols are in here, the specs we apply, etc.
     ## Still, the end user should not need to access the members,
     ## except via API.
     setHook*:            AttrSetHook
-    stateObjs*:          OrderedTable[string, SectionState]
     attrs*:              AttrScope
     globals*:            RuntimeFrame
     frames*:             VarStack
@@ -338,4 +315,10 @@ converter attrToAttrOrErr*(aos: AttrOrSub): AttrOrErr =
 converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
   either(err)
 
+converter secToExt*(sec: Con4mSectionType): ExtendedType =
+  result.kind  = TypeSection
+  result.sinfo = sec
 
+converter c4mToExt*(tinfo: Con4mType): ExtendedType =
+  result.kind  = TypePrimitive
+  result.tinfo = tinfo

@@ -228,7 +228,7 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   if possibleAttr.isA(AttrErr):
     return none(Box)
 
-  let attr = possibleAttr.get(AttrOrSub).aOrS.get(Attribute)
+  let attr = possibleAttr.get(AttrOrSub).get(Attribute)
     
   return attrToVal(attr)
 
@@ -252,25 +252,22 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
   ## locks and user-defined hooking, so don't set Attribute object
   ## values directly!
   let
-    `over?` = attr.override
-    n       = attr.fullNameAsSeq()
+    `over?`   = attr.override
+    nameparts = attr.fullNameAsSeq()
+    n         = nameparts.join(".")
 
   if `over?`.isSome():
     
     return AttrErr(code: errCantSet,
-                   msg:  fmt"{n.join('.')} can't be set due to a user override")
+                   msg:  fmt"{n} attr can't be set due to user override")
   if attr.locked:
-    let n = attr.fullNameAsSeq()
-    
     return AttrErr(code: errCantSet,
-                   msg:  fmt"{n.join('.')}: attribute locked, so can't be set")
+                   msg:  fmt"{n}: attribute is locked and can't be set")
     
   if hook != nil:
-    let n = attr.fullNameAsSeq()
-    
     if not hook(nameParts, value):
       return AttrErr(code: errCantSet,
-                     msg:  fmt"{n.join('.')}: The application prevented the " &
+                     msg:  fmt"{n}: The application prevented this " &
                               "attribute from being set")
   attr.value = some(value)
 
