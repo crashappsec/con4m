@@ -312,8 +312,8 @@ proc validateScope(ctx:     ConfigState,
                    scope:   Con4mScope,
                    stack:   seq[string],
                    myState: SectionState) =
-  let sname = stack[0]
-
+  
+  let sname        = stack[0]
   myState.beenSeen = true
 
   # Top-level sections MUST be pre-specified when validation is

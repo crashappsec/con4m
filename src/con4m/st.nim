@@ -11,8 +11,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-
-import tables, options, unicode, strutils, strformat, nimutils, types
+import tables, options, unicode, strutils, strformat, nimutils, types, algorithm
 
 var tVarNum: int
 
@@ -128,7 +127,6 @@ proc addVariable*(node: Con4mNode, name: string): VarSym =
   if node notin result.defs:
     result.defs.add(node)
 
-
 ## With var scopes, we have a single name, where we are always
 ## searching back up a stack when we need to search.
 ##
@@ -171,26 +169,41 @@ proc attrLookup*(scope: AttrScope,
       else:
         case op
         of vlSecDef:
-          let sub     = AttrScope(contents: default(Table[string, AttrOrSub]))
+          let sub     = AttrScope(name:     name,
+                                  parent:   some(scope),
+                                  config:   scope.config,
+                                  contents: default(Table[string, AttrOrSub]))
           scope.contents[name] = either(sub)
 
           return scope.contents[name]
         of vlAttrDef:
-          let attrib           = Attribute()
+          let attrib           = Attribute(name: name, scope: scope)
           scope.contents[name] = either(attrib)
 
           return scope.contents[name]
         else:
           return AttrErr(code: errNoAttr)
   else:
-    let item = scope.contents[name]
-    if item.isA(Attribute):
-      let dotted = parts[0 .. ix].join(".")
-      return AttrErr(code: errBadSec,
-                     msg:  fmt"{dotted}: should be a section, but already "&
-                               "have it as an attr")
-    let newScope = item.get(AttrScope)
+    var newScope: AttrScope
+    
+    if name in scope.contents:
+      let item = scope.contents[name]
+      if item.isA(Attribute):
+        let dotted = parts[0 .. ix].join(".")
+        return AttrErr(code: errBadSec,
+                       msg:  fmt"{dotted}: should be a section, but already "&
+                         "have it as an attr")
+      newScope = item.get(AttrScope)
+    else:
+      newScope = AttrScope(name:     name,
+                           parent:   some(scope),
+                           config:   scope.config,
+                           contents: default(Table[string, AttrOrSub]))
+      
+      scope.contents[name] = either(newScope)
+        
     return newScope.attrLookup(parts, ix + 1, op)
+      
 
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
@@ -205,7 +218,7 @@ proc attrToVal*(attr: Attribute): Option[Box] =
   elif `val?`.isSome():
     return `val?`
   return none(Box)
-  
+
 proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   ## This is the interface for actually lookup up values at runtime.
   let
@@ -215,28 +228,50 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   if possibleAttr.isA(AttrErr):
     return none(Box)
 
-  let
-    aOrS    = possibleAttr.get(AttrOrSub)
-    attr    = aOrS.get(Attribute)
+  let attr = possibleAttr.get(AttrOrSub).aOrS.get(Attribute)
     
   return attrToVal(attr)
 
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
-proc attrSet*(attr: Attribute, value: Box): AttrErr =
+proc fullNameAsSeq(attr: Attribute): seq[string] =
+  result = @[attr.name]
+  var sec = attr.scope
+
+  while sec.parent.isSome():
+    # The top-most section won't have a name.
+    result.add(sec.name)
+    sec = sec.parent.get()
+
+  result.reverse()
+
+proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
+  ## This version of attrSet is the lowest level, and actually does
+  ## the setting. This applies our logic for overrides, attribute
+  ## locks and user-defined hooking, so don't set Attribute object
+  ## values directly!
   let
-    `over?`           = attr.override
-    hook: AttrSetHook = attr.setHook
+    `over?` = attr.override
+    n       = attr.fullNameAsSeq()
 
-  if `over?`.isSome() or attr.locked:
-    return AttrErr(code: errCantSet)
-
-
+  if `over?`.isSome():
+    
+    return AttrErr(code: errCantSet,
+                   msg:  fmt"{n.join('.')} can't be set due to a user override")
+  if attr.locked:
+    let n = attr.fullNameAsSeq()
+    
+    return AttrErr(code: errCantSet,
+                   msg:  fmt"{n.join('.')}: attribute locked, so can't be set")
+    
   if hook != nil:
-    if not hook(value):
-      return AttrErr(code: errCustomDeny)
-
+    let n = attr.fullNameAsSeq()
+    
+    if not hook(nameParts, value):
+      return AttrErr(code: errCantSet,
+                     msg:  fmt"{n.join('.')}: The application prevented the " &
+                              "attribute from being set")
   attr.value = some(value)
 
   return AttrErr(code: errOk)
@@ -254,7 +289,7 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
     aOrS              = possibleAttr.get(AttrOrSub)
     attr              = aOrS.get(Attribute)
 
-  return attr.attrSet(value)
+  return attr.attrSet(value, attrs.config.setHook)
 
 proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
   return attrSet(ctx.attrs, fqn, val)
@@ -419,3 +454,16 @@ proc runtimeVarLookup*(frames: VarStack, name: string): Box =
                            fmt"Variable {name} used before assignment")
   unreachable
 
+proc lockAttribute*(attrs: AttrScope, fqn: string): bool =
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
+
+  if possibleAttr.isA(AttrErr):
+    return false
+
+  let attr    = possibleAttr.get(AttrOrSub).get(Attribute)
+  attr.locked = true
+
+proc lockAttribute*(state: ConfigState, fqn: string): bool =
+  return state.attrs.lockAttribute(fqn)

@@ -92,6 +92,9 @@ type
   ## challenging.
   ##
   AttrScope* = ref object
+    name*:     string
+    parent*:   Option[AttrScope]
+    config*:   ConfigState
     contents*: Table[string, AttrOrSub]
 
   AttrOrSub*   = object
@@ -108,15 +111,16 @@ type
     of false:
       err*: AttrErr
 
-  AttrSetHook* = proc(i0: Box): bool
+  AttrSetHook* = proc(i0: seq[string], i1: Box): bool
 
   Attribute* = ref object
+    name*:     string
+    scope*:    AttrScope
     tInfo*:    Con4mType
     value*:    Option[Box]
     override*: Option[Box]
     locked*:   bool
     firstDef*: Option[Con4mNode]
-    setHook*:  AttrSetHook
 
   VarSym*    = ref object
     name*:     string
@@ -131,7 +135,7 @@ type
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
   AttrErrEnum* = enum
-    errNoAttr, errBadSec, errBadAttr, errCantSet, errCustomDeny, errOk
+    errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
       
   AttrErr* = object
     code*:     AttrErrEnum
@@ -184,7 +188,6 @@ type
     ## files, to plug in defaults, ...
     doc*:         string
     attrType*:    string
-    validator*:   Option[AttrSetHook]
     defaultVal*:  Option[Box]
     lockOnWrite*: bool
     required*:    bool
@@ -231,6 +234,7 @@ type
     ## state. The symbols are in here, the specs we apply, etc.
     ## Still, the end user should not need to access the members,
     ## except via API.
+    setHook*:            AttrSetHook
     stateObjs*:          OrderedTable[string, SectionState]
     attrs*:              AttrScope
     globals*:            RuntimeFrame

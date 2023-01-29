@@ -99,7 +99,6 @@ proc accessExpr(ctx: ParseCtx): Con4mNode
 proc literal(ctx: ParseCtx): Con4mNode
 proc divExpr(ctx: ParseCtx): Option[Con4mNode]
 
-
 template exprProds(exprName: untyped,
                    rhsName: untyped,
                    nextInChain: untyped,

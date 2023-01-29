@@ -10,7 +10,7 @@ proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,
                      addBuiltins: bool           = true,
                      exclude:     openarray[int] = []): ConfigState =
-  node.attrScope = AttrScope()
+  node.attrScope = AttrScope(parent: none(AttrScope))
   node.varScope  = VarScope(parent: none(VarScope))
 
   ## Return a new `ConfigState` object, optionally setting the `spec`
@@ -23,6 +23,8 @@ proc newConfigState*(node:        Con4mNode,
   else:
     result = ConfigState(attrs: node.attrScope, globals: RuntimeFrame())
 
+  node.attrScope.config = result
+  
   if addBuiltins:
     result.addDefaultBuiltins(exclude)
 

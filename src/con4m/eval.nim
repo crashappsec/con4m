@@ -264,10 +264,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     case err.code
     of errCantSet:
-      fatal("Attempt to assign to a read-only field (locked or " &
-            "with a hard override, usually a user-defined flag", node)
-    of errCustomDeny:
-      fatal("The application prevented the attribute from being set.")
+      fatal(err.msg, node)
     of errOk:
       discard
     else:
