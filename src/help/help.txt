@@ -1,0 +1,19 @@
+%{H Usage: {appName} [flags] config_filename [additional_config]* }%
+Evaluates your configuration file(s), dumping a JSON string with the results.
+
+If multiple config files are provided, they are executed 'stacked', run one after another, in the order in which they appear on the command-line.
+
+Note that this interface currently does not support calling back in from another 'program', and loads the default functions only.
+
+%{h FLAGS}%
+%{T
+Short::Long::Description
+-p::--parse::Stop work after the parse phase (do not do type checking)
+-t::--type::Stop work after type checking (do not execute)
+-k::--dump-tokens::Show tokens after the parsing phase
+-s::--show-table::Output all attributes after each execution ends
+-d::--debug::Turn on any custom runtime tracing (usually will do nothing)
+-h::--help::This help message
+}%
+
+
