@@ -4,18 +4,19 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022, 2023, Crash Override, Inc.
 
-import tables, options, streams, nimutils
-import errmsg, types, parse, treecheck, eval, spec, builtins
+import tables, options, streams, nimutils, strformat
+import errmsg, types, parse, treecheck, eval, spec, builtins, dollars
 
 proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,
                      addBuiltins: bool           = true,
                      exclude:     openarray[int] = []): ConfigState =
-  node.attrScope = AttrScope(parent: none(AttrScope))
+  let attrRoot   = AttrScope(parent: none(AttrScope), name: "<<root>>")
+  node.attrScope = attrRoot
   node.varScope  = VarScope(parent: none(VarScope))
 
   let specOpt = if spec == nil: none(ConfigSpec) else: some(spec)
-  result      = ConfigState(attrs:   node.attrScope,
+  result      = ConfigState(attrs:   attrRoot,
                             globals: RuntimeFrame(),
                             spec:    specOpt)
 
@@ -46,7 +47,9 @@ proc runBase(state: ConfigState, tree: Con4mNode): bool =
   tree.checkTree(state)
   tree.initRun(state)
   try:
+    ctrace(fmt"{getCurrentFileName()}: Beginning evaluation.")
     tree.evalNode(state)
+    ctrace(fmt"{getCurrentFileName()}: Evaluation done.")
   finally:
     state.postRun()
 

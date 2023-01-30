@@ -9,143 +9,65 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m/parse
-export fatal, parse.parse, Con4mError
+import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
+import con4m/[eval, dollars, spec, run]
+export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
+export eval, dollars, spec, run
 
-## This operates on tokens, as already produced by lex().  It simply
-## kicks off the parser by entering the top-level production (body),
-## and prints out any error message that happened during parsing.
-
-import nimutils
-
-import con4m/[treecheck, types, eval, builtins, spec, codegen, st, dollars],
-       con4m/errmsg
-export treecheck, types, eval, builtins, spec, codegen, st, dollars, errmsg
 
 when isMainModule:
-  import os, parseopt, options, streams,json
-  import con4m/dollars
-
+  import nimutils/filetable
+  const helpPath   = staticExec("pwd") & "/help/"
+  const helpCorpus = newOrderedFileTable(helpPath)
+    
+  import nimutils, nimutils/help
+  import os, parseopt, options, streams, json, tables
+  
   discard subscribe(con4mTopic, defaultCon4mHook)
 
-  proc showResults(fstream: Stream,
-                   scope:
-                   Con4mScope,
-                   s: string,
-                   ascii: bool,
-                   header: bool
-                  ) =
-    if header:
-      fstream.write("********** Execution of " & s & " finished ************\n")
-    if ascii:
-      fstream.write($(scope))
-    else:
-      echo parseJson(scope.scopeTojson()).pretty()
-
-  proc showHelp() {.noreturn.} =
-    echo """
-con4m [flags] first.config ...
-      Evaluates your configuration file, dumping a JSON string with the results.
-
-      Writes to standard output by default.  If multiple config files are provided,
-      they are executed 'stacked', in command-line order.
-
-      Note that this interface currently does not support callbacks,
-      and loads the default functions only.
-
-      FLAGS:
-      -a, --ascii              Output text instead of JSON
-      -v, --verbose            Output (to stderr) additional information.
-      -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
-      -d, --debug              Throw NIM exceptions instead of printing error messages
-
-      -h, --help               This help message
-"""
-
-    quit()
-
-  let argv = commandLineParams()
-  var
-    outfilename: Option[string] = none(string)
-    conffiles: seq[string] = @[]
-    verbose: bool = false
-    ascii: bool = false
-    debug: bool = false
-    outstream: Stream
-
-
-  for kind, k, v in getopt(argv,
-                           {'h', 'v', 'a', 'd'},
-                           @["help", "verbose", "ascii", "debug"]):
-    case kind
-    of cmdArgument:
-      conffiles.add(k)
-    of cmdLongOption, cmdShortOption:
-      case k
-      of "help", "h":
-        showHelp()
-      of "debug", "d":
-        debug = true
-      of "verbose", "v":
-        verbose = true
-      of "outfile", "o":
-        if outfilename.isSome():
-          echo "Error: multiple output files specified"
-          showHelp()
-        outfilename = some(v)
-      of "ascii", "a":
-        ascii = true
-      else:
-        echo "Unrecognized option: --" & v
-    else:
-      unreachable
-
-  if len(conffiles) == 0:
-    showHelp()
-
-  if outfilename.isNone():
-    outstream = newFileStream(stdout)
-  else:
-    outstream = newFileStream(outfilename.get(), fmWrite)
-    if outstream.isNil():
-      echo "con4m: error: Could not open output file: " & outfilename.get()
-      quit(1)
-
-  # Load the first config file, and get a context object.
-  var
-    state: ConfigState
-    scope: Con4mScope
-    opt: Option[(ConfigState, Con4mScope)]
-
+  let argParser = newArgSpec().addArgs(min=1).
+                               addBinaryFlag('h',"help").
+                               addBinaryFlag('p', "parse").
+                               addBinaryFlag('t', "type").
+                               addBinaryFlag('k', "dump-tokens", setDumpToks).
+                               addBinaryFlag('s', "show-table").
+                               addBinaryFlag('d', "debug", setCTrace)
   try:
-    opt = evalConfig(conffiles[0], addBuiltins = true)
-  except:
-    discard
-  if opt.isNone():
-    echo "Failed to load: " & conffiles[0]
-    quit()
+    let
+      state = argParser.parse()
+      flags = state.getFlags()
+      args  = state.getArgs()
 
-  (state, scope) = opt.get()
-
-  if verbose or len(conffiles) == 1:
-    outstream.showResults(scope, conffiles[0], ascii, verbose)
-
-  # Now, load the rest of the conf files, using the same scope.
-  for filename in conffiles[1 .. ^1]:
-    var scopeOpt: Option[Con4mScope]
-
-    if verbose:
-      echo "Loading config file: " & filename
-    try:
-      scopeOpt = state.stackConfig(filename)
-    except:
-      discard
-
-    if scopeOpt.isNone():
-      echo "Failed to load: " & filename
+    state.commit()
+    
+    if "help" in flags:
+      echo getHelp(helpCorpus, args)
       quit()
-
-    scope = scopeOpt.get()
-
-    if verbose or filename == conffiles[^1]:
-      outstream.showResults(scope, filename, ascii, verbose)
+    if len(args) == 0:
+      echo getHelp(helpCorpus, @["help"])
+    else:
+      if "parse" in flags and "type" in flags:
+        echo("Error: specified multiple passes to stop at.")
+        quit()
+      if "parse" in flags:
+        for arg in args:
+          let tree = parse(newFileStream(arg), arg)
+          echo $(tree)
+      elif "type" in flags:
+        for arg in args:
+          var
+            tree  = parse(newFileStream(arg), arg)
+            state = newConfigState(tree)
+          tree.checkTree(state)
+          echo ($tree)
+      else:
+        var (ctx, ok) = firstRun(args[0])
+        if "show-table" in flags:
+          echo $(ctx.attrs)
+        for arg in args[1 .. ^1]:
+          discard ctx.stackConfig(arg)
+          if "show-table" in flags:
+            echo $(ctx.attrs)
+  except ValueError:
+    echo getCurrentException().msg
+    echo getHelp(helpCorpus, @["help"])

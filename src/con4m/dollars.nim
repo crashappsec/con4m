@@ -5,15 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options
-import strformat
-import strutils
-import streams
-import tables
-import json
-
-import types
-import nimutils/box
+import options, strformat, strutils, streams, tables, json, unicode
+import types, nimutils
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.
@@ -27,7 +20,7 @@ when false:
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
-    of TtStringLit: return tok.unescaped
+    of TtStringLit: return "\"" & tok.unescaped & "\""
     of TtWhiteSpace: return "~ws~"
     of TtNewLine: return "~nl~"
     of TtSof: return "~sof~"
@@ -128,6 +121,48 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
     fmtNt($(self.token.get()))
   of NodeIdentifier: fmtT("Identifier")
 
+proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
+  path.add(self.name)
+  
+  result = toAnsiCode([acBold]) & path.join(".") & toAnsiCode([acReset]) & "\n"
+  var rows = @[@["Name", "Type", "Value"]]
+
+
+  for k, v in self.contents:
+    var row: seq[string] = @[]
+    
+    if v.isA(Attribute):
+      var attr = v.get(Attribute)
+      if attr.value.isSome():
+        row.add(@[attr.name, $(attr.tInfo), $(attr.value.get())])
+      else:
+        row.add(@[attr.name, $(attr.tInfo), "<not set>"])
+    else:
+      var sec = v.get(AttrScope)
+      row.add(@[sec.name, "section", "n/a"])
+    rows.add(row)
+
+  var tbl = newTextTable(3,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder = true,
+                         rHdrFmt       = @[acBCyan], 
+                         eColFmt       = @[acBGCyan, acBBlack],
+                         oColFmt       = @[acBGWhite, acBBlack])
+  result &= tbl.render()
+
+  for k, v in self.contents:
+    if v.isA(AttrScope):
+      var scope = v.get(AttrScope)
+      result &= scope.reprOneLevel(path)
+  
+proc `$`*(self: AttrScope): string =
+  var parts: seq[string] = @[]
+  return reprOneLevel(self, parts)
+      
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   const
     typeTemplate = " -- type: {typeRepr}"
@@ -144,4 +179,3 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   for item in self.children:
     let subitem = item.`$`(i + 2)
     result = indentTemplate.fmt()
-

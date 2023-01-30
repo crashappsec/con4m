@@ -12,6 +12,7 @@
 ## :Copyright: 2022
 
 import tables, options, unicode, strutils, strformat, nimutils, types, algorithm
+import errmsg, dollars
 
 var tVarNum: int
 
@@ -47,11 +48,11 @@ proc newProcType*(params:  seq[Con4mType],
   else:
     return Con4mType(kind: TypeProc, retType: retType)
 
-
-##### New interface here.
-
 proc newVarSym(name: string): VarSym =
-  return VarSym(name: name, value: none(Box), firstDef: none(Con4mNode))
+  return VarSym(name:     name,
+                tInfo:    newTypeVar(),
+                value:    none(Box),
+                firstDef: none(Con4mNode))
 
 ## Symbol table lookups for variables start in a given scope, and then
 ## check up the tree, to see if the variable is defined in the current
@@ -88,7 +89,7 @@ proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
     of vlDef, vlUse:
       return some(scope.contents[name])
     of vlMask:
-      return none(VarSym)
+      return some(scope.contents[name])
     of vlFormal:
       let sym = scope.contents[name]
       if not sym.persists:
@@ -123,7 +124,8 @@ proc varUse*(node: Con4mNode, name: string): Option[VarSym] =
 proc addVariable*(node: Con4mNode, name: string): VarSym =
   result = varLookup(node.varScope, name, vlDef).get()
 
-  if result.firstDef.isNone(): result.firstDef = some(node)
+  if result.firstDef.isNone():
+    result.firstDef = some(node)
   if node notin result.defs:
     result.defs.add(node)
 
@@ -263,14 +265,13 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
   if attr.locked:
     return AttrErr(code: errCantSet,
                    msg:  fmt"{n}: attribute is locked and can't be set")
-    
   if hook != nil:
     if not hook(nameParts, value):
       return AttrErr(code: errCantSet,
                      msg:  fmt"{n}: The application prevented this " &
                               "attribute from being set")
   attr.value = some(value)
-
+  
   return AttrErr(code: errOk)
   
 proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
@@ -449,8 +450,22 @@ proc runtimeVarLookup*(frames: VarStack, name: string): Box =
       if not optRet.isSome():
         raise newException(ValueError,
                            fmt"Variable {name} used before assignment")
+      return optRet.get()
   unreachable
 
+proc runtimeVarSet*(state: ConfigState, name: string, val: Box) =
+  var n = state.frames.len()
+
+  while n != 0:
+    n         = n - 1
+    let frame = state.frames[n]
+
+    if name in frame:
+      frame[name] = some(val)
+      return
+
+  unreachable
+  
 proc lockAttribute*(attrs: AttrScope, fqn: string): bool =
   let
     parts        = fqn.split(".")

@@ -98,14 +98,14 @@ type
     contents*: Table[string, AttrOrSub]
 
   AttrOrSub*   = object
-    case kind: bool
+    case kind*: bool
     of true:
       attr*: Attribute
     of false:
       scope*: AttrScope
 
   AttrOrErr*   = object
-    case kind: bool
+    case kind*: bool
     of true:
       aos*: AttrOrSub
     of false:
@@ -153,6 +153,7 @@ type
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
+    id*:           int
     kind*:         Con4mNodeKind
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
@@ -288,20 +289,16 @@ template get*(aoe: AttrOrErr, t: typedesc): untyped =
     nil
 
 proc either*(attr: Attribute): AttrOrSub =
-  result.kind = true
-  result.attr = attr
+  result = AttrOrSub(kind: true, attr: attr)
 
 proc either*(sub: AttrScope): AttrOrSub =
-  result.kind  = false
-  result.scope = sub
+  result = AttrOrSub(kind: false, scope: sub)
 
 proc either*(aos: AttrOrSub): AttrOrErr =
-  result.kind = true
-  result.aos  = aos
+  return AttrOrErr(kind: true, aos: aos)
 
 proc either*(err: AttrErr): AttrOrErr =
-  result.kind = false
-  result.err  = err
+  return AttrOrErr(kind: false, err: err)
 
 converter attrToAttrOrSub*(attr: Attribute): AttrOrSub =
   either(attr)

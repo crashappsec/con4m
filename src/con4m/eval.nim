@@ -6,7 +6,7 @@
 ## :Copyright: 2022
 
 import options, tables, strformat
-import types, st, parse, treecheck, typecheck, nimutils
+import types, st, parse, treecheck, typecheck, nimutils, errmsg, dollars
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -47,7 +47,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState)
 
 proc pushRuntimeFrame*(s: ConfigState, n: Con4mNode) {.inline.} =
   var newFrame = RuntimeFrame()
-  
+
   for k, sym in n.varScope.contents:
     newFrame[k] = sym.value
   
@@ -58,19 +58,6 @@ proc popRuntimeFrame*(s: ConfigState): RuntimeFrame {.inline.} =
 
 proc runtimeVarLookup(s: ConfigState, name: string): Box {.inline.} =
   return runtimeVarLookup(s.frames, name)
-
-
-proc runtimeVarSet*(state: ConfigState, name: string, val: Box) =
-  var n = state.frames.len()
-
-  while n != 0:
-    n         = n - 1
-    let frame = state.frames[n]
-
-    if name in frame:
-      frame[name] = some(val)
-
-  unreachable
 
 proc getFuncBySig*(s:    ConfigState,
                    name: string,
@@ -100,8 +87,13 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
 
   try:
     node.children[2].evalNode(s)
-  except Con4mError:
+  except:
     discard # Clean return.  Error message will have been published.
+  finally:
+    let ex = getCurrentException()
+    if ex != nil:
+      ctrace(ex.getStackTrace())
+      ctrace(getCurrentExceptionMsg())
 
   let frame = s.popRuntimeFrame()
 
@@ -133,6 +125,8 @@ proc sCallUserDef*(s:        ConfigState,
   except:
     fatal(fmt"Unhandled error when running builtin call: {name}",
           nodeOpt.get())
+    let ex = getCurrentException()
+    ctrace(ex.getStackTrace())    
 
 proc sCallBuiltin(s:     ConfigState,
                   name:  string,
@@ -146,13 +140,14 @@ proc sCallBuiltin(s:     ConfigState,
     fatal(getCurrentExceptionMsg(), node)
   except:
     fatal(fmt"Unhandled error when running builtin call: {name}", node)
+    let ex = getCurrentException()
+    ctrace(ex.getStackTrace())    
 
 proc sCall*(s:       ConfigState,
             name:    string,
             a1:      seq[Box],
             tinfo:   Con4mType,
-            nodeOpt: Option[Con4mNode] = none(Con4mNode)
-           ): Option[Box] =
+            nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
   ## This is not really meant to be exposed outside this module,
   ## except to the evaluator.  This runs a builtin call, callback or
   ## user-defined function.
@@ -374,8 +369,10 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     node.value = pack(not unpack[bool](bx))
   of NodeMember:
-    # Unreachable, because I haven't implemented it yet.
-    unreachable
+    if node.attrRef.value.isNone():
+      fatal("Attribute used before it was set", node)
+
+    node.value = node.attrRef.value.get()
   of NodeIndex:
     # The node on the left's value will resolve to the object we need
     # to index.  We have to take action based on the type (and w/

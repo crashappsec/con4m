@@ -30,6 +30,9 @@ proc setCon4mVerbosity*(level: C4Verbosity) =
 proc setCurrentFileName*(s: string) =
   curFileName = s
 
+proc getCurrentFileName*(): string =
+  return curFileName
+
 proc formatCompilerError( msg: string,
                           t:   Con4mToken,
                           tb:  string = "",
@@ -99,3 +102,14 @@ template fatal*(msg: string, node: Con4mNode = nil) =
     fatal(msg, Con4mToken(nil), st)
   else:
     fatal(msg, node.token.getOrElse(nil), st, instantiationInfo())
+
+var doCtrace = false
+
+proc setCTrace*() =
+  setLogLevel(llTrace)
+  doCtrace = true
+  rawPublish(llTrace, "debugging on.")
+  
+proc ctrace*(msg: string) =
+  if doCtrace:
+    rawPublish(llTrace, msg)

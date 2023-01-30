@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, streams, types, nimutils, errmsg, lex
+import options, streams, types, nimutils, errmsg, lex, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
 # See docs/grammar.md for the grammar.
@@ -17,9 +17,12 @@ type ParseCtx = ref object
   nlWatch:        bool
   nesting:        int
 
+var nodeId = 0
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
+  nodeId += 1
   return Con4mNode(kind: k, token: t, children: c, parent: none(Con4mNode),
-                   typeInfo: ti, varScope: nil, attrScope: nil, value: nil)
+                   typeInfo: ti, varScope: nil, attrScope: nil, value: nil,
+                   id: nodeId)
 
 proc newNode(k,t: auto, c: seq[Con4mNode]= @[], ti: Con4mType= nil): Con4mNode =
     return nnbase(k, if t == nil: none(Con4mToken) else: some(t), c, ti)
@@ -567,26 +570,23 @@ proc section(ctx: ParseCtx): Con4mNode =
 
   result.children.add(newNode(NodeIdentifier, ctx.consume()))
 
-  while true:
-    i = i + 1
-    let tok = ctx.consume()
-    case tok.kind
-    of TtStringLit:
-      result.children.add(newNode(NodeSimpLit, tok))
-    of TtIdentifier:
-      result.children.add(newNode(NodeIdentifier, tok))
-    of TtLBrace:
-      break
+  i = i + 1
+  let tok = ctx.consume()
+  case tok.kind
+  of TtStringLit:
+    result.children.add(newNode(NodeSimpLit, tok))
+  of TtIdentifier:
+    result.children.add(newNode(NodeIdentifier, tok))
+  of TtLBrace:
+    discard
+  else:
+    if i == 0:
+      ctx.unconsume()
+      parseError("Expected either a function call or a section start")
     else:
-      if i == 0:
-        ctx.unconsume()
-        parseError("Expected either a function call or a section start")
-      elif i == 1:
-        ctx.unconsume()
-        parseError("Either need '( before this, for func call, " &
-                   "or '{' after for section start")
-      else:
-        parseError("Expected section start or more more section tags")
+      ctx.unconsume()
+      parseError("Either need '( before this, for func call, " &
+                 "or '{' after for section start")
 
   result.children.add(ctx.body())
   ctx.nlWatch = true
@@ -747,27 +747,31 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
-when defined(debugTokenStream):
-  import dollars
+var dumpToks = false
 
+proc setDumpToks*() =
+  dumpToks = true
+  
 proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
   ## and prints out any error message that happened during parsing.
-  var ctx = ParseCtx(tokens: tokens,
+  var ctx = ParseCtx(tokens:   tokens,
                      curTokIx: 0,
-                     nesting: 0,
-                     nlWatch: false)
+                     nesting:  0,
+                     nlWatch:  false)
 
   setCurrentFileName(filename)
+  ctrace(fmt"{filename}: {len(tokens)} tokens")
 
-  when defined(debugTokenStream):
+  if dumpToks:
     for i, token in tokens:
       echo i, ": ", $token
 
   result = ctx.body(toplevel = true)
   if ctx.curTok().kind != TtEof:
     parseError("EOF, assignment or block expected.", true)
+  ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
 
 proc parse*(s: Stream, filename: string = ""): Con4mNode =

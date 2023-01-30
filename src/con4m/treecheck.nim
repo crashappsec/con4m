@@ -13,7 +13,7 @@
 ## :Copyright: 2022
 
 import math, options, strformat, strutils, tables
-import types, st, parse, typecheck, dollars, nimutils
+import errmsg, types, st, parse, typecheck, dollars, nimutils
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
@@ -232,30 +232,30 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeSection:
     pushVarScope()
     if not s.secondPass:
-      var scope = node.attrScope
+      var
+        scope   = node.attrScope
+        secname = node.children[0].getTokenText()
+        maybeEntry: AttrOrErr
 
       if s.funcOrigin:
         fatal("Cannot introduce a section within a func or callback", node)
-
-      for i, kid in node.children[0 ..< ^1]:
-        if kid.kind == NodeSimpLit:
-          kid.checkNode(s)
-        let
-          secname    = kid.getTokenText()
-          maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
-
-        if i == 0:
-          node.nameConflictCheck(secname, s, [ucAttr, ucNone])
-
-        if maybeEntry.isA(AttrErr):
-          fatal(maybeEntry.get(AttrErr).msg, kid)
-        else:
-          scope = maybeEntry.get(AttrOrSub).get(AttrScope)
-
+        
+      node.nameConflictCheck(secname, s, [ucAttr, ucNone])
+      
+      if len(node.children) == 3:
+        let objname = node.children[1].getTokenText()
+        maybeEntry  = scope.attrLookup([secname, objname], 0, vlSecDef)        
+      else:
+        maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
+          
+      if maybeEntry.isA(AttrErr):
+        fatal(maybeEntry.get(AttrErr).msg, node)
+        
+      scope          = maybeEntry.get(AttrOrSub).get(AttrScope)
       node.attrScope = scope
 
     node.children[^1].checkNode(s)
-
+    
   of NodeAttrAssign:
     if s.funcOrigin:
       fatal("Cannot assign to attributes within functions or callbacks.", node)
@@ -368,9 +368,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if not s.secondPass:
       pushVarScope()
       let
-        name  = node.children[0].getTokenText()
-        entry = node.varScope.varLookup(name, vlMask).get()
-
+        name       = node.children[0].getTokenText()
+        entry      = node.varScope.varLookup(name, vlMask).get()
+        
+      entry.tinfo  = intType
       entry.locked = true
 
     for i in 1 ..< node.children.len():
@@ -480,8 +481,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("There's nothing to 'not' here", node)
     node.typeInfo = boolType
   of NodeMember:
-    node.checkKids(s)
-    fatal("Member access is currently not supported.", node)
+    node.children[0].checkNode(s)
+    var attrScope = node.children[0].attrScope
+    for item in node.children[1 .. ^1]:
+      item.attrScope = attrScope
+      item.checkNode(s)
+      attrScope = item.attrScope
+    if node.children[^1].attrRef == nil:
+      fatal("Final target of member operation is a section, not an attribute")
+    node.attrRef  = node.children[^1].attrRef
+    node.typeInfo = node.attrRef.tInfo
   of NodeIndex:
     node.checkKids(s)
     case node.children[0].getBaseType()
@@ -791,8 +800,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     let
       name          = node.getTokenText()
       `var?`        = node.varUse(name)
-      `localAttr?`  = node.attrScope.attrLookup([name], 0, vlAttrUse)
-      `globalAttr?` = s.attrs.attrLookup([name], 0, vlAttrUse)
+      `localAttr?`  = node.attrScope.attrLookup([name], 0, vlExists)
+      `globalAttr?` = s.attrs.attrLookup([name], 0, vlExists)
 
     if `var?`.isSome():
       let entry     = `var?`.get()
@@ -800,15 +809,19 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       node.attrRef  = nil
 
     elif `localAttr?`.isA(AttrOrSub):
-      let entry     = `localAttr?`.get(AttrOrSub).get(Attribute)
-      node.typeInfo = entry.tInfo
-      node.attrRef  = entry
-
+      let entry     = `localAttr?`.get(AttrOrSub)
+      if entry.isA(Attribute):
+        let attr = entry.get(Attribute)
+        node.typeInfo = attr.tInfo
+        node.attrRef  = attr
+      else:
+        node.attrScope = entry.get(AttrScope)
     elif `globalAttr?`.isA(AttrOrSub):
-      let entry     = `globalAttr?`.get(AttrOrSub).get(Attribute)
-      node.typeInfo = entry.tInfo
-      node.attrRef  = entry
-
+      let entry     = `globalAttr?`.get(AttrOrSub)
+      if entry.isA(Attribute):
+        let attr = entry.get(Attribute)
+        node.typeInfo = attr.tInfo
+        node.attrRef  = attr
     else:
       fatal(fmt"Variable {name} used before definition", node)
 
@@ -820,7 +833,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## ones.
   ##
   ## It does need to create a new variable scope though!
-  node.attrScope = AttrScope()
+  node.attrScope = s.attrs
   node.varScope  = VarScope(parent: none(VarScope))
 
   s.funcOrigin      = false
@@ -863,29 +876,4 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     # This cycle check waits until we are sure all forward references
     # are resolved.
     s.cycleCheck()
-
-when isMainModule:
-  proc tT(s: string): Con4mType =
-    return s.toCon4mType()
-
-  let t = newProcType(@[newListType(stringType),
-                        newDictType(boolType, floatType),
-                        intType],
-                      bottomType, true)
-  echo $(t)
-
-  echo $("[ string ]".toCon4mType())
-  echo $("[[string ]]".toCon4mType())
-  echo $("{int : [[string]]}".toCon4mType())
-  echo $("([string], { bool : float }, *int) -> @x".toCon4mType())
-  echo $("[ string ]".tT().unify("@x".tT()))
-  echo $("(int, int, int, *string)".tT())
-  echo $"(int, int, int, *string) -> @x".tT().unify(
-      "(int, int, int, *string)".tT())
-  echo $"(int, int, int, string) -> @x".tT(
-    ).unify("(int, int, int, string)".tT())
-  echo $"(int, int, int, *string) -> @x".tT().unify(
-      "(int, int, int, string, string)".tT())
-  echo $"(int, int, int, *bool) -> @x".tT().unify("(int, int, int)".tT())
-  echo $"(int, int, int, *@t) -> @x".tT().unify("(int, int, int, float)".tT())
-  echo $"(int, int, int, *@t) -> @x".tT().unify("(int, int, int)".tT())
+  ctrace(fmt"{getCurrentFileName()}: type checking completed.")
