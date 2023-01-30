@@ -479,3 +479,20 @@ proc lockAttribute*(attrs: AttrScope, fqn: string): bool =
 
 proc lockAttribute*(state: ConfigState, fqn: string): bool =
   return state.attrs.lockAttribute(fqn)
+
+const nullstr = "\"null\""
+proc scopeToJson*(scope: AttrScope): string =
+  var kvpairs: seq[string] = @[]
+  var b:       Box
+
+  for k, v in scope.contents:
+    if v.isA(Attribute):
+      let attr = v.get(Attribute)
+      let boxOpt = attr.attrToVal()
+      if boxOpt.isSome():
+        kvpairs.add(fmt(""""{k}" : {boxOpt.get().boxToJson()}"""))
+      else:
+        kvpairs.add(fmt""""{k}" : {nullstr}""")
+    else:
+      kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
+  return "{ " & kvpairs.join(", ") & "}"  

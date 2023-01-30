@@ -780,6 +780,8 @@ proc parse*(s: Stream, filename: string = ""): Con4mNode =
 
   # if s is a file, avoid unnecessary seeking by converting
   # to a stringStream
+  if s == nil:
+    fatal(fmt"Unable to open file '{filename}' for reading")
   let
     toParse = s.readAll()
     (valid, tokens) = toParse.newStringStream().lex()

@@ -12,7 +12,7 @@ Short::Long::Description
 -t::--type::Stop work after type checking (do not execute)
 -k::--dump-tokens::Show tokens after the parsing phase
 -s::--show-table::Output all attributes after each execution ends
--d::--debug::Turn on any custom runtime tracing (usually will do nothing)
+-d::--debug::Turn on any custom runtime tracing, including stack traces for errors
 -h::--help::This help message
 }%
 

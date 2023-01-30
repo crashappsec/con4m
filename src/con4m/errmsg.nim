@@ -103,13 +103,11 @@ template fatal*(msg: string, node: Con4mNode = nil) =
   else:
     fatal(msg, node.token.getOrElse(nil), st, instantiationInfo())
 
-var doCtrace = false
-
 proc setCTrace*() =
   setLogLevel(llTrace)
-  doCtrace = true
+  setCon4mVerbosity(c4vMax)
   rawPublish(llTrace, "debugging on.")
   
 proc ctrace*(msg: string) =
-  if doCtrace:
+  if verbosity == c4vMax:
     rawPublish(llTrace, msg)

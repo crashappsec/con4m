@@ -16,6 +16,7 @@ export eval, dollars, spec, run
 
 
 when isMainModule:
+  setCon4mVerbosity(c4vShowLoc)
   import nimutils/filetable
   const helpPath   = staticExec("pwd") & "/help/"
   const helpCorpus = newOrderedFileTable(helpPath)
@@ -39,7 +40,10 @@ when isMainModule:
       args  = state.getArgs()
 
     state.commit()
-    
+
+    if existsEnv("NO_COLOR"):
+      setShowColors(false)
+      
     if "help" in flags:
       echo getHelp(helpCorpus, args)
       quit()
@@ -68,6 +72,10 @@ when isMainModule:
           discard ctx.stackConfig(arg)
           if "show-table" in flags:
             echo $(ctx.attrs)
-  except ValueError:
-    echo getCurrentException().msg
+        stderr.writeLine(toAnsiCode([acBRed]))
+        stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
+        echo parseJson(ctx.attrs.scopeToJson()).pretty()
+        stderr.writeLine(toAnsiCode([acReset]))
+  except:
     echo getHelp(helpCorpus, @["help"])
+    
