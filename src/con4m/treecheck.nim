@@ -53,18 +53,7 @@ proc binOpTypeCheck(node: Con4mNode,
   node.typeInfo = unify(tv, paramCheck)
 
   if node.typeInfo.isBottom(): fatal2Type(e2, node, tv, paramCheck)
-
-when false:
-  proc printFuncTable(s: ConfigState) =
-    for key, entrySet in s.funcTable:
-      for entry in entrySet:
-        echo "{reprSig(key, entry.tinfo)}: {`$`(entry.kind)}".fmt()
-        case entry.kind
-        of FnUserDefined, FnCallback:
-          echo $(entry.impl)
-        else:
-          discard
-
+  
 template pushVarScope() =
   if not s.secondPass: # Current value was already copied from parent
     node.varScope = VarScope(parent: some(node.varScope))
@@ -220,10 +209,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if not s.secondPass:
       let tinfo = intType
       for i, kid in node.children:
+        kid.varScope = node.varScope
         let name = kid.getTokenText()
 
         node.nameConflictCheck(name, s, [ucNone])
-
+        
         let entry      = kid.addVariable(name)
         entry.value    = some(pack(i))
         entry.tinfo    = tinfo
@@ -376,6 +366,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     for i in 1 ..< node.children.len():
       node.children[i].checkNode(s)
+
+    if node.children[1].typeInfo.unify(intType).isBottom() or
+       node.children[2].typeInfo.unify(intType).isBottom():
+      fatal("For index ranges must be integers.")
   of NodeSimpLit:
     if s.secondPass:
       return
@@ -551,10 +545,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # Now add in the function's parameters.  We will allow this
       # to replace existing items from the global scope, but want
       # to barf if a parameter name is reused.
-      for node in node.children[1].children:
+      for n in node.children[1].children:
+        n.varScope = node.varScope
         let
-          varname = node.getTokenText()
-          `sym?`  = node.varScope.varLookup(varname, vlFormal)
+          varname = n.getTokenText()
+          `sym?`  = n.varScope.varLookup(varname, vlFormal)
 
         if `sym?`.isNone():
           fatal(fmt"In func decl: Duplicate parameter name: {varname}", node)
@@ -579,9 +574,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     node.typeInfo = tinfo
 
-    for node in node.children[1].children:
+    for n in node.children[1].children:
       let
-        varname = node.getTokenText()
+        varname = n.getTokenText()
         entry   = node.varUse(varname).get()
 
       tinfo.params.add(entry.tinfo)
@@ -700,6 +695,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         s.waitingForTypeInfo = true
         return
       else:
+        echo $(s.funcTable)
+
         fatal(fmt"No matching signature found for {fname}", node.children[0])
     else:
       if s.secondPass:

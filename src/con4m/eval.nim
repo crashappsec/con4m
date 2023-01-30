@@ -436,7 +436,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    var ret = s.sCall(fname, args, funcSig, some(node.children[0]))
+    var ret = s.sCall(fname, args, funcSig, some(node))
     if ret.isSome():
       node.value = ret.get()
       

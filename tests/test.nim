@@ -8,13 +8,14 @@ macro runTests(dir: static[string]): untyped =
     let
       (dname, fname, ext) = filepath.splitFile()
       kat   = staticRead(dname & "/kats/" & fname & ".kat").strip()
-      cmd   = "./con4m " & filepath
+      cmd   = "./con4m --no-json " & filepath
     var val = FAILED
     result.add quote do:
       let output = execCmdEx(`cmd`).output.strip()
       if output == `kat`:
-        echo "Test " & `fname` & " passed"
+        echo "[PASSED] Test " & `fname` 
       else:
+        echo "[FAILED] test " & `fname`
         echo "GOT:"
         echo output
         echo "EXPECTED: "

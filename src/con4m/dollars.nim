@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, strutils, streams, tables, json, unicode
+import options, strformat, strutils, streams, tables, json, unicode, errmsg
 import types, nimutils
 
 # If you want to be able to reconstruct the original file, swap this
@@ -121,6 +121,23 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
     fmtNt($(self.token.get()))
   of NodeIdentifier: fmtT("Identifier")
 
+proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
+  const
+    typeTemplate = " -- type: {typeRepr}"
+    mainTemplate = "{spaces}{name}{typeVal}\n"
+    indentTemplate = "{result}{subitem}"
+  let
+    spaces = ' '.repeat(i)
+    ti = self.typeInfo
+    typeRepr = if ti == nil: "" else: $(ti)
+    typeVal = if ti == nil: "" else: typeTemplate.fmt()
+
+  result = mainTemplate.fmt()
+
+  for item in self.children:
+    let subitem = item.`$`(i + 2)
+    result = indentTemplate.fmt()
+
 proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
   path.add(self.name)
   
@@ -162,20 +179,48 @@ proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
 proc `$`*(self: AttrScope): string =
   var parts: seq[string] = @[]
   return reprOneLevel(self, parts)
-      
-proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
-  const
-    typeTemplate = " -- type: {typeRepr}"
-    mainTemplate = "{spaces}{name}{typeVal}\n"
-    indentTemplate = "{result}{subitem}"
-  let
-    spaces = ' '.repeat(i)
-    ti = self.typeInfo
-    typeRepr = if ti == nil: "" else: $(ti)
-    typeVal = if ti == nil: "" else: typeTemplate.fmt()
+    
+proc `$`*(self: VarScope): string =
+  result = ""
 
-  result = mainTemplate.fmt()
+  if self.parent.isSome():
+    result = $(self.parent.get())
+    
+  var rows = @[@["Name", "Type"]]
+  for k, v in self.contents:
+    rows.add(@[k, $(v.tInfo)])
 
-  for item in self.children:
-    let subitem = item.`$`(i + 2)
-    result = indentTemplate.fmt()
+  var tbl = newTextTable(2,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder  = true,
+                         addTopBorder  = true, addBottomBorder = true, 
+                         rHdrFmt       = @[acBCyan], 
+                         eRowFmt       = @[acBGCyan, acBBlack],
+                         oRowFmt       = @[acBGWhite, acBBlack])
+    
+  return result & tbl.render()
+  
+proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
+  # Not technically a dollar, but hey.
+  var rows = @[@["Name", "Type", "Kind"]]
+  for key, entrySet in funcTable:
+    for entry in entrySet:
+      rows.add(@[key, $(entry.tinfo), $(entry.kind)])
+  var tbl = newTextTable(3,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder  = true,
+                         addTopBorder  = true, addBottomBorder = true,
+                         rHdrFmt       = @[acBCyan], 
+                         eRowFmt       = @[acBGCyan, acBBlack],
+                         oRowFmt       = @[acBGWhite, acBBlack])
+        
+  return result & tbl.render()
+

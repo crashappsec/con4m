@@ -32,6 +32,7 @@ when isMainModule:
                                addBinaryFlag('t', "type").
                                addBinaryFlag('k', "dump-tokens", setDumpToks).
                                addBinaryFlag('s', "show-table").
+                               addBinaryFlag('J', "no-json"). 
                                addBinaryFlag('d', "debug", setCTrace)
   try:
     let
@@ -72,10 +73,11 @@ when isMainModule:
           discard ctx.stackConfig(arg)
           if "show-table" in flags:
             echo $(ctx.attrs)
-        stderr.writeLine(toAnsiCode([acBRed]))
-        stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
-        echo parseJson(ctx.attrs.scopeToJson()).pretty()
-        stderr.writeLine(toAnsiCode([acReset]))
+        if "no-json" notin flags:
+          stderr.writeLine(toAnsiCode([acBRed]))
+          stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
+          echo parseJson(ctx.attrs.scopeToJson()).pretty()
+          stderr.writeLine(toAnsiCode([acReset]))
   except:
-    echo getHelp(helpCorpus, @["help"])
+    echo "See con4m --help for help on usage."
     
