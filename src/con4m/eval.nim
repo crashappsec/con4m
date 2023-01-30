@@ -6,7 +6,7 @@
 ## :Copyright: 2022
 
 import options, tables, strformat
-import types, st, parse, treecheck, typecheck, nimutils, errmsg, dollars
+import types, st, parse, treecheck, typecheck, nimutils, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -231,22 +231,13 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     finally:
       discard s.popRuntimeFrame()
   of NodeAttrAssign:
-    # We already created scope objects in the tree checking phase.
-    # And, we only allow identifiers on the LHS right now. So we just
-    # have to evaluate the RHS, then try to update the symbol's value
-    # in the symbol table.
+    # We already created scope objects in the tree checking phase,
+    # and cached a reference to the attribute location where any
+    # result should be stored.
     #
-    # Note that we also allow fields to be "locked", essentially
-    # turned into const-- basically, you should be able to save
-    # attribute state across runs, so that you can layer
-    # configurations. In such a case, an admin's config might specify
-    # not to change a value, which is the idea behind this.
+    # So we just have to update the RHS and then assign.
     node.children[1].evalNode(s)
-    let
-      name  = node.children[0].getTokenText()
-      maybe = node.attrScope.attrLookup([name], 0, vlAttrDef).get(AttrOrSub)
-      entry = maybe.get(Attribute)
-      err   = attrSet(entry, node.children[1].value)
+    let err = attrSet(node.attrRef, node.children[1].value)
 
     case err.code
     of errCantSet:

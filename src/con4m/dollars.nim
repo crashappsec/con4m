@@ -5,8 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, strutils, streams, tables, json, unicode, errmsg
-import types, nimutils
+import options, strformat, strutils, streams, tables, json, unicode
+import nimutils, types
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.

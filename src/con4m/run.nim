@@ -5,7 +5,7 @@
 ## :Copyright: 2022, 2023, Crash Override, Inc.
 
 import tables, options, streams, nimutils, strformat
-import errmsg, types, parse, treecheck, eval, spec, builtins, dollars
+import errmsg, types, parse, treecheck, eval, spec, builtins
 
 proc newConfigState*(node:        Con4mNode,
                      spec:        ConfigSpec     = nil,

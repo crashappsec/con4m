@@ -1,4 +1,8 @@
-import unittest, logging, streams, nimutils, macros, os, strutils, osproc
+import unittest, nimutils, macros, os, strutils, osproc
+
+let passString = toAnsiCode(acBGreen) & "[PASSED]" & toAnsiCode(acReset)
+let failString = toAnsiCode(acBRed)   & "[FAILED]" & toAnsiCode(acReset)
+var fails = 0
 
 macro runTests(dir: static[string]): untyped =
   result = newStmtList()
@@ -7,18 +11,31 @@ macro runTests(dir: static[string]): untyped =
   for filepath in staticListFiles(dirpath & "*.c4m"):
     let
       (dname, fname, ext) = filepath.splitFile()
-      kat   = staticRead(dname & "/kats/" & fname & ".kat").strip()
-      cmd   = "./con4m --no-json " & filepath
-    var val = FAILED
+      cmd   = "./con4m --no-color --no-json " & filepath
+
     result.add quote do:
-      let output = execCmdEx(`cmd`).output.strip()
-      if output == `kat`:
-        echo "[PASSED] Test " & `fname` 
-      else:
-        echo "[FAILED] test " & `fname`
-        echo "GOT:"
-        echo output
-        echo "EXPECTED: "
-        echo `kat`
+      try:
+        let
+          output = execCmdEx(`cmd`).output.strip()
+          kat    = open(`dname` & "/" & `fname` & ".kat").readAll().strip()
+
+        if output == kat:
+          echo passString & " Test " & `fname` 
+        else:
+          fails = fails + 1
+          echo failString & " test " & `fname`
+          echo "GOT:"
+          echo output
+          echo "EXPECTED: "
+          echo kat
+      except:
+        fails = fails + 1
+        echo "Exception raised: "
+        echo getStackTrace()
+        echo getCurrentExceptionMsg()
+        
 
 runTests("basics")
+check fails == 0
+
+

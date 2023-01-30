@@ -247,23 +247,25 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.children[^1].checkNode(s)
     
   of NodeAttrAssign:
+    var nameParts: seq[string]
     if s.funcOrigin:
       fatal("Cannot assign to attributes within functions or callbacks.", node)
     if node.children[0].kind != NodeIdentifier:
-      fatal("Dot assignments for attributes currently not supported.",
-            node.children[0])
-
+      nameParts = @[]
+      for child in node.children[0].children:
+        nameParts.add(child.getTokenText())
+    else:
+      nameParts = @[node.children[0].getTokenText()]
     node.children[1].checkNode(s)
-    let
-      name  = node.children[0].getTokenText()
-      tinfo = node.children[1].typeinfo
+    let tinfo = node.children[1].typeinfo
 
     if not s.secondPass:
-      if name == "result":
-        fatal("'result' is a reserved word in con4m, and cannot be used " &
-          "for attributes", node)
+      for name in nameParts:
+          if name == "result":
+            fatal("'result' is a reserved word in con4m, and cannot be used " &
+              "for attributes", node)
 
-    let `existing?` = node.attrScope.attrLookup([name], 0, vlAttrDef)
+    let `existing?` = node.attrScope.attrLookup(nameParts, 0, vlAttrDef)
     if `existing?`.isA(AttrErr):
       fatal(`existing?`.get(AttrErr).msg, node)
 
@@ -273,16 +275,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     else:
       let t = unify(tinfo, entry.tinfo)
       if t.isBottom():
-        fatal2Type(fmt"Attribute assignment of {name} doesn't " &
-                      "match previous type",
+        fatal2Type(fmt"""Attribute assignment of {nameParts.join(".")} """ &
+                      "doesn't match previous type",
                       node.children[1], tinfo, entry.tinfo)
       else:
         entry.tInfo = t
 
     if entry.locked:
-      fatal(fmt"You cannot assign to the (locked) attribute {name}.",
+      fatal("You cannot assign to the (locked) attribute " &
+            fmt"""{nameParts.join(".")}.""",
             node.children[0])
-
+    node.attrRef = entry
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for variables currently not supported.",
@@ -695,8 +698,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         s.waitingForTypeInfo = true
         return
       else:
-        echo $(s.funcTable)
-
         fatal(fmt"No matching signature found for {fname}", node.children[0])
     else:
       if s.secondPass:

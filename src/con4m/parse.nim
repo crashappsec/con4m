@@ -204,11 +204,15 @@ proc memberExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
   result = newNode(NodeMember, ctx.consume())
   result.children.add(lhs)
 
-  if ctx.curTok().kind != TtIdentifier:
-    parseError(". operator must have an identifier on the right hand side")
+  while true:
+    if ctx.curTok().kind != TtIdentifier:
+      parseError(". operator must have an identifier on the right hand side")
 
-  let kid = newNode(NodeIdentifier, ctx.consume())
-  result.children.add(kid)
+    let kid = newNode(NodeIdentifier, ctx.consume())
+    result.children.add(kid)
+    if ctx.curTok().kind != TtPeriod:
+      break
+    discard ctx.consume()
 
 proc indexExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
   result = newNode(NodeIndex, ctx.consume())
@@ -642,13 +646,25 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
 
 
 proc attrAssign(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
+  let
+    t         = ctx.consume()
+    firstNode = newNode(NodeIdentifier, t)
+  var
+    child     = firstNode
 
-  result = newNode(NodeAttrAssign, t, @[newNode(NodeIdentifier, t)])
+  result = newNode(NodeAttrAssign, t, @[])
 
-  # Second token is validated already.
-  discard ctx.consume()
+  if ctx.curTok().kind == TtPeriod:
+    child = ctx.memberExpr(firstNode)
+
+  case ctx.consume().kind
+  of TtAttrAssign, TtColon:
+    discard
+  else:
+    parseError("Expected a : or = after attr specification")
+    
   ctx.nlWatch = true
+  result.children.add(child)
   result.children.add(ctx.expression())
 
   case ctx.consume().kind
@@ -688,7 +704,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         parseError("Enums are only allowed at the top level of the config")
     of TtIdentifier:
       case ctx.lookAhead().kind
-      of TtAttrAssign, TtColon:
+      of TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
         continue
       of TtLocalAssign, TtComma:

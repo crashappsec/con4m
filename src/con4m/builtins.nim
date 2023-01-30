@@ -6,7 +6,7 @@
 ## :Copyright: 2022
 
 import os, tables, osproc, strformat, strutils, options, streams
-import types, typecheck, st, parse, nimutils, errmsg, dollars
+import types, typecheck, st, parse, nimutils, errmsg
 
 when defined(posix):
   import posix

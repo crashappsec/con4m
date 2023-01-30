@@ -22,12 +22,13 @@ when isMainModule:
   const helpCorpus = newOrderedFileTable(helpPath)
     
   import nimutils, nimutils/help
-  import os, parseopt, options, streams, json, tables
+  import os, streams, json, tables
   
   discard subscribe(con4mTopic, defaultCon4mHook)
 
   let argParser = newArgSpec().addArgs(min=1).
                                addBinaryFlag('h',"help").
+                               addBinaryFlag('c', "no-color").               
                                addBinaryFlag('p', "parse").
                                addBinaryFlag('t', "type").
                                addBinaryFlag('k', "dump-tokens", setDumpToks).
@@ -42,7 +43,7 @@ when isMainModule:
 
     state.commit()
 
-    if existsEnv("NO_COLOR"):
+    if existsEnv("NO_COLOR") or "no-color" in flags:
       setShowColors(false)
       
     if "help" in flags:

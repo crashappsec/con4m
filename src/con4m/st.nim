@@ -12,7 +12,6 @@
 ## :Copyright: 2022
 
 import tables, options, unicode, strutils, strformat, nimutils, types, algorithm
-import errmsg, dollars
 
 var tVarNum: int
 
