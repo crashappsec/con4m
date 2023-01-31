@@ -50,7 +50,7 @@ proc pushRuntimeFrame*(s: ConfigState, n: Con4mNode) {.inline.} =
 
   for k, sym in n.varScope.contents:
     newFrame[k] = sym.value
-  
+
   s.frames.add(newFrame)
 
 proc popRuntimeFrame*(s: ConfigState): RuntimeFrame {.inline.} =
@@ -78,7 +78,7 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
   let savedFrames = s.frames
 
   s.frames = @[s.globals]
-  
+
   s.pushRuntimeFrame(node)
 
   for i, idNode in node.children[1].children:
@@ -246,7 +246,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       discard
     else:
       unreachable
-      
+
   of NodeVarAssign:
     node.children[1].evalNode(s)
 
@@ -263,7 +263,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for i, item in tup:
       let name = node.children[i].getTokenText()
       s.runtimeVarSet(name, item)
-      
+
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -328,7 +328,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     # The only unary ops we support are + and -, and only on numerics,
     # so + actually is a noop.
     node.evalKids(s)
-    
+
     let
       sign = node.getTokenText()
       bx = node.children[0].value
@@ -430,7 +430,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     var ret = s.sCall(fname, args, funcSig, some(node))
     if ret.isSome():
       node.value = ret.get()
-      
+
   of NodeDictLit:
     node.evalKids(s)
     if node.typeInfo.kind == TypeTVar:

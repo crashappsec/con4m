@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, strutils, streams, tables, json, unicode
+import options, strformat, strutils, streams, tables, json, unicode, algorithm
 import nimutils, types
 
 # If you want to be able to reconstruct the original file, swap this
@@ -38,6 +38,18 @@ else:
       if result.contains('\n'):
         return "~multi-line value~"
 
+template colorType(s: string): string =
+  toAnsiCode(acGreen) & s & toAnsiCode(acReset)
+
+template colorLit(s: string): string =
+  toAnsiCode(acRed) & s & toAnsiCode(acReset)
+
+template colorNT(s: string): string =
+  toAnsiCode(acBrown) & s & toAnsiCode(acReset)
+
+template colorT(s: string): string =
+  toAnsiCode(acYellow) & s & toAnsiCode(acReset)
+
 proc `$`*(t: Con4mType): string =
   ## Prints a type object the way it should be written for input, with
   ## the exception of the bottom type, which prints as its
@@ -47,8 +59,8 @@ proc `$`*(t: Con4mType): string =
   of TypeBool: return "bool"
   of TypeInt: return "int"
   of TypeFloat: return "float"
-  of TypeList: return "[{t.itemType}]".fmt()
-  of TypeDict: return "{{{t.keyType} : {t.valType}}}".fmt()
+  of TypeList: return fmt"[{t.itemType}]"
+  of TypeDict: return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
     var s: seq[string]
     for item in t.itemTypes:
@@ -60,7 +72,8 @@ proc `$`*(t: Con4mType): string =
     return fmt"@{t.varNum}"
   of TypeBottom: return "⊥"
   of TypeProc:
-    if t.params.len() == 0: return "f() -> {$(t.retType)}".fmt()
+    if t.params.len() == 0:
+      return fmt"f() -> {$(t.retType)}"
     else:
       var paramTypes: seq[string]
       for item in t.params:
@@ -75,18 +88,18 @@ proc formatTerm(self: Con4mNode, name: string, i: int): string =
   if not self.token.isSome():
     return ' '.repeat(i) & name & " <???>"
 
-  result = ' '.repeat(i) & name & " " & $(self.token.get())
+  result = ' '.repeat(i) & name & " " & colorLit($(self.token.get()))
   if self.typeInfo != nil:
-    result = result & " -- type: " & $(self.typeInfo)
+    result = result & " -- type: " & colorLit($(self.typeInfo))
 
 template fmtNt(name: string) =
-  return self.formatNonTerm(name, i)
+  return self.formatNonTerm(colorNT(name), i)
 
 template fmtNtNamed(name: string) =
-  return self.formatNonTerm(name & " " & $(self.token.get()), i)
+  return self.formatNonTerm(colorNT(name) & " " & $(self.token.get()), i)
 
 template fmtT(name: string) =
-  return self.formatTerm(name, i) & "\n"
+  return self.formatTerm(colorT(name), i) & "\n"
 
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
@@ -129,7 +142,7 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   let
     spaces = ' '.repeat(i)
     ti = self.typeInfo
-    typeRepr = if ti == nil: "" else: $(ti)
+    typeRepr = if ti == nil: "" else: colorType($(ti))
     typeVal = if ti == nil: "" else: typeTemplate.fmt()
 
   result = mainTemplate.fmt()
@@ -140,14 +153,14 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
 
 proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
   path.add(self.name)
-  
+
   result = toAnsiCode([acBold]) & path.join(".") & toAnsiCode([acReset]) & "\n"
   var rows = @[@["Name", "Type", "Value"]]
 
 
   for k, v in self.contents:
     var row: seq[string] = @[]
-    
+
     if v.isA(Attribute):
       var attr = v.get(Attribute)
       if attr.value.isSome():
@@ -166,7 +179,7 @@ proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
                          colHeaderSep  = none(Rune),
                          colSep        = some(Rune('|')),
                          addLeftBorder = true, addRightBorder = true,
-                         rHdrFmt       = @[acBCyan], 
+                         rHdrFmt       = @[acBCyan],
                          eColFmt       = @[acBGCyan, acBBlack],
                          oColFmt       = @[acBGWhite, acBBlack])
   result &= tbl.render()
@@ -175,17 +188,17 @@ proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
     if v.isA(AttrScope):
       var scope = v.get(AttrScope)
       result &= scope.reprOneLevel(path)
-  
+
 proc `$`*(self: AttrScope): string =
   var parts: seq[string] = @[]
   return reprOneLevel(self, parts)
-    
+
 proc `$`*(self: VarScope): string =
   result = ""
 
   if self.parent.isSome():
     result = $(self.parent.get())
-    
+
   var rows = @[@["Name", "Type"]]
   for k, v in self.contents:
     rows.add(@[k, $(v.tInfo)])
@@ -197,19 +210,26 @@ proc `$`*(self: VarScope): string =
                          colHeaderSep  = none(Rune),
                          colSep        = some(Rune('|')),
                          addLeftBorder = true, addRightBorder  = true,
-                         addTopBorder  = true, addBottomBorder = true, 
-                         rHdrFmt       = @[acBCyan], 
+                         addTopBorder  = true, addBottomBorder = true,
+                         rHdrFmt       = @[acBCyan],
                          eRowFmt       = @[acBGCyan, acBBlack],
                          oRowFmt       = @[acBGWhite, acBBlack])
-    
+
   return result & tbl.render()
-  
+
+proc `<`(x, y: seq[string]): bool =
+  if x[0] == y[0]:
+    return x[1] < y[1]
+  else:
+    return x[0] < y[0]
+
 proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
   # Not technically a dollar, but hey.
   var rows = @[@["Name", "Type", "Kind"]]
   for key, entrySet in funcTable:
     for entry in entrySet:
       rows.add(@[key, $(entry.tinfo), $(entry.kind)])
+  rows.sort()
   var tbl = newTextTable(3,
                          rows          = rows,
                          fillWidth     = true,
@@ -218,9 +238,8 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
                          colSep        = some(Rune('|')),
                          addLeftBorder = true, addRightBorder  = true,
                          addTopBorder  = true, addBottomBorder = true,
-                         rHdrFmt       = @[acBCyan], 
+                         rHdrFmt       = @[acBCyan],
                          eRowFmt       = @[acBGCyan, acBBlack],
                          oRowFmt       = @[acBGWhite, acBBlack])
-        
-  return result & tbl.render()
 
+  return result & tbl.render()

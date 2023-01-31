@@ -186,7 +186,7 @@ proc attrLookup*(scope: AttrScope,
           return AttrErr(code: errNoAttr)
   else:
     var newScope: AttrScope
-    
+
     if name in scope.contents:
       let item = scope.contents[name]
       if item.isA(Attribute):
@@ -200,11 +200,11 @@ proc attrLookup*(scope: AttrScope,
                            parent:   some(scope),
                            config:   scope.config,
                            contents: default(Table[string, AttrOrSub]))
-      
+
       scope.contents[name] = either(newScope)
-        
+
     return newScope.attrLookup(parts, ix + 1, op)
-      
+
 
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
@@ -230,7 +230,7 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
     return none(Box)
 
   let attr = possibleAttr.get(AttrOrSub).get(Attribute)
-    
+
   return attrToVal(attr)
 
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
@@ -258,7 +258,7 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
     n         = nameparts.join(".")
 
   if `over?`.isSome():
-    
+
     return AttrErr(code: errCantSet,
                    msg:  fmt"{n} attr can't be set due to user override")
   if attr.locked:
@@ -270,9 +270,9 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
                      msg:  fmt"{n}: The application prevented this " &
                               "attribute from being set")
   attr.value = some(value)
-  
+
   return AttrErr(code: errOk)
-  
+
 proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
   let
@@ -464,7 +464,7 @@ proc runtimeVarSet*(state: ConfigState, name: string, val: Box) =
       return
 
   unreachable
-  
+
 proc lockAttribute*(attrs: AttrScope, fqn: string): bool =
   let
     parts        = fqn.split(".")
@@ -482,7 +482,6 @@ proc lockAttribute*(state: ConfigState, fqn: string): bool =
 const nullstr = "\"null\""
 proc scopeToJson*(scope: AttrScope): string =
   var kvpairs: seq[string] = @[]
-  var b:       Box
 
   for k, v in scope.contents:
     if v.isA(Attribute):
@@ -494,4 +493,4 @@ proc scopeToJson*(scope: AttrScope): string =
         kvpairs.add(fmt""""{k}" : {nullstr}""")
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
-  return "{ " & kvpairs.join(", ") & "}"  
+  return "{ " & kvpairs.join(", ") & "}"

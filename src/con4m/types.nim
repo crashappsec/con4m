@@ -136,7 +136,7 @@ type
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
   AttrErrEnum* = enum
     errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
-      
+
   AttrErr* = object
     code*:     AttrErrEnum
     msg*:      string
@@ -184,20 +184,20 @@ type
       impl*:      Option[Con4mNode]
 
   ExtendedTypeKind* = enum TypePrimitive, TypeSection
-                           
+
   ExtendedType* = ref object
     case kind*: ExtendedTypeKind
     of TypePrimitive:
       tinfo*: Con4mType
     of TypeSection:
       sinfo*: Con4mSectionType
-  
+
   FieldSpec* = ref object
     extType*:      ExtendedType
     minRequired*:  int
     maxRequired*:  int
     lock*:         bool
-    
+
   Con4mSectionType* = ref object
     typeName*:      string
     singleton*:     bool
@@ -207,7 +207,7 @@ type
   ConfigSpec* = ref object
     secSpecs*: Table[string, Con4mSectionType]
     rootSpec*: Con4mSectionType
-    
+
   ConfigState* = ref object
     ## The top-level representation of a configuration's runtime
     ## state. The symbols are in here, the specs we apply, etc.
@@ -226,6 +226,7 @@ type
     secondPass*:         bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
+  Con4mPhase* = enum phTokenize, phParse, phCheck, phEval
 
 let
   # These are just shared instances for types that aren't
@@ -313,9 +314,7 @@ converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
   either(err)
 
 converter secToExt*(sec: Con4mSectionType): ExtendedType =
-  result.kind  = TypeSection
-  result.sinfo = sec
+  return ExtendedType(kind: TypeSection, sinfo: sec)
 
 converter c4mToExt*(tinfo: Con4mType): ExtendedType =
-  result.kind  = TypePrimitive
-  result.tinfo = tinfo
+  return ExtendedType(kind: TypePrimitive, tinfo: tinfo)

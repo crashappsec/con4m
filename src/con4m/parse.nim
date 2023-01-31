@@ -5,15 +5,41 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, streams, types, nimutils, errmsg, lex, dollars, strformat
+import tables, options, streams, types, nimutils, nimutils/logging
+import errmsg, lex, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
+
+
+## This stuff probably belongs in 'run.nim' or con4m.nim (since it's
+## meant only for the command-line compiler).
+##
+## But since cyclical imports are a problem, we'll just stick it here.
+
+var stopPhase* = phEval
+
+proc setStopPhase*(s: string) =
+  ## This is really only meant to be used when running the compiler
+  ## on the command line, not via API.
+  case s
+  of "tokenize": stopPhase = phTokenize
+  of "parse":    stopPhase = phParse
+  of "check":    stopPhase = phCheck
+  else:          stopPhase = phEval
+
+proc phaseEnded*(phase: Con4mPhase) =
+  if phase >= stopPhase:
+    var publishParams = { "loglevel" : $(llInfo) }.newOrderedTable()
+    discard publish(con4mTopic,
+                    "Compilation exiting early due to command-line flag.\n",
+                    publishParams)
+    quit()
+
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
 type ParseCtx = ref object
   tokens:        seq[Con4mToken]
   curTokIx:       int
-  root, current:  Con4mNode
   nlWatch:        bool
   nesting:        int
 
@@ -582,15 +608,18 @@ proc section(ctx: ParseCtx): Con4mNode =
   of TtIdentifier:
     result.children.add(newNode(NodeIdentifier, tok))
   of TtLBrace:
-    discard
+    ctx.unconsume()
   else:
     if i == 0:
       ctx.unconsume()
       parseError("Expected either a function call or a section start")
     else:
       ctx.unconsume()
-      parseError("Either need '( before this, for func call, " &
+      parseError("Either need '(' before this, for func call, " &
                  "or '{' after for section start")
+
+  if ctx.consume().kind != TtLBrace:
+    parseError("Expected '{' to start section")
 
   result.children.add(ctx.body())
   ctx.nlWatch = true
@@ -662,7 +691,7 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
     discard
   else:
     parseError("Expected a : or = after attr specification")
-    
+
   ctx.nlWatch = true
   result.children.add(child)
   result.children.add(ctx.expression())
@@ -763,11 +792,16 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
-var dumpToks = false
+var
+  dumpToks  = false
+  showParse = false
 
 proc setDumpToks*() =
   dumpToks = true
-  
+
+proc setShowParse*() =
+  showParse = true
+
 proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
@@ -780,9 +814,11 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   setCurrentFileName(filename)
   ctrace(fmt"{filename}: {len(tokens)} tokens")
 
-  if dumpToks:
+  if dumpToks or stopPhase == phTokenize:
     for i, token in tokens:
-      echo i, ": ", $token
+      stderr.writeLine($i & ": " & $token)
+
+  phaseEnded(phTokenize)
 
   result = ctx.body(toplevel = true)
   if ctx.curTok().kind != TtEof:
@@ -790,7 +826,11 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
 
-proc parse*(s: Stream, filename: string = ""): Con4mNode =
+  if showParse or stopPhase == phParse:
+    stderr.write($result)
+  phaseEnded(phParse)
+
+proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
   ## implementation on tokens, which kicks off the actual parsing.
 

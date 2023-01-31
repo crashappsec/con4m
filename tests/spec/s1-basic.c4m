@@ -1,0 +1,84 @@
+root {
+  require root { }
+  allow object { }
+  allow singleton { }
+  field user_def_ok {
+    type: "bool"
+    require: true
+  }
+  user_def_ok: false
+}
+
+singleton root {
+  allow field {
+  }
+  allow require {
+  }
+  allow allow {
+  }
+  user_def_ok: false
+}
+
+object field {
+  field type {
+    type:    "string"
+    require: true
+  }
+  field default {
+    type:    "@x"
+    require: false
+  }
+  field require {
+    type:    "bool"
+    require: true
+  }
+  field write_lock {
+    type:    "bool"
+    require: false
+  }
+  user_def_ok: false
+}
+
+object singleton {
+  allow field {
+  }
+  allow require {
+  }
+  allow allow {
+  }
+  field user_def_ok {
+    type: "bool"
+    require: true
+  }
+  user_def_ok: false
+}
+
+object object {
+  allow field {
+  }
+  allow require {
+  }
+  allow allow {
+  }
+  field user_def_ok {
+    type: "bool"
+    require: true
+  }
+  user_def_ok: false
+}
+
+object allow {
+  field write_lock {
+    type:    "bool"
+    require: false     # Write locking is not yet (re-)implemented.
+  }
+  user_def_ok: false
+}
+
+object require {
+  field write_lock {
+    type:    "bool"
+    require: false     # Write locking is not yet (re-)implemented.
+  }
+  user_def_ok: false
+}

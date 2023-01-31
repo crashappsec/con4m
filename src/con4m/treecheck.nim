@@ -53,7 +53,7 @@ proc binOpTypeCheck(node: Con4mNode,
   node.typeInfo = unify(tv, paramCheck)
 
   if node.typeInfo.isBottom(): fatal2Type(e2, node, tv, paramCheck)
-  
+
 template pushVarScope() =
   if not s.secondPass: # Current value was already copied from parent
     node.varScope = VarScope(parent: some(node.varScope))
@@ -213,7 +213,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         let name = kid.getTokenText()
 
         node.nameConflictCheck(name, s, [ucNone])
-        
+
         let entry      = kid.addVariable(name)
         entry.value    = some(pack(i))
         entry.tinfo    = tinfo
@@ -229,23 +229,23 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       if s.funcOrigin:
         fatal("Cannot introduce a section within a func or callback", node)
-        
+
       node.nameConflictCheck(secname, s, [ucAttr, ucNone])
-      
+
       if len(node.children) == 3:
         let objname = node.children[1].getTokenText()
-        maybeEntry  = scope.attrLookup([secname, objname], 0, vlSecDef)        
+        maybeEntry  = scope.attrLookup([secname, objname], 0, vlSecDef)
       else:
         maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
-          
+
       if maybeEntry.isA(AttrErr):
         fatal(maybeEntry.get(AttrErr).msg, node)
-        
+
       scope          = maybeEntry.get(AttrOrSub).get(AttrScope)
       node.attrScope = scope
 
     node.children[^1].checkNode(s)
-    
+
   of NodeAttrAssign:
     var nameParts: seq[string]
     if s.funcOrigin:
@@ -363,7 +363,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       let
         name       = node.children[0].getTokenText()
         entry      = node.varScope.varLookup(name, vlMask).get()
-        
+
       entry.tinfo  = intType
       entry.locked = true
 
@@ -598,7 +598,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       return
 
     var fnList = s.funcTable[name]
-    for item in fnList:
+    var placeholderIx = -1
+    for i, item in fnList:
       # Look for already installed info about functions of this name.
       # If we find one, perform any checks we need, and if we are allowed
       # to overwrite the old implementation, do so (and return).
@@ -620,6 +621,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
               fatal(fmt"Duplicate implementation of function '{item.name}'",
                     node)
             return
+        else:
+          if item.tinfo == bottomType:
+            placeholderIx = i
+
+    if placeholderIx != -1:
+      fnlist.del(placeholderIx)
 
     # If we get here, the name was already defined, and none of the existing
     # definitions match our signature.  Add ourselves in.

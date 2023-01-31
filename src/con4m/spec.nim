@@ -9,7 +9,7 @@ import errmsg, types, parse, typecheck
 
 proc sectionType*(spec:       ConfigSpec,
                   name:       string,
-                  singleton:  bool = false): Con4mSectionType =
+                  singleton:  bool = false): Con4mSectionType {.discardable.} =
   # Will add this back in at some point, but trying to simplify
   # since I'm not getting as much time on this as I wanted.
   #validNames: seq[string] = []): Con4mSectionType =
@@ -19,29 +19,30 @@ proc sectionType*(spec:       ConfigSpec,
                             singleton:     singleton,
                             #validObjNames: validNames,
                             backref:       spec)
-  spec.secSpecs[name] = result
+  if name != "":
+    spec.secSpecs[name] = result
 
 proc addAttr*(sect:     Con4mSectionType,
               name:     string,
               tinfo:    Con4mType,
               required: bool,
-              lock:     bool = false): Con4mSectionType =
+              lock:     bool = false): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     raise newException(ValueError, fmt"Duplicate spec: {name}")
   if "*" in name:
-    if name != "*": 
+    if name != "*":
       raise newException(ValueError, "Attribute wilcard must be '*' only")
     elif required == true:
       raise newException(ValueError, "Wildcard attr spec can't have value " &
                                      "'required'")
 
-  let 
+  let
     tobj = ExtendedType(kind: TypePrimitive, tinfo: tinfo)
     info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
                      lock:        lock)
-  
+
   sect.fields[name] = info
   return sect
 
@@ -49,7 +50,7 @@ proc addSection*(sect:     Con4mSectionType,
                  typeName: string,
                  min:      int  = 0,
                  max:      int  = 0,
-                 lock:     bool = false): Con4mSectionType =
+                 lock:     bool = false): Con4mSectionType {.discardable.} =
 
   let knownTypes = sect.backref.secSpecs
 
@@ -75,12 +76,13 @@ proc addSection*(sect:     Con4mSectionType,
                      lock:        lock)
   sect.fields[typeName] = fs
 
-proc newSpec*(state: ConfigState): Con4mSectionType =
-  let spec = ConfigSpec()
-  
-  result        = sectionType(spec, "", true)
-  spec.rootSpec = result
-  state.spec    = some(spec)
+proc newSpec*(): ConfigSpec =
+  result = ConfigSpec()
+
+  result.rootSpec = sectionType(result, "", true)
+
+proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
+  return spec.rootSpec
 
 proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType)
 
@@ -110,8 +112,8 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
   if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
     fatal(fmt"Expected no more than {spec.minRequired} sections of {name}, " &
       fmt"but got {len(sectAttr.contents)}.")
-    
-  
+
+
 proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
   if name notin attrs.contents:
     if spec.minRequired == 1:
@@ -140,7 +142,7 @@ proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType) =
   if "*" notin spec.fields:
     for name, _ in attrs.contents:
       if name notin spec.fields:
-        fatal("Unknown field for a {spec.typeName} section")
-  
+        fatal(fmt"Unknown field for a {spec.typeName} section: {name}")
+
 proc validateState*(state: ConfigState) =
   validateOneSection(state.attrs, state.spec.get().rootSpec)

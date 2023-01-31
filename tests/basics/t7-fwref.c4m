@@ -15,4 +15,3 @@ func fact(f) {
 func doFact(f) {
   return fact(f)
 }
-

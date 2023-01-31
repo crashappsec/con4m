@@ -107,7 +107,7 @@ proc setCTrace*() =
   setLogLevel(llTrace)
   setCon4mVerbosity(c4vMax)
   rawPublish(llTrace, "debugging on.")
-  
+
 proc ctrace*(msg: string) =
   if verbosity == c4vMax:
     rawPublish(llTrace, msg)

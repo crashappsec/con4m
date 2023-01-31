@@ -1,7 +1,7 @@
 x = 12485
 y = 400
 
-m = "foo" + "bar" 
+m = "foo" + "bar"
 
 echo(m)
 

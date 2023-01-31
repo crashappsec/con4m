@@ -261,7 +261,7 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
     key:    string
     `box?`: Option[Box]
     box:    Box = nil
-      
+
   while i < s.len():
     case s[i]
     of '}':
@@ -283,7 +283,7 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
         key.add(s[i])
         i = i + 1
       i = i + 1
-      
+
       `box?` = state.attrLookup(key)
       if `box?`.isNone() and '.' notin key:
         let aoe = state.nodeStash.attrScope.attrLookup([key], 0, vlAttrUse)
@@ -296,7 +296,7 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
           box = runtimeVarLookup(state.frames, key)
         except:
           raise newException(Con4mError, fmt"Error in format: {key} not found")
-          
+
       case box.kind
         of MkStr:
           res.add(unpack[string](box))
