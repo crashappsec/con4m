@@ -776,11 +776,11 @@ const defaultBuiltins = [
   (109, "format",   BiFn(c4mFormat),         "f(string) -> string"),
 
   # Container (list and dict) basics.
-  (200, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
-  (201, "len",      BiFn(c4mDictLen),         "f({@x : @y}) -> int"),
-  (202, "keys",     BiFn(c4mDictKeys),        "f({@x : @y}) -> [@x]"),
-  (203, "values",   BiFn(c4mDictValues),      "f({@x: @y}) -> [@y]"),
-  (204, "items",    BiFn(c4mDictItems),       "f({@x: @y}) -> [(@x, @y)]"),
+  (201, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
+  (202, "len",      BiFn(c4mDictLen),         "f({@x : @y}) -> int"),
+  (203, "keys",     BiFn(c4mDictKeys),        "f({@x : @y}) -> [@x]"),
+  (204, "values",   BiFn(c4mDictValues),      "f({@x: @y}) -> [@y]"),
+  (205, "items",    BiFn(c4mDictItems),       "f({@x: @y}) -> [(@x, @y)]"),
 
   # File system routines
   (301, "listDir",     BiFn(c4mListDir),      "f() -> [string]"),

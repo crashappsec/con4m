@@ -4,19 +4,16 @@ object key {
 
   field require {
     type:     "bool"
-    require: true
-    #default: false
-    # doc: "..."
+    default:  false
+    # docstring: "..."
   }
   field system {
     type:     "bool"
-    require: false
-    #default: false
+    default: false
   }
   field squash {
     type:     "bool"
-    require: false
-    #default:  false
+    default:  false
   }
   field type {
     type:     "string"
@@ -28,8 +25,7 @@ object key {
   }
   field standard {
     type:     "bool"
-    require: false
-    #default:  false
+    default:  false
   }
   field since {
     type:     "string"
@@ -37,22 +33,19 @@ object key {
   }
   field skip {
     type:     "bool"
-    require: false
-    #default:  false
+    default:  false
   }
   field in_ptr {
     type:     "bool"
-    require: false
-    #default:  false
+    default:  false
   }
   field output_order {
     type:     "int"
-    require: false
-    #default:  default_key_priority
+    default:  default_key_priority
   }
   field docstring {
     type:     "string"
-    require: false
+    require:  false
   }
 }
 
@@ -61,41 +54,35 @@ object plugin {
 
   field priority {
     type:     "int"
-    require: false
-    #default: 50
+    default:  50
   }
   field ignore {
-    type: "[string]"
-    require: false
-    #default: []
+    type:    "[string]"
+    default: []
   }
   field codec {
     type:     "bool"
-    require: false
-    #default:  false
+    default:  false
   }
   field keys {
     type:       "[string]"
-    require:   true
+    require:    true
     write_lock: true
   }
   field enabled {
-    type: "bool"
-    require: false
-    # default: true
+    type:    "bool"
+    default: true
   }
   field overrides {
     type: "[string]"
-    require: false
-    # default: []
+    default: []
   }
   field uses_fstrea {
     type: "bool"
-    require: false
-    # default: []
+    default: []
   }
   field docstring {
-    type: "string"
+    type:    "string"
     require: false
   }
 }
@@ -104,203 +91,168 @@ object sink {
   user_def_ok: false
 
   field uses_secret {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_uid {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_filename {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_uri {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_region {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_headers {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_cacheid {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field uses_aux {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_secret {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_uid {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_filename {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_uri {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_region {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_aux {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_headers {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field needs_cacheid {
-    type: "bool"
-    require: true
-    # default: false
+    type:    "bool"
+    default: false
   }
   field docstring {
-    type: "string"
-    require: true
-    # default: false
+    type:    "string"
+    default: false
   }
 }
 
 root {
   user_def_ok: false
-  allow key { }
+  
+  allow key    { }
   allow plugin { }
-  allow sink { }
+  allow sink   { }
+  
   field config_path {
-    type:     "[string]"
-    require: true
-    # default: [".", "~"]
+    type:    "[string]"
+    default: [".", "~"]
   }
   field config_filename {
-    type: "string"
-    require: true
-    # default: "sami.conf"
+    type:    "string"
+    default: "sami.conf"
   }
   field default_command {
-    type:     "string"
+    type:    "string"
     require: false
   }
   field color {
-    type:     "bool"
+    type:    "bool"
     require: false
   }
   field log_level {
     type:     "string"
-    require: true
-    #default:  "warn"
+    default:  "warn"
   }
   field sami_log_level {
-    type:     "string"
-    require: true
-    #default: "warn"
+    type:    "string"
+    default: "warn"
   }
   field dry_run {
     type:     "bool"
-    require: true
-    #default:  false
+    default:  false
   }
   field ignore_broken_conf {
-    type: "bool"
-    require: false
-    #default: true
+    type:    "bool"
+    default: true
   }
   field con4m_pinpoint {
-    type: "bool"
-    require: true
-    #default: true
+    type:    "bool"
+    default: true
   }
   field con4m_traces {
-    type:     "bool"
-    require: true
-    #default: false
+    type:    "bool"
+    default: false
   }
   field cache_fd_limit {
-    type: "int"
-    require: true
-    #default: 50
+    type:    "int"
+    default: 50
   }
   field publish_audit {
-    type: "bool"
-    require: true
-    #default: false
+    type:    "bool"
+    default: false
   }
   field artifact_search_path {
-    type: "[string]"
-    require: true
-    # default: ["."]
+    type:    "[string]"
+    default: ["."]
   }
   field ignore_patterns {
-    type: "[string]"
-    require: true
-    #default: [".*/**", "*.txt", "*.json"]
+    type:    "[string]"
+    default: [".*/**", "*.txt", "*.json"]
   }
   field recursive {
-    type: "bool"
-    require: true
-    #default: true
+    type:    "bool"
+    default: true
   }
   field can_dump {
-    type: "bool"
-    require: true
-    #default: true
+    type:    "bool"
+    default: true
   }
   field can_load {
-    type: "bool"
-    require: true
-    #default: true
+    type:    "bool"
+    default: true
   }
   field container_image_id {
-    type: "string"
-    require: true
-    #default:  ""
+    type:     "string"
+    default:  ""
   }
   field container_image_name {
-    type: "string"
-    require: true
-    #default:  ""
+    type:     "string"
+    default:  ""
   }
   field allow_external_config {
-    type: "bool"
-    require: true
-    #default: true
+    type:    "bool"
+    default: true
   }
   field publish_defaults {
-    type: "bool"
-    require: true
-    #default: false
+    type:    "bool"
+    default: false
   }
   field publish_unmarked {
     type: "bool"
-    require: true
-    #default: true
+    default: true
   }
 }

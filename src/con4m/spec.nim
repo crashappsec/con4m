@@ -10,14 +10,10 @@ import errmsg, types, parse, typecheck
 proc sectionType*(spec:       ConfigSpec,
                   name:       string,
                   singleton:  bool = false): Con4mSectionType {.discardable.} =
-  # Will add this back in at some point, but trying to simplify
-  # since I'm not getting as much time on this as I wanted.
-  #validNames: seq[string] = []): Con4mSectionType =
   if name in spec.secSpecs:
     raise newException(ValueError, fmt"Duplicate section type name: {name}")
   result = Con4mSectionType(typeName:      name,
                             singleton:     singleton,
-                            #validObjNames: validNames,
                             backref:       spec)
   if name != "":
     spec.secSpecs[name] = result
@@ -26,7 +22,9 @@ proc addAttr*(sect:     Con4mSectionType,
               name:     string,
               tinfo:    Con4mType,
               required: bool,
-              lock:     bool = false): Con4mSectionType {.discardable.} =
+              lock:     bool = false,
+              default:  Option[Box] = none(Box)):
+                Con4mSectionType {.discardable.} =
   if name in sect.fields:
     raise newException(ValueError, fmt"Duplicate spec: {name}")
   if "*" in name:
@@ -41,10 +39,51 @@ proc addAttr*(sect:     Con4mSectionType,
     info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
+                     default:     default,
                      lock:        lock)
 
   sect.fields[name] = info
   return sect
+
+# Use this to add simple mutual exclusions... if we see X, then we're
+# not allowed. For instance, in the c42 spec, default: and required:
+# are mutually exclusive, but at least one of them is required.
+#
+# So we mark them as both required and mutually exclusive.
+#  
+# The 'min required' is only enforced when there are no exclusions.
+proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
+  # The c42 object / singleton / root types should allow something
+  # like:
+  #
+  # exclusions { field1: field2, field2: field3 }
+  if fieldName1 notin sect.fields:
+    raise newException(ValueError,
+                       fmt"{fieldName1} must exist in section {sect.typeName}" &
+                          "before it can be used in an exclusion.")
+  if fieldName2 notin sect.fields:
+    raise newException(ValueError,
+                       fmt"{fieldName2} must exist in section {sect.typeName}" &
+                          "before it can be used in an exclusion.")
+  var
+    field1 = sect.fields[fieldName1]
+    field2 = sect.fields[fieldName2]
+
+  # Note: not checking for a double add here.
+  field1.exclusions.add(fieldName2)
+  field2.exclusions.add(fieldName1)
+  
+
+proc setValidationContext*(spec: ConfigSpec,  ctx: ConfigState) =
+  spec.validationCtx = ctx
+  
+proc addSectionCheckCallback*(spec: ConfigSpec,
+                              sect: string,
+                              c4mCallbackName: string) =
+  if sect notin spec.secSpecs:
+    raise newException(ValueError, fmt"Section {sect} must be added before a " &
+                                      "validator can be added.")
+  spec.secSpecs[sect].c4Check = some(c4mCallbackName)
 
 proc addSection*(sect:     Con4mSectionType,
                  typeName: string,
@@ -73,6 +112,7 @@ proc addSection*(sect:     Con4mSectionType,
   var fs = FieldSpec(extType:     ExtendedType(t),
                      minRequired: min,
                      maxRequired: max,
+                     default:     none(Box),
                      lock:        lock)
   sect.fields[typeName] = fs
 
@@ -86,10 +126,31 @@ proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
 
 proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType)
 
+proc exclusionPresent(attrs, name, spec: auto): string =
+  # Returns any one exclusion from the spec that has a value
+  # associated with it in attrs, whether it's an instantiated
+  # section (even if empty) or another attribute.
+  for item in spec.exclusions:
+    if item == name:
+      continue # Ignore if we excluded ourselves.
+    if item notin attrs.contents:
+      continue
+    let aOrS = attrs.contents[item]
+    if aOrS.isA(AttrScope):
+      return item # Once present, attr objects never go away.
+    let attr = aOrS.get(Attribute)
+    if attr.value.isSome() or attr.override.isSome():
+      return item
+  return ""
+  
 proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
+  let exclusion = exclusionPresent(attrs, name, spec)
+  
   if name notin attrs.contents:
-    if spec.minRequired > 0:
-      fatal(fmt"Required section {name} is missing")
+    if spec.minRequired > 0 and exclusion == "":
+      fatal(fmt"Inside section {attrs.name}: Required section {name} is " &
+            "missing, and there are no other fields present that would " &
+            "remove this constraint.")
     else:
       return
   let aOrS = attrs.contents[name]
@@ -106,18 +167,26 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
       fatal(fmt"Cannot have a singleton for section type: {name}")
     else:
       validateOneSection(v.get(AttrScope), secSpec)
-  if len(sectAttr.contents) < spec.minRequired:
-    fatal(fmt"Expected {spec.minRequired} sections of {name}, " &
-      fmt"but only have {len(sectAttr.contents)}.")
-  if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
-    fatal(fmt"Expected no more than {spec.minRequired} sections of {name}, " &
-      fmt"but got {len(sectAttr.contents)}.")
 
+  if exclusion != "":
+    if len(sectAttr.contents) > 0:
+      fatal(fmt"{name} cannot appear alongside {exclusion}")
+  else:
+    if len(sectAttr.contents) < spec.minRequired:
+      fatal(fmt"Expected {spec.minRequired} sections of {name}, " &
+            fmt"but only have {len(sectAttr.contents)}.")
+    if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
+      fatal(fmt"Expected no more than {spec.minRequired} sections of {name}, " &
+            fmt"but got {len(sectAttr.contents)}.")
 
 proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
+  let exclusion = exclusionPresent(attrs, name, spec)
+  
   if name notin attrs.contents:
-    if spec.minRequired == 1:
-      fatal(fmt"Required attribute {name} is missing.")
+    if spec.minRequired == 1 and exclusion == "":
+      fatal(fmt"Inside field {attrs.name}: Required attribute {name} " &
+               "is missing, and there are no other fields present that would " &
+               "remove this constraint.")
     else:
       return
   # The spec says the name is def a con4m type. Make sure it's not a section.
@@ -126,9 +195,16 @@ proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
     fatal(fmt"Expected a field named {name} but got a section.")
   let
     attr = aOrS.get(Attribute)
-  if not attr.value.isSome() and not attr.override.isSome():
-    if spec.minRequired == 1:
-      fatal(fmt"Required attribute {name} is missing.")
+  if not attr.value.isSome() and not attr.override.isSome() and
+     spec.minRequired == 1:
+    if exclusionPresent(attrs, name, spec) == "":
+      if spec.default.isSome():
+        attr.value = spec.default
+      else:
+        fatal(fmt"Required attribute {name} is missing.")
+  else:
+    if exclusion != "":
+      fatal(fmt"In sect {attrs.name}: {name} can't appear with {exclusion}")
   if attr.tInfo.copyType().unify(spec.extType.tinfo.copyType()).isBottom():
     fatal(fmt"Wrong type for {name}")
 

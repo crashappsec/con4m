@@ -116,8 +116,11 @@ when isMainModule:
     else:
       stderr.writeLine(toAnsiCode(acBold) & "Compilation failed.")
       quit(1)
+  except ValueError:
+    echo "con4m: " & getCurrentExceptionMsg()
+    echo getCurrentException().getStackTrace()
+    quit(1)
   except:
-    #echo "con4m: " & getCurrentExceptionMsg()
     echo "See con4m --help for help on usage."
     quit(1)
 

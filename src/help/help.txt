@@ -25,3 +25,4 @@ Short::Long::Description
 ::--none::Alias for --attr-output=none
 -h::--help::This help message
 }%
+See {bold}'con4m --help topics'{reset} for a list of available help topics.

@@ -197,16 +197,20 @@ type
     minRequired*:  int
     maxRequired*:  int
     lock*:         bool
+    default*:      Option[Box]
+    exclusions*:   seq[string] # Fields that obviate us.
 
   Con4mSectionType* = ref object
     typeName*:      string
     singleton*:     bool
     fields*:        Table[string, FieldSpec]
     backref*:       ConfigSpec
+    c4Check*:       Option[string] #c4m callback for validation.
 
   ConfigSpec* = ref object
-    secSpecs*: Table[string, Con4mSectionType]
-    rootSpec*: Con4mSectionType
+    secSpecs*:      Table[string, Con4mSectionType]
+    rootSpec*:      Con4mSectionType
+    validationCtx*: ConfigState # Not required unless using a custom validator
 
   ConfigState* = ref object
     ## The top-level representation of a configuration's runtime
