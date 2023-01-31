@@ -538,6 +538,62 @@ proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mQuote*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(quoteShell(unpack[string](args[0]))))
 
+proc c4mGetOsName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(hostOS))
+
+proc c4mGetArch*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(hostCPU))
+  
+proc c4mGetArgv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(commandLineParams()))
+
+proc c4mGetExePath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(resolvePath(getAppFilename())))
+
+proc c4mGetExeName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(getAppFilename().splitPath().tail))
+  
+proc c4mIntHigh*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(high(int64)))
+
+proc c4mIntLow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(low(int64)))
+
+proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    o1 = unpack[int](args[0])
+    o2 = unpack[int](args[1])
+
+  return some(pack(o1 or o2))
+
+proc c4mBitAnd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    o1 = unpack[int](args[0])
+    o2 = unpack[int](args[1])
+
+  return some(pack(o1 and o2))
+
+proc c4mBitXor*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    o1 = unpack[int](args[0])
+    o2 = unpack[int](args[1])
+
+  return some(pack(o1 xor o2))
+  
+proc c4mBitShl*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    o1 = unpack[int](args[0])
+    o2 = unpack[int](args[1])
+
+  return some(pack(o1 shl o2))
+  
+proc c4mBitShr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    o1 = unpack[int](args[0])
+    o2 = unpack[int](args[1])
+
+  return some(pack(o1 shr o2))
+  
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -747,14 +803,28 @@ const defaultBuiltins = [
   (318, "fileLen",     BiFn(c4mFileLen),      "f(string) -> int"),
 
   # System routines
-  (401, "echo",        BiFn(c4mEcho),         "f(*string)"),
-  (402, "abort",       BiFn(c4mAbort),        "f(string)"),
-  (403, "env",         BiFn(c4mEnvAll),       "f() -> {string : string}"),
-  (404, "env",         BiFn(c4mEnv),          "f(string) -> string"),
-  (405, "envExists",   BiFn(c4mEnvExists),    "f(string) -> bool"),
-  (406, "setEnv",      BiFn(c4mSetEnv),       "f(string, string) -> bool"),
-  (407, "getpid",      BiFn(c4mGetPid),       "f() -> int"),
-  (408, "quote",       BiFn(c4mQuote),        "f(string)->string")
+  (401, "echo",         BiFn(c4mEcho),         "f(*string)"),
+  (402, "abort",        BiFn(c4mAbort),        "f(string)"),
+  (403, "env",          BiFn(c4mEnvAll),       "f() -> {string : string}"),
+  (404, "env",          BiFn(c4mEnv),          "f(string) -> string"),
+  (405, "envExists",    BiFn(c4mEnvExists),    "f(string) -> bool"),
+  (406, "setEnv",       BiFn(c4mSetEnv),       "f(string, string) -> bool"),
+  (407, "getpid",       BiFn(c4mGetPid),       "f() -> int"),
+  (408, "quote",        BiFn(c4mQuote),        "f(string)->string"),
+  (409, "osname",       BiFn(c4mGetOsName),    "f() -> string"),
+  (410, "arch",         BiFn(c4mGetArch),      "f() -> string"),
+  (411, "program_args", BiFn(c4mGetArgv),      "f() -> [string]"),
+  (412, "program_path", BiFn(c4mGetExePath),   "f() -> string"),  
+  (413, "program_name", BiFn(c4mGetExeName),   "f() -> string"),
+  (414, "high",         BiFn(c4mIntHigh),      "f() -> int"),
+  (415, "low",          BiFn(c4mIntLow),       "f() -> int"),
+
+  # Binary ops
+  (501, "bitor",        BiFn(c4mBitOr),        "f(int, int) -> int"),
+  (502, "bitand",       BiFn(c4mBitAnd),       "f(int, int) -> int"),
+  (503, "xor",          BiFn(c4mBitXor),       "f(int, int) -> int"),
+  (504, "shl",          BiFn(c4mBitShl),       "f(int, int) -> int"),
+  (505, "shr",          BiFn(c4mBitShr),       "f(int, int) -> int"),
 ]
 
 when defined(posix):
