@@ -748,12 +748,16 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         result.children.add(ctx.enumeration())
       else:
         parseError("Enums are only allowed at the top level of the config")
+    of TtLockAttr:
+      result.children.add(ctx.attrAssign())
+    of TtExportVar:
+        result.children.add(ctx.varAssign(toplevel))      
     of TtIdentifier:
       case ctx.lookAhead().kind
-      of TtLockAttr, TtAttrAssign, TtColon, TtPeriod:
+      of TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
         continue
-      of TtExportVar, TtLocalAssign, TtComma:
+      of TtLocalAssign, TtComma:
         result.children.add(ctx.varAssign(toplevel))
         continue
       of TtIdentifier, TtStringLit, TtLBrace:

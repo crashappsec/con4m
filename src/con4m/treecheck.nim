@@ -859,7 +859,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   for varName, sym in node.varScope.contents:
     if sym.persists:
       s.keptGlobals[varName] = sym
-      if varName in s.frames[0]:
+      if len(s.frames) > 0 and varName in s.frames[0]:
         sym.value = s.frames[0][varName]
 
   # Now that we've finished the first pass, unlink any nodes that are

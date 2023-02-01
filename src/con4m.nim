@@ -117,12 +117,16 @@ when isMainModule:
       stderr.writeLine(toAnsiCode(acBold) & "Compilation failed.")
       quit(1)
   except ValueError:
-    echo toAnsiCode(acBRed) & "con4m: " & toAnsiCode(acReset) &
+    echo toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
       getCurrentExceptionMsg()
     if getCon4mVerbosity() == c4vMax:
       echo getCurrentException().getStackTrace()
 
     quit(1)
   except:
+    echo toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
+      getCurrentExceptionMsg()
+    if getCon4mVerbosity() == c4vMax:
+      echo getCurrentException().getStackTrace()
     echo "See con4m --help for help on usage."
     quit(1)

@@ -92,10 +92,14 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
     let name = idNode.getTokenText()
     s.runtimeVarSet(name, args[i])
 
-  try:
-    node.children[2].evalNode(s)
-  except:
-    discard # Clean return.  Error message will have been published.
+  #try:
+  node.children[2].evalNode(s)
+  #except:
+  #  discard # Clean return.  Error message will have been published.
+  if len(s.frames) > 0:
+    for k, v in s.frames[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
 
   let frame = s.popRuntimeFrame()
 

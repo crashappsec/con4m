@@ -34,6 +34,10 @@ proc initRun*(n: Con4mNode, s: ConfigState) {.inline.} =
   s.frames = @[topFrame]
 
 proc postRun(state: ConfigState) =
+  if len(state.frames) > 0:
+    for k, v in state.frames[0]:
+      if k in state.keptGlobals:
+        state.keptGlobals[k].value = v
   state.frames  = @[]
 
 var showChecked = false
@@ -57,7 +61,6 @@ proc runBase(state: ConfigState, tree: Con4mNode): bool =
         stderr.write($tree)
 
   phaseEnded(phCheck)
-
   tree.initRun(state)
   try:
     ctrace(fmt"{getCurrentFileName()}: Beginning evaluation.")
