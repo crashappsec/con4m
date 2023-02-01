@@ -4,7 +4,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strutils, strformat, nimutils
+import options, tables, strutils, strformat, nimutils, macros
 import types, typecheck, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
@@ -47,13 +47,13 @@ proc sectionType*(spec:       ConfigSpec,
   if name != "":
     spec.secSpecs[name] = result
 
-proc addAttr*(sect:     Con4mSectionType,
-              name:     string,
-              tinfo:    Con4mType,
-              required: bool,
-              lock:     bool = false,
-              default:  Option[Box] = none(Box)):
-                Con4mSectionType {.discardable.} =
+proc addAttr*(sect:      Con4mSectionType,
+              name:      string,
+              tinfo:     Con4mType,
+              required:  bool,
+              lock:      bool = false,
+              default:   Option[Box] = none(Box),
+              validator: string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: {name}")
   if "*" in name:
@@ -63,7 +63,9 @@ proc addAttr*(sect:     Con4mSectionType,
       defErr(sect, "Wildcard attr spec can't be 'required'")
 
   let
-    tobj = ExtendedType(kind: TypePrimitive, tinfo: tinfo)
+    tobj = ExtendedType(kind:      TypePrimitive,
+                        tinfo:     tinfo,
+                        validator: validator)
     info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
@@ -73,18 +75,19 @@ proc addAttr*(sect:     Con4mSectionType,
   sect.fields[name] = info
   return sect
 
-proc addC4TypeField*(sect:     Con4mSectionType,
-                     name:     string,
-                     required: bool = true,
-                     lock:     bool = false,
-                     default: Option[Box] = none(Box)):
-                       Con4mSectionType {.discardable.} =
+proc addC4TypeField*(sect:      Con4mSectionType,
+                     name:      string,
+                     required:  bool = true,
+                     lock:      bool = false,
+                     default:   Option[Box] = none(Box),
+                     validator: string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: {name}")
   if "*" in name:
     defErr(sect, "User-defined fields can't be 'type' fields")
   let
-    info = FieldSpec(extType:     ExtendedType(kind: TypeC4TypeSpec),
+    tobj = ExtendedType(kind: TypeC4TypeSpec, validator: validator)
+    info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
                      default:     default,
@@ -96,15 +99,16 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
                    name:        string,
                    pointsTo:    string,
                    required:    bool = true,
-                   lock:        bool = false):
-                     Con4mSectionType {.discardable.} =
+                   lock:        bool = false,
+                   validator:   string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
-    defErr(sect, fmt"Duplicate field name: {name}")
+    defErr(sect, fmt"Duplicate field name: '{name}'")
   if "*" in name:
     defErr(sect, "User-defined fields can't be 'type' fields")
   let
-    tinfo = ExtendedType(kind:     TypeC4TypePtr,
-                         fieldRef: pointsTo)
+    tinfo = ExtendedType(kind:      TypeC4TypePtr,
+                         fieldRef:  pointsTo,
+                         validator: validator)
     info  = FieldSpec(extType:     tinfo,
                       minRequired: if required: 1 else: 0,
                       maxRequired: 1,
@@ -112,6 +116,62 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
                       lock:        lock)
   sect.fields[name] = info
   return sect
+
+# For addChoiceField and addRangeField, we don't check to see if
+# default is in range; we assume the developer knows what they're
+# doing and wants the default to only be appliable if no value is
+# given.  Better specing it here rather than hardcoding it internal to
+# the app.
+proc addChoiceField*[T](sect:      Con4mSectionType,
+                        name:      string,
+                        choices:   seq[T],
+                        required:  bool = true,
+                        lock:      bool = false,
+                        default:   Option[Box] = none(Box),
+                        validator: string = "") =
+  var attrType: Con4mType
+
+  when T is string:
+    attrType = stringType
+  elif T is int:
+    attrType = intType
+  else:
+    static:
+      error("addChoiceField must take a sequence of ints or strings")
+
+  addAttr(sect, name, attrType, required, lock, default, validator)
+  var tobj = sect.fields[name].extType
+
+  if tobj.range[0] != tobj.range[1]:
+    defErr(sect, "Can't set both range and choice on the same field")
+  elif len(tobj.int_choices) + len(tobj.str_choices) != 0:
+    defErr(sect, "Already have choices established!")
+  elif len(choices) <= 1:
+    defErr(sect, fmt"When defining field '{name}': must offer 2 or more " &
+                    "choices, or else it's not a choice!")
+
+  when T is string:
+    tobj.str_choices = choices
+  elif T is int:
+    tobj.int_choices = choices
+
+proc addRangeField*(sect:       Con4mSectionType,
+                    name:       string,
+                    rangemin:   int,
+                    rangemax:   int,
+                    required:   bool = true,
+                    lock:       bool = false,
+                    default:   Option[Box] = none(Box),
+                    validator: string = "") =
+  addAttr(sect, name, intType, required, lock, default, validator)
+  var tobj = sect.fields[name].extType
+
+  if rangemin >= rangemax:
+    defErr(sect, "Invalid range.")
+  elif len(tobj.int_choices) + len(tobj.str_choices) != 0:
+    defErr(sect, "Can't offer choices and a range.")
+
+  tobj.range = (rangemin, rangemax)
 
 # Use this to add simple mutual exclusions... if we see X, then we're
 # not allowed. For instance, in the c42 spec, default: and required:
@@ -142,13 +202,6 @@ proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
 
 proc setValidationContext*(spec: ConfigSpec,  ctx: ConfigState) =
   spec.validationCtx = ctx
-
-proc addSectionCheckCallback*(spec: ConfigSpec,
-                              sect: string,
-                              c4mCallbackName: string) =
-  if sect notin spec.secSpecs:
-    defErr(fmt"Section {sect} must be added before a validator can be added.")
-  spec.secSpecs[sect].c4Check = some(c4mCallbackName)
 
 proc addSection*(sect:     Con4mSectionType,
                  typeName: string,
@@ -290,6 +343,25 @@ proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
         toAnsiCode(acBGreen) & fmt"{specType} " & toAnsiCode(acReset) &
         "but value is a: " & toAnsiCode(acBGreen) & fmt"{attrType}" &
         toAnsiCode(acReset) & ")")
+    if attr.value.isSome():
+      if spec.extType.range.low != spec.extType.range.high:
+        assert not attr.tInfo.unify(intType).isBottom()
+        let val = unpack[int](attr.value.get())
+        if val < spec.extType.range.low or val > spec.extType.range.high:
+          specErr(attr, fmt"Value '{val}' is outside of allowed range: " &
+                  fmt"{spec.extType.range.low} .. {spec.extType.range.high}")
+      elif len(spec.extType.int_choices) != 0:
+        assert not attr.tInfo.unify(intType).isBottom()
+        let val = unpack[int](attr.value.get())
+        if val notin spec.extType.int_choices:
+          specErr(attr, "Value is not one of the valid choices: " &
+            $(spec.extType.int_choices))
+      elif len(spec.extType.str_choices) != 0:
+        assert not attr.tInfo.unify(stringType).isBottom()
+        let val = unpack[string](attr.value.get())
+        if val notin spec.extType.str_choices:
+          specErr(attr, "Value is not one of the valid choices: " &
+            spec.extType.str_choices.join(", "))
   of TypeSection:
     unreachable
   of TypeC4TypeSpec:
@@ -339,5 +411,7 @@ proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType) =
       if name notin spec.fields:
         specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
 
-proc validateState*(state: ConfigState) =
+proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
   validateOneSection(state.attrs, state.spec.get().rootSpec)
+  if c42env != nil:
+    state.spec.get().validationCtx = c42env # TODO: lookit dem hooks

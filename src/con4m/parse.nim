@@ -751,7 +751,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
     of TtLockAttr:
       result.children.add(ctx.attrAssign())
     of TtExportVar:
-        result.children.add(ctx.varAssign(toplevel))      
+        result.children.add(ctx.varAssign(toplevel))
     of TtIdentifier:
       case ctx.lookAhead().kind
       of TtAttrAssign, TtColon, TtPeriod:

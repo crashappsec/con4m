@@ -52,6 +52,9 @@ proc buildC42Spec*(): ConfigSpec =
   field.addAttr("require", boolType, true)
   field.addExclusion("default", "require")
   field.addAttr("write_lock", boolType, false)
+  field.addAttr("range", toCon4mType("(int, int)"), false)
+  field.addAttr("choice", toCon4mType("[@T]"), false)
+  field.addAttr("validate", stringType, false)
 
   require.addAttr("write_lock", boolType, false)
   allow.addAttr("write_lock", boolType, false)
@@ -131,12 +134,52 @@ proc populateFields(spec:       ConfigSpec,
       specErr(scope, "Fields must specify either a 'require' or " &
                      "'defaults' field")
 
-  # Do the add here based on the type string.
-    if c4mTypeStr == "typespec":
-      tInfo.addC4TypeField(k, require, lock, default)
+  # Do the add here based on the type string and other fields.
+    if "choice" in fields and "range" in fields:
+      specErr(scope, "Cannot offer both choices and a range.")
+
+    if "choice" in fields:
+      case c4mTypeStr
+      of "string":
+        let
+          lType  = toCon4mType("[string]")
+          choice = fields["choice"].get(Attribute)
+
+        if choice.tInfo.unify(lType).isBottom():
+          specErr(scope, "Choice field should be a list of strings here")
+        let v = unpack[seq[string]](choice.value.get())
+        addChoiceField(tinfo, k, v, require, lock, default) # ADD VALID8OR
+      of "int":
+        let
+          lType  = toCon4mType("[int]")
+          choice = fields["choice"].get(Attribute)
+
+        if choice.tInfo.unify(lType).isBottom():
+          specErr(scope, "Choice field should be a list of int here")
+        let v = unpack[seq[int]](choice.value.get())
+        addChoiceField(tinfo, k, v, require, lock, default) # ADD VALID8OR
+      else:
+        specErr(scope, "Choice field must have type 'int' or 'string'")
+    elif "range" in fields:
+      if c4mTypeStr != "int":
+        specErr(scope, "Range field is only valid for 'int' types.")
+      let
+        tupType  = toCon4mType("(int, int)")
+        tupField = fields["range"].get(Attribute)
+
+      if tupField.tInfo.unify(tupType).isBottom():
+        specErr(scope, "Range field must be a tuple of two integers.")
+      let
+        v: seq[Box] = unpack[seq[Box]](tupField.value.get())
+        l: int      = unpack[int](v[0])
+        h: int      = unpack[int](v[1])
+
+      tInfo.addRangeField(k, l, h, require, lock, default) # ADD VALID8R
+    elif c4mTypeStr == "typespec":
+      tInfo.addC4TypeField(k, require, lock, default) # ADD VALID8R
     elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
       let refField   = c4mTypeStr[1..^1]
-      tInfo.addC4TypePtr(k, refField, require, lock)
+      tInfo.addC4TypePtr(k, refField, require, lock) # ADD VALID8R
     else:
       var c4mType: Con4mType
 
@@ -192,6 +235,8 @@ proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   spec.sectionType(objInfo.name, singleton = false)
 
 proc c42Spec*(s: Stream, fileName: string): Option[ConfigSpec] =
+  ## Create a ConfigSpec object from a con4m file. The schema is
+  ## validated against our c4-2-spec format.
   let (cfgContents, success) = firstRun(s, fileName, buildC42Spec())
 
   if not success:

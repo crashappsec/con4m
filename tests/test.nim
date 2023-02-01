@@ -82,7 +82,7 @@ macro runStackTests(dir: static[string], cmd: untyped): untyped =
         echo "Exception raised: "
         echo getStackTrace()
         echo getCurrentExceptionMsg()
-        
+
 runTests("basics"):
   "./con4m --no-color --none "
 
@@ -91,5 +91,5 @@ runTests("spec"):
 
 runStackTests("stack"):
   "./con4m --no-color --none "
-  
+
 check fails == 0

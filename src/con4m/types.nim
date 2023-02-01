@@ -187,9 +187,13 @@ type
     TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
   ExtendedType* = ref object
+    validator*: string   # A con4m call taking a type tInfo
     case kind*: ExtendedTypeKind
     of TypePrimitive:
       tinfo*: Con4mType
+      range*:       tuple[low: int, high: int] # Only for int types; INCLUSIVE.
+      int_choices*: seq[int]
+      str_choices*: seq[string]
     of TypeSection:
       sinfo*: Con4mSectionType
     of TypeC4TypePtr:
@@ -210,7 +214,6 @@ type
     singleton*:     bool
     fields*:        Table[string, FieldSpec]
     backref*:       ConfigSpec
-    c4Check*:       Option[string] #c4m callback for validation.
 
   ConfigSpec* = ref object
     secSpecs*:      Table[string, Con4mSectionType]

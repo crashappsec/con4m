@@ -42,6 +42,7 @@ object key {
   field output_order {
     type:     "int"
     default:  default_key_priority
+    range:    (0, high())
   }
   field docstring {
     type:     "string"
@@ -59,6 +60,7 @@ object plugin {
   field priority {
     type:     "int"
     default:  50
+    range: (0, high())
   }
   field ignore {
     type:    "[string]"
@@ -174,16 +176,17 @@ root {
   field config_path {
     type:    "[string]"
     default: [".", "~"]
-    validate: "=path_exists"
   }
   field config_filename {
     type:    "string"
     default: "sami.conf"
+    validate: "=valid_filename_check"
   }
   field default_command {
     type:    "string"
     require: false
-    choice:  ["help", "insert", "extract", "delete"]
+    choice:  ["help", "insert", "extract", "delete", "help",
+              "defaults", "confdump"]
   }
   field color {
     type:    "bool"
@@ -192,10 +195,12 @@ root {
   field log_level {
     type:     "string"
     default:  "warn"
+    choice: ["verbose", "trace", "info", "warn", "error", "none"]
   }
   field sami_log_level {
     type:    "string"
     default: "warn"
+    choice: ["verbose", "trace", "info", "warn", "error", "none"]
   }
   field dry_run {
     type:     "bool"
@@ -216,6 +221,7 @@ root {
   field cache_fd_limit {
     type:    "int"
     default: 50
+    range:   (1, high())
   }
   field publish_audit {
     type:    "bool"

@@ -83,7 +83,7 @@ proc fatal*(baseMsg: string,
             st:      string   = "",
             ii:      InstInfo = default(InstInfo)) =
   # 'Fatal' from con4m's perspective is throwing an exception that
-  # returns to the caller.  
+  # returns to the caller.
   var msg: string
 
   if token == nil:
