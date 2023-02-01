@@ -543,7 +543,7 @@ proc c4mGetOsName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mGetArch*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(hostCPU))
-  
+
 proc c4mGetArgv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(commandLineParams()))
 
@@ -552,7 +552,7 @@ proc c4mGetExePath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mGetExeName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(getAppFilename().splitPath().tail))
-  
+
 proc c4mIntHigh*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(high(int64)))
 
@@ -579,21 +579,21 @@ proc c4mBitXor*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     o2 = unpack[int](args[1])
 
   return some(pack(o1 xor o2))
-  
+
 proc c4mBitShl*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
     o2 = unpack[int](args[1])
 
   return some(pack(o1 shl o2))
-  
+
 proc c4mBitShr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
     o2 = unpack[int](args[1])
 
   return some(pack(o1 shr o2))
-  
+
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -814,7 +814,7 @@ const defaultBuiltins = [
   (409, "osname",       BiFn(c4mGetOsName),    "f() -> string"),
   (410, "arch",         BiFn(c4mGetArch),      "f() -> string"),
   (411, "program_args", BiFn(c4mGetArgv),      "f() -> [string]"),
-  (412, "program_path", BiFn(c4mGetExePath),   "f() -> string"),  
+  (412, "program_path", BiFn(c4mGetExePath),   "f() -> string"),
   (413, "program_name", BiFn(c4mGetExeName),   "f() -> string"),
   (414, "high",         BiFn(c4mIntHigh),      "f() -> int"),
   (415, "low",          BiFn(c4mIntLow),       "f() -> int"),

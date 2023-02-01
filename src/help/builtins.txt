@@ -10,13 +10,13 @@ ID::Function::Description
 8::string(bool) -> string::Convert a boolean value to the string “true” or “false”.
 9::string(int) -> string::convert an integer into a string.
 10::string(float) -> string::Convert a float into a string.
-101::contains(string, string) -> bool::Returns true if the first argument contains second argument anywhere. 
+101::contains(string, string) -> bool::Returns true if the first argument contains second argument anywhere.
 102::find(string, string) -> int::If the first string contains the second as a substring, returns the starting byte index of the first match, starting from 0.  If the  substring is not found, this returns -1.
 103::len(string) -> int::Returns the number of bytes in a string
 104::slice(string, int) -> string::Returns a new string that is a substring starting at the provided byte index, through the end of the string.  As with languages like Python, negative values work, indexing from the back of the string.
 105::slice(string, int, int) -> string::Returns a new string that is a substring starting at the first provided byte index, through the second provided index (not inclusive). As with languages like Python, negative values work, indexing from the back of the string.
 106::split(string, string) -> [string]::Take the first string, and break it into a list containing all of the pieces that are separated by the second string, putting the results in a list
-107::strip(string) -> string::Returns a second string, with any trailing or leading whitespace removed. 
+107::strip(string) -> string::Returns a second string, with any trailing or leading whitespace removed.
 108::pad(string, int) -> string::Puts the specified number of spaces in front of each line of a string.
 109::format(string) -> string:: Makes substitutions within a string, based on variables that are in scope. For the input string, anything inside braces {} will be treated as a specifier. You can access attributes that are out of scope by fully dotting from the top-level name.  Note that all tags are currently part of the dotted name. You can use both attributes and variables in a specifier. Strings, bools, ints and floats are acceptable for specifiers, but lists and dictionaries are not. Note that there is currently no way to specify things like padding and alignment in a format specifier. If you want to insert an actual { or } character that shouldn't be part of a specifier, quote them by doubling them up (e.g., {{ to get a single left brace)
 201::len([@T]) -> int::Returns the number of items in a list.
@@ -38,7 +38,7 @@ ID::Function::Description
 312::chdir(string) -> bool::Changes the current working directory of the process.  Returns true if successful.
 313::mkdir(string) -> bool::Creates a directory, and returns true on success.
 314::isDir(string) -> bool:: Returns true if the given file name exists at the time of the call, and is a directory.
-315::isFile(string) -> bool:: Returns true if the given file name exists at the time of the call, and is a regular file. 
+315::isFile(string) -> bool:: Returns true if the given file name exists at the time of the call, and is a regular file.
 316::isLink(string) -> bool::Returns true if the given file name exists at the time of the call, and is a link.
 317::chmod(string, int) -> bool::Attempt to set the file permissions; returns true if successful.
 318::fileLen(string) -> int::Returns the number of bytes in the specified file, or -1 if there is an error (e.g., no file, or not readable)

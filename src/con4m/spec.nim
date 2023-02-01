@@ -5,7 +5,7 @@
 ## :Copyright: 2022
 
 import options, tables, strutils, strformat, nimutils
-import errmsg, types, parse, typecheck
+import errmsg, types, parse, typecheck, st, dollars
 
 proc sectionType*(spec:       ConfigSpec,
                   name:       string,
@@ -26,7 +26,7 @@ proc addAttr*(sect:     Con4mSectionType,
               default:  Option[Box] = none(Box)):
                 Con4mSectionType {.discardable.} =
   if name in sect.fields:
-    raise newException(ValueError, fmt"Duplicate spec: {name}")
+    raise newException(ValueError, fmt"Duplicate field name: {name}")
   if "*" in name:
     if name != "*":
       raise newException(ValueError, "Attribute wilcard must be '*' only")
@@ -45,12 +45,52 @@ proc addAttr*(sect:     Con4mSectionType,
   sect.fields[name] = info
   return sect
 
+proc addC4TypeField*(sect:     Con4mSectionType,
+                     name:     string,
+                     required: bool = true,
+                     lock:     bool = false,
+                     default: Option[Box] = none(Box)):
+                       Con4mSectionType {.discardable.} =
+  if name in sect.fields:
+    raise newException(ValueError, fmt"Duplicate field name: {name}")
+  if "*" in name:
+    raise newException(ValueError, "User-defined fields can't be type fields")
+  let
+    info = FieldSpec(extType:     ExtendedType(kind: TypeC4TypeSpec),
+                     minRequired: if required: 1 else: 0,
+                     maxRequired: 1,
+                     default:     default,
+                     lock:        lock)
+  sect.fields[name] = info
+  return sect
+
+proc addC4TypePtr*(sect:        Con4mSectionType,
+                   name:        string,
+                   pointsTo:    string,
+                   required:    bool = true,
+                   lock:        bool = false):
+                     Con4mSectionType {.discardable.} =
+  if name in sect.fields:
+    raise newException(ValueError, fmt"Duplicate field name: {name}")
+  if "*" in name:
+    raise newException(ValueError, "User-defined fields can't be type fields")
+  let
+    tinfo = ExtendedType(kind:     TypeC4TypePtr,
+                         fieldRef: pointsTo)
+    info  = FieldSpec(extType:     tinfo,
+                      minRequired: if required: 1 else: 0,
+                      maxRequired: 1,
+                      default:     none(Box),
+                      lock:        lock)
+  sect.fields[name] = info
+  return sect
+
 # Use this to add simple mutual exclusions... if we see X, then we're
 # not allowed. For instance, in the c42 spec, default: and required:
 # are mutually exclusive, but at least one of them is required.
 #
 # So we mark them as both required and mutually exclusive.
-#  
+#
 # The 'min required' is only enforced when there are no exclusions.
 proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
   # The c42 object / singleton / root types should allow something
@@ -72,11 +112,11 @@ proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
   # Note: not checking for a double add here.
   field1.exclusions.add(fieldName2)
   field2.exclusions.add(fieldName1)
-  
+
 
 proc setValidationContext*(spec: ConfigSpec,  ctx: ConfigState) =
   spec.validationCtx = ctx
-  
+
 proc addSectionCheckCallback*(spec: ConfigSpec,
                               sect: string,
                               c4mCallbackName: string) =
@@ -142,10 +182,10 @@ proc exclusionPresent(attrs, name, spec: auto): string =
     if attr.value.isSome() or attr.override.isSome():
       return item
   return ""
-  
+
 proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
   let exclusion = exclusionPresent(attrs, name, spec)
-  
+
   if name notin attrs.contents:
     if spec.minRequired > 0 and exclusion == "":
       fatal(fmt"Inside section {attrs.name}: Required section {name} is " &
@@ -181,12 +221,22 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
 
 proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
   let exclusion = exclusionPresent(attrs, name, spec)
-  
+
   if name notin attrs.contents:
     if spec.minRequired == 1 and exclusion == "":
-      fatal(fmt"Inside field {attrs.name}: Required attribute {name} " &
-               "is missing, and there are no other fields present that would " &
-               "remove this constraint.")
+      if spec.default.isSome():
+        let t = spec.extType.tinfo
+        # While we set the default here, it does have to drop down
+        # below to properly type check.
+        attrs.contents[name] = Attribute(name: name,
+                                         scope: attrs,
+                                         tInfo: t,
+                                         value: spec.default,
+                                         override: none(Box))
+      else:
+        fatal(fmt"Inside field {attrs.name}: Required attribute {name} " &
+              "is missing, and there are no other fields present that would " &
+              "remove this constraint.")
     else:
       return
   # The spec says the name is def a con4m type. Make sure it's not a section.
@@ -205,16 +255,52 @@ proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
   else:
     if exclusion != "":
       fatal(fmt"In sect {attrs.name}: {name} can't appear with {exclusion}")
-  if attr.tInfo.copyType().unify(spec.extType.tinfo.copyType()).isBottom():
-    fatal(fmt"Wrong type for {name}")
+  case spec.extType.kind
+  of TypePrimitive:
+    if attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
+      fatal(fmt"Wrong type for {name}")
+  of TypeSection:
+    unreachable
+  of TypeC4TypeSpec:
+    discard # Only the referrer needs to validate.
+  of TypeC4TypePtr:
+    let fieldRef = spec.extType.fieldRef
+
+    if fieldRef notin attrs.contents:
+      fatal(fmt"Type for field {name} (section {attrs.name}) is supposed to " &
+            fmt"be taken from the '{fieldRef}' field, which was not provided.")
+
+    let refAOrS = attrs.contents[fieldRef]
+    if refAOrS.isA(AttrScope):
+      fatal(fmt"Expected a field named '{fieldRef}' containing the type " &
+            fmt" for the field '{name}'")
+
+    let refAttr = refAOrS.get(Attribute)
+    if not refAttr.value.isSome() and not refAttr.value.isSome():
+      fatal(fmt"Field '{fieldRef}' is supposed to contain a con4m type for " &
+            fmt"field '{name}', but that type is missing.")
+    if refAttr.tInfo.unify(stringType).isBottom():
+      fatal(fmt"Field '{fieldRef}' is supposed to contain a con4m type for " &
+            fmt"field '{name}', but the field is not a valid con4m string.")
+    let typeString = unpack[string](refAttr.value.get())
+    try:
+      let fieldType = typeString.toCon4mType()
+      if attr.tInfo.unify(fieldType).isBottom():
+        fatal(fmt"Wrong type for {name} (expected {typeString} per " &
+              fmt"the type read from field '{fieldRef}'), but got: " &
+              fmt"{`$`(attr.tInfo)}")
+    except:
+      fatal(fmt"When reading a type from field '{fieldRef}' (to type check " &
+            fmt"the field '{name}'), got a parse error parsing the type: " &
+            getCurrentExceptionMsg())
 
 proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType) =
   # Here we are 'in' a section and need to validate each field.
   for name, fieldspec in spec.fields:
-    if fieldspec.extType.kind == TypePrimitive:
-      validateOneAttrField(attrs, name, fieldspec)
-    else:
+    if fieldspec.extType.kind == TypeSection:
       validateOneSectField(attrs, name, fieldspec)
+    else:
+      validateOneAttrField(attrs, name, fieldspec)
   if "*" notin spec.fields:
     for name, _ in attrs.contents:
       if name notin spec.fields:

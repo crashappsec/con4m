@@ -123,4 +123,3 @@ when isMainModule:
   except:
     echo "See con4m --help for help on usage."
     quit(1)
-

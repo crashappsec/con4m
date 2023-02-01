@@ -1,11 +1,23 @@
 ## Reading from a con4m file, generate a ConfigSpec object to use for
 ## checking some *other* con4m file.  (⊙ꇴ⊙)
 ##
+## The most mind-bending thing I've done in a while was in building a
+## test case for this, where I wrote a partial implementation of the
+## c42 spec. It hurts my brain even thinking about it.
+##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import tables, strformat, options, streams, nimutils
+import tables, strformat, options, streams, nimutils, macros
 import types, run, spec, st,  errmsg, typecheck, dollars
+
+template throw*(t: typedesc, msg: string) =
+  when t != Exception:
+    macros.error("Argument to throw must be an exception type.")
+  raise newException(t, msg)
+
+template throw*(msg: string) =
+  raise newException(ValueError, msg)
 
 proc buildC42Spec*(): ConfigSpec =
   # We're going to read a con4m file in from users with their specification
@@ -62,7 +74,7 @@ proc populateSec(spec:    ConfigSpec,
 
   for k, v in scope.contents:
     if k notin spec.secSpecs:
-      raise newException(ValueError, fmt"No section type named '{k}' defined")
+      throw fmt"No section type named '{k}' defined"
     let
       fields = v.get(AttrScope).contents
       lock   = if "write_lock" in fields:
@@ -76,41 +88,76 @@ proc populateFields(spec:       ConfigSpec,
                     scope:      AttrScope,
                     exclusions: seq[(string, string)]) =
   for k, v in scope.contents:
+    var
+      require: bool        = false
+      default: Option[Box] = none(Box)
     let
       fields     = v.get(AttrScope).contents
       c4mTypeStr = unpack[string](fields["type"].get(Attribute).value.get())
-      c4mType    = toCon4mType(c4mTypeStr)
       lock       = if "write_lock" in fields:
                      unpack[bool](fields["write_lock"].get(
                        Attribute).value.get())
                    else:
                      false
-    if "require" in fields and "default" in fields:
-      raise newException(ValueError,
-                         "Cannot have 'require' and 'default' together")
+
     if "require" in fields:
-      let require = unpack[bool](fields["require"].get(Attribute).value.get())
-      tInfo.addAttr(k, c4mType, require, lock)
+      if "default" in fields:
+        throw "Cannot have 'require' and 'default' together"
+      else:
+        require = unpack[bool](fields["require"].get(Attribute).value.get())
     elif "default" in fields:
       let
-        attr        = fields["default"].get(Attribute)
-        attrTypeStr = $(attr.tInfo)
-      if unify(c4mType, attr.tInfo).isBottom():
-        raise newException(ValueError,
-                           fmt"for {k}: default value actual type " &
-                           fmt"({attrTypeStr}) does not match the provided" &
-                           fmt"'type' field, which had type: {c4mTypeStr}")
-      tInfo.addAttr(k, c4mType, true, lock, attr.value)
+        attr         = fields["default"].get(Attribute)
+        attrType     = attr.tInfo
+        attrTypeStr  = $(attrType)
+
+      if len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
+        throw "Fields that get their type from other fields may not " &
+              "have a default value"
+      elif c4mTypeStr == "typespec":
+          var ok = true
+          if attrType != stringType or attr.value.isNone():
+            ok = false
+          else:
+            try:
+              discard toCon4mType(unpack[string](attr.value.get()))
+            except:
+              ok = false
+          if not ok:
+            throw "Default values for 'typespec' fields must be valid " &
+                  "con4m type strings."
+      else:
+        let expectedType = toCon4mType(c4mTypeStr)
+
+        if expectedType.unify(attr.tInfo).isBottom():
+          throw fmt"for {k}: default value actual type ({attrTypeStr}) does " &
+                fmt"not match the provided'type' field, which had type: " &
+                fmt"{c4mTypeStr}"
+
+      default = attr.value
     else:
-      raise newException(ValueError, "'require' is required (unless " &
-                                     "a default value is provided instead")
+      throw "Fields must specify either a 'require' or 'defaults' field"
+
+  # Do the add here based on the type string.
+    if c4mTypeStr == "typespec":
+      tInfo.addC4TypeField(k, require, lock, default)
+    elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
+      let refField   = c4mTypeStr[1..^1]
+      tInfo.addC4TypePtr(k, refField, require, lock)
+    else:
+      var c4mType: Con4mType
+
+      try:
+        c4mType = toCon4mType(c4mTypeStr)
+      except:
+        throw fmt"Invalid con4m type in spec: {c4mTypeStr}"
+      tInfo.addAttr(k, c4mType, require, lock, none(Box))
+
   for (k, v) in exclusions:
     if k notin tInfo.fields:
-      raise newException(ValueError, fmt"In {scope.name}: cannot exclude " &
-                                     fmt"undefined field {k}")
+      throw fmt"In {scope.name}: cannot exclude undefined field {k}"
     if v notin tInfo.fields:
-      raise newException(ValueError, fmt"In {scope.name}: cannot exclude " &
-                                     fmt"undefined field {v}")
+      throw fmt"In {scope.name}: cannot exclude undefined field {v}"
     let
       kAttr = tInfo.fields[k]
       vAttr = tInfo.fields[v]
@@ -121,7 +168,7 @@ proc populateFields(spec:       ConfigSpec,
 
 proc getExclusions(s: AttrScope): seq[(string, string)] =
   result = @[]
-  
+
   for k, aOrS in s.contents:
     result.add((k, unpack[string](aOrS.get(Attribute).value.get())))
 
@@ -132,7 +179,7 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
   if "field" in scope.contents:
     spec.populateFields(tInfo, scope.contents["field"].get(AttrScope), pairs)
   elif len(pairs) != 0:
-    raise newException(ValueError, "Can't have exclusions without fields!")
+    throw "Can't have exclusions without fields!"
   if "require" in scope.contents:
     spec.populateSec(tinfo, scope.contents["require"].get(AttrScope), true)
   if "allow" in scope.contents:
@@ -191,4 +238,3 @@ proc c42Spec*(filename: string): Option[ConfigSpec] =
     fatal(fmt"Unable to open file '{filename}' for reading")
 
   return c42Spec(s.readAll().newStringStream(), filename)
-

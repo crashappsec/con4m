@@ -183,7 +183,8 @@ type
     of FnUserDefined, FnCallback:
       impl*:      Option[Con4mNode]
 
-  ExtendedTypeKind* = enum TypePrimitive, TypeSection
+  ExtendedTypeKind* = enum
+    TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
   ExtendedType* = ref object
     case kind*: ExtendedTypeKind
@@ -191,6 +192,10 @@ type
       tinfo*: Con4mType
     of TypeSection:
       sinfo*: Con4mSectionType
+    of TypeC4TypePtr:
+      fieldRef*: string
+    of TypeC4TypeSpec:
+      discard
 
   FieldSpec* = ref object
     extType*:      ExtendedType

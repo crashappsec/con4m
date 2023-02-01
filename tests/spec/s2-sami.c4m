@@ -2,7 +2,7 @@ default_key_priority := 500
 object key {
   user_def_ok: false
 
-  field require {
+  field required {
     type:     "bool"
     default:  false
     # docstring: "..."
@@ -16,11 +16,11 @@ object key {
     default:  false
   }
   field type {
-    type:     "string"
+    type:     "typespec"
     require: true
   }
   field value {
-    type:     "@x"
+    type:     "=type"
     require: false
   }
   field standard {
@@ -46,6 +46,10 @@ object key {
   field docstring {
     type:     "string"
     require:  false
+  }
+  field codec {
+    type: "bool"
+    default: false
   }
 }
 
@@ -77,9 +81,9 @@ object plugin {
     type: "[string]"
     default: []
   }
-  field uses_fstrea {
+  field uses_fstream {
     type: "bool"
-    default: []
+    default: true
   }
   field docstring {
     type:    "string"
@@ -156,17 +160,17 @@ object sink {
   }
   field docstring {
     type:    "string"
-    default: false
+    require:  false
   }
 }
 
 root {
   user_def_ok: false
-  
+
   allow key    { }
   allow plugin { }
   allow sink   { }
-  
+
   field config_path {
     type:    "[string]"
     default: [".", "~"]
