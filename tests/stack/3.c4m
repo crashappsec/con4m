@@ -1,4 +1,0 @@
-func f() {
-  echo(s)
-}
-f()

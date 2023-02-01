@@ -92,10 +92,11 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
     let name = idNode.getTokenText()
     s.runtimeVarSet(name, args[i])
 
-  #try:
-  node.children[2].evalNode(s)
-  #except:
-  #  discard # Clean return.  Error message will have been published.
+  try:
+    node.children[2].evalNode(s)
+  except Con4mError:
+    if getCurrentExceptionMsg() != "return":
+      raise
   if len(s.frames) > 0:
     for k, v in s.frames[0]:
       if k in s.keptGlobals:
@@ -126,10 +127,11 @@ proc sCallUserDef*(s:        ConfigState,
         # user function, no implementation, wouldn't pass the checker.
       unreachable
     return s.evalFunc(a1, nodeOpt.get())
-  except Con4mError:
-    fatal(getCurrentExceptionMsg(), nodeOpt.get())
   except:
-    fatal(fmt"Unhandled error when running builtin call: {name}",
+    let msg = getCurrentExceptionMsg()
+    if getCon4mVerbosity() == c4vMax:
+      echo getCurrentException().getStackTrace()
+    fatal(fmt"Unhandled error when running builtin call '{name}': msg",
           nodeOpt.get())
 
 proc sCallBuiltin(s:     ConfigState,
