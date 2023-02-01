@@ -628,11 +628,19 @@ proc section(ctx: ParseCtx): Con4mNode =
     parseError("Expected }")
 
 
-proc varAssign(ctx: ParseCtx): Con4mNode =
+proc varAssign(ctx: ParseCtx, toplevel = true): Con4mNode =
   var
-    t = ctx.consume()
+    t         = ctx.consume()
+    doExport = if t.kind == TtExportVar: true else: false
     ids: seq[Con4mNode] = @[]
 
+  if doExport:
+    if not toplevel:
+      parseError("Only global variables may be exported, at a global " &
+                 "declaration site")
+    t = ctx.consume()
+    if t.kind != TtIdentifier:
+      parseError("Expected a variable to export after '$'")
 
   ids.add(newNode(NodeIdentifier, t))
 
@@ -659,7 +667,10 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
     parseError("Expected := after list of identifiers for tuple unpack.", true)
 
   if len(ids) == 1:
-    result = newNode(NodeVarAssign, t)
+    if doExport:
+      result = newNode(NodeVarSetExport, t)
+    else:
+      result = newNode(NodeVarAssign, t)
   else:
     result = newNode(NodeUnpack, t)
 
@@ -675,13 +686,19 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
 
 
 proc attrAssign(ctx: ParseCtx): Con4mNode =
-  let
-    t         = ctx.consume()
-    firstNode = newNode(NodeIdentifier, t)
   var
+    t    = ctx.consume()
+    lock = if t.kind == TtLockAttr: true else: false
+
+  if lock:
+    t = ctx.consume()
+    if t.kind != TtIdentifier:
+      parseError("Expected an attribute after '~'")
+  var
+    firstNode = newNode(NodeIdentifier, t)
     child     = firstNode
 
-  result = newNode(NodeAttrAssign, t, @[])
+  result = newNode(if lock: NodeAttrSetLock else: NodeAttrAssign, t, @[])
 
   if ctx.curTok().kind == TtPeriod:
     child = ctx.memberExpr(firstNode)
@@ -733,11 +750,11 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         parseError("Enums are only allowed at the top level of the config")
     of TtIdentifier:
       case ctx.lookAhead().kind
-      of TtAttrAssign, TtColon, TtPeriod:
+      of TtLockAttr, TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
         continue
-      of TtLocalAssign, TtComma:
-        result.children.add(ctx.varAssign())
+      of TtExportVar, TtLocalAssign, TtComma:
+        result.children.add(ctx.varAssign(toplevel))
         continue
       of TtIdentifier, TtStringLit, TtLBrace:
         result.children.add(ctx.section())

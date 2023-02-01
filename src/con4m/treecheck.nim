@@ -246,7 +246,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     node.children[^1].checkNode(s)
 
-  of NodeAttrAssign:
+  of NodeAttrAssign, NodeAttrSetLock:
     var nameParts: seq[string]
     if s.funcOrigin:
       fatal("Cannot assign to attributes within functions or callbacks.", node)
@@ -286,7 +286,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             fmt"""{nameParts.join(".")}.""",
             node.children[0])
     node.attrRef = entry
-  of NodeVarAssign:
+  of NodeVarAssign, NodeVarSetExport:
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for variables currently not supported.",
             node.children[0])
@@ -310,6 +310,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if entry.locked:
       # Could be a loop index or enum.
         fatal(fmt"Cannot assign to the (locked) value {name}", node.children[0])
+    if node.kind == NodeVarSetExport:
+      entry.persists = true
 
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
@@ -841,12 +843,24 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   node.attrScope = s.attrs
   node.varScope  = VarScope(parent: none(VarScope))
 
+  # Put any persistant variable we already know about into the root
+  # scope.
+  for varName, sym in s.keptGlobals:
+    node.varScope.contents[varName] = sym
+
   s.funcOrigin      = false
   s.moduleFuncDefs  = @[]
   s.moduleFuncImpls = @[]
 
   for item in node.children:
     item.checkNode(s)
+
+  # Stash anything that survives stacks.
+  for varName, sym in node.varScope.contents:
+    if sym.persists:
+      s.keptGlobals[varName] = sym
+      if varName in s.frames[0]:
+        sym.value = s.frames[0][varName]
 
   # Now that we've finished the first pass, unlink any nodes that are
   # function decls, so they don't participate in the primary program

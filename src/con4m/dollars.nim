@@ -105,7 +105,9 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
   of NodeBody: fmtNt("Body")
   of NodeAttrAssign: fmtNt("AttrAssign")
+  of NodeAttrSetLock: fmtNt("AttrSetLock")
   of NodeVarAssign: fmtNt("VarAssign")
+  of NodeVarSetExport: fmtNt("VarSetExport")
   of NodeUnpack: fmtNt("Unpack")
   of NodeSection: fmtNt("Section")
   of NodeIfStmt: fmtNt("If Stmt")

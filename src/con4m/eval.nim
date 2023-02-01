@@ -77,7 +77,14 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
 
   let savedFrames = s.frames
 
-  s.frames = @[s.globals]
+  if len(savedFrames) > 0:
+    s.frames = @[savedFrames[0]]
+  else:
+    var newFrame = RuntimeFrame()
+    s.frames     = @[newFrame]
+    for k, v in s.keptGlobals:
+      newFrame[k] = v.value
+
 
   s.pushRuntimeFrame(node)
 
@@ -230,7 +237,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.children[^1].evalNode(s)
     finally:
       discard s.popRuntimeFrame()
-  of NodeAttrAssign:
+  of NodeAttrAssign, NodeAttrSetLock:
     # We already created scope objects in the tree checking phase,
     # and cached a reference to the attribute location where any
     # result should be stored.
@@ -243,16 +250,18 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     of errCantSet:
       fatal(err.msg, node)
     of errOk:
-      discard
+      if node.kind == NodeAttrSetLock:
+        node.attrRef.locked = true
     else:
       unreachable
 
-  of NodeVarAssign:
+  of NodeVarAssign, NodeVarSetExport:
     node.children[1].evalNode(s)
 
     let name  = node.children[0].getTokenText()
 
     s.runtimeVarSet(name, node.children[1].value)
+
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let

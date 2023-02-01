@@ -29,8 +29,8 @@ coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
                    breakStmt | returnStmt | expression (NL|";")+
 sectBodyItems ::= coreBodyItems | section
 enum          ::= "enum" ID ("," ID)*
-attrAssign    ::= ID("." ID)* ("="|":") expression (NL|";")+
-varAssign     ::= ID ("," ID)* ":=" expression (NL|";")+
+attrAssign    ::= ("~")? ID("." ID)* ("="|":") expression (NL|";")+
+varAssign     ::= ("$")? ID ("," ID)* ":=" expression (NL|";")+
 section       ::= ID (STR | ID)? "{" body "}"
 ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*

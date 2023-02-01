@@ -234,6 +234,10 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
         else:
           discard s.readChar()
       tok(TtLineComment)
+    of '~':
+      tok(TtLockAttr)
+    of '$':
+      tok(TtExportVar)
     of '+':
       tok(TtPlus)
     of '-':

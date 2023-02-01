@@ -17,7 +17,6 @@ proc newConfigState*(node:        Con4mNode,
 
   let specOpt = if spec == nil: none(ConfigSpec) else: some(spec)
   result      = ConfigState(attrs:   attrRoot,
-                            globals: RuntimeFrame(),
                             spec:    specOpt)
 
   node.attrScope.config = result
@@ -26,12 +25,8 @@ proc newConfigState*(node:        Con4mNode,
     result.addDefaultBuiltins(exclude)
 
 proc initRun*(n: Con4mNode, s: ConfigState) {.inline.} =
-  var topFrame = s.globals
+  var topFrame = RuntimeFrame()
 
-  if topFrame == nil:
-    topFrame = RuntimeFrame()
-
-  # TODO: validate lock state of globals across runs.
   for k, sym in n.varScope.contents:
     if k notin topFrame:
       topFrame[k] = sym.value
@@ -39,7 +34,6 @@ proc initRun*(n: Con4mNode, s: ConfigState) {.inline.} =
   s.frames = @[topFrame]
 
 proc postRun(state: ConfigState) =
-  state.globals = state.frames[0]
   state.frames  = @[]
 
 var showChecked = false

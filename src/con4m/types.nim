@@ -12,10 +12,10 @@ type
   ## Enumeration of all possible lexical tokens. Should not be exposed
   ## outside the package.
   Con4mTokenKind* = enum
-    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtPlus, TtMinus, TtMul,
-    TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte, TtGt, TtNeq, TtNot,
-    TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma, TtPeriod,
-    TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
+    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtLockAttr, TtExportVar,
+    TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
+    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
+    TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtCallback, TtSof, TtEof, ErrorTok,
@@ -38,13 +38,13 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeBody, NodeAttrAssign, NodeVarAssign, NodeUnpack, NodeSection,
-    NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue,
-    NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex,
-    NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit,
-    NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
-    NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier,
-    NodeFuncDef, NodeFormalList
+    NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, NodeVarSetExport,
+    NodeUnpack, NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor,
+    NodeBreak, NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot,
+    NodeMember, NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair,
+    NodeListLit, NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
+    NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -224,7 +224,7 @@ type
     ## except via API.
     setHook*:            AttrSetHook
     attrs*:              AttrScope
-    globals*:            RuntimeFrame
+    keptGlobals*:        Table[string, VarSym]
     frames*:             VarStack
     spec*:               Option[ConfigSpec]
     funcTable*:          Table[string, seq[FuncTableEntry]]
