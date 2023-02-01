@@ -27,6 +27,9 @@ var
 proc setCon4mVerbosity*(level: C4Verbosity) =
   verbosity = level
 
+proc getCon4mVerbosity*(): C4Verbosity =
+  return verbosity
+
 proc setCurrentFileName*(s: string) =
   curFileName = s
 

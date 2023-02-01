@@ -8,16 +8,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import tables, strformat, options, streams, nimutils, macros
+import tables, strformat, options, streams, nimutils
 import types, run, spec, st,  errmsg, typecheck, dollars
-
-template throw*(t: typedesc, msg: string) =
-  when t != Exception:
-    macros.error("Argument to throw must be an exception type.")
-  raise newException(t, msg)
-
-template throw*(msg: string) =
-  raise newException(ValueError, msg)
 
 proc buildC42Spec*(): ConfigSpec =
   # We're going to read a con4m file in from users with their specification
@@ -74,7 +66,7 @@ proc populateSec(spec:    ConfigSpec,
 
   for k, v in scope.contents:
     if k notin spec.secSpecs:
-      throw fmt"No section type named '{k}' defined"
+      specErr(scope, fmt"No section type named '{k}' defined in spec")
     let
       fields = v.get(AttrScope).contents
       lock   = if "write_lock" in fields:
@@ -102,7 +94,7 @@ proc populateFields(spec:       ConfigSpec,
 
     if "require" in fields:
       if "default" in fields:
-        throw "Cannot have 'require' and 'default' together"
+        specErr(scope, "Cannot have 'require' and 'default' together")
       else:
         require = unpack[bool](fields["require"].get(Attribute).value.get())
     elif "default" in fields:
@@ -112,8 +104,8 @@ proc populateFields(spec:       ConfigSpec,
         attrTypeStr  = $(attrType)
 
       if len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
-        throw "Fields that get their type from other fields may not " &
-              "have a default value"
+        specErr(scope, "Fields that get their type from other fields may " &
+                       "not have a default value")
       elif c4mTypeStr == "typespec":
           var ok = true
           if attrType != stringType or attr.value.isNone():
@@ -124,19 +116,20 @@ proc populateFields(spec:       ConfigSpec,
             except:
               ok = false
           if not ok:
-            throw "Default values for 'typespec' fields must be valid " &
-                  "con4m type strings."
+            specErr(scope, "Default values for 'typespec' fields must be " &
+                           "valid con4m type strings.")
       else:
         let expectedType = toCon4mType(c4mTypeStr)
 
         if expectedType.unify(attr.tInfo).isBottom():
-          throw fmt"for {k}: default value actual type ({attrTypeStr}) does " &
-                fmt"not match the provided'type' field, which had type: " &
-                fmt"{c4mTypeStr}"
+          specErr(scope, fmt"for {k}: default value actual type " &
+                         fmt"({attrTypeStr}) does not match the provided " &
+                         fmt"'type' field, which had type: {c4mTypeStr}")
 
       default = attr.value
     else:
-      throw "Fields must specify either a 'require' or 'defaults' field"
+      specErr(scope, "Fields must specify either a 'require' or " &
+                     "'defaults' field")
 
   # Do the add here based on the type string.
     if c4mTypeStr == "typespec":
@@ -150,14 +143,14 @@ proc populateFields(spec:       ConfigSpec,
       try:
         c4mType = toCon4mType(c4mTypeStr)
       except:
-        throw fmt"Invalid con4m type in spec: {c4mTypeStr}"
+        specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
       tInfo.addAttr(k, c4mType, require, lock, none(Box))
 
   for (k, v) in exclusions:
     if k notin tInfo.fields:
-      throw fmt"In {scope.name}: cannot exclude undefined field {k}"
+      specErr(scope, fmt"Cannot exclude undefined field {k}")
     if v notin tInfo.fields:
-      throw fmt"In {scope.name}: cannot exclude undefined field {v}"
+      specErr(scope, fmt"Cannot exclude undefined field {v}")
     let
       kAttr = tInfo.fields[k]
       vAttr = tInfo.fields[v]
@@ -179,7 +172,7 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
   if "field" in scope.contents:
     spec.populateFields(tInfo, scope.contents["field"].get(AttrScope), pairs)
   elif len(pairs) != 0:
-    throw "Can't have exclusions without fields!"
+    specErr(scope, "Can't have exclusions without fields!")
   if "require" in scope.contents:
     spec.populateSec(tinfo, scope.contents["require"].get(AttrScope), true)
   if "allow" in scope.contents:
@@ -235,6 +228,6 @@ proc c42Spec*(filename: string): Option[ConfigSpec] =
   var s = newFileStream(filename)
 
   if s == nil:
-    fatal(fmt"Unable to open file '{filename}' for reading")
+    fatal(fmt"Unable to open specification file '{filename}' for reading")
 
   return c42Spec(s.readAll().newStringStream(), filename)

@@ -205,7 +205,6 @@ proc attrLookup*(scope: AttrScope,
 
     return newScope.attrLookup(parts, ix + 1, op)
 
-
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
 
@@ -236,16 +235,24 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
-proc fullNameAsSeq(attr: Attribute): seq[string] =
-  result = @[attr.name]
-  var sec = attr.scope
+proc fullNameAsSeq*(scope: AttrScope): seq[string] =
+  var sec = scope
+  result  = @[]
 
   while sec.parent.isSome():
-    # The top-most section won't have a name.
     result.add(sec.name)
     sec = sec.parent.get()
+  result.reverse
 
-  result.reverse()
+proc fullNameAsSeq*(attr: Attribute): seq[string] =
+  result = attr.scope.fullNameAsSeq()
+  result.add(attr.name)
+
+proc fullNameAsStr*(scope: AttrScope): string =
+  return scope.fullNameAsSeq().join(".")
+
+proc fullNameAsStr*(attr: Attribute): string =
+  return attr.fullNameAsSeq().join(".")
 
 proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
   ## This version of attrSet is the lowest level, and actually does
