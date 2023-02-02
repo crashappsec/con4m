@@ -144,16 +144,16 @@ proc addChoiceField*[T](sect:      Con4mSectionType,
 
   if tobj.range[0] != tobj.range[1]:
     defErr(sect, "Can't set both range and choice on the same field")
-  elif len(tobj.int_choices) + len(tobj.str_choices) != 0:
+  elif len(tobj.intChoices) + len(tobj.strChoices) != 0:
     defErr(sect, "Already have choices established!")
   elif len(choices) <= 1:
     defErr(sect, fmt"When defining field '{name}': must offer 2 or more " &
                     "choices, or else it's not a choice!")
 
   when T is string:
-    tobj.str_choices = choices
+    tobj.strChoices = choices
   elif T is int:
-    tobj.int_choices = choices
+    tobj.intChoices = choices
 
 proc addRangeField*(sect:       Con4mSectionType,
                     name:       string,
@@ -168,7 +168,7 @@ proc addRangeField*(sect:       Con4mSectionType,
 
   if rangemin >= rangemax:
     defErr(sect, "Invalid range.")
-  elif len(tobj.int_choices) + len(tobj.str_choices) != 0:
+  elif len(tobj.intChoices) + len(tobj.strChoices) != 0:
     defErr(sect, "Can't offer choices and a range.")
 
   tobj.range = (rangemin, rangemax)
@@ -254,7 +254,7 @@ proc exclusionPresent(attrs, name, spec: auto): string =
     if aOrS.isA(AttrScope):
       return item # Once present, attr objects never go away.
     let attr = aOrS.get(Attribute)
-    if attr.value.isSome() or attr.override.isSome():
+    if attr.attrToVal.isSome():
       return item
   return ""
 
@@ -326,8 +326,7 @@ proc validateOneAttrField(attrs:  AttrScope,
     specErr(attrs, fmt"Expected a field '{name}' but got a section instead.")
   let
     attr = aOrS.get(Attribute)
-  if not attr.value.isSome() and not attr.override.isSome() and
-     spec.minRequired == 1:
+  if not attr.attrToVal().isSome() and spec.minRequired == 1:
     if exclusionPresent(attrs, name, spec) == "":
       if spec.default.isSome():
         attr.value = spec.default
@@ -347,25 +346,26 @@ proc validateOneAttrField(attrs:  AttrScope,
         toAnsiCode(acBGreen) & fmt"{specType} " & toAnsiCode(acReset) &
         "but value is a: " & toAnsiCode(acBGreen) & fmt"{attrType}" &
         toAnsiCode(acReset) & ")")
-    if attr.value.isSome():
+    var attrVal = attr.attrToVal()
+    if attrVal.isSome():
       if spec.extType.range.low != spec.extType.range.high:
         assert not attr.tInfo.unify(intType).isBottom()
-        let val = unpack[int](attr.value.get())
+        let val = unpack[int](attrVal.get())
         if val < spec.extType.range.low or val > spec.extType.range.high:
           specErr(attr, fmt"Value '{val}' is outside of allowed range: " &
                   fmt"{spec.extType.range.low} .. {spec.extType.range.high}")
-      elif len(spec.extType.int_choices) != 0:
+      elif len(spec.extType.intChoices) != 0:
         assert not attr.tInfo.unify(intType).isBottom()
-        let val = unpack[int](attr.value.get())
-        if val notin spec.extType.int_choices:
+        let val = unpack[int](attrVal.get())
+        if val notin spec.extType.intChoices:
           specErr(attr, "Value is not one of the valid choices: " &
-            $(spec.extType.int_choices))
-      elif len(spec.extType.str_choices) != 0:
+            $(spec.extType.intChoices))
+      elif len(spec.extType.strChoices) != 0:
         assert not attr.tInfo.unify(stringType).isBottom()
-        let val = unpack[string](attr.value.get())
-        if val notin spec.extType.str_choices:
+        let val = unpack[string](attrVal.get())
+        if val notin spec.extType.strChoices:
           specErr(attr, "Value is not one of the valid choices: " &
-            spec.extType.str_choices.join(", "))
+            spec.extType.strChoices.join(", "))
   of TypeSection:
     unreachable
   of TypeC4TypeSpec:
@@ -383,7 +383,7 @@ proc validateOneAttrField(attrs:  AttrScope,
                      fmt"the type for the field '{name}'")
 
     let refAttr = refAOrS.get(Attribute)
-    if not refAttr.value.isSome() and not refAttr.value.isSome():
+    if not refAttr.attrToVal().isSome():
       specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a " &
                      fmt"con4m type for field '{name}', but that type is " &
                         "missing.")
@@ -391,7 +391,7 @@ proc validateOneAttrField(attrs:  AttrScope,
       specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a con4m " &
                      fmt"type for field '{name}', but the field is not a " &
                      "valid con4m string.")
-    let typeString = unpack[string](refAttr.value.get())
+    let typeString = unpack[string](refAttr.attrToVal().get())
     try:
       let fieldType = typeString.toCon4mType()
       if attr.tInfo.unify(fieldType).isBottom():
@@ -402,7 +402,7 @@ proc validateOneAttrField(attrs:  AttrScope,
       specErr(attrs, fmt"When reading a type from field '{fieldRef}' " &
                      fmt"(to type check the field '{name}'), got a parse " &
                      "error parsing the type: " & getCurrentExceptionMsg())
-  if spec.extType.validator != "" and attr.value.isSome():
+  if spec.extType.validator != "" and attr.attrToVal().isSome():
     var fieldType: Con4mType
     if spec.extType.kind == TypePrimitive:
       fieldType = spec.extType.tinfo
@@ -420,7 +420,7 @@ proc validateOneAttrField(attrs:  AttrScope,
                     "didn't provide an evaluation context.")
     else:
       let
-        box = attr.value.get()
+        box = attr.attrToVal().get()
         ret = c42env.runCallback(spec.extType.validator,
                                  @[pack(attr.fullNameAsStr()), box],
                                  some(callType))

@@ -193,10 +193,10 @@ type
     validator*: string   # A con4m call used in fields, not sections.
     case kind*: ExtendedTypeKind
     of TypePrimitive:
-      tinfo*: Con4mType
-      range*:       tuple[low: int, high: int] # Only for int types; INCLUSIVE.
-      int_choices*: seq[int]
-      str_choices*: seq[string]
+      tinfo*:      Con4mType
+      range*:      tuple[low: int, high: int] # Only for int types; INCLUSIVE.
+      intChoices*: seq[int]
+      strChoices*: seq[string]
     of TypeSection:
       sinfo*: Con4mSectionType
     of TypeC4TypePtr:
