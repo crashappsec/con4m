@@ -74,6 +74,7 @@ object plugin {
     type:       "[string]"
     require:    true
     write_lock: true
+    validator:  "key_check"
   }
   field enabled {
     type:    "bool"
@@ -91,6 +92,32 @@ object plugin {
     type:    "string"
     require: false
   }
+}
+
+func key_check(keyname, value) {
+  if false {
+    value := [""]
+  }    # Declare type of value.  Fix this urgently.
+       # AND, make sure spec uses the right accessor API
+  sects := sections("key")
+
+  for i from 0 to len(value) {
+    if value[i] == "*" {
+      continue
+    }
+    okay := false
+    for j from 0 to len(sects) {
+        if sects[j] == value[i] {
+	  okay := true
+	  break
+        }
+    }
+    if not okay {
+       x := "'" + value[i] + "' is not a valid (specified) key."
+       return x
+    }
+  }
+  return ""
 }
 
 object sink {
@@ -180,7 +207,7 @@ root {
   field config_filename {
     type:    "string"
     default: "sami.conf"
-    validate: "=valid_filename_check"
+    validator: "valid_filename_check"
   }
   field default_command {
     type:    "string"
@@ -221,7 +248,7 @@ root {
   field cache_fd_limit {
     type:    "int"
     default: 50
-    range:   (1, high())
+    range:   (0, high())
   }
   field publish_audit {
     type:    "bool"

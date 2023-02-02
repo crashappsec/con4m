@@ -594,6 +594,44 @@ proc c4mBitShr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(o1 shr o2))
 
+proc c4mBitNot*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let innum = unpack[int](args[0])
+
+  return some(pack(not innum))
+
+var replacementState: Option[ConfigState] = none(ConfigState)
+
+proc setReplacementState*(state: ConfigState) =
+  replacementState = some(state)
+
+proc clearReplacementState*() =
+  replacementState = none(ConfigState)
+
+proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
+  let
+    name  = unpack[string](args[0])
+    state = replacementState.getOrElse(localState)
+    aOrE  = attrLookup(state.attrs, name.split("."), 0, vlExists)
+
+  if aOrE.isA(AttrErr):
+    return some(pack[seq[string]](@[]))
+
+  let
+    aOrS             = aOrE.get(AttrOrSub)
+
+  if aOrS.isA(Attribute):
+    return some(pack[seq[string]](@[]))
+  var
+    sec              = aOrS.get(AttrScope)
+    res: seq[string] = @[]
+
+  for key, aOrS in sec.contents:
+    if aOrS.isA(AttrScope):
+      res.add(key)
+
+
+  return some(pack(res))
+
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -825,6 +863,10 @@ const defaultBuiltins = [
   (503, "xor",          BiFn(c4mBitXor),       "f(int, int) -> int"),
   (504, "shl",          BiFn(c4mBitShl),       "f(int, int) -> int"),
   (505, "shr",          BiFn(c4mBitShr),       "f(int, int) -> int"),
+  (506, "bitnot",       BiFn(c4mBitNot),       "f(int) -> int"),
+
+  # Con4m-specific stuff
+  (601, "sections",     BiFn(c4mSections),     "f(string) -> [string]"),
 ]
 
 when defined(posix):

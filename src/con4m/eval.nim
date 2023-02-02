@@ -62,14 +62,11 @@ proc runtimeVarLookup(s: ConfigState, name: string): Box {.inline.} =
 proc getFuncBySig*(s:    ConfigState,
                    name: string,
                    t:    Con4mType): Option[FuncTableEntry] =
-  if not s.funcTable.contains(name):
-    return
+  let candidates = s.findMatchingProcs(name, t)
 
-  let candidates = s.funcTable[name]
+  if len(candidates) == 1:
+    return some(candidates[0])
 
-  for item in candidates:
-    if not isBottom(copyType(t), copyType(item.tinfo)):
-      return some(item)
 
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
   if args.len() != node.children[1].children.len():
@@ -102,16 +99,13 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
       if k in s.keptGlobals:
         s.keptGlobals[k].value = v
 
-  let frame = s.popRuntimeFrame()
+
+  try:
+    result = some(runtimeVarLookup(s, "result"))
+  except:
+    result = none(Box)
 
   s.frames = savedFrames
-
-  if "result" in frame:
-    result = frame["result"]
-    if result.isSome():
-      node.value = result.get()
-  else:
-    return none(Box)
 
 
 proc sCallUserDef*(s:        ConfigState,
@@ -127,7 +121,7 @@ proc sCallUserDef*(s:        ConfigState,
         # user function, no implementation, wouldn't pass the checker.
       unreachable
     return s.evalFunc(a1, nodeOpt.get())
-  except:
+  except ValueError:
     let msg = getCurrentExceptionMsg()
     if getCon4mVerbosity() == c4vMax:
       echo getCurrentException().getStackTrace()
@@ -148,30 +142,32 @@ proc sCallBuiltin(s:     ConfigState,
     fatal(fmt"Unhandled error when running builtin call: {name}", node)
 
 proc sCall*(s:       ConfigState,
-            name:    string,
+            fInfo:   FuncTableEntry,
             a1:      seq[Box],
-            tinfo:   Con4mType,
-            nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
+            node:    Con4mNode): Option[Box] =
   ## This is not really meant to be exposed outside this module,
   ## except to the evaluator.  This runs a builtin call, callback or
   ## user-defined function.
   ##
-  ## The node parameter will be the node from the caller's scope, if
-  ## present.
+  ## The node parameter will be the node from the caller's scope.
+  case fInfo.kind
+  of FnBuiltIn:
+    return s.sCallBuiltin(fInfo.name, a1, fInfo, node)
+  else:
+    return s.sCallUserDef(fInfo.name, a1, true, fInfo.impl)
+
+proc sCall*(s:       ConfigState,
+            name:    string,
+            a1:      seq[Box],
+            tinfo:   Con4mType,
+            nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
 
   let optFunc = s.getFuncBySig(name, tinfo)
 
   if not optFunc.isSome():
-    fatal(fmt"Function {reprSig(name, tinfo)} not found")
+    fatal(fmt"Function '{reprSig(name, tinfo)}' not found")
 
-  let fInfo = optFunc.get()
-
-  case fInfo.kind
-  of FnBuiltIn:
-    return s.sCallBuiltin(name, a1, fInfo, nodeOpt.get())
-  else:
-    let callback = fInfo.kind == FnCallback
-    return s.sCallUserDef(name, a1, callback, fInfo.impl)
+  return s.sCall(optFunc.get(), a1, nodeOpt.getOrElse(nil))
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
@@ -433,16 +429,14 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     # We package up the arguments into a sequence, and then invoke
     # sCall; we checked for the function's existence already.
     node.children[1].evalNode(s)
-    let
-      fname   = node.children[0].getTokenText()
-      funcSig = node.children[1].typeInfo
     var
       args: seq[Box] = @[]
 
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    var ret = s.sCall(fname, args, funcSig, some(node))
+    assert node.procRef != nil
+    var ret = s.sCall(node.procRef, args, node)
     if ret.isSome():
       node.value = ret.get()
 
@@ -571,3 +565,19 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = node.attrRef.value.get()
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
+
+proc runCallback*(s:     ConfigState,
+                  name:  string,
+                  args:  seq[Box],
+                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
+  if tinfo.isSome():
+    return s.sCall(name, args, tinfo.get())
+  if not s.funcTable.contains(name):
+    # User did not supply the callback.
+    return
+  if len(s.funcTable[name]) > 0:
+    raise newException(ValueError,
+                       "When supporting callbacks with multiple signatures, " &
+                       "you must supply the type when calling runCallback()")
+  let impl = s.funcTable[name][0].impl
+  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)

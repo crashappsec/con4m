@@ -163,6 +163,7 @@ type
     attrScope*:    AttrScope
     value*:        Box
     attrRef*:      Attribute
+    procRef*:      FuncTableEntry
 
   BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
@@ -187,7 +188,7 @@ type
     TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
   ExtendedType* = ref object
-    validator*: string   # A con4m call taking a type tInfo
+    validator*: string   # A con4m call used in fields, not sections.
     case kind*: ExtendedTypeKind
     of TypePrimitive:
       tinfo*: Con4mType
@@ -218,7 +219,6 @@ type
   ConfigSpec* = ref object
     secSpecs*:      Table[string, Con4mSectionType]
     rootSpec*:      Con4mSectionType
-    validationCtx*: ConfigState # Not required unless using a custom validator
 
   ConfigState* = ref object
     ## The top-level representation of a configuration's runtime

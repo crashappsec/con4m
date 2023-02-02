@@ -44,7 +44,7 @@ var showChecked = false
 proc setShowChecked*() =
   showChecked = true
 
-proc runBase(state: ConfigState, tree: Con4mNode): bool =
+proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   if tree == nil: return false
   tree.checkTree(state)
   if showChecked or stopPhase == phCheck:
@@ -70,7 +70,7 @@ proc runBase(state: ConfigState, tree: Con4mNode): bool =
     state.postRun()
 
   if state.spec.isSome():
-    state.validateState()
+    state.validateState(evalCtx)
 
   return true
 
@@ -80,8 +80,8 @@ proc firstRun*(stream:      Stream,
                addBuiltins: bool = true,
                customFuncs: openarray[(string, BuiltinFn, string)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = []):
-                 (ConfigState, bool) =
+               callbacks:   openarray[(string, string)] = [],
+               evalCtx:     ConfigState = nil): (ConfigState, bool) =
     setCurrentFileName(fileName)
     # Parse throws an error if it doesn't succeed.
     var
@@ -94,7 +94,7 @@ proc firstRun*(stream:      Stream,
     for (name, tinfo) in callbacks:
       state.newCallback(name, tinfo)
 
-    if state.runBase(tree):
+    if state.runBase(tree, evalCtx):
       return (state, true)
     else:
       return (state, false)
@@ -105,45 +105,37 @@ proc firstRun*(contents:    string,
                addBuiltins: bool = true,
                customFuncs: openarray[(string, BuiltinFn, string)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = []):
-                 (ConfigState, bool) =
+               callbacks:   openarray[(string, string)] = [],
+               evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newStringStream(contents), fileName, spec, addBuiltins,
-                  customFuncs, exclude, callbacks)
+                  customFuncs, exclude, callbacks, evalCtx)
 
 proc firstRun*(fileName:    string,
                spec:        ConfigSpec = nil,
                addBuiltins: bool = true,
                customFuncs: openarray[(string, BuiltinFn, string)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = []):
-                 (ConfigState, bool) =
+               callbacks:   openarray[(string, string)] = [],
+               evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newFileStream(fileName, fmRead), fileName, spec,
-                  addBuiltins, customFuncs, exclude, callbacks)
+                  addBuiltins, customFuncs, exclude, callbacks, evalCtx)
 
-proc stackConfig*(s: ConfigState, stream: Stream, fileName: string): bool =
+proc stackConfig*(s:        ConfigState,
+                  stream:   Stream,
+                  fileName: string,
+                  evalCtx:  ConfigState = nil): bool =
   setCurrentFileName(fileName)
-  return runBase(s, parse(stream, fileName))
+  return s.runBase(parse(stream, fileName), evalCtx)
 
-proc stackConfig*(s: ConfigState, contents: string, filename: string): bool =
+proc stackConfig*(s:        ConfigState,
+                  contents: string,
+                  filename: string,
+                  evalCtx:  ConfigState = nil): bool =
   setCurrentFileName(filename)
-  return runBase(s, parse(newStringStream(filename), filename))
+  return s.runBase(parse(newStringStream(filename), filename), evalCtx)
 
-proc stackConfig*(s: ConfigState, filename: string): bool =
+proc stackConfig*(s:        ConfigState,
+                  filename: string,
+                  evalCtx:  ConfigState = nil): bool =
   setCurrentFileName(filename)
-  return runBase(s, parse(newFileStream(filename), filename))
-
-proc runCallback*(s:     ConfigState,
-                  name:  string,
-                  args:  seq[Box],
-                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
-  if tinfo.isSome():
-    return s.sCall(name, args, tinfo.get())
-  if not s.funcTable.contains(name):
-    # User did not supply the callback.
-    return
-  if len(s.funcTable[name]) > 0:
-    raise newException(ValueError,
-                       "When supporting callbacks with multiple signatures, " &
-                       "you must supply the type when calling runCallback()")
-  let impl = s.funcTable[name][0].impl
-  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
+  return s.runBase(parse(newFileStream(filename), filename), evalCtx)

@@ -4,8 +4,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strutils, strformat, nimutils, macros
-import types, typecheck, st, dollars
+import options, tables, strutils, strformat, nimutils, macros, builtins
+import types, typecheck, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
   let name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
@@ -199,10 +199,6 @@ proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
   field1.exclusions.add(fieldName2)
   field2.exclusions.add(fieldName1)
 
-
-proc setValidationContext*(spec: ConfigSpec,  ctx: ConfigState) =
-  spec.validationCtx = ctx
-
 proc addSection*(sect:     Con4mSectionType,
                  typeName: string,
                  min:      int  = 0,
@@ -241,7 +237,7 @@ proc newSpec*(): ConfigSpec =
 proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
   return spec.rootSpec
 
-proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType)
+proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType, c42Env: ConfigState)
 
 proc exclusionPresent(attrs, name, spec: auto): string =
   # Returns any one exclusion from the spec that has a value
@@ -260,7 +256,7 @@ proc exclusionPresent(attrs, name, spec: auto): string =
       return item
   return ""
 
-proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
+proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec, c42Env: ConfigState) =
   let exclusion = exclusionPresent(attrs, name, spec)
 
   if name notin attrs.contents:
@@ -277,13 +273,13 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
     sectAttr = aOrS.get(AttrScope)
     secSpec = spec.extType.sinfo
   if secSpec.singleton:
-    validateOneSection(sectAttr, secSpec)
+    validateOneSection(sectAttr, secSpec, c42env)
     return
   for k, v in sectAttr.contents:
     if v.isA(Attribute):
       specErr(attrs, fmt"Cannot have a singleton for section type: '{name}'")
     else:
-      validateOneSection(v.get(AttrScope), secSpec)
+      validateOneSection(v.get(AttrScope), secSpec, c42env)
 
   if exclusion != "":
     if len(sectAttr.contents) > 0:
@@ -296,7 +292,7 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec) =
       specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
                      fmt"of '{name}', but got {len(sectAttr.contents)}.")
 
-proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
+proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec, c42Env: ConfigState) =
   let exclusion = exclusionPresent(attrs, name, spec)
 
   if name notin attrs.contents:
@@ -398,20 +394,50 @@ proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec) =
       specErr(attrs, fmt"When reading a type from field '{fieldRef}' " &
                      fmt"(to type check the field '{name}'), got a parse " &
                      "error parsing the type: " & getCurrentExceptionMsg())
+  if spec.extType.validator != "" and attr.value.isSome():
+    var fieldType: Con4mType
+    if spec.extType.kind == TypePrimitive:
+      fieldType = spec.extType.tinfo
+    else:
+      fieldType = stringType
 
-proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType) =
+    let
+      callType = Con4mType(kind:   TypeProc,
+                           params: @[stringType, fieldType],
+                           va:     false,
+                           retType: stringType)
+
+    if c42env == nil:
+      specErr(attr, "A validator was specified, but the application " &
+                    "didn't provide an evaluation context.")
+    else:
+      let
+        box = attr.value.get()
+        ret = c42env.runCallback(spec.extType.validator,
+                                 @[pack(attr.fullNameAsStr()), box],
+                                 some(callType))
+      if ret.isNone():
+        specErr(attr, "A validator was specified, but no function of the " &
+                fmt"correct type exists in spec file: {$callType}")
+      let
+        errMsg = unpack[string](ret.get())
+
+      if errMsg != "":
+        specErr(attr, errMsg)
+
+proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType, c42Env: ConfigState) =
   # Here we are 'in' a section and need to validate each field.
   for name, fieldspec in spec.fields:
     if fieldspec.extType.kind == TypeSection:
-      validateOneSectField(attrs, name, fieldspec)
+      validateOneSectField(attrs, name, fieldspec, c42env)
     else:
-      validateOneAttrField(attrs, name, fieldspec)
+      validateOneAttrField(attrs, name, fieldspec, c42env)
   if "*" notin spec.fields:
     for name, _ in attrs.contents:
       if name notin spec.fields:
         specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
 
 proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
-  validateOneSection(state.attrs, state.spec.get().rootSpec)
-  if c42env != nil:
-    state.spec.get().validationCtx = c42env # TODO: lookit dem hooks
+  setReplacementState(state)
+  validateOneSection(state.attrs, state.spec.get().rootSpec, c42env)
+  clearReplacementState()

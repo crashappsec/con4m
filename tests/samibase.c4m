@@ -385,7 +385,7 @@ plugin sbom_callback {
 # low(int64) in con4m is -high(int64), when it should be one less.
 plugin system {
   keys:     ["INJECTOR_ID", "INJECTOR_VERSION", "INJECTOR_PLATFORM",
-            "INJECTOR_COMMIT_ID", "X_SAMI_CONFIG", "_MAGIC.json"]
+            "INJECTOR_COMMIT_ID", "X_SAMI_CONFIG", "_MAGIC"]
   priority: 0
 }
 

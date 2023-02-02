@@ -54,7 +54,7 @@ proc buildC42Spec*(): ConfigSpec =
   field.addAttr("write_lock", boolType, false)
   field.addAttr("range", toCon4mType("(int, int)"), false)
   field.addAttr("choice", toCon4mType("[@T]"), false)
-  field.addAttr("validate", stringType, false)
+  field.addAttr("validator", stringType, false)
 
   require.addAttr("write_lock", boolType, false)
   allow.addAttr("write_lock", boolType, false)
@@ -84,8 +84,9 @@ proc populateFields(spec:       ConfigSpec,
                     exclusions: seq[(string, string)]) =
   for k, v in scope.contents:
     var
-      require: bool        = false
-      default: Option[Box] = none(Box)
+      require:   bool        = false
+      default:   Option[Box] = none(Box)
+      validator: string      = ""
     let
       fields     = v.get(AttrScope).contents
       c4mTypeStr = unpack[string](fields["type"].get(Attribute).value.get())
@@ -133,6 +134,13 @@ proc populateFields(spec:       ConfigSpec,
     else:
       specErr(scope, "Fields must specify either a 'require' or " &
                      "'defaults' field")
+    if "validator" in fields:
+      let
+        attr = fields["validator"].get(Attribute)
+        val  = attr.value
+
+      if val.isSome():
+        validator = unpack[string](val.get())
 
   # Do the add here based on the type string and other fields.
     if "choice" in fields and "range" in fields:
@@ -148,7 +156,7 @@ proc populateFields(spec:       ConfigSpec,
         if choice.tInfo.unify(lType).isBottom():
           specErr(scope, "Choice field should be a list of strings here")
         let v = unpack[seq[string]](choice.value.get())
-        addChoiceField(tinfo, k, v, require, lock, default) # ADD VALID8OR
+        addChoiceField(tinfo, k, v, require, lock, default, validator)
       of "int":
         let
           lType  = toCon4mType("[int]")
@@ -157,7 +165,7 @@ proc populateFields(spec:       ConfigSpec,
         if choice.tInfo.unify(lType).isBottom():
           specErr(scope, "Choice field should be a list of int here")
         let v = unpack[seq[int]](choice.value.get())
-        addChoiceField(tinfo, k, v, require, lock, default) # ADD VALID8OR
+        addChoiceField(tinfo, k, v, require, lock, default, validator)
       else:
         specErr(scope, "Choice field must have type 'int' or 'string'")
     elif "range" in fields:
@@ -174,12 +182,12 @@ proc populateFields(spec:       ConfigSpec,
         l: int      = unpack[int](v[0])
         h: int      = unpack[int](v[1])
 
-      tInfo.addRangeField(k, l, h, require, lock, default) # ADD VALID8R
+      tInfo.addRangeField(k, l, h, require, lock, default, validator)
     elif c4mTypeStr == "typespec":
-      tInfo.addC4TypeField(k, require, lock, default) # ADD VALID8R
+      tInfo.addC4TypeField(k, require, lock, default, validator)
     elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
       let refField   = c4mTypeStr[1..^1]
-      tInfo.addC4TypePtr(k, refField, require, lock) # ADD VALID8R
+      tInfo.addC4TypePtr(k, refField, require, lock, validator)
     else:
       var c4mType: Con4mType
 
@@ -187,7 +195,7 @@ proc populateFields(spec:       ConfigSpec,
         c4mType = toCon4mType(c4mTypeStr)
       except:
         specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
-      tInfo.addAttr(k, c4mType, require, lock, none(Box))
+      tInfo.addAttr(k, c4mType, require, lock, none(Box), validator)
 
   for (k, v) in exclusions:
     if k notin tInfo.fields:
@@ -234,18 +242,18 @@ proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
   spec.sectionType(objInfo.name, singleton = false)
 
-proc c42Spec*(s: Stream, fileName: string): Option[ConfigSpec] =
+proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
   ## Create a ConfigSpec object from a con4m file. The schema is
   ## validated against our c4-2-spec format.
   let (cfgContents, success) = firstRun(s, fileName, buildC42Spec())
 
   if not success:
-    return none(ConfigSpec)
+    return none((ConfigSpec, ConfigState))
 
   let
     res      = newSpec()
     contents = cfgContents.attrs.contents
-  result     = some(res)
+  result     = some((res, cfgContents))
 
   # Register all types before we populate them, so that we can safely
   # forward-reference; all type names will be registered before we
@@ -269,7 +277,7 @@ proc c42Spec*(s: Stream, fileName: string): Option[ConfigSpec] =
 
   res.populateType(res.rootSpec, contents["root"].get(AttrScope))
 
-proc c42Spec*(filename: string): Option[ConfigSpec] =
+proc c42Spec*(filename: string): Option[(ConfigSpec, ConfigState)] =
   var s = newFileStream(filename)
 
   if s == nil:

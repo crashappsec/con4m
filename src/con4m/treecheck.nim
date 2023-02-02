@@ -15,6 +15,39 @@
 import math, options, strformat, strutils, tables
 import errmsg, types, st, parse, typecheck, dollars, nimutils
 
+proc addPlaceHolder(s: ConfigState, name: string) =
+  let f = FuncTableEntry(kind:        FnUserDefined,
+                         tinfo:       bottomType,
+                         name:        name,
+                         impl:        none(Con4mNode),
+                         onStack:     false,
+                         cannotCycle: false,
+                         locked:      false)
+  if name in s.funcTable:
+    s.funcTable[name].add(f)
+  else:
+    s.funcTable[name] = @[f]
+  s.waitingForTypeInfo = true
+
+proc findMatchingProcs*(s:          ConfigState,
+                        name:       string,
+                        tInfo:      Con4mType): seq[FuncTableEntry] =
+  result = @[]
+
+  if name notin s.funcTable:
+    # Can only happen on the first pass!
+    s.addPlaceHolder(name)
+    return
+
+  for item in s.funcTable[name]:
+    if not unify(tInfo.copyType(), item.tInfo.copyType()).isBottom():
+      if (item.kind != FnBuiltIn) and item.impl.isNone():
+          continue
+      result.add(item)
+
+  if len(s.funcTable[name]) == 0 and not s.secondpass:
+    s.addPlaceHolder(name)
+
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
 
@@ -317,20 +350,22 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
   of NodeUnpack:
-    let tup = node.children[^1]
+    let
+      tup = node.children[^1]
+      ti  = tup.typeInfo.resolveTypeVars()
 
     tup.checkNode(s)
-    if tup.getBaseType() == TypeTVar and not s.secondPass:
+    if ti.kind == TypeTVar and not s.secondPass:
       for i in 0 ..< node.children.len() - 1:
         node.children[i].checkNode(s)
       return # Figure it out in the second pass.
 
-    if tup.getBaseType() != TypeTuple:
+    if ti.kind != TypeTuple:
       fatal("Trying to unpack a value that is not a tuple.", tup)
-    if tup.typeInfo.itemTypes.len() != node.children.len() - 1:
+    if ti.itemTypes.len() != node.children.len() - 1:
       fatal("Trying to unpack a tuple of the wrong size.", tup)
 
-    for i, tv in tup.typeInfo.itemTypes:
+    for i, tv in ti.itemTypes:
       let name = node.children[i].getTokenText()
 
       node.nameConflictCheck(name, s, [ucVar, ucNone])
@@ -492,7 +527,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = node.attrRef.tInfo
   of NodeIndex:
     node.checkKids(s)
-    case node.children[0].getBaseType()
+    let ti = node.children[0].typeInfo.resolveTypeVars()
+    case ti.kind
     of TypeTuple:
       if isBottom(node.children[1], intType):
         fatal("Invalid tuple index (numbers only)", node.children[1])
@@ -503,23 +539,29 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
               "static type checking", node.children[1])
       let i = unpack[int](v)
 
-      if i < 0 or i >= node.children[0].typeInfo.itemTypes.len():
+      if i < 0 or i >= ti.itemTypes.len():
         fatal("Tuple index out of bounds", node.children[1])
-      node.typeInfo = node.children[0].typeInfo.itemTypes[i]
+      node.typeInfo = ti.itemTypes[i]
     of TypeList:
       if isBottom(node.children[1], intType):
         fatal("Invalid list index (numbers only)", node.children[1])
-      node.typeInfo = node.children[0].typeInfo.itemType
+      node.typeInfo = ti.itemType
     of TypeDict:
       let
-        kt = node.children[0].typeInfo.keyType
-        vt = node.children[0].typeInfo.valType
+        kt = ti.keyType
+        vt = ti.valType
       case kt.kind
       of TypeString, TypeInt:
         node.typeInfo = vt
       else:
         fatal("Dict indicies can only be strings or ints", node.children[1])
+    of TypeTVar:
+      if not s.secondPass:
+        node.typeInfo = newTypeVar()
     else:
+      var n = node
+      while n.parent.isSome():
+        n = n.parent.get()
       fatal("Currently only support indexing on dicts and lists", node)
   of NodeFuncDef:
     let
@@ -651,13 +693,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # type variable here, just in case we cannot resolve the type yet. This
     # will keep typechecking above this node from failing due to no info
     # about this node.
-    #
-    # However, if we do find a type, we will replace this value.
-    #
-    # Note that we do *not* allow the use of global variables before
-    # they are defined, even in a function.
 
-    node.typeInfo = newTypeVar()
+    if not s.secondPass:
+      node.typeInfo = newTypeVar()
     node.children[1].checkNode(s)
 
     if node.children[0].kind != NodeIdentifier:
@@ -665,64 +703,26 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     let fname = node.children[0].getTokenText()
 
-    if fname in s.funcTable:
-      var entries = s.funcTable[fname]
-
-      for item in entries:
-        # If we have real type info here, we use it now, copying it
-        # (in case the formals have type polymorphism).  Otherwise,
-        # we'll have to mark ourselves as waiting on a future
-        # definition, and there will need to be a second pass of the
-        # tree :(
-        if not item.tinfo.isBottom():
-          let t = unify(node.children[1].typeInfo, copyType(item.tinfo))
-          if t.isBottom():
-            # Actually, it didn't match this signature. Go back to
-            # hoping there's a forward reference.
-            continue
-          else:
-            # Here, it did match the signature, but check to see
-            # if there's an implementation, or if it's just a stub
-            # like a callback, or some user-defined function we're
-            # expecting to see based on previous code but haven't.
-            if not (item.kind == FnBuiltIn) and item.impl.isNone():
-              if s.secondPass:
-                fatal("Could not find signature match for func " & fname)
-              s.waitingForTypeInfo = true
-            node.typeInfo = t.retType
-            return
-
-      # After looping through all entries and not finding it, we hope
-      # there is a future definition.
-      if not s.secondPass:
-        let f = FuncTableEntry(kind:        FnUserDefined,
-                               tinfo:       bottomType,
-                               name:        fname,
-                               impl:        none(Con4mNode),
-                               onStack:     false,
-                               cannotCycle: false,
-                               locked:      false)
-        entries.add(f)
-        s.funcTable[fname] = entries
-        s.waitingForTypeInfo = true
-        return
-      else:
-        fatal(fmt"No matching signature found for {fname}", node.children[0])
-    else:
+    let procList = s.findMatchingProcs(fname,
+                                       node.children[1].typeInfo)
+    case len(proclist)
+    of 1:
+      discard proclist[0].tInfo.copyType().unify(node.children[1].typeInfo)
+      node.typeInfo = proclist[0].tInfo.copyType().retType
+      node.procRef = proclist[0]
+      assert proclist[0] != nil
+    of 0:
       if s.secondPass:
-        fatal(fmt"No matching signature found for {fname}", node.children[0])
-      # The call wasn't in the function table, so we hope it's defined
-      # later in the config.
-      let f = FuncTableEntry(kind:        FnUserDefined,
-                             tinfo:       bottomType,
-                             name:        fname,
-                             impl:        none(Con4mNode),
-                             onStack:     false,
-                             cannotCycle: false,
-                             locked:      false)
-      s.funcTable[fname]   = @[f]
+        fatal(fmt"No matching signature found for function '{fname}'. " &
+              fmt"Expected type was: {$(node.children[1].typeInfo)}")
       s.waitingForTypeInfo = true
-      return
+      node.typeInfo = node.children[1].typeInfo.retType
+    else:
+      if not s.secondPass:
+        node.typeInfo = node.children[1].typeInfo.retType
+        s.waitingForTypeInfo = true
+      else:
+        fatal("Ambiguous call (matched multiple implementations).")
 
   of NodeActuals:
     var t: seq[Con4mType]

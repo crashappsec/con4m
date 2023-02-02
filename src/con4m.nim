@@ -45,11 +45,11 @@ when isMainModule:
       fatal("Can't use c42 spec and an external spec together")
     useC42 = true
 
-  proc getConfigSpec(): ConfigSpec =
+  proc getConfigSpec(): (ConfigSpec, ConfigState) =
     if specFile.isNone():
       if useC42:
-        return buildC42Spec()
-      return nil
+        return (buildC42Spec(), nil)
+      return (nil, nil)
     let `spec?` = c42Spec(specfile.get())
 
     if `spec?`.isNone():
@@ -103,8 +103,8 @@ when isMainModule:
     if len(args) == 0:
       raise newException(ValueError, "Not enough arguments given.")
     var
-      spec      = getConfigSpec()
-      (ctx, ok) = firstRun(args[0], spec)
+      (spec, evalCtx) = getConfigSpec()
+      (ctx, ok)       = firstRun(args[0], spec, evalCtx = evalCtx)
     if ok:
       ctx.styleOutput(false)
       for arg in args[1 .. ^1]:

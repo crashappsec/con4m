@@ -11,7 +11,7 @@ import tables
 import dollars
 import options
 
-proc resolveTypeVars(t: Con4mType): Con4mType =
+proc resolveTypeVars*(t: Con4mType): Con4mType =
   case t.kind
   of TypeTVar:
     if t.cycle:
