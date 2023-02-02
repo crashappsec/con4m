@@ -26,7 +26,7 @@ are ignored in most expression contexts (they’re only used to separate stateme
 top           ::= (sectBodyItems | enum | fnOrCallback) *
 body          ::= sectBodyItems *
 coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
-                   breakStmt | returnStmt | expression (NL|";")+
+                   breakStmt | returnStmt | varStmt | expression (NL|";")+
 sectBodyItems ::= coreBodyItems | section
 enum          ::= "enum" ID ("," ID)*
 attrAssign    ::= ("~")? ID("." ID)* ("="|":") expression (NL|";")+
@@ -40,7 +40,12 @@ continueStmt  ::= "continue" (";")?
 breakStmt     ::= "break" (";")?
 returnStmt    ::= "return" expression? (";")?
 fnOrCallback  ::= ("func" | "callback") ID formalSpec fnBody
-formalSpec    ::= "(" (ID? ("," ID)* ")"
+formalSpec    ::= "(" (paramSpec? ("," paramSpec)* ")"
+paramSpec     ::= ID (":" typeSpec)
+varDeclItem   ::= ID ("," ID)* ":" typeSpec 
+varStmt       ::= "var" varDeclItem ("," varDeclItem)*
+typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" | 
+                   "{" typeSpec "}" | "(" typeSpec, (typeSpec)+ ")"
 fnBody        ::= "{" coreBodyItems* "}"
 # Note that literal matches before accessExpr, so a lparen at an exprStart
 # or in a unaryExpr will be treated as a tuple literal.

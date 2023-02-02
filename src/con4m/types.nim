@@ -18,7 +18,7 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtCallback, TtSof, TtEof, ErrorTok,
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtSof, TtEof, ErrorTok,
     ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
@@ -44,7 +44,9 @@ type
     NodeMember, NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair,
     NodeListLit, NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
-    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList
+    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict,
+    NodeTypeList, NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat,
+    NodeTypeBool, NodeVarDecl, NodeVarSymNames
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m

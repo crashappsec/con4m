@@ -91,13 +91,6 @@ template pushVarScope() =
   if not s.secondPass: # Current value was already copied from parent
     node.varScope = VarScope(parent: some(node.varScope))
 
-proc getTokenText*(node: Con4mNode): string {.inline.} =
-  ## This returns the raw string associated with a token.  Internal.
-  let token = node.token.get()
-
-  if token.kind == TtStringLit: return token.unescaped
-  else:                         return $(token)
-
 when defined(disallowRecursion):
   proc cycleDetected(stack: var seq[FuncTableEntry]) =
     let
@@ -209,10 +202,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   if node.attrScope == nil: node.attrScope = node.parent.get().attrScope
 
   case node.kind
-  of NodeBody, NodeIfStmt:
-    node.checkKids(s)
-  of NodeBreak, NodeContinue, NodeFormalList:
-    discard
   of NodeReturn:
     if not s.funcOrigin:
       fatal("Return not allowed outside function or callback definition")
@@ -602,6 +591,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           fatal(fmt"In func decl: Duplicate parameter name: {varname}", node)
 
     s.funcOrigin = true
+    node.children[1].checkNode(s) # Now check any declared types
     node.children[2].checkNode(s)
     s.funcOrigin = false
 
@@ -701,10 +691,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if node.children[0].kind != NodeIdentifier:
       fatal("Data objects cannot currently have methods.", node.children[0])
 
-    let fname = node.children[0].getTokenText()
-
-    let procList = s.findMatchingProcs(fname,
-                                       node.children[1].typeInfo)
+    let
+      fname    = node.children[0].getTokenText()
+      procList = s.findMatchingProcs(fname, node.children[1].typeInfo)
     case len(proclist)
     of 1:
       discard proclist[0].tInfo.copyType().unify(node.children[1].typeInfo)
@@ -722,7 +711,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         node.typeInfo = node.children[1].typeInfo.retType
         s.waitingForTypeInfo = true
       else:
-        fatal("Ambiguous call (matched multiple implementations).")
+        var err = "Ambiguous call (matched multiple implementations):\n"
+        for call in procList:
+          err &= "  " & call.name & `$`(call.tinfo)[1..^1] & "\n"
+        if s.funcOrigin:
+          err &= "This is most likely because a parameter to your function "
+          err &= "could be different types depending on the calling context. "
+          err &= "While that's okay in general, function call dispatch "
+          err &= "currently needs to be selected before execution begins.\n"
+        err &= "Try declaring a concrete type for any variables that are " &
+               "ambiguous."
+        fatal(err, node.children[1])
 
   of NodeActuals:
     var t: seq[Con4mType]
@@ -800,6 +799,33 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
     node.typeInfo = floatType
+  of NodeTypeInt:
+    node.typeInfo = intType
+  of NodeTypeFloat:
+    node.typeInfo = floatType
+  of NodeTypeBool:
+    node.typeInfo = boolType
+  of NodeTypeString:
+    node.typeInfo = stringType
+  of NodeTypeList:
+    node.checkKids(s)
+    node.typeInfo = Con4mType(kind:     TypeList,
+                              itemType: node.children[0].typeInfo)
+  of NodeTypeDict:
+    node.checkKids(s)
+    node.typeInfo = Con4mType(kind:    TypeDict,
+                              keyType: node.children[0].typeInfo,
+                              valType: node.children[1].typeInfo)
+  of NodeTypeTuple:
+    node.checkKids(s)
+    var types: seq[Con4mType] = @[]
+
+    for item in node.children:
+      types.add(item.typeInfo)
+
+    node.typeInfo = Con4mType(kind: TypeTuple,
+                              itemTypes: types)
+
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -810,27 +836,45 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       `localAttr?`  = node.attrScope.attrLookup([name], 0, vlExists)
       `globalAttr?` = s.attrs.attrLookup([name], 0, vlExists)
 
+    var typeInfo: Con4mType
+
     if `var?`.isSome():
-      let entry     = `var?`.get()
-      node.typeInfo = entry.tInfo
-      node.attrRef  = nil
+      let entry    = `var?`.get()
+      typeInfo     = entry.tInfo
+      node.attrRef = nil
 
     elif `localAttr?`.isA(AttrOrSub):
       let entry     = `localAttr?`.get(AttrOrSub)
       if entry.isA(Attribute):
-        let attr = entry.get(Attribute)
-        node.typeInfo = attr.tInfo
-        node.attrRef  = attr
+        let attr     = entry.get(Attribute)
+        typeInfo     = attr.tInfo
+        node.attrRef = attr
       else:
         node.attrScope = entry.get(AttrScope)
+        return
     elif `globalAttr?`.isA(AttrOrSub):
       let entry     = `globalAttr?`.get(AttrOrSub)
       if entry.isA(Attribute):
-        let attr = entry.get(Attribute)
-        node.typeInfo = attr.tInfo
-        node.attrRef  = attr
-    else:
+        let attr     = entry.get(Attribute)
+        typeInfo     = attr.tInfo
+        node.attrRef = attr
+    elif len(node.children) == 0:
       fatal(fmt"Variable {name} used before definition", node)
+
+    if len(node.children) != 0:
+      node.checkKids(s)
+      node.typeInfo = typeInfo.unify(node.children[0].typeInfo)
+      if node.typeInfo.isBottom():
+        fatal2Type("Declared type conflicts with existing type",
+                   node.children[0],
+                   node.children[0].typeInfo,
+                   typeInfo)
+    else:
+      node.typeInfo = typeInfo
+  else:
+    # Many nodes need no semantic checking, just ask their children,
+    # if any, to check.
+    node.checkKids(s)
 
 proc checkTree*(node: Con4mNode, s: ConfigState) =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,

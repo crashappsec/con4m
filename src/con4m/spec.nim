@@ -237,7 +237,9 @@ proc newSpec*(): ConfigSpec =
 proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
   return spec.rootSpec
 
-proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType, c42Env: ConfigState)
+proc validateOneSection(attrs:  AttrScope,
+                        spec:   Con4mSectionType,
+                        c42Env: ConfigState)
 
 proc exclusionPresent(attrs, name, spec: auto): string =
   # Returns any one exclusion from the spec that has a value
@@ -256,7 +258,10 @@ proc exclusionPresent(attrs, name, spec: auto): string =
       return item
   return ""
 
-proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec, c42Env: ConfigState) =
+proc validateOneSectField(attrs:  AttrScope,
+                          name:   string,
+                          spec:   FieldSpec,
+                          c42Env: ConfigState) =
   let exclusion = exclusionPresent(attrs, name, spec)
 
   if name notin attrs.contents:
@@ -292,7 +297,10 @@ proc validateOneSectField(attrs: AttrScope, name: string, spec: FieldSpec, c42En
       specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
                      fmt"of '{name}', but got {len(sectAttr.contents)}.")
 
-proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec, c42Env: ConfigState) =
+proc validateOneAttrField(attrs:  AttrScope,
+                          name:   string,
+                          spec:   FieldSpec,
+                          c42Env: ConfigState) =
   let exclusion = exclusionPresent(attrs, name, spec)
 
   if name notin attrs.contents:
@@ -425,7 +433,9 @@ proc validateOneAttrField(attrs: AttrScope, name: string, spec: FieldSpec, c42En
       if errMsg != "":
         specErr(attr, errMsg)
 
-proc validateOneSection(attrs: AttrScope, spec: Con4mSectionType, c42Env: ConfigState) =
+proc validateOneSection(attrs:  AttrScope,
+                        spec:   Con4mSectionType,
+                        c42Env: ConfigState) =
   # Here we are 'in' a section and need to validate each field.
   for name, fieldspec in spec.fields:
     if fieldspec.extType.kind == TypeSection:

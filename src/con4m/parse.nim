@@ -34,6 +34,14 @@ proc phaseEnded*(phase: Con4mPhase) =
                     publishParams)
     quit()
 
+proc getTokenText*(token: Con4mToken): string {.inline.} =
+  if token.kind == TtStringLit: return token.unescaped
+  else:                         return $(token)
+
+proc getTokenText*(node: Con4mNode): string {.inline.} =
+  ## This returns the raw string associated with a token.  Internal.
+  return node.token.get().getTokenText()
+
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
@@ -442,9 +450,90 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   else:
     parseError("Expected an expression", false)
 
+proc typeSpec(ctx: ParseCtx): Con4mNode =
+  let t = ctx.consume()
+
+  case t.kind
+  of TtLBrace:
+    result = newNode(NodeTypeDict, t)
+    result.children.add(ctx.typeSpec())
+    if ctx.consume().kind != TtColon:
+      parseError("Invalid dictionary type declaration; expected a colon here")
+    result.children.add(ctx.typeSpec())
+    if ctx.consume().kind != TtRBrace:
+      parseError("Invalid dictionary type declaration; expected '}' here.")
+  of TTLBracket:
+    result = newNode(NodeTypeList, t)
+    result.children.add(ctx.typeSpec())
+    if ctx.consume().kind != TtRBracket:
+      parseError("Invalid list type declaration; expected ']' here.")
+  of TtLParen:
+    result = newNode(NodeTypeTuple, t)
+    result.children.add(ctx.typeSpec())
+    if ctx.consume().kind != TtComma:
+      parseError("Tuples may not be singletons (expected ',' here).")
+    while true:
+      result.children.add(ctx.typeSpec())
+      case ctx.consume().kind
+      of TtComma:
+        continue
+      of TtRParen:
+        return
+      else:
+        parseError("Expected either ',' or ')' here")
+  of TTIdentifier:
+    case t.getTokenText()
+    of "int":
+      result = newNode(NodeTypeInt, t)
+    of "float":
+      result = newNode(NodeTypeFloat, t)
+    of "string":
+      result = newNode(NodeTypeString, t)
+    of "bool":
+      result = newNode(NodeTypeBool, t)
+    else:
+      parseError("Invalid syntax for a type declaration.")
+  else:
+    parseError("Invalid syntax for a type declaration.")
+
+proc varStmt(ctx: ParseCtx): Con4mNode =
+  result = newNode(NodeVarDecl, ctx.consume())
+
+  while true:
+    ctx.nlWatch = false
+
+    var
+      tok = ctx.consume()
+      n   = newNode(NodeVarSymNames, tok)
+
+    while true:
+      if tok.kind != TtIdentifier:
+        parseError("Expect a valid identifier here")
+        n.children.add(newNode(NodeIdentifier, tok))
+      case ctx.consume().kind
+      of TtComma:
+        tok = ctx.consume() # set up the next identifier.
+        continue
+      of TtColon:
+        break
+      else:
+        parseError("Expect either a ',' or ':' here")
+    result.children.add(n)
+    let spec = ctx.typeSpec()
+    for item in n.children:
+      item.children.add(spec)
+    ctx.nlWatch = true
+    case ctx.consume().kind
+    of TtSemi, TtNewLine:
+      while ctx.curTok().kind == TtSemi: discard ctx.consume()
+    of TtComma:
+      continue
+    else:
+      parseError("Expected a newline, or more vars")
+
 proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   let
-    t = ctx.consume()
+    t  = ctx.consume()
     id = ctx.consume()
 
   if id.kind != TtIdentifier:
@@ -459,18 +548,21 @@ proc fnOrCallback(ctx: ParseCtx): Con4mNode =
   of TtRParen:
     discard ctx.consume()
   of TtIdentifier:
-    formals.children.add(newNode(NodeIdentifier, ctx.consume()))
     while true:
+      var idNode = newNode(NodeIdentifier, ctx.consume())
+      formals.children.add(idNode)
+      if ctx.curTok.kind == TtColon:
+        discard ctx.consume()
+        idNode.children.add(ctx.typeSpec())
+
       case ctx.consume().kind
       of TtRParen:
         break
       of TtComma:
-        let param = ctx.consume()
-        if param.kind != TtIdentifier:
+        if ctx.curTok().kind != TtIdentifier:
           parseError("Expected an identifier.", true)
-        formals.children.add(newNode(NodeIdentifier, param))
       else:
-        parseError("Invalid parameter specification", true)
+        parseError("Invalid parameter specification", false)
   else:
     parseError("Invalid parameter specification", false)
 
@@ -787,6 +879,8 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       else:
         parseError("Functions and callbacks are only allowed at the top level",
                    false)
+    of TtVar:
+      result.children.add(ctx.varStmt())
     else:
       let t = ctx.curTok()
       try:

@@ -67,7 +67,6 @@ proc getFuncBySig*(s:    ConfigState,
   if len(candidates) == 1:
     return some(candidates[0])
 
-
 proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
   if args.len() != node.children[1].children.len():
     raise newException(Con4mError, "Incorrect number of arugments")
@@ -99,14 +98,12 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
       if k in s.keptGlobals:
         s.keptGlobals[k].value = v
 
-
   try:
     result = some(runtimeVarLookup(s, "result"))
   except:
     result = none(Box)
 
   s.frames = savedFrames
-
 
 proc sCallUserDef*(s:        ConfigState,
                    name:     string,
@@ -202,8 +199,11 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## the tree to evaluate, and then take whatever action is
   ## apporpriate after, if any.
   case node.kind
-  of NodeFuncDef:
-    unreachable
+  # These are explicit just to make sure I don't end up w/ implementation
+  # errors that baffle me.
+  of NodeFuncDef, NodeTypeList, NodeTypeDict, NodeTypeTuple, NodeTypeString,
+     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeVarDecl, NodeVarSymNames:
+    return # Nothing to do, everything was done in the check phase.
   of NodeReturn:
     if node.children.len() != 0:
       node.children[0].evalNode(s)

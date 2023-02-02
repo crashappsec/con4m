@@ -56,11 +56,11 @@ proc `$`*(t: Con4mType): string =
   ## mathematical symbol (`⊥`)
   case t.kind
   of TypeString: return "string"
-  of TypeBool: return "bool"
-  of TypeInt: return "int"
-  of TypeFloat: return "float"
-  of TypeList: return fmt"[{t.itemType}]"
-  of TypeDict: return fmt"{{{t.keyType} : {t.valType}}}"
+  of TypeBool:   return "bool"
+  of TypeInt:    return "int"
+  of TypeFloat:  return "float"
+  of TypeList:   return fmt"[{t.itemType}]"
+  of TypeDict:   return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
     var s: seq[string]
     for item in t.itemTypes:
@@ -96,45 +96,58 @@ template fmtNt(name: string) =
   return self.formatNonTerm(colorNT(name), i)
 
 template fmtNtNamed(name: string) =
-  return self.formatNonTerm(colorNT(name) & " " & $(self.token.get()), i)
+  return self.formatNonTerm(colorNT(name) & " " &
+            colorT($(self.token.get())), i)
 
 template fmtT(name: string) =
   return self.formatTerm(colorT(name), i) & "\n"
 
+template fmtTy(name: string) =
+  return self.formatNonTerm(colorType(name), i)
+
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
-  of NodeBody: fmtNt("Body")
-  of NodeAttrAssign: fmtNt("AttrAssign")
-  of NodeAttrSetLock: fmtNt("AttrSetLock")
-  of NodeVarAssign: fmtNt("VarAssign")
+  of NodeBody:         fmtNt("Body")
+  of NodeAttrAssign:   fmtNt("AttrAssign")
+  of NodeAttrSetLock:  fmtNt("AttrSetLock")
+  of NodeVarAssign:    fmtNt("VarAssign")
   of NodeVarSetExport: fmtNt("VarSetExport")
-  of NodeUnpack: fmtNt("Unpack")
-  of NodeSection: fmtNt("Section")
-  of NodeIfStmt: fmtNt("If Stmt")
-  of NodeConditional: fmtNt("Conditional")
-  of NodeElse: fmtNt("Else")
-  of NodeFor: fmtNt("For")
-  of NodeBreak: fmtT("Break")
-  of NodeContinue: fmtT("Continue")
-  of NodeReturn: fmtNt("Return")
-  of NodeSimpLit: fmtT("Literal")
-  of NodeUnary: fmtNtNamed("Unary")
-  of NodeNot: fmtNt("Not")
-  of NodeMember: fmtNt("Member")
-  of NodeIndex: fmtNt("Index")
-  of NodeCall: fmtNt("Call")
-  of NodeActuals: fmtNt("Actuals")
-  of NodeDictLit: fmtNt("DictLit")
-  of NodeKVPair: fmtNt("KVPair")
-  of NodeListLit: fmtNt("ListLit")
-  of NodeTupleLit: fmtNt("TupleLit")
-  of NodeEnum: fmtNt("Enum")
-  of NodeFuncDef: fmtNtNamed("Def")
-  of NodeFormalList: fmtNt("Formals")
+  of NodeUnpack:       fmtNt("Unpack")
+  of NodeSection:      fmtNt("Section")
+  of NodeIfStmt:       fmtNt("If Stmt")
+  of NodeConditional:  fmtNt("Conditional")
+  of NodeElse:         fmtNt("Else")
+  of NodeFor:          fmtNt("For")
+  of NodeBreak:        fmtT("Break")
+  of NodeContinue:     fmtT("Continue")
+  of NodeReturn:       fmtNt("Return")
+  of NodeSimpLit:      fmtT("Literal")
+  of NodeUnary:        fmtNtNamed("Unary")
+  of NodeNot:          fmtNt("Not")
+  of NodeMember:       fmtNt("Member")
+  of NodeIndex:        fmtNt("Index")
+  of NodeCall:         fmtNt("Call")
+  of NodeActuals:      fmtNt("Actuals")
+  of NodeDictLit:      fmtNt("DictLit")
+  of NodeKVPair:       fmtNt("KVPair")
+  of NodeListLit:      fmtNt("ListLit")
+  of NodeTupleLit:     fmtNt("TupleLit")
+  of NodeEnum:         fmtNt("Enum")
+  of NodeFuncDef:      fmtNtNamed("Def")
+  of NodeFormalList:   fmtNt("Formals")
+  of NodeTypeDict:     fmtTy("TypeDict")
+  of NodeTypeList:     fmtTy("TypeList")
+  of NodeTypeTuple:    fmtTy("TypeTuple")
+  of NodeTypeString:   fmtTy("TypeString")
+  of NodeTypeInt:      fmtTy("TypeInt")
+  of NodeTypeFloat:    fmtTy("TypeFloat")
+  of NodeTypeBool:     fmtTy("TypeBool")
+  of NodeVarDecl:      fmtNt("VarDecl")
+  of NodeVarSymNames:  fmtNt("VarSymNames")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))
-  of NodeIdentifier: fmtT("Identifier")
+  of NodeIdentifier:   fmtNtNamed("Identifier")
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   const

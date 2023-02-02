@@ -94,11 +94,7 @@ object plugin {
   }
 }
 
-func key_check(keyname, value) {
-  if false {
-    value := [""]
-  }    # Declare type of value.  Fix this urgently.
-       # AND, make sure spec uses the right accessor API
+func key_check(keyname, value: [string]) {
   sects := sections("key")
 
   for i from 0 to len(value) {

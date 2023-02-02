@@ -440,6 +440,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       s.setPosition(pos)
 
       case txt
+      of "var": tok(TtVar)
       of "True", "true": tok(TtTrue)
       of "False", "false": tok(TtFalse)
       of "Null", "null": tok(TtNull)
