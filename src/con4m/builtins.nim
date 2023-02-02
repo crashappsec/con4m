@@ -326,6 +326,28 @@ proc c4mListLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(len(list)))
 
+proc c4mListContains*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    list = unpack[seq[Box]](args[0])
+    val  = unpack[Box](args[1])
+
+  for item in list:
+    if item == val:
+      return trueRet
+
+  return falseRet
+
+proc c4mDictContains*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    list   = unpack[OrderedTableRef[Box, Box]](args[0])
+    target = unpack[Box](args[1])
+
+  for key, val in list:
+    if target == key:
+      return trueRet
+
+  return falseRet
+
 proc c4mStrLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the number of bytes in a string.
   var s = unpack[string](args[0])
@@ -819,6 +841,8 @@ const defaultBuiltins = [
   (203, "keys",     BiFn(c4mDictKeys),        "f({@x : @y}) -> [@x]"),
   (204, "values",   BiFn(c4mDictValues),      "f({@x: @y}) -> [@y]"),
   (205, "items",    BiFn(c4mDictItems),       "f({@x: @y}) -> [(@x, @y)]"),
+  (206, "contains", BiFn(c4mListContains),    "f([@x], @x) -> bool"),
+  (207, "contains", BiFn(c4mDictContains),    "f({@x : @y}, @x) -> bool"),
 
   # File system routines
   (301, "listDir",     BiFn(c4mListDir),      "f() -> [string]"),

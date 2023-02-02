@@ -101,16 +101,10 @@ func key_check(keyname, value: [string]) {
     if value[i] == "*" {
       continue
     }
-    okay := false
-    for j from 0 to len(sects) {
-        if sects[j] == value[i] {
-	  okay := true
-	  break
-        }
-    }
-    if not okay {
-       x := "'" + value[i] + "' is not a valid (specified) key."
-       return x
+    if sects.contains(value[i]) {
+      continue
+    } else {
+      return "'" + value[i] + "' is not a valid (specified) key."
     }
   }
   return ""
