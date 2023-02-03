@@ -124,8 +124,10 @@ when isMainModule:
 
     quit(1)
   except:
-    echo toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
-      getCurrentExceptionMsg()
+    echo perLineWrap(toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
+                     getCurrentExceptionMsg(),
+                    firstHangingIndent = len("error: con4m: "),
+                    remainingIndents = 0)
     if getCon4mVerbosity() == c4vMax:
       echo getCurrentException().getStackTrace()
     echo "See con4m --help for help on usage."

@@ -116,13 +116,14 @@ type
   AttrSetHook* = (seq[string], Box) -> bool
 
   Attribute* = ref object
-    name*:     string
-    scope*:    AttrScope
-    tInfo*:    Con4mType
-    value*:    Option[Box]
-    override*: Option[Box]
-    locked*:   bool
-    firstDef*: Option[Con4mNode]
+    name*:        string
+    scope*:       AttrScope
+    tInfo*:       Con4mType
+    value*:       Option[Box]
+    override*:    Option[Box]
+    locked*:      bool
+    lockOnWrite*: bool
+    firstDef*:    Option[Con4mNode]
 
   VarSym*    = ref object
     name*:     string
@@ -195,6 +196,7 @@ type
     of TypePrimitive:
       tinfo*:      Con4mType
       range*:      tuple[low: int, high: int] # Only for int types; INCLUSIVE.
+      itemCount*:  tuple[low: int, high: int] # Should reuse (TODO)
       intChoices*: seq[int]
       strChoices*: seq[string]
     of TypeSection:
@@ -209,6 +211,7 @@ type
     minRequired*:  int
     maxRequired*:  int
     lock*:         bool
+    stackLimit*:   int
     default*:      Option[Box]
     exclusions*:   seq[string] # Fields that obviate us.
 
@@ -227,6 +230,7 @@ type
     ## state. The symbols are in here, the specs we apply, etc.
     ## Still, the end user should not need to access the members,
     ## except via API.
+    numExecutions*:      int
     setHook*:            AttrSetHook
     attrs*:              AttrScope
     keptGlobals*:        Table[string, VarSym]
@@ -240,7 +244,7 @@ type
     secondPass*:         bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
-  Con4mPhase* = enum phTokenize, phParse, phCheck, phEval
+  Con4mPhase* = enum phTokenize, phParse, phCheck, phEval, phValidate
 
 let
   # These are just shared instances for types that aren't

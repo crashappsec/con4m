@@ -8,7 +8,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import tables, strformat, options, streams, nimutils
+import tables, strformat, options, streams, nimutils, strutils
 import types, run, spec, st,  errmsg, typecheck, dollars
 
 proc buildC42Spec*(): ConfigSpec =
@@ -47,18 +47,20 @@ proc buildC42Spec*(): ConfigSpec =
   rootScope.addSection("singleton")
   rootScope.addSection("object")
 
-  field.addAttr("type", stringType, true)
-  field.addAttr("default", newTypeVar(), true)
-  field.addAttr("require", boolType, true)
+  field.addAttr("type",         stringType, true)
+  field.addAttr("default",      newTypeVar(), true)
+  field.addAttr("require",      boolType, true)
+  field.addAttr("write_lock",   boolType, false)
+  field.addAttr("range",        toCon4mType("(int, int)"), false)
+  field.addAttr("choice",       toCon4mType("[@T]"), false)
+  field.addAttr("validator",    stringType, false)
+  field.addAttr("stack_limit",  intType, false)
+  field.addAttr("min_items",    intType, false)
+  field.addAttr("max_items",    intType, false)
   field.addExclusion("default", "require")
-  field.addAttr("write_lock", boolType, false)
-  field.addAttr("range", toCon4mType("(int, int)"), false)
-  field.addAttr("choice", toCon4mType("[@T]"), false)
-  field.addAttr("validator", stringType, false)
-
   require.addAttr("write_lock", boolType, false)
-  allow.addAttr("write_lock", boolType, false)
-  exclusions.addAttr("*", stringType, false)
+  allow.addAttr("write_lock",   boolType, false)
+  exclusions.addAttr("*",       stringType, false)
 
 # TODO: make sure everything used as a section type is a valid ID
 proc populateSec(spec:    ConfigSpec,
@@ -78,32 +80,97 @@ proc populateSec(spec:    ConfigSpec,
                  false
     tinfo.addSection(k, min = minSz, lock = lock)
 
+template getField(fields: Table[string, AttrOrSub], name: string): untyped =
+  if name notin fields:
+    specErr(scope, "Expected a field '" & name & "'")
+  let aOrS = fields[name]
+
+  if not aOrS.kind:
+    specErr(scope, "Expected '{name}' to be a field, but it is a section")
+
+  var res = aOrS.attr
+  res
+
+proc unpackValue[T](scope: AttrScope, attr: Attribute, typeStr: string): T =
+  let
+    c4Type = toCon4mType(typeStr)
+    valOpt = attr.value
+
+  if attr.tInfo.unify(c4Type).isBottom():
+    specErr(attr, "Field '" & attr.name & "' should be " & typeStr &
+                   ", but got: " & $(attr.tInfo))
+  if valOpt.isNone():
+    specErr(attr,
+            "Expected '" & attr.name & "' to have a value; none was provided")
+  let box = valOpt.get()
+
+  try:
+    when T is (int, int):
+      var box = unpack[seq[Box]](box)
+      result = (unpack[int](box[0]), unpack[int](box[1]))
+    else:
+      result = unpack[T](box)
+  except:
+    specErr(attr,
+            "Wrong type for '" & attr.name & "', expected a '" & typeStr &
+              "', but got a '" & $(attr.tInfo) & "'")
+
+template getValOfType(fields:  Table[string, AttrOrSub],
+                      name:    string,
+                      typeStr: string,
+                      nimType: typedesc): untyped =
+  unpackValue[nimType](scope, getField(fields, name), typeStr)
+
+template valIfPresent(fields:  Table[string, AttrOrSub],
+                      name:    string,
+                      c4mType: string,
+                      nimType: typedesc,
+                      default: untyped): untyped =
+  if name in fields:
+    getValOfType(fields, name, c4mType, nimType)
+  else:
+    default
+
+template optValIfPresent(fields:  Table[string, AttrOrSub],
+                         name:    string,
+                         c4mType: string,
+                         nimType: typedesc): untyped =
+  if name in fields:
+    some(getValOfType(fields, name, c4mType, nimType))
+  else:
+    none(nimType)
+
 proc populateFields(spec:       ConfigSpec,
                     tInfo:      Con4mSectionType,
                     scope:      AttrScope,
                     exclusions: seq[(string, string)]) =
   for k, v in scope.contents:
     var
-      require:   bool        = false
-      default:   Option[Box] = none(Box)
-      validator: string      = ""
+      default:    Option[Box] = none(Box)
     let
+      # valIfPresent sets defaults that we use even if not passed. The
+      # fields using optValIfPresent don't get used if not provided.
+      # choiceOpt is a snowflake b/c we have to make a type decision before
+      # we pull the value out.
       fields     = v.get(AttrScope).contents
-      c4mTypeStr = unpack[string](fields["type"].get(Attribute).value.get())
-      lock       = if "write_lock" in fields:
-                     unpack[bool](fields["write_lock"].get(
-                       Attribute).value.get())
+      c4mTypeStr = getValOfType(fields, "type", "string", string) #Not opt.
+      lock       = valIfPresent(fields, "write_lock", "bool", bool, false)
+      validator  = valIfPresent(fields, "validator", "string", string, "")
+      stackLimit = valIfPresent(fields, "stack_limit", "int", int, -1)
+      require    = valIfPresent(fields, "require", "bool", bool, false)
+      `range?`   = optValIfPresent(fields, "range", "(int, int)", (int, int))
+      `min?`     = optValIfPresent(fields, "min_items", "int", int)
+      `max?`     = optValIfPresent(fields, "max_items", "int", int)
+      choiceOpt  = if "choice" in fields:
+                     some(getField(fields, "choice"))
                    else:
-                     false
+                     none(Attribute)
 
-    if "require" in fields:
-      if "default" in fields:
+    if "default" in fields:
+      if "require" in fields:
         specErr(scope, "Cannot have 'require' and 'default' together")
-      else:
-        require = unpack[bool](fields["require"].get(Attribute).value.get())
-    elif "default" in fields:
       let
-        attr         = fields["default"].get(Attribute)
+        attr         = getField(fields, "default")
         attrType     = attr.tInfo
         attrTypeStr  = $(attrType)
 
@@ -111,92 +178,82 @@ proc populateFields(spec:       ConfigSpec,
         specErr(scope, "Fields that get their type from other fields may " &
                        "not have a default value")
       elif c4mTypeStr == "typespec":
-          var ok = true
-          if attrType != stringType or attr.value.isNone():
+        var ok = true
+        if attrType != stringType or attr.value.isNone():
+          ok = false
+        else:
+          try:
+            discard toCon4mType(unpack[string](attr.value.get()))
+          except:
             ok = false
-          else:
-            try:
-              discard toCon4mType(unpack[string](attr.value.get()))
-            except:
-              ok = false
-          if not ok:
-            specErr(scope, "Default values for 'typespec' fields must be " &
-                           "valid con4m type strings.")
+        if not ok:
+          specErr(scope, "Default values for 'typespec' fields must be " &
+                         "valid con4m type strings.")
       else:
-        let expectedType = toCon4mType(c4mTypeStr)
-
-        if expectedType.unify(attr.tInfo).isBottom():
+        let fieldType = toCon4mType(c4mTypeStr)
+        if fieldType.unify(attr.tInfo).isBottom():
           specErr(scope, fmt"for {k}: default value actual type " &
                          fmt"({attrTypeStr}) does not match the provided " &
                          fmt"'type' field, which had type: {c4mTypeStr}")
 
-      default = attr.value
-    else:
+      default = attr.value # We leave it as a boxed option.
+    elif "require" notin fields:
       specErr(scope, "Fields must specify either a 'require' or " &
                      "'defaults' field")
-    if "validator" in fields:
-      let
-        attr = fields["validator"].get(Attribute)
-        val  = attr.value
 
-      if val.isSome():
-        validator = unpack[string](val.get())
+    var count = 0
+    if choiceOpt.isSome():                 count = count + 1
+    if `range?`.isSome():                  count = count + 1
+    if `min?`.isSome() or `max?`.isSome(): count = count + 1
 
-  # Do the add here based on the type string and other fields.
-    if "choice" in fields and "range" in fields:
-      specErr(scope, "Cannot offer both choices and a range.")
+    if count > 1:
+      specErr(scope, "Can't specify multiple constraint types on one field.")
+    if count != 0 and c4mTypeStr.startsWith("="):
+      specErr(scope, "Fields typed from another field can't have constraints")
 
-    if "choice" in fields:
+    # Time to add.
+    if choiceOpt.isSome():
       case c4mTypeStr
       of "string":
-        let
-          lType  = toCon4mType("[string]")
-          choice = fields["choice"].get(Attribute)
-
-        if choice.tInfo.unify(lType).isBottom():
-          specErr(scope, "Choice field should be a list of strings here")
-        let v = unpack[seq[string]](choice.value.get())
-        addChoiceField(tinfo, k, v, require, lock, default, validator)
+        let v = unpackValue[seq[string]](scope, choiceOpt.get(), "[string]")
+        addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
+                       validator)
       of "int":
-        let
-          lType  = toCon4mType("[int]")
-          choice = fields["choice"].get(Attribute)
-
-        if choice.tInfo.unify(lType).isBottom():
-          specErr(scope, "Choice field should be a list of int here")
-        let v = unpack[seq[int]](choice.value.get())
-        addChoiceField(tinfo, k, v, require, lock, default, validator)
+        let v = unpackValue[seq[int]](scope, choiceOpt.get(), "[int]")
+        addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
+                       validator)
       else:
         specErr(scope, "Choice field must have type 'int' or 'string'")
-    elif "range" in fields:
-      if c4mTypeStr != "int":
-        specErr(scope, "Range field is only valid for 'int' types.")
-      let
-        tupType  = toCon4mType("(int, int)")
-        tupField = fields["range"].get(Attribute)
-
-      if tupField.tInfo.unify(tupType).isBottom():
-        specErr(scope, "Range field must be a tuple of two integers.")
-      let
-        v: seq[Box] = unpack[seq[Box]](tupField.value.get())
-        l: int      = unpack[int](v[0])
-        h: int      = unpack[int](v[1])
-
-      tInfo.addRangeField(k, l, h, require, lock, default, validator)
-    elif c4mTypeStr == "typespec":
-      tInfo.addC4TypeField(k, require, lock, default, validator)
-    elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
-      let refField   = c4mTypeStr[1..^1]
-      tInfo.addC4TypePtr(k, refField, require, lock, validator)
-    else:
-      var c4mType: Con4mType
-
+    elif `range?`.isSome():
+      let (l, h) = `range?`.get()
+      tInfo.addRangeField(k, l, h, require, lock, stackLimit, default,
+                          validator)
+    elif `min?`.isSome() or `max?`.isSome():
+      var
+        min_val = `min?`.getOrElse(-1)
+        max_val = `max?`.getOrElse(-1)
+        c4mType: Con4mType
       try:
         c4mType = toCon4mType(c4mTypeStr)
       except:
         specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
-      tInfo.addAttr(k, c4mType, require, lock, none(Box), validator)
+      tInfo.addBoundedContainer(k, min_val, max_val, c4mType, require,
+                                lock, stackLimit, default, validator)
+    elif c4mTypeStr == "typespec":
+      tInfo.addC4TypeField(k, require, lock, stackLimit, default, validator)
+    elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
+      let refField   = c4mTypeStr[1..^1]
+      tInfo.addC4TypePtr(k, refField, require, lock, stackLimit, validator)
+    else:
+      var c4mType: Con4mType
+      try:
+        c4mType = toCon4mType(c4mTypeStr)
+      except:
+        specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
+      tInfo.addAttr(k, c4mType, require, lock, stackLimit, none(Box),
+                    validator)
 
+  # Once we've processed all fields, check exclusion constraints.
   for (k, v) in exclusions:
     if k notin tInfo.fields:
       specErr(scope, fmt"Cannot exclude undefined field {k}")

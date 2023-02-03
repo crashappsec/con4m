@@ -3,33 +3,37 @@ object key {
   user_def_ok: false
 
   field required {
-    type:     "bool"
-    default:  false
+    type:        "bool"
+    default:     false
     # docstring: "..."
   }
   field system {
-    type:     "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field squash {
     type:     "bool"
     default:  false
   }
   field type {
-    type:     "typespec"
-    require: true
+    type:      "typespec"
+    require:    true
+    write_lock: true
   }
   field value {
     type:     "=type"
-    require: false
+    require:  false
   }
   field standard {
-    type:     "bool"
-    default:  false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field since {
-    type:     "string"
-    require: false
+    type:       "string"
+    require:    false
+    write_lock: true
   }
   field skip {
     type:     "bool"
@@ -40,17 +44,20 @@ object key {
     default:  false
   }
   field output_order {
-    type:     "int"
-    default:  default_key_priority
-    range:    (0, high())
+    type:       "int"
+    default:     default_key_priority
+    range:       (0, high())
+    write_lock:  true
+    stack_limit: 0  # Can't be provided when stacking, just on first run.
   }
   field docstring {
     type:     "string"
     require:  false
   }
   field codec {
-    type: "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
 }
 
@@ -60,15 +67,16 @@ object plugin {
   field priority {
     type:     "int"
     default:  50
-    range: (0, high())
+    range:    (0, high())
   }
   field ignore {
     type:    "[string]"
     default: []
   }
   field codec {
-    type:     "bool"
-    default:  false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field keys {
     type:       "[string]"
@@ -81,12 +89,13 @@ object plugin {
     default: true
   }
   field overrides {
-    type: "[string]"
+    type:    "[string]"
     default: []
   }
   field uses_fstream {
-    type: "bool"
-    default: true
+    type:       "bool"
+    default:    true
+    write_lock: true
   }
   field docstring {
     type:    "string"
@@ -114,72 +123,89 @@ object sink {
   user_def_ok: false
 
   field uses_secret {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_uid {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_filename {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_uri {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_region {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_headers {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_cacheid {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field uses_aux {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_secret {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_uid {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_filename {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_uri {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_region {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_aux {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_headers {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field needs_cacheid {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field docstring {
-    type:    "string"
-    require:  false
+    type:       "string"
+    require:    false
+    write_lock: true
   }
 }
 
@@ -191,37 +217,39 @@ root {
   allow sink   { }
 
   field config_path {
-    type:    "[string]"
-    default: [".", "~"]
+    type:       "[string]"
+    default:    [".", "~"]
+    write_lock: true
   }
   field config_filename {
-    type:    "string"
-    default: "sami.conf"
-    validator: "valid_filename_check"
+    type:      "string"
+    default:   "sami.conf"
+    write_lock: true
   }
   field default_command {
-    type:    "string"
-    require: false
-    choice:  ["help", "insert", "extract", "delete", "help",
-              "defaults", "confdump"]
+    type:       "string"
+    require:    false
+    choice:     ["help", "insert", "extract", "delete", "help",
+                 "defaults", "confdump"]
+    write_lock: true
   }
   field color {
     type:    "bool"
     require: false
   }
   field log_level {
-    type:     "string"
-    default:  "warn"
-    choice: ["verbose", "trace", "info", "warn", "error", "none"]
+    type:    "string"
+    default: "warn"
+    choice:  ["verbose", "trace", "info", "warn", "error", "none"]
   }
   field sami_log_level {
     type:    "string"
     default: "warn"
-    choice: ["verbose", "trace", "info", "warn", "error", "none"]
+    choice:  ["verbose", "trace", "info", "warn", "error", "none"]
   }
   field dry_run {
-    type:     "bool"
-    default:  false
+    type:    "bool"
+    default: false
   }
   field ignore_broken_conf {
     type:    "bool"
@@ -241,8 +269,9 @@ root {
     range:   (0, high())
   }
   field publish_audit {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field artifact_search_path {
     type:    "[string]"
@@ -257,12 +286,14 @@ root {
     default: true
   }
   field can_dump {
-    type:    "bool"
-    default: true
+    type:       "bool"
+    default:    true
+    write_lock: true
   }
   field can_load {
-    type:    "bool"
-    default: true
+    type:       "bool"
+    default:    true
+    write_lock: true
   }
   field container_image_id {
     type:     "string"
@@ -273,15 +304,17 @@ root {
     default:  ""
   }
   field allow_external_config {
-    type:    "bool"
-    default: true
+    type:       "bool"
+    default:    true
+    write_lock: true
   }
   field publish_defaults {
-    type:    "bool"
-    default: false
+    type:       "bool"
+    default:    false
+    write_lock: true
   }
   field publish_unmarked {
-    type: "bool"
+    type:    "bool"
     default: true
   }
 }

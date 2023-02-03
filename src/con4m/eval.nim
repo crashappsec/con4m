@@ -574,7 +574,7 @@ proc runCallback*(s:     ConfigState,
     return s.sCall(name, args, tinfo.get())
   if not s.funcTable.contains(name):
     # User did not supply the callback.
-    return
+    return none(Box)
   if len(s.funcTable[name]) > 0:
     raise newException(ValueError,
                        "When supporting callbacks with multiple signatures, " &

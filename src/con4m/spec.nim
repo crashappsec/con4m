@@ -47,13 +47,14 @@ proc sectionType*(spec:       ConfigSpec,
   if name != "":
     spec.secSpecs[name] = result
 
-proc addAttr*(sect:      Con4mSectionType,
-              name:      string,
-              tinfo:     Con4mType,
-              required:  bool,
-              lock:      bool = false,
-              default:   Option[Box] = none(Box),
-              validator: string = ""): Con4mSectionType {.discardable.} =
+proc addAttr*(sect:       Con4mSectionType,
+              name:       string,
+              tinfo:      Con4mType,
+              required:   bool,
+              lock:       bool = false,
+              stackLimit: int = -1,
+              default:    Option[Box] = none(Box),
+              validator:  string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: {name}")
   if "*" in name:
@@ -69,6 +70,7 @@ proc addAttr*(sect:      Con4mSectionType,
     info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
+                     stackLimit:  stackLimit,
                      default:     default,
                      lock:        lock)
 
@@ -79,6 +81,7 @@ proc addC4TypeField*(sect:      Con4mSectionType,
                      name:      string,
                      required:  bool = true,
                      lock:      bool = false,
+                     stackLimit: int = -1,
                      default:   Option[Box] = none(Box),
                      validator: string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
@@ -90,6 +93,7 @@ proc addC4TypeField*(sect:      Con4mSectionType,
     info = FieldSpec(extType:     tobj,
                      minRequired: if required: 1 else: 0,
                      maxRequired: 1,
+                     stackLimit:  stackLimit,
                      default:     default,
                      lock:        lock)
   sect.fields[name] = info
@@ -98,8 +102,9 @@ proc addC4TypeField*(sect:      Con4mSectionType,
 proc addC4TypePtr*(sect:        Con4mSectionType,
                    name:        string,
                    pointsTo:    string,
-                   required:    bool = true,
-                   lock:        bool = false,
+                   required:    bool   = true,
+                   lock:        bool   = false,
+                   stackLimit:  int    = -1,
                    validator:   string = ""): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: '{name}'")
@@ -112,6 +117,7 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
     info  = FieldSpec(extType:     tinfo,
                       minRequired: if required: 1 else: 0,
                       maxRequired: 1,
+                      stackLimit:  stackLimit,
                       default:     none(Box),
                       lock:        lock)
   sect.fields[name] = info
@@ -122,13 +128,14 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
 # doing and wants the default to only be appliable if no value is
 # given.  Better specing it here rather than hardcoding it internal to
 # the app.
-proc addChoiceField*[T](sect:      Con4mSectionType,
-                        name:      string,
-                        choices:   seq[T],
-                        required:  bool = true,
-                        lock:      bool = false,
-                        default:   Option[Box] = none(Box),
-                        validator: string = "") =
+proc addChoiceField*[T](sect:       Con4mSectionType,
+                        name:       string,
+                        choices:    seq[T],
+                        required:   bool        = true,
+                        lock:       bool        = false,
+                        stackLimit: int         = -1,
+                        default:    Option[Box] = none(Box),
+                        validator:  string = "") =
   var attrType: Con4mType
 
   when T is string:
@@ -139,7 +146,7 @@ proc addChoiceField*[T](sect:      Con4mSectionType,
     static:
       error("addChoiceField must take a sequence of ints or strings")
 
-  addAttr(sect, name, attrType, required, lock, default, validator)
+  addAttr(sect, name, attrType, required, lock, stackLimit, default, validator)
   var tobj = sect.fields[name].extType
 
   if tobj.range[0] != tobj.range[1]:
@@ -159,11 +166,12 @@ proc addRangeField*(sect:       Con4mSectionType,
                     name:       string,
                     rangemin:   int,
                     rangemax:   int,
-                    required:   bool = true,
-                    lock:       bool = false,
-                    default:   Option[Box] = none(Box),
-                    validator: string = "") =
-  addAttr(sect, name, intType, required, lock, default, validator)
+                    required:   bool        = true,
+                    lock:       bool        = false,
+                    stackLimit: int         = -1,
+                    default:    Option[Box] = none(Box),
+                    validator:  string      = "") =
+  addAttr(sect, name, intType, required, lock, stackLimit, default, validator)
   var tobj = sect.fields[name].extType
 
   if rangemin >= rangemax:
@@ -172,6 +180,31 @@ proc addRangeField*(sect:       Con4mSectionType,
     defErr(sect, "Can't offer choices and a range.")
 
   tobj.range = (rangemin, rangemax)
+
+proc addBoundedContainer*(sect:       Con4mSectionType,
+                          name:       string,
+                          minSize:    int,
+                          maxSize:    int,
+                          tinfo:      Con4mType,
+                          required:   bool,
+                          lock:       bool        = false,
+                          stackLimit: int         = -1,
+                          default:    Option[Box] = none(Box),
+                          validator:  string      = "") =
+  case tinfo.getBaseType()
+  of TypeDict, TypeList:
+    addAttr(sect, name, tinfo, required, lock, stackLimit, default, validator)
+    if minSize < 0 and maxSize < 0:
+      defErr(sect, "Constraint must apply to either min or max to use this")
+    if minSize >= 0 and maxSize >= 0 and minSize >= maxSize:
+      defErr(sect, "Invalid size specification (min >= max)")
+    var tobj = sect.fields[name].extType
+    tobj.itemCount = (minSize, maxSize)
+  of TypeInt:
+    defErr(sect, "Bounded containers are for dicts and lists; use range " &
+                 "fields for integers.")
+  else:
+    defErr(sect, "Bounded containers must be dict or list types")
 
 # Use this to add simple mutual exclusions... if we see X, then we're
 # not allowed. For instance, in the c42 spec, default: and required:
@@ -187,10 +220,10 @@ proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
   # exclusions { field1: field2, field2: field3 }
   if fieldName1 notin sect.fields:
     defErr(sect, fmt"{fieldName1} must exist in section {sect.typeName}" &
-                    "before it can be used in an exclusion.")
+                    " before it can be used in an exclusion.")
   if fieldName2 notin sect.fields:
     defErr(sect, fmt"{fieldName2} must exist in section {sect.typeName}" &
-                    "before it can be used in an exclusion.")
+                    " before it can be used in an exclusion.")
   var
     field1 = sect.fields[fieldName1]
     field2 = sect.fields[fieldName2]
@@ -366,6 +399,27 @@ proc validateOneAttrField(attrs:  AttrScope,
         if val notin spec.extType.strChoices:
           specErr(attr, "Value is not one of the valid choices: " &
             spec.extType.strChoices.join(", "))
+      elif spec.extType.itemCount.low != 0 or spec.extType.itemCount.high != 0:
+        var l: int
+        case attr.tInfo.getBaseType()
+        of TypeDict:
+          let val = unpack[OrderedTableRef[Box, Box]](attrVal.get())
+          l   = len(val)
+        of TypeList:
+          let val = unpack[seq[Box]](attrVal.get())
+          l   = len(val)
+        else:
+          specErr(attr, "Value must be a container.")
+
+        if spec.extType.itemCount.low > 0:
+          if l < spec.extType.itemCount.low:
+            specErr(attr, "Value is require to contain between at least " &
+              $(spec.extType.itemCount.low) & " values")
+        if spec.extType.itemCount.high > 0:
+          if l > spec.extType.itemCount.high:
+            specErr(attr, "Value is require to contain no more than " &
+              $(spec.extType.itemCount.low) & " values")
+
   of TypeSection:
     unreachable
   of TypeC4TypeSpec:
@@ -402,6 +456,15 @@ proc validateOneAttrField(attrs:  AttrScope,
       specErr(attrs, fmt"When reading a type from field '{fieldRef}' " &
                      fmt"(to type check the field '{name}'), got a parse " &
                      "error parsing the type: " & getCurrentExceptionMsg())
+  if spec.lock:
+    if attr.value.isSome():
+      attr.locked = true
+    else:
+     attr.lockOnWrite = true
+  if spec.stackLimit != -1:
+    if getReplacementState().get().numExecutions >= spec.stackLimit:
+      attr.locked = true
+
   if spec.extType.validator != "" and attr.attrToVal().isSome():
     var fieldType: Con4mType
     if spec.extType.kind == TypePrimitive:
@@ -425,6 +488,9 @@ proc validateOneAttrField(attrs:  AttrScope,
                                  @[pack(attr.fullNameAsStr()), box],
                                  some(callType))
       if ret.isNone():
+        # Actually, this error doesn't display right now, since we are
+        # not try-catching the runCallback.  Instead, we should get:
+        # "Function '...' not found"
         specErr(attr, "A validator was specified, but no function of the " &
                 fmt"correct type exists in spec file: {$callType}")
       let
@@ -448,6 +514,15 @@ proc validateOneSection(attrs:  AttrScope,
         specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
 
 proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
+  # The 'replacement state' is basically to enable the sections()
+  # builtin in a con4m-to-spec scenario-- specifically, the code in
+  # a con4m spec can check the sections of the NEW spec we're creating.
+  # Also, we use this stash above to avoid passing state as an extra
+  # variable all around.
+  #
+  # This all will need to change a bit if we ever allow real
+  # multi-threading (TODO).
+
   setReplacementState(state)
   validateOneSection(state.attrs, state.spec.get().rootSpec, c42env)
   clearReplacementState()

@@ -278,6 +278,9 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
                               "attribute from being set")
   attr.value = some(value)
 
+  if attr.lockOnWrite:
+    attr.locked = true
+
   return AttrErr(code: errOk)
 
 proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =

@@ -623,6 +623,11 @@ proc c4mBitNot*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 var replacementState: Option[ConfigState] = none(ConfigState)
 
+# this is so sections() in a con4m spec validation can get the value of
+# the spec we're checking, instead of being introspective.
+proc getReplacementState*(): Option[ConfigState] =
+  return replacementState
+
 proc setReplacementState*(state: ConfigState) =
   replacementState = some(state)
 

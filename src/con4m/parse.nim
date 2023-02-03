@@ -15,7 +15,7 @@ export fatal, con4mTopic, defaultCon4mHook, Con4mError
 ##
 ## But since cyclical imports are a problem, we'll just stick it here.
 
-var stopPhase* = phEval
+var stopPhase* = phValidate
 
 proc setStopPhase*(s: string) =
   ## This is really only meant to be used when running the compiler

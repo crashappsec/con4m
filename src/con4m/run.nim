@@ -16,8 +16,9 @@ proc newConfigState*(node:        Con4mNode,
   node.varScope  = VarScope(parent: none(VarScope))
 
   let specOpt = if spec == nil: none(ConfigSpec) else: some(spec)
-  result      = ConfigState(attrs:   attrRoot,
-                            spec:    specOpt)
+  result      = ConfigState(attrs:         attrRoot,
+                            spec:          specOpt,
+                            numExecutions: 0)
 
   node.attrScope.config = result
 
@@ -69,8 +70,12 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   finally:
     state.postRun()
 
+  phaseEnded(phEval)
+
   if state.spec.isSome():
     state.validateState(evalCtx)
+
+  state.numExecutions += 1
 
   return true
 
