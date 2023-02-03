@@ -9,143 +9,126 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m/parse
-export fatal, parse.parse, Con4mError
+import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
+import con4m/[eval, dollars, spec, run, c42spec]
+export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
+export eval, dollars, spec, run, c42spec
 
-## This operates on tokens, as already produced by lex().  It simply
-## kicks off the parser by entering the top-level production (body),
-## and prints out any error message that happened during parsing.
-
-import nimutils
-
-import con4m/[treecheck, types, eval, builtins, spec, codegen, st, dollars],
-       con4m/errmsg
-export treecheck, types, eval, builtins, spec, codegen, st, dollars, errmsg
 
 when isMainModule:
-  import os, parseopt, options, streams,json
-  import con4m/dollars
+  setCon4mVerbosity(c4vShowLoc)
+  import nimutils, nimutils/help
+  import json, tables, options
+  const helpPath   = staticExec("pwd") & "/help/"
+  const helpCorpus = newOrderedFileTable(helpPath)
+
 
   discard subscribe(con4mTopic, defaultCon4mHook)
 
-  proc showResults(fstream: Stream,
-                   scope:
-                   Con4mScope,
-                   s: string,
-                   ascii: bool,
-                   header: bool
-                  ) =
-    if header:
-      fstream.write("********** Execution of " & s & " finished ************\n")
-    if ascii:
-      fstream.write($(scope))
-    else:
-      echo parseJson(scope.scopeTojson()).pretty()
 
-  proc showHelp() {.noreturn.} =
-    echo """
-con4m [flags] first.config ...
-      Evaluates your configuration file, dumping a JSON string with the results.
+  var showFuncs = false
+  proc setShowFuncs() =
+    showFuncs = true
 
-      Writes to standard output by default.  If multiple config files are provided,
-      they are executed 'stacked', in command-line order.
-
-      Note that this interface currently does not support callbacks,
-      and loads the default functions only.
-
-      FLAGS:
-      -a, --ascii              Output text instead of JSON
-      -v, --verbose            Output (to stderr) additional information.
-      -o:file, --outfile:file  Redirect JSON or ASCII output to a file.
-      -d, --debug              Throw NIM exceptions instead of printing error messages
-
-      -h, --help               This help message
-"""
-
-    quit()
-
-  let argv = commandLineParams()
   var
-    outfilename: Option[string] = none(string)
-    conffiles: seq[string] = @[]
-    verbose: bool = false
-    ascii: bool = false
-    debug: bool = false
-    outstream: Stream
+    specFile = none(string)
+    useC42   = false
 
 
-  for kind, k, v in getopt(argv,
-                           {'h', 'v', 'a', 'd'},
-                           @["help", "verbose", "ascii", "debug"]):
-    case kind
-    of cmdArgument:
-      conffiles.add(k)
-    of cmdLongOption, cmdShortOption:
-      case k
-      of "help", "h":
-        showHelp()
-      of "debug", "d":
-        debug = true
-      of "verbose", "v":
-        verbose = true
-      of "outfile", "o":
-        if outfilename.isSome():
-          echo "Error: multiple output files specified"
-          showHelp()
-        outfilename = some(v)
-      of "ascii", "a":
-        ascii = true
-      else:
-        echo "Unrecognized option: --" & v
-    else:
-      unreachable
+  proc setSpecFile(fname: string) =
+    if useC42:
+      fatal("Can't use c42 spec and an external spec together")
+    specFile = some(fname)
 
-  if len(conffiles) == 0:
-    showHelp()
+  proc setC42() =
+    if specFile.isSome():
+      fatal("Can't use c42 spec and an external spec together")
+    useC42 = true
 
-  if outfilename.isNone():
-    outstream = newFileStream(stdout)
-  else:
-    outstream = newFileStream(outfilename.get(), fmWrite)
-    if outstream.isNil():
-      echo "con4m: error: Could not open output file: " & outfilename.get()
-      quit(1)
+  proc getConfigSpec(): (ConfigSpec, ConfigState) =
+    if specFile.isNone():
+      if useC42:
+        return (buildC42Spec(), nil)
+      return (nil, nil)
+    let `spec?` = c42Spec(specfile.get())
 
-  # Load the first config file, and get a context object.
-  var
-    state: ConfigState
-    scope: Con4mScope
-    opt: Option[(ConfigState, Con4mScope)]
+    if `spec?`.isNone():
+      fatal("Config spec file failed to load.")
+    return `spec?`.get()
 
+  var attrOutStyle = "json"
+  proc setOutStyle(style: string) =
+    attrOutStyle = style
+
+  proc styleOutput(ctx: ConfigState, final: bool) =
+    if attrOutStyle == "pretty":
+      if not final:
+        echo $(ctx.attrs)
+    if attrOutStyle == "json":
+      if final:
+        stderr.writeLine(toAnsiCode([acBRed]))
+        stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
+        echo parseJson(ctx.attrs.scopeToJson()).pretty()
+        stderr.writeLine(toAnsiCode([acReset]))
+
+  let
+    phaseOps = ["tokenize", "parse", "check", "eval"]
+    outOps   = ["json", "pretty", "none"]
+    argParser  = newArgSpec().addArgs(min=0).
+                 addFlagWithStrArg('s', "spec", setSpecFile).
+                 addChoiceFlag('p', "phase", phaseOps, true, setStopPhase).
+                 addChoiceFlag('a', "attr-output", outOps, true, setOutStyle).
+                 addBinaryFlag('k', "show-tokens", setDumpToks).
+                 addBinaryFlag('t', "show-parse-tree", setShowParse).
+                 addBinaryFlag('x', "show-checked-tree", setShowChecked).
+                 addBinaryFlag('F', "show-funcs", setShowFuncs).
+                 addBinaryFlag('4', "c42", setC42).
+                 addPairedFlag('c', 'C', "color", setShowColors).
+                 addBinaryFlag('h',"help").
+                 addBinaryFlag('d', "debug", setCTrace)
   try:
-    opt = evalConfig(conffiles[0], addBuiltins = true)
+    let
+      state = argParser.parse()
+      args  = state.getArgs()
+      flags   = state.getFlags()
+
+    state.commit()
+
+    if "help" in flags or (len(args) == 1 and args[0] == "help"):
+      if len(args) != 0:
+        echo getHelp(helpCorpus, args)
+      else:
+        echo getHelp(helpCorpus, @["help"])
+      quit(1)
+    if len(args) == 0:
+      raise newException(ValueError, "Not enough arguments given.")
+    var
+      (spec, evalCtx) = getConfigSpec()
+      (ctx, ok)       = firstRun(args[0], spec, evalCtx = evalCtx)
+    if ok:
+      ctx.styleOutput(false)
+      for arg in args[1 .. ^1]:
+        discard ctx.stackConfig(arg)
+        ctx.styleOutput(false)
+      ctx.styleOutput(true)
+      if showFuncs:
+        stderr.write($(ctx.funcTable))
+    else:
+      stderr.writeLine(toAnsiCode(acBold) & "Compilation failed.")
+      quit(1)
+  except ValueError:
+    echo toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
+      getCurrentExceptionMsg()
+    if getCon4mVerbosity() == c4vMax:
+      echo getCurrentException().getStackTrace()
+
+    quit(1)
   except:
-    discard
-  if opt.isNone():
-    echo "Failed to load: " & conffiles[0]
-    quit()
-
-  (state, scope) = opt.get()
-
-  if verbose or len(conffiles) == 1:
-    outstream.showResults(scope, conffiles[0], ascii, verbose)
-
-  # Now, load the rest of the conf files, using the same scope.
-  for filename in conffiles[1 .. ^1]:
-    var scopeOpt: Option[Con4mScope]
-
-    if verbose:
-      echo "Loading config file: " & filename
-    try:
-      scopeOpt = state.stackConfig(filename)
-    except:
-      discard
-
-    if scopeOpt.isNone():
-      echo "Failed to load: " & filename
-      quit()
-
-    scope = scopeOpt.get()
-
-    if verbose or filename == conffiles[^1]:
-      outstream.showResults(scope, filename, ascii, verbose)
+    echo perLineWrap(toAnsiCode(acBRed) & "error: " & toAnsiCode(acReset) &
+                     getCurrentExceptionMsg(),
+                    firstHangingIndent = len("error: con4m: "),
+                    remainingIndents = 0)
+    if getCon4mVerbosity() == c4vMax:
+      echo getCurrentException().getStackTrace()
+    echo "See con4m --help for help on usage."
+    quit(1)

@@ -91,7 +91,7 @@ proc unescape(token: Con4mToken) =
       st = getStackTrace()
     else:
       st = ""
-      fatal("Unterminated escape sequence in string literal", token, st, ii)
+    fatal("Unterminated escape sequence in string literal", token, st, ii)
 
   token.unescaped = res
 
@@ -120,9 +120,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
     i      = 0
     newtok: Con4mToken = nil
-  let
-    l  = len(intoks)
-    
+
   result = @[]
 
   if len(inToks) != 0:
@@ -175,7 +173,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
                   result.add(newTok)
                   newTok = nil
                   break outer
-                  
+
                 result.add(t)
                 i = i + 1
                 break outer
@@ -187,7 +185,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
             result.add(t)
             i = i + 1
             break outer
-          
+
     else:
       result.add(t)
     i += 1
@@ -236,6 +234,10 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
         else:
           discard s.readChar()
       tok(TtLineComment)
+    of '~':
+      tok(TtLockAttr)
+    of '$':
+      tok(TtExportVar)
     of '+':
       tok(TtPlus)
     of '-':
@@ -438,6 +440,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       s.setPosition(pos)
 
       case txt
+      of "var": tok(TtVar)
       of "True", "true": tok(TtTrue)
       of "False", "false": tok(TtFalse)
       of "Null", "null": tok(TtNull)

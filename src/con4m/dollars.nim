@@ -5,15 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options
-import strformat
-import strutils
-import streams
-import tables
-import json
-
-import types
-import nimutils/box
+import options, strformat, strutils, streams, tables, json, unicode, algorithm
+import nimutils, types
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.
@@ -27,7 +20,7 @@ when false:
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
-    of TtStringLit: return tok.unescaped
+    of TtStringLit: return "\"" & tok.unescaped & "\""
     of TtWhiteSpace: return "~ws~"
     of TtNewLine: return "~nl~"
     of TtSof: return "~sof~"
@@ -45,17 +38,29 @@ else:
       if result.contains('\n'):
         return "~multi-line value~"
 
+template colorType(s: string): string =
+  toAnsiCode(acGreen) & s & toAnsiCode(acReset)
+
+template colorLit(s: string): string =
+  toAnsiCode(acRed) & s & toAnsiCode(acReset)
+
+template colorNT(s: string): string =
+  toAnsiCode(acBrown) & s & toAnsiCode(acReset)
+
+template colorT(s: string): string =
+  toAnsiCode(acYellow) & s & toAnsiCode(acReset)
+
 proc `$`*(t: Con4mType): string =
   ## Prints a type object the way it should be written for input, with
   ## the exception of the bottom type, which prints as its
   ## mathematical symbol (`⊥`)
   case t.kind
   of TypeString: return "string"
-  of TypeBool: return "bool"
-  of TypeInt: return "int"
-  of TypeFloat: return "float"
-  of TypeList: return "[{t.itemType}]".fmt()
-  of TypeDict: return "{{{t.keyType} : {t.valType}}}".fmt()
+  of TypeBool:   return "bool"
+  of TypeInt:    return "int"
+  of TypeFloat:  return "float"
+  of TypeList:   return fmt"[{t.itemType}]"
+  of TypeDict:   return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
     var s: seq[string]
     for item in t.itemTypes:
@@ -67,7 +72,8 @@ proc `$`*(t: Con4mType): string =
     return fmt"@{t.varNum}"
   of TypeBottom: return "⊥"
   of TypeProc:
-    if t.params.len() == 0: return "f() -> {$(t.retType)}".fmt()
+    if t.params.len() == 0:
+      return fmt"f() -> {$(t.retType)}"
     else:
       var paramTypes: seq[string]
       for item in t.params:
@@ -82,51 +88,66 @@ proc formatTerm(self: Con4mNode, name: string, i: int): string =
   if not self.token.isSome():
     return ' '.repeat(i) & name & " <???>"
 
-  result = ' '.repeat(i) & name & " " & $(self.token.get())
+  result = ' '.repeat(i) & name & " " & colorLit($(self.token.get()))
   if self.typeInfo != nil:
-    result = result & " -- type: " & $(self.typeInfo)
+    result = result & " -- type: " & colorLit($(self.typeInfo))
 
 template fmtNt(name: string) =
-  return self.formatNonTerm(name, i)
+  return self.formatNonTerm(colorNT(name), i)
 
 template fmtNtNamed(name: string) =
-  return self.formatNonTerm(name & " " & $(self.token.get()), i)
+  return self.formatNonTerm(colorNT(name) & " " &
+            colorT($(self.token.get())), i)
 
 template fmtT(name: string) =
-  return self.formatTerm(name, i) & "\n"
+  return self.formatTerm(colorT(name), i) & "\n"
+
+template fmtTy(name: string) =
+  return self.formatNonTerm(colorType(name), i)
 
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
-  of NodeBody: fmtNt("Body")
-  of NodeAttrAssign: fmtNt("AttrAssign")
-  of NodeVarAssign: fmtNt("VarAssign")
-  of NodeUnpack: fmtNt("Unpack")
-  of NodeSection: fmtNt("Section")
-  of NodeIfStmt: fmtNt("If Stmt")
-  of NodeConditional: fmtNt("Conditional")
-  of NodeElse: fmtNt("Else")
-  of NodeFor: fmtNt("For")
-  of NodeBreak: fmtT("Break")
-  of NodeContinue: fmtT("Continue")
-  of NodeReturn: fmtNt("Return")
-  of NodeSimpLit: fmtT("Literal")
-  of NodeUnary: fmtNtNamed("Unary")
-  of NodeNot: fmtNt("Not")
-  of NodeMember: fmtNt("Member")
-  of NodeIndex: fmtNt("Index")
-  of NodeCall: fmtNt("Call")
-  of NodeActuals: fmtNt("Actuals")
-  of NodeDictLit: fmtNt("DictLit")
-  of NodeKVPair: fmtNt("KVPair")
-  of NodeListLit: fmtNt("ListLit")
-  of NodeTupleLit: fmtNt("TupleLit")
-  of NodeEnum: fmtNt("Enum")
-  of NodeFuncDef: fmtNtNamed("Def")
-  of NodeFormalList: fmtNt("Formals")
+  of NodeBody:         fmtNt("Body")
+  of NodeAttrAssign:   fmtNt("AttrAssign")
+  of NodeAttrSetLock:  fmtNt("AttrSetLock")
+  of NodeVarAssign:    fmtNt("VarAssign")
+  of NodeVarSetExport: fmtNt("VarSetExport")
+  of NodeUnpack:       fmtNt("Unpack")
+  of NodeSection:      fmtNt("Section")
+  of NodeIfStmt:       fmtNt("If Stmt")
+  of NodeConditional:  fmtNt("Conditional")
+  of NodeElse:         fmtNt("Else")
+  of NodeFor:          fmtNt("For")
+  of NodeBreak:        fmtT("Break")
+  of NodeContinue:     fmtT("Continue")
+  of NodeReturn:       fmtNt("Return")
+  of NodeSimpLit:      fmtT("Literal")
+  of NodeUnary:        fmtNtNamed("Unary")
+  of NodeNot:          fmtNt("Not")
+  of NodeMember:       fmtNt("Member")
+  of NodeIndex:        fmtNt("Index")
+  of NodeCall:         fmtNt("Call")
+  of NodeActuals:      fmtNt("Actuals")
+  of NodeDictLit:      fmtNt("DictLit")
+  of NodeKVPair:       fmtNt("KVPair")
+  of NodeListLit:      fmtNt("ListLit")
+  of NodeTupleLit:     fmtNt("TupleLit")
+  of NodeEnum:         fmtNt("Enum")
+  of NodeFuncDef:      fmtNtNamed("Def")
+  of NodeFormalList:   fmtNt("Formals")
+  of NodeTypeDict:     fmtTy("TypeDict")
+  of NodeTypeList:     fmtTy("TypeList")
+  of NodeTypeTuple:    fmtTy("TypeTuple")
+  of NodeTypeString:   fmtTy("TypeString")
+  of NodeTypeInt:      fmtTy("TypeInt")
+  of NodeTypeFloat:    fmtTy("TypeFloat")
+  of NodeTypeBool:     fmtTy("TypeBool")
+  of NodeVarDecl:      fmtNt("VarDecl")
+  of NodeVarSymNames:  fmtNt("VarSymNames")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))
-  of NodeIdentifier: fmtT("Identifier")
+  of NodeIdentifier:   fmtNtNamed("Identifier")
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   const
@@ -136,7 +157,7 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
   let
     spaces = ' '.repeat(i)
     ti = self.typeInfo
-    typeRepr = if ti == nil: "" else: $(ti)
+    typeRepr = if ti == nil: "" else: colorType($(ti))
     typeVal = if ti == nil: "" else: typeTemplate.fmt()
 
   result = mainTemplate.fmt()
@@ -145,79 +166,95 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     let subitem = item.`$`(i + 2)
     result = indentTemplate.fmt()
 
-## The indent field doesn't try to pretty-print unless it is set
-## to a positive value.
-const nullstr = "\"null\""
-proc scopeToJson*(scope: Con4mScope): string =
-  var kvpairs: seq[string] = @[]
-  var b: Box
+proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
+  path.add(self.name)
 
-  for k, st in scope.entries:
-    if st.subscope.isSome():
-      kvpairs.add(fmt""""{k}" : {scopeToJson(st.subscope.get())}""")
-      continue
-    if st.override.isSome():
-      b = st.override.get()
-    elif st.value.isSome():
-      b = st.value.get()
+  result = toAnsiCode([acBold]) & path.join(".") & toAnsiCode([acReset]) & "\n"
+  var rows = @[@["Name", "Type", "Value"]]
+
+
+  for k, v in self.contents:
+    var row: seq[string] = @[]
+
+    if v.isA(Attribute):
+      var attr = v.get(Attribute)
+      if attr.value.isSome():
+        row.add(@[attr.name, $(attr.tInfo), $(attr.value.get())])
+      else:
+        row.add(@[attr.name, $(attr.tInfo), "<not set>"])
     else:
-      kvpairs.add(fmt""""{k}" : {nullstr}""")
-      continue
-    kvpairs.add(fmt(""""{k}" : {b.boxToJson()}"""))
+      var sec = v.get(AttrScope)
+      row.add(@[sec.name, "section", "n/a"])
+    rows.add(row)
 
-  return "{ " & kvpairs.join(", ") & "}"
+  var tbl = newTextTable(3,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder = true,
+                         rHdrFmt       = @[acBCyan],
+                         eColFmt       = @[acBGCyan, acBBlack],
+                         oColFmt       = @[acBGWhite, acBBlack])
+  result &= tbl.render()
 
-proc `$`*(scope: Con4mScope, indent: int): string =
-  let pad = " ".repeat(indent + 2)
+  for k, v in self.contents:
+    if v.isA(AttrScope):
+      var scope = v.get(AttrScope)
+      result &= scope.reprOneLevel(path)
 
-  for k, v in scope.entries:
-    let s = $(v.tInfo)
-    result = "{result}{pad}{k}: {s}".fmt()
-    if v.value.isSome():
-      result = "{result} = {$(v.value.get())}\n".fmt()
-    else:
-      result = "{result} (no value)\n".fmt()
+proc `$`*(self: AttrScope): string =
+  var parts: seq[string] = @[]
+  return reprOneLevel(self, parts)
 
-  for k, v in scope.entries:
-    if v.subscope.isNone(): continue
-    let subscope = v.subscope.get()
-    result = result & "{pad[0 .. ^2]}[subscope {k}]:\n".fmt()
-    let s = `$`(subscope, indent + 2)
+proc `$`*(self: VarScope): string =
+  result = ""
 
-    result = result & s
+  if self.parent.isSome():
+    result = $(self.parent.get())
 
-proc `$`*(scope: Con4mScope, goDown = true): string =
-  ## If you want to print subscopes, leave the goDown flag
-  ## as true.  Otherwise, set the goDown flag to false.
-  if not goDown:
-    for k, v in scope.entries:
-      let s = $(v.tInfo)
-      result = "{result}{k}: {s}\n".fmt()
+  var rows = @[@["Name", "Type"]]
+  for k, v in self.contents:
+    rows.add(@[k, $(v.tInfo)])
 
-    if scope.parent.isSome():
-      let parent = scope.parent.get()
-      result = "{result}\n--------------\nPrevious Scope:\n".fmt()
-      result = "{result}--------------\n".fmt()
-      result = "{result}{$parent}".fmt()
+  var tbl = newTextTable(2,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder  = true,
+                         addTopBorder  = true, addBottomBorder = true,
+                         rHdrFmt       = @[acBCyan],
+                         eRowFmt       = @[acBGCyan, acBBlack],
+                         oRowFmt       = @[acBGWhite, acBBlack])
 
+  return result & tbl.render()
+
+proc `<`(x, y: seq[string]): bool =
+  if x[0] == y[0]:
+    return x[1] < y[1]
   else:
-    return `$`(scope, 0)
+    return x[0] < y[0]
 
-proc `$`*(spec: AttrSpec): string =
-  result = "type: {spec.attrType}, required:".fmt()
-  if spec.required:
-    result = "{result} true, default:".fmt()
-  else:
-    result = "{result} false, default:".fmt()
-  if spec.defaultVal.isSome():
-    result = "{result} {`$`(spec.defaultVal.get())}".fmt()
-  else:
-    result = "{result} none".fmt()
+proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
+  # Not technically a dollar, but hey.
+  var rows = @[@["Name", "Type", "Kind"]]
+  for key, entrySet in funcTable:
+    for entry in entrySet:
+      rows.add(@[key, $(entry.tinfo), $(entry.kind)])
+  rows.sort()
+  var tbl = newTextTable(3,
+                         rows          = rows,
+                         fillWidth     = true,
+                         rowHeaderSep  = some(Rune('-')),
+                         colHeaderSep  = none(Rune),
+                         colSep        = some(Rune('|')),
+                         addLeftBorder = true, addRightBorder  = true,
+                         addTopBorder  = true, addBottomBorder = true,
+                         rHdrFmt       = @[acBCyan],
+                         eRowFmt       = @[acBGCyan, acBBlack],
+                         oRowFmt       = @[acBGWhite, acBBlack])
 
-proc `$`*(attrs: FieldAttrs): string =
-  var s: seq[string]
-
-  for k, v in attrs:
-    s.add("  {k} : {`$`(v)}".fmt())
-
-  return s.join("\n  ")
+  return result & tbl.render()

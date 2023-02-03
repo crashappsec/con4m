@@ -4,528 +4,525 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strutils, unicode, strformat, streams, nimutils
-import errmsg, types, parse, st, treecheck, typecheck, eval, dollars
+import options, tables, strutils, strformat, nimutils, macros, builtins
+import types, typecheck, eval, st, dollars
 
-proc newConfigSpec*(customTopLevelOk: bool = false): ConfigSpec =
-  ## Returns a new, empty ConfigSpec object, which allows us to define
-  ## a schema for our config files that we will validate after loading
-  ## the file.
-  ##
-  ## By default, the top-level section will not accept new
-  ## user-defined attributes added to it.  Users get variables, so
-  ## generally they shouldn't need it in the top-level space.
-  return ConfigSpec(customTopLevelOk: customTopLevelOk)
+proc specErr*(scope: AttrScope, msg: string) =
+  let name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
+  raise newException(ValueError,
+                     fmt"When checking {name}: {msg}")
 
-proc addGlobalAttr*(spec: ConfigSpec,
-                    name: string,
-                    con4mType: string,
-                    default: Option[Box] = none(Box),
-                    required: bool = true,
-                    lockOnWrite: bool = false,
-                    v: FieldValidator = nil,
-                    doc: string = "") =
-  ## This call specifies properties of specific attributes set in the
-  ## global namespace. By default (unless you set `customTopLevelOK`
-  ## to false when calling `newConfigSpec`), user-defined attributes
-  ## will NOT be allowed in the global namespace.  They do get
-  ## user-defined variables that don't bubble up to your app, though!
-  ##
-  ## Right now, this is the biggest wart in con4m. I was going to have
-  ## there only be an `addAttr()` API, but the section would have to
-  ## have a back-reference to the top, and I thought that would be
-  ## confusing.  But I think eventually that's where I'm going to go,
-  ## as I don't like the irregularity.
-  ##
-  ## The `doc` parameter is for doc strings, which is currently not
-  ## used, but will be used down the road when we merge in supporting
-  ## command-line argument handling, and start providing help
-  ## messages.
+proc specErr*(attr: Attribute, msg: string) =
+  let name = toAnsiCode(acBCyan) & attr.fullNameAsStr() & toAnsiCode(acReset)
+  raise newException(ValueError,
+                     fmt"When checking {name}: {msg}")
 
-  if spec.globalAttrs.contains(name):
-    raise newException(ValueError, "Global attribute already has a spec")
+proc specErr*(msg: string) =
+  raise newException(ValueError,
+                     fmt"In post execution check, at top-level: {msg}")
 
-  if not name.isValidId():
-    raise newException(ValueError, "Name is not a valid identifier")
+proc defErr*(scope: AttrScope, msg: string) =
+  let name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
+  raise newException(ValueError,
+                     fmt"When defining section {name}: {msg}")
 
-  let validator: Option[FieldValidator] = if v != nil: some(v)
-                                          else: none(FieldValidator)
-  let attr = AttrSpec(doc: doc,
-                      attrType: con4mType,
-    defaultVal: default,
-    lockOnWrite: lockOnWrite,
-    required: required,
-    validator: validator)
+proc defErr*(scope: Con4mSectionType, msg: string) =
+  let name = toAnsiCode(acBCyan) & scope.typeName & toAnsiCode(acReset)
+  raise newException(ValueError,
+                     fmt"When defining section {name}: {msg}")
 
-  spec.globalAttrs[name] = attr
-
-proc addSection*(spec: ConfigSpec,
-                 name: string,
-                 doc: string = "",
-                 requiredSubSecs: seq[string] = @[],
-                 validSubSecs: seq[string] = @[],
-                 allowCustomAttrs: bool = false): SectionSpec =
-  ## Adds information about the section to our specification.  Note
-  ## that currently, we limit section schema specs to the top-level
-  ## space.  That limitation will eventually change, but right now,
-  ## this con4m code:
-  ##
-  ## key "test" "foo" "bar" {
-  ##  test: 10
-  ## }
-  ##
-  ## is invalid, because the namespace for the descriptors at the
-  ## start of the block is the same as the namespace for attributes
-  ## inside the block.  I did it this way because HCL does, then
-  ## realized it's confusing AF, so instead of kludging a way to have
-  ## both approaches interoperate, I decided to not implement nested
-  ## sections quite yet; I'm going to come back and fix it properly by
-  ## giving both concepts their own namespace, essentially.
-  ##
-  ## But it's a lot of work, so until I prioritize it, you cannot do:
-  ##
-  ## host "test" {
-  ##    subsec {
-  ##       foo : 10
-  ##    }
-  ## }
-  ##
-  ## Because that currently is the same as:
-  ##
-  ## host "test" subsec {
-  ##   foo: 10
-  ## }
-  ##
-  ## Actually, you *can* do it, but it must have the same schema at
-  ## the parent.
-  ##
-  ## Currently, `requiredSubSecs` and `validSubSecs` are a list of
-  ## allowed values for the sub-block descritors (the `"test" "foo"
-  ## "bar"` above).  An asterisk in one position allows anything in
-  ## that position.  You cannot match arbitrary lengths.  Use dot
-  ## notation here.
-  ##
-  ## `allowCustomAttrs` can be turned on, but it's off by default,
-  ## because, hey, Con4m has a separate set of variables.
-  ##
-  ## The `doc` parameter is for doc strings, which is currently not
-  ## used, but will be used down the road when we merge in supporting
-  ## command-line argument handling, and start providing help
-  ## messages.
-
-  if spec.secSpecs.contains(name):
-    raise newException(ValueError, "Cannot redefine section {name}.".fmt())
-
-  if not name.isValidId():
-    raise newException(ValueError, "Name is not a valid identifier")
-
-  result = SectionSpec(doc: doc,
-                       requiredSubsections: requiredSubSecs,
-                       allowedSubsections: validSubSecs,
-                       customAttrs: allowCustomAttrs,
-                       associatedSpec: spec)
-
-  spec.secSpecs[name] = result
-
-proc addSection*(parent: SectionSpec,
-                 name: string,
-                 doc: string = "",
-                 requiredSubSecs: seq[string] = @[],
-                 validSubSecs: seq[string] = @[],
-                 allowCustomAttrs: bool = false): SectionSpec =
-  ## Same as above, but just delegates to the associatedSpec field to
-  ## allow these things to be chained.
-  return parent.associatedSpec.addSection(name,
-                                          doc,
-                                          requiredSubSecs,
-                                          validSubSecs,
-                                          allowCustomAttrs)
-
-proc addAttr*(section: SectionSpec,
-              name: string,
-              con4mType: string,
-              default: Option[Box] = none(Box),
-              required: bool = true,
-              lockOnWrite: bool = false,
-              v: FieldValidator = nil,
-              doc: string = "") =
-  ## Same as `globalAddAttr`, except for the first parameter being the
-  ## section to put the attr into, not the global state.  We're going
-  ## to fix this :(
-  if section.predefinedAttrs.contains(name):
-    raise newException(ValueError, "Attribute already has a spec")
-
-  if not name.isValidId():
-    raise newException(ValueError, "Name is not a valid identifier")
-
-  let validator: Option[FieldValidator] = if v != nil: some(v)
-                                          else: none(FieldValidator)
-  let attr = AttrSpec(doc: doc,
-                      attrType: con4mType,
-    defaultVal: default,
-    lockOnWrite: lockOnWrite,
-    required: required,
-    validator: validator)
-
-  section.predefinedAttrs[name] = attr
+proc defErr*(msg: string) =
+  raise newException(ValueError,
+                     fmt"When defining a top-level section: {msg}")
 
 
-proc containsFields(scope: Con4mScope): bool =
-  for n, e in scope.entries:
-    if e.subscope.isNone():
-      return true
+proc sectionType*(spec:       ConfigSpec,
+                  name:       string,
+                  singleton:  bool = false): Con4mSectionType {.discardable.} =
+  if name in spec.secSpecs:
+    defErr(fmt"Duplicate section type name: {name}")
+  result = Con4mSectionType(typeName:      name,
+                            singleton:     singleton,
+                            backref:       spec)
+  if name != "":
+    spec.secSpecs[name] = result
 
-  return false
+proc addAttr*(sect:       Con4mSectionType,
+              name:       string,
+              tinfo:      Con4mType,
+              required:   bool,
+              lock:       bool = false,
+              stackLimit: int = -1,
+              default:    Option[Box] = none(Box),
+              validator:  string = ""): Con4mSectionType {.discardable.} =
+  if name in sect.fields:
+    defErr(sect, fmt"Duplicate field name: {name}")
+  if "*" in name:
+    if name != "*":
+      defErr(sect, "Attribute wilcard must be '*' only")
+    elif required == true:
+      defErr(sect, "Wildcard attr spec can't be 'required'")
 
-proc containsSubscopes(scope: Con4mScope): bool =
-  for n, e in scope.entries:
-    if e.subscope.isSome():
-      return true
-  return false
+  let
+    tobj = ExtendedType(kind:      TypePrimitive,
+                        tinfo:     tinfo,
+                        validator: validator)
+    info = FieldSpec(extType:     tobj,
+                     minRequired: if required: 1 else: 0,
+                     maxRequired: 1,
+                     stackLimit:  stackLimit,
+                     default:     default,
+                     lock:        lock)
 
-type ValidState = enum
-  Invalid, ValidData, PathMatch
+  sect.fields[name] = info
+  return sect
 
-proc checkOneSectionSpec(spec: string, stack: seq[string]): ValidState =
-  let parts = spec.split('.')
+proc addC4TypeField*(sect:      Con4mSectionType,
+                     name:      string,
+                     required:  bool = true,
+                     lock:      bool = false,
+                     stackLimit: int = -1,
+                     default:   Option[Box] = none(Box),
+                     validator: string = ""): Con4mSectionType {.discardable.} =
+  if name in sect.fields:
+    defErr(sect, fmt"Duplicate field name: {name}")
+  if "*" in name:
+    defErr(sect, "User-defined fields can't be 'type' fields")
+  let
+    tobj = ExtendedType(kind: TypeC4TypeSpec, validator: validator)
+    info = FieldSpec(extType:     tobj,
+                     minRequired: if required: 1 else: 0,
+                     maxRequired: 1,
+                     stackLimit:  stackLimit,
+                     default:     default,
+                     lock:        lock)
+  sect.fields[name] = info
+  return sect
 
-  if parts.len() < stack.len(): return Invalid
+proc addC4TypePtr*(sect:        Con4mSectionType,
+                   name:        string,
+                   pointsTo:    string,
+                   required:    bool   = true,
+                   lock:        bool   = false,
+                   stackLimit:  int    = -1,
+                   validator:   string = ""): Con4mSectionType {.discardable.} =
+  if name in sect.fields:
+    defErr(sect, fmt"Duplicate field name: '{name}'")
+  if "*" in name:
+    defErr(sect, "User-defined fields can't be 'type' fields")
+  let
+    tinfo = ExtendedType(kind:      TypeC4TypePtr,
+                         fieldRef:  pointsTo,
+                         validator: validator)
+    info  = FieldSpec(extType:     tinfo,
+                      minRequired: if required: 1 else: 0,
+                      maxRequired: 1,
+                      stackLimit:  stackLimit,
+                      default:     none(Box),
+                      lock:        lock)
+  sect.fields[name] = info
+  return sect
 
-  for i in 0 ..< stack.len():
-    if parts[i] == "*": continue # Wait this makes no sense.
-    if cmpRunesIgnoreCase(parts[i], stack[i]) != 0:
-      return Invalid
+# For addChoiceField and addRangeField, we don't check to see if
+# default is in range; we assume the developer knows what they're
+# doing and wants the default to only be appliable if no value is
+# given.  Better specing it here rather than hardcoding it internal to
+# the app.
+proc addChoiceField*[T](sect:       Con4mSectionType,
+                        name:       string,
+                        choices:    seq[T],
+                        required:   bool        = true,
+                        lock:       bool        = false,
+                        stackLimit: int         = -1,
+                        default:    Option[Box] = none(Box),
+                        validator:  string = "") =
+  var attrType: Con4mType
 
-  if stack.len() == parts.len():
-    return ValidData
+  when T is string:
+    attrType = stringType
+  elif T is int:
+    attrType = intType
   else:
-    return PathMatch
+    static:
+      error("addChoiceField must take a sequence of ints or strings")
 
-proc okayToBeHere(specs, stack: seq[string], scope: Con4mScope): bool =
-  # Validate that this section existing makes sense, based on the
-  # spec.  Note that the spec identifies what can contain DATA, and
-  # this scope may not contain data.  Still, even if it doesn't, we
-  # need to make sure there COULD be a legitimate data-containing
-  # scope under us.
+  addAttr(sect, name, attrType, required, lock, stackLimit, default, validator)
+  var tobj = sect.fields[name].extType
 
-  let thisScopeContainsData = scope.containsFields()
+  if tobj.range[0] != tobj.range[1]:
+    defErr(sect, "Can't set both range and choice on the same field")
+  elif len(tobj.intChoices) + len(tobj.strChoices) != 0:
+    defErr(sect, "Already have choices established!")
+  elif len(choices) <= 1:
+    defErr(sect, fmt"When defining field '{name}': must offer 2 or more " &
+                    "choices, or else it's not a choice!")
 
-  for spec in specs:
-    case spec.checkOneSectionSpec(stack)
-    of Invalid: continue
-    of ValidData:
-      return true
-    of PathMatch:
-      if not thisScopeContainsData:
-        return true
+  when T is string:
+    tobj.strChoices = choices
+  elif T is int:
+    tobj.intChoices = choices
 
-proc validateAttr(ctx: ConfigState,
-                  stack: seq[string],
-                  entry: STEntry,
-                  fields: FieldAttrs,
-                  customOk: bool) =
+proc addRangeField*(sect:       Con4mSectionType,
+                    name:       string,
+                    rangemin:   int,
+                    rangemax:   int,
+                    required:   bool        = true,
+                    lock:       bool        = false,
+                    stackLimit: int         = -1,
+                    default:    Option[Box] = none(Box),
+                    validator:  string      = "") =
+  addAttr(sect, name, intType, required, lock, stackLimit, default, validator)
+  var tobj = sect.fields[name].extType
 
+  if rangemin >= rangemax:
+    defErr(sect, "Invalid range.")
+  elif len(tobj.intChoices) + len(tobj.strChoices) != 0:
+    defErr(sect, "Can't offer choices and a range.")
 
-  # 1. If not customOk, does the field name exist in the list of okay fields?
-  # 2. Is there actually a value set?  If not, no actual problem here.
-  # 3. Does the type in the symbol table match what was spec'd?
-  # 4. If there's a validator callback, call it!
-  # 5. Are we supposed to lock this field now that it's set? If so, do it.
+  tobj.range = (rangemin, rangemax)
 
-  let
-    symbol = stack[^1]
+proc addBoundedContainer*(sect:       Con4mSectionType,
+                          name:       string,
+                          minSize:    int,
+                          maxSize:    int,
+                          tinfo:      Con4mType,
+                          required:   bool,
+                          lock:       bool        = false,
+                          stackLimit: int         = -1,
+                          default:    Option[Box] = none(Box),
+                          validator:  string      = "") =
+  case tinfo.getBaseType()
+  of TypeDict, TypeList:
+    addAttr(sect, name, tinfo, required, lock, stackLimit, default, validator)
+    if minSize < 0 and maxSize < 0:
+      defErr(sect, "Constraint must apply to either min or max to use this")
+    if minSize >= 0 and maxSize >= 0 and minSize >= maxSize:
+      defErr(sect, "Invalid size specification (min >= max)")
+    var tobj = sect.fields[name].extType
+    tobj.itemCount = (minSize, maxSize)
+  of TypeInt:
+    defErr(sect, "Bounded containers are for dicts and lists; use range " &
+                 "fields for integers.")
+  else:
+    defErr(sect, "Bounded containers must be dict or list types")
 
-  if not customOk and not fields.contains(symbol):
-    ctx.errors.add("{stack.join(\".\")} is a custom key in a section ".fmt() &
-                   "that does not accept custom keys.")
-    return
+# Use this to add simple mutual exclusions... if we see X, then we're
+# not allowed. For instance, in the c42 spec, default: and required:
+# are mutually exclusive, but at least one of them is required.
+#
+# So we mark them as both required and mutually exclusive.
+#
+# The 'min required' is only enforced when there are no exclusions.
+proc addExclusion*(sect: Con4mSectionType, fieldName1, fieldName2: string) =
+  # The c42 object / singleton / root types should allow something
+  # like:
+  #
+  # exclusions { field1: field2, field2: field3 }
+  if fieldName1 notin sect.fields:
+    defErr(sect, fmt"{fieldName1} must exist in section {sect.typeName}" &
+                    " before it can be used in an exclusion.")
+  if fieldName2 notin sect.fields:
+    defErr(sect, fmt"{fieldName2} must exist in section {sect.typeName}" &
+                    " before it can be used in an exclusion.")
+  var
+    field1 = sect.fields[fieldName1]
+    field2 = sect.fields[fieldName2]
 
-  if entry.value.isNone():
-    # This can happen when code isn't evaluated, for instance due to a
-    # conditional. In such a case, the attribute never got set. It's not
-    # an error condition, but we also don't want to end up marking the
-    # symbol as having been seen.
-    return
+  # Note: not checking for a double add here.
+  field1.exclusions.add(fieldName2)
+  field2.exclusions.add(fieldName1)
 
-  let
-    box = entry.value.get()
-    spec = fields[symbol]
-    t1 = entry.tInfo
-    t2 = spec.attrType.toCon4mType()
-    unified = unify(t1, t2)
+proc addSection*(sect:     Con4mSectionType,
+                 typeName: string,
+                 min:      int  = 0,
+                 max:      int  = 0,
+                 lock:     bool = false): Con4mSectionType {.discardable.} =
 
-  if unified.isBottom():
-    ctx.errors.add("The value of {stack.join(\".\")} is not of the ".fmt() &
-                   "right type ({$(t1)} vs {$(t2)})".fmt())
-    return
+  let knownTypes = sect.backref.secSpecs
 
-  if spec.validator.isSome():
-    let f = spec.validator.get()
-    if not f(stack, box):
-      ctx.errors.add(
-        """{stack.join(".")} didn't pass its validation check""".fmt())
-      return
+  if typeName notin knownTypes:
+    defErr(sect, fmt"Reference an undeclared section type: {typeName}")
+  if typeName in sect.fields:
+    defErr(sect, fmt"Duplicate spec for: {typeName}")
+  if min < 0 or max < 0:
+    defErr(sect, fmt"Values for min and max must be positive")
+  if max != 0 and min > max:
+    defErr(sect, fmt"Minimum number can't be greater than the maximum")
 
-  if spec.lockOnWrite:
-    entry.locked = true
+  let t = knownTypes[typeName]
 
-proc requiredFieldCheck(ctx: ConFigState,
-                        scope: Con4mScope,
-                        attrs: FieldAttrs,
-                        scopeName: string) =
-  # Fill in fields tha were not provided, when there are defaults we
-  # can fill in.  Otherwise, if fields are required, error.
-  if scope.containsSubscopes() and not scope.containsFields():
-    if scopeName != "<global>":
-      return
+  if t.singleton and min > 1 or max > 1:
+    defErr(sect, fmt"Section {typeName} is a singleton; min/max fields " &
+                    "must be 1 or less")
 
-  for key, specEntry in attrs:
-    if scope.entries.contains(key):
-      let entry = scope.entries[key]
-      if entry.value.isSome():
-        continue
-      else:
-        if specEntry.defaultVal.isSome():
-          entry.value = specEntry.defaultVal
-          scope.entries[key] = entry
-        else:
-          if specEntry.required:
-            ctx.errors.add("In {scopeName}: Required symbol {key}".fmt() &
-              "not found")
-          continue
-    else:
-      if specEntry.defaultVal.isNone():
-        if specEntry.required:
-          ctx.errors.add("In {scopeName}: ".fmt() &
-                         "Required symbol {key} not found".fmt())
-        else:
-          # Add in an empty value.
-          discard scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
-      else:
-        let
-          opt = scope.addEntry(key, tinfo = specEntry.attrType.toCon4mType())
-          entry = opt.get()
-        entry.value = specEntry.defaultVal
-        scope.entries[key] = entry
+  var fs = FieldSpec(extType:     ExtendedType(t),
+                     minRequired: min,
+                     maxRequired: max,
+                     default:     none(Box),
+                     lock:        lock)
+  sect.fields[typeName] = fs
 
-proc validateScope(ctx: ConfigState,
-                   scope: Con4mScope,
-                   stack: seq[string],
-                   myState: SectionState) =
-  let sname = stack[0]
+proc newSpec*(): ConfigSpec =
+  result = ConfigSpec()
 
-  myState.beenSeen = true
+  result.rootSpec = sectionType(result, "", true)
 
-  # Top-level sections MUST be pre-specified when validation is
-  # invoked.  So when we're looking at a top-level section (ie, when
-  # there's only one name on the stack), make sure there's a section
-  # spec.
-  if stack.len() == 1:
-    if not ctx.spec.get().secSpecs.contains(sname):
-      ctx.errors.add("Invalid top-level section in config: {sname}".fmt())
-      return
+proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
+  return spec.rootSpec
 
-  let
-    spec = ctx.spec.get().secSpecs[sname]
-    customOk = spec.customAttrs
+proc validateOneSection(attrs:  AttrScope,
+                        spec:   Con4mSectionType,
+                        c42Env: ConfigState)
 
-  if len(stack) > 1 and
-     not okayToBeHere(spec.requiredSubsections, stack[1 .. ^1], scope) and
-     not okayToBeHere(spec.allowedSubsections, stack[1 .. ^1], scope):
-    ctx.errors.add("Invalid section: {stack.join(\".\")}".fmt())
-    return
-
-  for key, entry in scope.entries:
-    var pushed = stack
-    pushed.add(key)
-
-    if entry.subscope.isSome():
-      let secState = SectionState()
-      myState.subStateObjs[key] = secState
-      ctx.validateScope(entry.subscope.get(), pushed, secState)
-    else:
-      ctx.validateAttr(pushed, entry, spec.predefinedAttrs, customOk)
-
-  # Next check required fields.
-  # Add a default value in, if need be.
-  requiredFieldCheck(ctx, scope, spec.predefinedAttrs, stack.join("."))
-
-
-proc validateConfig*(config: ConfigState): bool =
-  ## This function validates the executed configuration file against
-  ## the specification set in the `config` variable (which you should
-  ## have already set with `addSpec()`).
-  ##
-  ## Note that, unlike static errors and the few possible runtime
-  ## errors (currently just index out of bounds errors) this does
-  ## *NOT* throw an exception on error.  Instead, the config context
-  ## will contain a list of error strings.
-  ##
-  ## This makes it easier you to decide whether you want to error
-  ## outright, or overcome the mistakes somehow, as we don't bail on
-  ## our work in the middle of it.
-  let
-    scope = config.st
-    optSpec = config.spec
-
-  if optSpec.isNone():
-    raise newException(ValueError,
-                       "Attempting to validate a configuration against " &
-                       "a specification, but no specification has been set " &
-                       "for this config.")
-  let spec = optSpec.get()
-
-  #Check required fields for the global scope, adding in defaults if
-  #needed.
-  requiredFieldCheck(config, scope, spec.globalAttrs, "<global>")
-
-  # We walk through scopes that have actually appeared, and
-  # compare what we see in those scopes vs. what we expected.
-
-  for key, entry in scope.entries:
-    if entry.subscope.isSome():
-      let secState = SectionState()
-      config.stateObjs[key] = secState
-      config.validateScope(entry.subscope.get(), @[key], secState)
-    else:
-      config.validateAttr(@[key],
-                          entry,
-                          spec.globalAttrs,
-                          spec.customTopLevelOk)
-
-  # Then check for missing required sections.
-  for cmd, spec in spec.secSpecs:
-    for targetSection in spec.requiredSubsections:
-      if targetSection.contains("*"):
-        config.errors.add("Required section spec cannot contain " &
-                          "wildcards (spec {targetSection})".fmt())
-        continue
-      let parts = targetSection.split(".")
-      if dottedLookup(scope, parts).isNone():
-        config.errors.add("Required section not provided: {targetSection}".fmt())
-
-  if config.errors.len() == 0:
-    return true
-
-proc stackBase(s: ConfigState, tree: Con4mNode): Option[Con4mScope] =
-  if tree == nil: return none(Con4mScope)
-  s.errors = @[]
-  tree.checkTree(s)
-
-  s.pushRuntimeFrame()
-  try:
-    tree.evalNode(s)
-  finally:
-    discard s.popRuntimeFrame()
-
-  if s.spec.isSome():
-    if not s.validateConfig():
-      return none(Con4mScope)
-
-  return some(tree.scopes.get().attrs)
-
-proc stackConfig*(s: ConfigState,
-                  stream: Stream,
-                  filename: string): Option[Con4mScope] =
-  setCurrentFileName(filename)
-  stackBase(s, parse(stream, filename))
-
-
-proc stackConfig*(s: ConfigState, filename: string): Option[Con4mScope] =
-  setCurrentFileName(filename)  
-  stackBase(s, parse(filename))
-
-
-proc getConfigVar*(state: ConfigState, field: string): Option[Box] =
-  ## This interface allows you to look up individual fields to get
-  ## their value as a Box (since the config schema doesn't need to be
-  ## static).
-  ##
-  ## The contents of `field` use standard object dot notation.
-  let
-    parts = field.split('.')
-    optEntry = state.st.dottedLookup(parts)
-
-  if optEntry.isNone():
-    return
-
-  let entry = optEntry.get()
-
-  if entry.override.isSome():
-    return entry.override
-
-  return entry.value
-
-type Con4mSectInfo = seq[(string, string, Con4mScope)]
-
-proc lockConfigVar*(state: ConfigState, field: string): bool =
-  ## This prevents the variable from being written.  Returns false if
-  ## the variable doesn't exist in the scope, which will generally
-  ## imply a programmer error.
-  let
-    parts = field.split('.')
-    optEntry = state.st.dottedLookup(parts)
-
-  if optEntry.isNone():
-    return false
-
-  let entry = optEntry.get()
-  entry.locked = true
-  return true
-
-proc setOverride*(state: ConfigState, field: string, value: Box): bool =
-  ## This indicates that, while the executing config file might be
-  ## able to write to a field, some higher power (generally a
-  ## command-line flag) is going to clobber with this value, as soon
-  ## as execution completes.
-  ##
-  ## Will return false if the specified variable doesn't exist in the
-  ## scope, which will generally imply a programmer error.
-  let
-    parts = field.split('.')
-    optEntry = state.st.dottedLookup(parts)
-
-  if optEntry.isNone():
-    return false
-
-  let entry = optEntry.get()
-  entry.override = some(value)
-  return true
-
-proc walkSTForSects(toplevel: string,
-                    path: string,
-                    scope: Con4mScope,
-                    s: var Con4mSectInfo) =
-
-  if scope.containsFields():
-    s.add((toplevel, path, scope))
-
-  for n, e in scope.entries:
-    if e.subscope.isNone():
+proc exclusionPresent(attrs, name, spec: auto): string =
+  # Returns any one exclusion from the spec that has a value
+  # associated with it in attrs, whether it's an instantiated
+  # section (even if empty) or another attribute.
+  for item in spec.exclusions:
+    if item == name:
+      continue # Ignore if we excluded ourselves.
+    if item notin attrs.contents:
       continue
+    let aOrS = attrs.contents[item]
+    if aOrS.isA(AttrScope):
+      return item # Once present, attr objects never go away.
+    let attr = aOrS.get(Attribute)
+    if attr.attrToVal.isSome():
+      return item
+  return ""
 
-    let newpath = if path != "":
-                    path & "." & n
-                  else:
-                    n
+proc validateOneSectField(attrs:  AttrScope,
+                          name:   string,
+                          spec:   FieldSpec,
+                          c42Env: ConfigState) =
+  let exclusion = exclusionPresent(attrs, name, spec)
 
-    walkSTForSects(toplevel, newpath, e.subscope.get(), s)
+  if name notin attrs.contents:
+    if spec.minRequired > 0 and exclusion == "":
+      specErr(attrs, fmt"Required section '{name}' is missing, and there " &
+        "are no other fields present that would remove this constraint.")
+    else:
+      return
+  let aOrS = attrs.contents[name]
+  if aOrS.isA(Attribute):
+    specErr(attrs, fmt"Expected a section '{name}', but got an " &
+                      "attribute instead.")
+  let
+    sectAttr = aOrS.get(AttrScope)
+    secSpec = spec.extType.sinfo
+  if secSpec.singleton:
+    validateOneSection(sectAttr, secSpec, c42env)
+    return
+  for k, v in sectAttr.contents:
+    if v.isA(Attribute):
+      specErr(attrs, fmt"Cannot have a singleton for section type: '{name}'")
+    else:
+      validateOneSection(v.get(AttrScope), secSpec, c42env)
 
-proc getAllSectionSTs*(ctx: ConfigState): Con4mSectInfo =
-  ## Returns a sequence of tuples, one per section provided in
-  ## a config file that's been read in.
-  ##
-  ## The tuples are of the format (`topsection`, `dotted path`, `scope`)
-  ##
-  ## Where scope is an object of type `Con4mScope`
+  if exclusion != "":
+    if len(sectAttr.contents) > 0:
+      specErr(attrs, fmt"'{name}' cannot appear alongside '{exclusion}'")
+  else:
+    if len(sectAttr.contents) < spec.minRequired:
+      specErr(attrs, fmt"Expected {spec.minRequired} sections of '{name}', " &
+                     fmt"but only have {len(sectAttr.contents)}.")
+    if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
+      specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
+                     fmt"of '{name}', but got {len(sectAttr.contents)}.")
 
+proc validateOneAttrField(attrs:  AttrScope,
+                          name:   string,
+                          spec:   FieldSpec,
+                          c42Env: ConfigState) =
+  let exclusion = exclusionPresent(attrs, name, spec)
 
-  result = @[]
+  if name notin attrs.contents:
+    if spec.minRequired == 1 and exclusion == "":
+      if spec.default.isSome():
+        let t = spec.extType.tinfo
+        # While we set the default here, it does have to drop down
+        # below to properly type check.
+        attrs.contents[name] = Attribute(name: name,
+                                         scope: attrs,
+                                         tInfo: t,
+                                         value: spec.default,
+                                         override: none(Box))
+      else:
+        specErr(attrs, fmt"Inside field '{attrs.name}': Required attribute " &
+                       fmt"'{name}' is missing, and there are no other " &
+                          "fields present that would remove this constraint.")
+    else:
+      return
+  # The spec says the name is def a con4m type. Make sure it's not a section.
+  let aOrS = attrs.contents[name]
+  if aOrS.isA(AttrScope):
+    specErr(attrs, fmt"Expected a field '{name}' but got a section instead.")
+  let
+    attr = aOrS.get(Attribute)
+  if not attr.attrToVal().isSome() and spec.minRequired == 1:
+    if exclusionPresent(attrs, name, spec) == "":
+      if spec.default.isSome():
+        attr.value = spec.default
+      else:
+        specErr(attr, fmt"Required attribute '{name}' is missing.")
+  else:
+    if exclusion != "":
+      specErr(attr, fmt"'{name}' can't appear alongside '{exclusion}'")
+  case spec.extType.kind
+  of TypePrimitive:
+    if attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
+      let
+        specType = $(spec.extType.tinfo)
+        attrType = $(attr.tInfo)
 
-  for k, entry in ctx.st.entries:
-    if entry.subscope.isSome():
-      walkStForSects(k, "", entry.subscope.get(), result)
+      specErr(attr, fmt"Wrong type for '{name}' (spec said " &
+        toAnsiCode(acBGreen) & fmt"{specType} " & toAnsiCode(acReset) &
+        "but value is a: " & toAnsiCode(acBGreen) & fmt"{attrType}" &
+        toAnsiCode(acReset) & ")")
+    var attrVal = attr.attrToVal()
+    if attrVal.isSome():
+      if spec.extType.range.low != spec.extType.range.high:
+        assert not attr.tInfo.unify(intType).isBottom()
+        let val = unpack[int](attrVal.get())
+        if val < spec.extType.range.low or val > spec.extType.range.high:
+          specErr(attr, fmt"Value '{val}' is outside of allowed range: " &
+                  fmt"{spec.extType.range.low} .. {spec.extType.range.high}")
+      elif len(spec.extType.intChoices) != 0:
+        assert not attr.tInfo.unify(intType).isBottom()
+        let val = unpack[int](attrVal.get())
+        if val notin spec.extType.intChoices:
+          specErr(attr, "Value is not one of the valid choices: " &
+            $(spec.extType.intChoices))
+      elif len(spec.extType.strChoices) != 0:
+        assert not attr.tInfo.unify(stringType).isBottom()
+        let val = unpack[string](attrVal.get())
+        if val notin spec.extType.strChoices:
+          specErr(attr, "Value is not one of the valid choices: " &
+            spec.extType.strChoices.join(", "))
+      elif spec.extType.itemCount.low != 0 or spec.extType.itemCount.high != 0:
+        var l: int
+        case attr.tInfo.getBaseType()
+        of TypeDict:
+          let val = unpack[OrderedTableRef[Box, Box]](attrVal.get())
+          l   = len(val)
+        of TypeList:
+          let val = unpack[seq[Box]](attrVal.get())
+          l   = len(val)
+        else:
+          specErr(attr, "Value must be a container.")
 
-proc addSpec*(s: ConfigState, spec: ConfigSpec) =
-  ## Associate a ConfigSpec object with an existing state object.
-  s.spec = some(spec)
+        if spec.extType.itemCount.low > 0:
+          if l < spec.extType.itemCount.low:
+            specErr(attr, "Value is require to contain between at least " &
+              $(spec.extType.itemCount.low) & " values")
+        if spec.extType.itemCount.high > 0:
+          if l > spec.extType.itemCount.high:
+            specErr(attr, "Value is require to contain no more than " &
+              $(spec.extType.itemCount.low) & " values")
+
+  of TypeSection:
+    unreachable
+  of TypeC4TypeSpec:
+    discard # Only the referrer needs to validate.
+  of TypeC4TypePtr:
+    let fieldRef = spec.extType.fieldRef
+
+    if fieldRef notin attrs.contents:
+      specErr(attrs, fmt"Type for field '{name}' is supposed to be taken " &
+                     fmt"from the '{fieldRef}' field, which was not provided.")
+
+    let refAOrS = attrs.contents[fieldRef]
+    if refAOrS.isA(AttrScope):
+      specErr(attrs, fmt"Expected a field named '{fieldRef}' containing " &
+                     fmt"the type for the field '{name}'")
+
+    let refAttr = refAOrS.get(Attribute)
+    if not refAttr.attrToVal().isSome():
+      specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a " &
+                     fmt"con4m type for field '{name}', but that type is " &
+                        "missing.")
+    if refAttr.tInfo.unify(stringType).isBottom():
+      specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a con4m " &
+                     fmt"type for field '{name}', but the field is not a " &
+                     "valid con4m string.")
+    let typeString = unpack[string](refAttr.attrToVal().get())
+    try:
+      let fieldType = typeString.toCon4mType()
+      if attr.tInfo.unify(fieldType).isBottom():
+        specErr(attrs, fmt"Wrong type for {name} (expected {typeString} per " &
+                       fmt"the type read from field '{fieldRef}'), but got: " &
+                       fmt"{`$`(attr.tInfo)}")
+    except:
+      specErr(attrs, fmt"When reading a type from field '{fieldRef}' " &
+                     fmt"(to type check the field '{name}'), got a parse " &
+                     "error parsing the type: " & getCurrentExceptionMsg())
+  if spec.lock:
+    if attr.value.isSome():
+      attr.locked = true
+    else:
+     attr.lockOnWrite = true
+  if spec.stackLimit != -1:
+    if getReplacementState().get().numExecutions >= spec.stackLimit:
+      attr.locked = true
+
+  if spec.extType.validator != "" and attr.attrToVal().isSome():
+    var fieldType: Con4mType
+    if spec.extType.kind == TypePrimitive:
+      fieldType = spec.extType.tinfo
+    else:
+      fieldType = stringType
+
+    let
+      callType = Con4mType(kind:   TypeProc,
+                           params: @[stringType, fieldType],
+                           va:     false,
+                           retType: stringType)
+
+    if c42env == nil:
+      specErr(attr, "A validator was specified, but the application " &
+                    "didn't provide an evaluation context.")
+    else:
+      let
+        box = attr.attrToVal().get()
+        ret = c42env.runCallback(spec.extType.validator,
+                                 @[pack(attr.fullNameAsStr()), box],
+                                 some(callType))
+      if ret.isNone():
+        # Actually, this error doesn't display right now, since we are
+        # not try-catching the runCallback.  Instead, we should get:
+        # "Function '...' not found"
+        specErr(attr, "A validator was specified, but no function of the " &
+                fmt"correct type exists in spec file: {$callType}")
+      let
+        errMsg = unpack[string](ret.get())
+
+      if errMsg != "":
+        specErr(attr, errMsg)
+
+proc validateOneSection(attrs:  AttrScope,
+                        spec:   Con4mSectionType,
+                        c42Env: ConfigState) =
+  # Here we are 'in' a section and need to validate each field.
+  for name, fieldspec in spec.fields:
+    if fieldspec.extType.kind == TypeSection:
+      validateOneSectField(attrs, name, fieldspec, c42env)
+    else:
+      validateOneAttrField(attrs, name, fieldspec, c42env)
+  if "*" notin spec.fields:
+    for name, _ in attrs.contents:
+      if name notin spec.fields:
+        specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
+
+proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
+  # The 'replacement state' is basically to enable the sections()
+  # builtin in a con4m-to-spec scenario-- specifically, the code in
+  # a con4m spec can check the sections of the NEW spec we're creating.
+  # Also, we use this stash above to avoid passing state as an extra
+  # variable all around.
+  #
+  # This all will need to change a bit if we ever allow real
+  # multi-threading (TODO).
+
+  setReplacementState(state)
+  validateOneSection(state.attrs, state.spec.get().rootSpec, c42env)
+  clearReplacementState()

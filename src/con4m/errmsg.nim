@@ -27,17 +27,26 @@ var
 proc setCon4mVerbosity*(level: C4Verbosity) =
   verbosity = level
 
+proc getCon4mVerbosity*(): C4Verbosity =
+  return verbosity
+
 proc setCurrentFileName*(s: string) =
   curFileName = s
 
-proc formatCompilerError( msg: string,
-                          t:   Con4mToken,
-                          tb:  string = "",
-                          ii:  InstInfo): string =
-  let
-    me = getAppFileName().splitPath().tail
+proc getCurrentFileName*(): string =
+  return curFileName
 
-  result = fmt"{me}: {curFileName}: "
+proc formatCompilerError(msg: string,
+                         t:   Con4mToken,
+                         tb:  string = "",
+                         ii:  InstInfo): string =
+  let
+    me    = getAppFileName().splitPath().tail
+    red   = toAnsiCode(acRed)
+    reset = toAnsiCode(acReset)
+    bold  = toAnsiCode(acBold)
+
+  result = fmt"{red}{me}{reset}: {curFileName}: "
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
   result &= msg
@@ -54,7 +63,7 @@ proc formatCompilerError( msg: string,
         pad    = repeat(' ', offset + 1)
 
       result &= "\n  " & lines[line] & "\n"
-      result &= pad & "^"
+      result &= pad & bold & "^" & reset
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
@@ -74,8 +83,7 @@ proc fatal*(baseMsg: string,
             st:      string   = "",
             ii:      InstInfo = default(InstInfo)) =
   # 'Fatal' from con4m's perspective is throwing an exception that
-  # returns to the caller.  We will both publish the error and return
-  # it via the exception interface.
+  # returns to the caller.
   var msg: string
 
   if token == nil:
@@ -85,9 +93,7 @@ proc fatal*(baseMsg: string,
   else:
     msg = baseMsg
 
-  rawPublish(llError, formatCompilerError(msg, token, st, ii))
-
-  raise newException(Con4mError, msg)
+  raise newException(Con4mError, formatCompilerError(msg, token, st, ii))
 
 template fatal*(msg: string, node: Con4mNode = nil) =
   var st   = ""
@@ -99,3 +105,12 @@ template fatal*(msg: string, node: Con4mNode = nil) =
     fatal(msg, Con4mToken(nil), st)
   else:
     fatal(msg, node.token.getOrElse(nil), st, instantiationInfo())
+
+proc setCTrace*() =
+  setLogLevel(llTrace)
+  setCon4mVerbosity(c4vMax)
+  rawPublish(llTrace, "debugging on.")
+
+proc ctrace*(msg: string) =
+  if verbosity == c4vMax:
+    rawPublish(llTrace, msg)

@@ -1,0 +1,28 @@
+%{H Usage: {appName} [flags] config_filename [additional_config]* }%
+Evaluates your configuration file(s), dumping a JSON string with the results.
+
+If multiple config files are provided, they are executed 'stacked', run one after another, in the order in which they appear on the command-line.
+
+Note that this interface currently does not support calling back in from another 'program', and loads the default functions only.
+
+%{h FLAGS}%
+%{T
+Short::Long::Description
+-p::--phase=ARG::Stop the parse after the given phase. Valid values are 'tokenize', 'parse', 'check', 'eval'; 'eval' is the default.
+-a::--attr-output=ARG::If the run successfully executes, this determines the style for outputting the resulting attribute space.  Options are: "json", "pretty" (which gives tables), or "none".  The default is "json", which prints attribute results to stdout, and only after all stacked configs are run.  The "pretty" option will output state after each stacked config file runs.
+-s::--spec=ARG::Before beginning, read a con4m 'c42spec' file, and then apply it to the c4m files that are parsed.  See 'con4m --help c42' (coming soon).
+-4::--c42::Install the c42 'spec', to check the con4m file(s) passed in for being a valid c42 specification. Cannot co-exist with the --spec field.
+-k::--show-tokens::Show tokens after the parsing phase (if reached)
+-t::--show-parse-tree::Shows the UNTYPED parse tree after the parsing phase (if reached), but before the checking phase.
+-x::--show-checked-tree::It's Christmas! Show the typed parse tree after the checking phase.
+-F::--show-funcs::Show the function table once execution ends.
+-C::--no-color::Disable ANSI colors in output
+-d::--debug::Turn on any custom runtime tracing, including stack traces for errors
+::--tokenize::Alias for --phase=tokenize
+::--parse::Alias for --phase=parse
+::--check::Alias for --phase=check
+::--pretty::Alias for --attr-output=pretty
+::--none::Alias for --attr-output=none
+-h::--help::This help message
+}%
+See {bold}'con4m --help topics'{reset} for a list of available help topics.

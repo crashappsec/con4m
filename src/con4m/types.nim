@@ -12,13 +12,13 @@ type
   ## Enumeration of all possible lexical tokens. Should not be exposed
   ## outside the package.
   Con4mTokenKind* = enum
-    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtPlus, TtMinus, TtMul,
-    TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte, TtGt, TtNeq, TtNot,
-    TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma, TtPeriod,
-    TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
+    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtLockAttr, TtExportVar,
+    TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
+    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
+    TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtCallback, TtSof, TtEof, ErrorTok,
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtSof, TtEof, ErrorTok,
     ErrorLongComment, ErrorStringLit
 
   Con4mToken* = ref object
@@ -38,13 +38,15 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeBody, NodeAttrAssign, NodeVarAssign, NodeUnpack, NodeSection,
-    NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak, NodeContinue,
-    NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember, NodeIndex,
-    NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeTupleLit,
-    NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
-    NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum, NodeIdentifier,
-    NodeFuncDef, NodeFormalList
+    NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, NodeVarSetExport,
+    NodeUnpack, NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor,
+    NodeBreak, NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot,
+    NodeMember, NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair,
+    NodeListLit, NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
+    NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict,
+    NodeTypeList, NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat,
+    NodeTypeBool, NodeVarDecl, NodeVarSymNames
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -78,71 +80,95 @@ type
   # So I can switch between ordered and not without hardship.
   Con4mDict*[K, V] = TableRef[K, V]
 
-  STEntry* = ref object
-    ## Internal; our symbol table data structure.
+  ## At any point in a Con4m program, there are two different scopes,
+  ## variable scopes (which change whenever we enter a new block
+  ## like in a for loop), and attribute scopes, which nest based on
+  ## sections.
+  ##
+  ## Conceptually, the program that loads the configuration file is
+  ## expected to only make use of the attributes; the variables are
+  ## private to the config file's execution.
+  ##
+  ## This helps make it easy for users to do computation, without
+  ## polluting the runtime namespace, or making validation more
+  ## challenging.
+  ##
+  AttrScope* = ref object
+    name*:     string
+    parent*:   Option[AttrScope]
+    config*:   ConfigState
+    contents*: Table[string, AttrOrSub]
+
+  AttrOrSub*   = object
+    case kind*: bool
+    of true:
+      attr*: Attribute
+    of false:
+      scope*: AttrScope
+
+  AttrOrErr*   = object
+    case kind*: bool
+    of true:
+      aos*: AttrOrSub
+    of false:
+      err*: AttrErr
+
+  AttrSetHook* = (seq[string], Box) -> bool
+
+  Attribute* = ref object
+    name*:        string
+    scope*:       AttrScope
+    tInfo*:       Con4mType
+    value*:       Option[Box]
+    override*:    Option[Box]
+    locked*:      bool
+    lockOnWrite*: bool
+    firstDef*:    Option[Con4mNode]
+
+  VarSym*    = ref object
+    name*:     string
     tInfo*:    Con4mType
-    value*:    Option[Box] ## Note that local variables are not stored in an
-                           ## STEntry during execution.  Before execution, this
-                           ## value can hold default values.
-                           ##
-                           ## Attribute scopes persist though, so we *do* use
-                           ## this variable at runtime for attributes.
-    override*: Option[Box] ## If a command-line flag or the program set this
-                           ## value at runtime, then it will automatically be
-                           ## re-set after the configuration file loads.
-    subscope*: Option[Con4mScope]
-    firstDef*: Option[Con4mNode]
+    value*:    Option[Box]
+    persists*: bool
     locked*:   bool
+    firstDef*: Option[Con4mNode]
+    defs*:     seq[Con4mNode]
+
+  VLookupOp*   = enum vlDef, vlUse, vlMask, vlFormal
+  ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
+  UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
+  AttrErrEnum* = enum
+    errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
+
+  AttrErr* = object
+    code*:     AttrErrEnum
+    msg*:      string
+
+  VarScope*  = ref object
+    parent*:    Option[VarScope]
+    contents*:  Table[string, VarSym]
 
   ## Frame for holding local variables.  In a call, the caller
   ## does the pushing and popping.
-  RuntimeFrame* = TableRef[string, Box]
-  ##
-  ##
-  VarStack* = seq[RuntimeFrame]
-
-  Con4mScope* = ref object
-    ## Internal. It represents a single scope, only containing a
-    ## dictionary plus a link to out parent scope, if any.
-    parent*:  Option[Con4mScope]
-    entries*: OrderedTable[string, STEntry]
-
-  Con4mSectInfo* = seq[(string, Con4mScope)]
-
-  CurScopes* = object
-    ## At any point in a Con4m program, there are two different scopes,
-    ## variable scopes (which change whenever we enter a new block
-    ## like in a for loop), and attribute scopes, which nest based on
-    ## sections.
-    ##
-    ## Conceptually, the program that loads the configuration file is
-    ## expected to only make use of the attributes; the variables are
-    ## private to the config file's execution.
-    ##
-    ## This helps make it easy for users to do computation, without
-    ## polluting the runtime namespace, or making validation more
-    ## challenging.
-    ##
-    ## We also keep a separate record of globals, even though they are
-    ## a parent of var scopes, because in user-defined functions, we
-    ## are going to disallow access to global variables, so we want to
-    ## be able to give good error messages.
-    attrs*:   Con4mScope
-    vars*:    Con4mScope
-    globals*: Con4mScope
+  RuntimeFrame*  = TableRef[string, Option[Box]]
+  VarStack*      = seq[RuntimeFrame]
+  Con4mSectInfo* = seq[(string, AttrScope)]
 
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
+    id*:           int
     kind*:         Con4mNodeKind
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
     parent*:       Option[Con4mNode] # Root is nil
     typeInfo*:     Con4mType
-    scopes*:       Option[CurScopes]
-    formalScopes*: Option[CurScopes]
+    varScope*:     VarScope
+    attrScope*:    AttrScope
     value*:        Box
+    attrRef*:      Attribute
+    procRef*:      FuncTableEntry
 
-  BuiltInFn* = ((seq[Box], Con4mScope, VarStack, Con4mScope) -> Option[Box])
+  BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 
@@ -161,75 +187,64 @@ type
     of FnUserDefined, FnCallback:
       impl*:      Option[Con4mNode]
 
-  FieldValidator* = (seq[string], Box) -> bool
-  ## This isn't implemented fully yet, but will allow the program to
-  ## specify additional value checking to be done on a field before
-  ## accepting a configuration file.
+  ExtendedTypeKind* = enum
+    TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
-  AttrSpec* = ref object
-    ## Internal. This is the data structure holding specification data
-    ## for individual attributes, used to check for well-formed config
-    ## files, to plug in defaults, ...
-    doc*:         string
-    attrType*:    string
-    validator*:   Option[FieldValidator]
-    defaultVal*:  Option[Box]
-    lockOnWrite*: bool
-    required*:    bool
+  ExtendedType* = ref object
+    validator*: string   # A con4m call used in fields, not sections.
+    case kind*: ExtendedTypeKind
+    of TypePrimitive:
+      tinfo*:      Con4mType
+      range*:      tuple[low: int, high: int] # Only for int types; INCLUSIVE.
+      itemCount*:  tuple[low: int, high: int] # Should reuse (TODO)
+      intChoices*: seq[int]
+      strChoices*: seq[string]
+    of TypeSection:
+      sinfo*: Con4mSectionType
+    of TypeC4TypePtr:
+      fieldRef*: string
+    of TypeC4TypeSpec:
+      discard
 
-  FieldAttrs* = OrderedTable[string, AttrSpec]
-  ## Internal.  Alias for the table in a section specification maping
-  ## its fields to attribute specifications.
+  FieldSpec* = ref object
+    extType*:      ExtendedType
+    minRequired*:  int
+    maxRequired*:  int
+    lock*:         bool
+    stackLimit*:   int
+    default*:      Option[Box]
+    exclusions*:   seq[string] # Fields that obviate us.
 
-  SectionSpec* = ref object
-    ## Internal. This holds specification data for a top-level
-    ## section.
-    requiredSubsections*: seq[string]
-    allowedSubsections*:  seq[string]
-    predefinedAttrs*:     FieldAttrs
-    customAttrs*:         bool
-    doc*:                 string
-    associatedSpec*:      ConfigSpec ## Don't use this, it's only temporary to
-                                     ## support having *some* code in place
-                                     ## for seprately typed subsections.
+  Con4mSectionType* = ref object
+    typeName*:      string
+    singleton*:     bool
+    fields*:        Table[string, FieldSpec]
+    backref*:       ConfigSpec
 
   ConfigSpec* = ref object
-    ## The main user-level abstraction for holding specification data
-    ## for a config file schema.  Fill it with calls to `addAttr()`,
-    ## `addSection()`, etc (or, better yet, through the `con4m()`
-    ## macro).
-    ##
-    ## The spec will be used to ensure the config file is well formed
-    ## enough to work with, by comparing it against the results of
-    ## execution.
-    secSpecs*:         OrderedTable[string, SectionSpec]
-    globalAttrs*:      FieldAttrs
-    customTopLevelOk*: bool
-
-  SectionState* = ref object
-    ## Internal. This holds the overall information about a single
-    ## section's evauluation state, for use primarily in checking
-    ## to make sure required sections are present.
-    isLocked*:     bool
-    substateObjs*: OrderedTable[string, SectionState]
-    beenSeen*:     bool
+    secSpecs*:      Table[string, Con4mSectionType]
+    rootSpec*:      Con4mSectionType
 
   ConfigState* = ref object
     ## The top-level representation of a configuration's runtime
     ## state. The symbols are in here, the specs we apply, etc.
     ## Still, the end user should not need to access the members,
     ## except via API.
-    stateObjs*:          OrderedTable[string, SectionState]
-    st*:                 Con4mScope
+    numExecutions*:      int
+    setHook*:            AttrSetHook
+    attrs*:              AttrScope
+    keptGlobals*:        Table[string, VarSym]
+    frames*:             VarStack
     spec*:               Option[ConfigSpec]
-    errors*:             seq[string]
     funcTable*:          Table[string, seq[FuncTableEntry]]
     funcOrigin*:         bool
     waitingForTypeInfo*: bool
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
     moduleFuncImpls*:    seq[Con4mNode] # Passed from the parser.
     secondPass*:         bool
-    frames*:             VarStack
+    nodeStash*:          Con4mNode # Tracked during builtin func calls, for
+                                   # now, just for the benefit of format()
+  Con4mPhase* = enum phTokenize, phParse, phCheck, phEval, phValidate
 
 let
   # These are just shared instances for types that aren't
@@ -243,3 +258,81 @@ let
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
   return newTable[K, V]()
+
+type
+  LookupErr* = enum
+    errBadSubscope, errNotFound, errBadSpec, errAlreadyExists
+  LookupKind* = enum
+    # luMask is only for variables; luExpectAttr
+    # luDeclareOnly is only for attrs.
+    luExpect, luFindOrDeclare, luMask, luDeclareOnly
+
+template isA*(aos: AttrOrSub, t: typedesc): bool =
+  when t is Attribute:
+    aos.kind
+  elif t is AttrScope:
+    not aos.kind
+  else:
+    static:
+      error("isA(AttrOrSub, t): t must be an Attribute or AttrScope")
+    false
+
+template get*(aos: AttrOrSub, t: typedesc): untyped =
+  when t is Attribute:
+    aos.attr
+  elif t is AttrScope:
+    aos.scope
+  else:
+    static:
+      error("get(AttrOrSub, t): t must be an Attribute or AttrScope")
+    nil
+
+template isA*(aoe: AttrOrErr, t: typedesc): bool =
+  when t is AttrOrSub:
+    aoe.kind
+  elif t is AttrErr:
+    not aoe.kind
+  else:
+    static:
+      error("isA(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
+    false
+
+template get*(aoe: AttrOrErr, t: typedesc): untyped =
+  when t is AttrOrSub:
+    aoe.aos
+  elif t is AttrErr:
+    aoe.err
+  else:
+    static:
+      error("get(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
+    nil
+
+proc either*(attr: Attribute): AttrOrSub =
+  result = AttrOrSub(kind: true, attr: attr)
+
+proc either*(sub: AttrScope): AttrOrSub =
+  result = AttrOrSub(kind: false, scope: sub)
+
+proc either*(aos: AttrOrSub): AttrOrErr =
+  return AttrOrErr(kind: true, aos: aos)
+
+proc either*(err: AttrErr): AttrOrErr =
+  return AttrOrErr(kind: false, err: err)
+
+converter attrToAttrOrSub*(attr: Attribute): AttrOrSub =
+  either(attr)
+
+converter subToAttrOrSub*(sub: AttrScope): AttrOrSub =
+  either(sub)
+
+converter attrToAttrOrErr*(aos: AttrOrSub): AttrOrErr =
+  either(aos)
+
+converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
+  either(err)
+
+converter secToExt*(sec: Con4mSectionType): ExtendedType =
+  return ExtendedType(kind: TypeSection, sinfo: sec)
+
+converter c4mToExt*(tinfo: Con4mType): ExtendedType =
+  return ExtendedType(kind: TypePrimitive, tinfo: tinfo)

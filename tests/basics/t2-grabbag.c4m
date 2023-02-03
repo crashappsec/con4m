@@ -1,14 +1,8 @@
-defaults {
- color: "blue"
- hair: "wavy"
- faves: ["x", "y", "z"]
-}
-
-text := run("ls -l")
+text := run("ls /bin/ps")
 
 # die := die + 1
 
-echo("Fun times! Here's the output of ls:")
+echo("Here's the output of ls:")
 echo(text)
 
 ctr := 0
@@ -22,3 +16,8 @@ for i from 5 to 1 {
 }
 
 echo("I ran the counter " + string(ctr) + " times.")
+#echo(defaults.color)
+#echo(defaults.hair)
+#for i from 0 to len(defaults.faves) {
+#  echo(defaults.faves[i])
+#}

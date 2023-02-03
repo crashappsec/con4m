@@ -5,107 +5,111 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import types
-import st
-import parse
-import treecheck
-import typecheck
-import nimutils
-import nimutils/box
-
-import options
-import tables
-import strformat
+import options, tables, strformat
+import types, st, parse, treecheck, typecheck, nimutils, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
 
-const breakMsg = "b"
+const breakMsg    = "b"
 const continueMsg = "c"
 
-proc pushRuntimeFrame*(s: ConfigState) {.inline.} =
-  s.frames.add(RuntimeFrame())
+proc evalNode*(node: Con4mNode, s: ConfigState)
+
+# Right now, we are not properly generating code, we are just evaluating
+# directly out of the tree. We still need a stack for execution, which
+# is the first parameter, here.
+#
+# Were we generating code, we would have generated offsets from
+# the start of the stack frame for the stack variables we reference.
+# However, we have done no such thing, and we need to get the 'right'
+# version of masked variables (it can happen in conform, such as with
+# loop index variables).
+#
+# Two obvious strategies for dealing with this:
+# 1) When we push a scope, we can pre-load the runtime values with
+#    default (zero'd out) values for any new declarations the
+#    symbol table shows.
+#
+# 2) We can consult the symbol table as we look up variables.
+#
+# Either of these is fine, and the default value is not even very
+# important, since we are statically checking for def before use.
+# Still, we take a belt-and-suspenders approach, for the inevitable
+# compiler implementation bugs, so we do runtime checking, and
+# make the symbol table hold options to make life easy.
+#
+# In the first version of con4m we went with door #2. Now
+# that we're redoing the symbol table, I'm going w/ door #1.
+#
+# I'm sure before too long we'll be generating at least some code for
+# a dumb stack machine, so all of this will be moot.
+
+proc pushRuntimeFrame*(s: ConfigState, n: Con4mNode) {.inline.} =
+  var newFrame = RuntimeFrame()
+
+  for k, sym in n.varScope.contents:
+    newFrame[k] = sym.value
+
+  s.frames.add(newFrame)
 
 proc popRuntimeFrame*(s: ConfigState): RuntimeFrame {.inline.} =
   return s.frames.pop()
 
-proc runtimeVarLookup*(frames: VarStack,
-                       name: string,
-                       scope: Con4mScope): Box =
+proc runtimeVarLookup(s: ConfigState, name: string): Box {.inline.} =
+  return runtimeVarLookup(s.frames, name)
 
-  var
-    n = frames.len()
-    s = scope
-
-  while n != 0:
-    n = n - 1
-    let frame = frames[n]
-    # TODO: you are here. The second half of this shouldn't be necessary.
-    # There should be code injecting this for nodeVarAssign, no??
-    # But neither place we're assigning is working :/
-    if name in s.entries or (name in frame):
-      if name in frame:
-        return frame[name]
-      else:
-        let entry = s.entries[name]
-        if entry.value.isSome():
-          return entry.value.get()
-        else:
-          raise newException(Con4mError,
-              fmt"Variable {name} used before being defined")
-    if s.parent.isSome():
-      s = s.parent.get()
-    else:
-      break
-  echo "couldn't lookup ", name
-  unreachable
-
-proc runtimeVarLookup(s: ConfigState,
-                      name: string,
-                      scope: Con4mScope): Box {.inline.} =
-  return runtimeVarLookup(s.frames, name, scope)
-
-
-proc runtimeVarSet*(state: ConfigState,
-                    scope: Con4mScope,
-                    name: string,
-                    val: Box) =
-  var
-    n = state.frames.len()
-    s = scope
-
-  while n != 0:
-    n = n - 1
-    let frame = state.frames[n]
-    if name in s.entries:
-      frame[name] = val
-      return
-    if s.parent.isSome():
-      s = s.parent.get()
-    else:
-      break
-
-  raise newException(Con4mError, fmt"{name} not found in scope at runtime")
-
-proc getFuncBySig*(s: ConfigState,
+proc getFuncBySig*(s:    ConfigState,
                    name: string,
-                   t: Con4mType): Option[FuncTableEntry] =
-  if not s.funcTable.contains(name):
-    return
+                   t:    Con4mType): Option[FuncTableEntry] =
+  let candidates = s.findMatchingProcs(name, t)
 
-  let candidates = s.funcTable[name]
+  if len(candidates) == 1:
+    return some(candidates[0])
 
-  for item in candidates:
-    if not isBottom(copyType(t), copyType(item.tinfo)):
-      return some(item)
+proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
+  if args.len() != node.children[1].children.len():
+    raise newException(Con4mError, "Incorrect number of arugments")
 
-proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box]
+  let savedFrames = s.frames
 
-proc sCallUserDef(s: ConfigState,
-                  name: string,
-                  a1: seq[Box],
-                  callback: bool,
-                  nodeOpt: Option[Con4mNode]): Option[Box] =
+  if len(savedFrames) > 0:
+    s.frames = @[savedFrames[0]]
+  else:
+    var newFrame = RuntimeFrame()
+    s.frames     = @[newFrame]
+    for k, v in s.keptGlobals:
+      newFrame[k] = v.value
+
+
+  s.pushRuntimeFrame(node)
+
+  for i, idNode in node.children[1].children:
+    let name = idNode.getTokenText()
+    s.runtimeVarSet(name, args[i])
+
+  try:
+    node.children[2].evalNode(s)
+  except Con4mError:
+    if getCurrentExceptionMsg() != "return":
+      raise
+  if len(s.frames) > 0:
+    for k, v in s.frames[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
+
+  try:
+    result = some(runtimeVarLookup(s, "result"))
+  except:
+    result = none(Box)
+
+  s.frames = savedFrames
+
+proc sCallUserDef*(s:        ConfigState,
+                   name:     string,
+                   a1:       seq[Box],
+                   callback: bool,
+                   nodeOpt:  Option[Con4mNode]): Option[Box] =
 
   try:
     if nodeOpt.isNone():
@@ -114,86 +118,53 @@ proc sCallUserDef(s: ConfigState,
         # user function, no implementation, wouldn't pass the checker.
       unreachable
     return s.evalFunc(a1, nodeOpt.get())
-  except Con4mError:
-    fatal(getCurrentExceptionMsg(), nodeOpt.get())
-  except:
-    fatal(fmt"Unhandled error when running builtin call: {name}",
+  except ValueError:
+    let msg = getCurrentExceptionMsg()
+    if getCon4mVerbosity() == c4vMax:
+      echo getCurrentException().getStackTrace()
+    fatal(fmt"Unhandled error when running builtin call '{name}': msg",
           nodeOpt.get())
 
-proc sCallBuiltin(s: ConfigState,
-                  name: string,
-                  a1: seq[Box],
+proc sCallBuiltin(s:     ConfigState,
+                  name:  string,
+                  a1:    seq[Box],
                   fInfo: FuncTableEntry,
-                  node: Con4mNode): Option[Box] =
-  var
-    attrs, vars: Con4mScope
-    scopeOpt = node.scopes
-    n: Con4mNode = node
-
-  while scopeOpt.isNone():
-    n = n.parent.get()
-    scopeOpt = n.scopes
-
-  if n.scopes.isSome():
-    attrs = n.scopes.get().attrs
-    vars = n.scopes.get().vars
-  else:
-    attrs = nil
-    vars = nil
-
+                  node:  Con4mNode): Option[Box] =
+  s.nodeStash = node
   try:
-    var x = fInfo.builtin(a1, attrs, s.frames, vars)
-    return x
+    return fInfo.builtin(a1, s)
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
-    fatal("Unhandled error when running builtin call: {name}".fmt(), node)
+    fatal(fmt"Unhandled error when running builtin call: {name}", node)
 
-proc sCall*(s: ConfigState,
-            name: string,
-            a1: seq[Box],
-            tinfo: Con4mType,
-            nodeOpt: Option[Con4mNode] = none(Con4mNode)
-           ): Option[Box] =
-  ## This is not meant to be exposed outside this module, except to
-  ## the evaluator.  This runs a builtin call, callback or
+proc sCall*(s:       ConfigState,
+            fInfo:   FuncTableEntry,
+            a1:      seq[Box],
+            node:    Con4mNode): Option[Box] =
+  ## This is not really meant to be exposed outside this module,
+  ## except to the evaluator.  This runs a builtin call, callback or
   ## user-defined function.
   ##
-  ## The node parameter will be the node from the caller's scope, if
-  ## present.
+  ## The node parameter will be the node from the caller's scope.
+  case fInfo.kind
+  of FnBuiltIn:
+    return s.sCallBuiltin(fInfo.name, a1, fInfo, node)
+  else:
+    return s.sCallUserDef(fInfo.name, a1, true, fInfo.impl)
+
+proc sCall*(s:       ConfigState,
+            name:    string,
+            a1:      seq[Box],
+            tinfo:   Con4mType,
+            nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
 
   let optFunc = s.getFuncBySig(name, tinfo)
 
   if not optFunc.isSome():
-    fatal(fmt"Function {reprSig(name, tinfo)} not found")
+    fatal(fmt"Function '{reprSig(name, tinfo)}' not found")
 
-  let fInfo = optFunc.get()
-
-  case fInfo.kind
-  of FnBuiltIn:
-    var x = s.sCallBuiltin(name, a1, fInfo, nodeOpt.get())
-    return x
-  else:
-    let callback = fInfo.kind == FnCallback
-    return s.sCallUserDef(name, a1, callback, fInfo.impl)
-
-proc runCallback*(s: ConfigState,
-                  name: string,
-                  args: seq[Box],
-                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
-  if tinfo.isSome():
-    return s.sCall(name, args, tinfo.get())
-  if not s.funcTable.contains(name):
-    # User did not supply the callback.
-    return
-  if len(s.funcTable[name]) > 0:
-    raise newException(ValueError,
-                       "When supporting callbacks with multiple signatures, " &
-                       "you must supply the type when calling runCallback()")
-  let impl = s.funcTable[name][0].impl
-  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
-
-proc evalNode*(node: Con4mNode, s: ConfigState)
+  return s.sCall(optFunc.get(), a1, nodeOpt.getOrElse(nil))
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
   for item in node.children:
@@ -212,8 +183,8 @@ template cmpWork(typeWeAreComparing: typedesc, op: untyped) =
     node.value = pack(false)
 
 template binaryOpWork(typeWeAreOping: typedesc,
-                      returnType: typedesc,
-                      op: untyped) =
+                      returnType:     typedesc,
+                      op:             untyped) =
   ## Similar thing, but with binary operators like +, -, /, etc.
   let
     v1 = unpack[typeWeAreOping](node.children[0].value)
@@ -228,18 +199,21 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## the tree to evaluate, and then take whatever action is
   ## apporpriate after, if any.
   case node.kind
-  of NodeFuncDef:
-    unreachable
+  # These are explicit just to make sure I don't end up w/ implementation
+  # errors that baffle me.
+  of NodeFuncDef, NodeTypeList, NodeTypeDict, NodeTypeTuple, NodeTypeString,
+     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeVarDecl, NodeVarSymNames:
+    return # Nothing to do, everything was done in the check phase.
   of NodeReturn:
     if node.children.len() != 0:
       node.children[0].evalNode(s)
-      s.runtimeVarSet(node.getVarScope(), "result", node.children[0].value)
+      s.runtimeVarSet("result", node.children[0].value)
     raise newException(Con4mError, "return")
   of NodeActuals, NodeBody:
     node.evalKids(s)
     node.value = pack(false)
   of NodeElse:
-    s.pushRuntimeFrame()
+    s.pushRuntimeFrame(node)
     try:
       node.evalKids(s)
       node.value = pack(false)
@@ -260,53 +234,47 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeContinue:
     raise newException(ValueError, continueMsg)
   of NodeSection:
-    s.pushRuntimeFrame()
+    s.pushRuntimeFrame(node)
     try:
       node.children[^1].evalNode(s)
     finally:
       discard s.popRuntimeFrame()
-  of NodeAttrAssign:
-    # We already created scope objects in the tree checking phase.
-    # And, we only allow identifiers on the LHS right now. So we just
-    # have to evaluate the RHS, then try to update the symbol's value
-    # in the symbol table.
+  of NodeAttrAssign, NodeAttrSetLock:
+    # We already created scope objects in the tree checking phase,
+    # and cached a reference to the attribute location where any
+    # result should be stored.
     #
-    # Note that we also allow fields to be "locked", essentially
-    # turned into const-- basically, you should be able to save
-    # attribute state across runs, so that you can layer
-    # configurations. In such a case, an admin's config might specify
-    # not to change a value, which is the idea behind this.
+    # So we just have to update the RHS and then assign.
     node.children[1].evalNode(s)
-    let
-      name = node.children[0].getTokenText()
-      scope = node.getAttrScope()
-      entry = scope.lookup(name).get()
+    let err = attrSet(node.attrRef, node.children[1].value)
 
-    if entry.locked:
-      fatal("Attempt to assign to a read-only field", node)
+    case err.code
+    of errCantSet:
+      fatal(err.msg, node)
+    of errOk:
+      if node.kind == NodeAttrSetLock:
+        node.attrRef.locked = true
+    else:
+      unreachable
 
-    entry.value = some(node.children[1].value)
-  of NodeVarAssign:
-    # Variables are specific to the run, so this is a little simpler.
+  of NodeVarAssign, NodeVarSetExport:
     node.children[1].evalNode(s)
 
-    let
-      name = node.children[0].getTokenText()
-      scope = node.getVarScope()
+    let name  = node.children[0].getTokenText()
 
-    s.runtimeVarSet(scope, name, node.children[1].value)
+    s.runtimeVarSet(name, node.children[1].value)
+
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let
       boxedTup = node.children[^1].value
       tup = unpack[seq[Box]](boxedTup)
-      scope = node.getVarScope()
 
     # Each item is still a Box; we did not unbox all layers, only one.
     for i, item in tup:
       let name = node.children[i].getTokenText()
+      s.runtimeVarSet(name, item)
 
-      s.runtimeVarSet(scope, name, item)
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -323,7 +291,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.children[0].evalNode(s)
     node.value = node.children[0].value
     if unpack[bool](node.value):
-      s.pushRuntimeFrame()
+      s.pushRuntimeFrame(node)
       try:
         node.children[1].evalNode(s)
       finally:
@@ -332,17 +300,14 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     # This is pretty straightforward, other than the fact that we use
     # exceptions to implement `break` / `continue` per the above
     # comments.
-    let
-      scope = node.getVarScope()
-      name = node.children[0].getTokenText()
-    var
-      incr, start, stop, i: int
+    let name  = node.children[0].getTokenText()
+    var incr, start, stop, i: int
 
     node.children[1].evalNode(s)
     node.children[2].evalNode(s)
 
     start = unpack[int](node.children[1].value)
-    stop = unpack[int](node.children[2].value)
+    stop  = unpack[int](node.children[2].value)
 
     if start < stop:
       incr = 1
@@ -352,9 +317,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       start = start - 1
 
     i = start
-    s.pushRuntimeFrame()
+    s.pushRuntimeFrame(node)
     while i != (stop + incr):
-      s.runtimeVarSet(scope, name, pack(i))
+      s.runtimeVarSet(name, pack(i))
       i = i + incr
       try:
         node.children[3].evalNode(s)
@@ -397,8 +362,10 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     node.value = pack(not unpack[bool](bx))
   of NodeMember:
-    # Unreachable, because I haven't implemented it yet.
-    unreachable
+    if node.attrRef.value.isNone():
+      fatal("Attribute used before it was set", node)
+
+    node.value = node.attrRef.value.get()
   of NodeIndex:
     # The node on the left's value will resolve to the object we need
     # to index.  We have to take action based on the type (and w/
@@ -414,7 +381,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     node.evalKids(s)
     let
       containerBox = node.children[0].value
-      indexBox = node.children[1].value
+      indexBox     = node.children[1].value
 
     case node.children[0].getBaseType()
     of TypeTuple:
@@ -434,9 +401,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = l[i]
     of TypeDict:
       let
-        kt = node.children[0].typeInfo.keyType
+        kt           = node.children[0].typeInfo.keyType
         containerBox = node.children[0].value
-        indexBox = node.children[1].value
+        indexBox     = node.children[1].value
       case kt.kind
       of TypeInt:
         let
@@ -451,7 +418,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
           s = unpack[string](indexBox)
 
         if not d.contains(s):
-          fatal("Runtime error in config: dict key {s} not found.".fmt(), node)
+          fatal(fmt"Runtime error in config: dict key {s} not found.", node)
         node.value = d[s]
       else:
         unreachable
@@ -461,20 +428,18 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeCall:
     # We package up the arguments into a sequence, and then invoke
     # sCall; we checked for the function's existence already.
-
     node.children[1].evalNode(s)
-    let
-      fname = node.children[0].getTokenText()
-      funcSig = node.children[1].typeInfo
-
-    var args: seq[Box] = @[]
+    var
+      args: seq[Box] = @[]
 
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    var ret = s.sCall(fname, args, funcSig, some(node.children[0]))
+    assert node.procRef != nil
+    var ret = s.sCall(node.procRef, args, node)
     if ret.isSome():
       node.value = ret.get()
+
   of NodeDictLit:
     node.evalKids(s)
     if node.typeInfo.kind == TypeTVar:
@@ -593,95 +558,26 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     of TypeFloat: binaryOpWork(float, float, `/`)
     else: unreachable
   of NodeIdentifier:
-    let
-      name = node.getTokenText()
-      scopes = node.getBothScopes()
-      attrEntry = scopes.attrs.lookup(name)
-    try:
-      if attrEntry.isSome():
-        node.value = attrEntry.get().value.get()
+    if node.attrRef != nil:
+      if node.attrRef.value.isNone():
+        fatal("Attribute {node.getTokenText()} referenced before assignment")
       else:
-        node.value = s.runtimeVarLookup(name, scopes.vars)
-    except:
-      fatal("Variable was referenced before assignment", node)
+        node.value = node.attrRef.value.get()
+    else:
+      node.value = s.runtimeVarLookup(node.getTokenText())
 
-template evalTreeBase(node: untyped, param: untyped): untyped =
-  let state = param
-
-  if node == nil:
-    return
-
-  state.pushRuntimeFrame()
-  try:
-    node.evalNode(state)
-  finally:
-    discard state.popRuntimeFrame()
-
-  return some(state)
-
-proc evalTree*(node:         Con4mNode,
-               addBuiltins = false): Option[ConfigState] {.inline.} =
-  ## This runs the evaluator on a tree that has already been parsed
-  ## and type-checked.
-  evalTreeBase(node):
-      node.checkTree(addBuiltins)
-
-proc evalTree*(node:      Con4mNode,
-               fns:       openarray[(string, BuiltinFn, string)] = [],
-               exclude:   openarray[int] = [],
-               callbacks: openarray[(string, string)] = []):
-                 Option[ConfigState] {.inline.} =
-  ## This is the same as above, but always has checkTree() add the
-  ## default builtins, minus explicitly excluded ones, and
-  ## additionally allows for installing custom ones.
-  evalTreeBase(node):
-      node.checkTree(fns, exclude, callbacks)
-
-proc evalConfig*(filename: string,
-                 addBuiltins = false): Option[(ConfigState, Con4mScope)] =
-  ## Given the config file as a string, this will load and parse the
-  ## file, then execute it, returning both the state object created,
-  ## as well as the top-level symbol table for attributes, both
-  ## assuming the operation was successful.
-
-  let
-    tree = parse(filename)
-    confOpt = tree.evalTree(addBuiltins)
-
-  if confOpt.isSome():
-    let
-      state = confOpt.get()
-      scopes = tree.scopes.get()
-
-    return some((state, scopes.attrs))
-
-proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
-
-  if args.len() != node.children[1].children.len():
-    raise newException(Con4mError, "Incorrect number of arugments")
-
-  let
-    scope = node.getVarScope()
-    savedFrames = s.frames
-
-  s.frames = @[]
-  s.pushRuntimeFrame()
-
-  for i, idNode in node.children[1].children:
-    let name = idNode.getTokenText()
-    s.runtimeVarSet(scope, name, args[i])
-
-  try:
-    node.children[2].evalNode(s)
-  except Con4mError:
-    discard # Clean return.  Error message will have been published.
-
-  let frame = s.popRuntimeFrame()
-
-  s.frames = savedFrames
-
-  if "result" in frame:
-    node.value = frame["result"]
-    return some(node.value)
-  else:
+proc runCallback*(s:     ConfigState,
+                  name:  string,
+                  args:  seq[Box],
+                  tinfo: Option[Con4mType] = none(Con4mType)): Option[Box] =
+  if tinfo.isSome():
+    return s.sCall(name, args, tinfo.get())
+  if not s.funcTable.contains(name):
+    # User did not supply the callback.
     return none(Box)
+  if len(s.funcTable[name]) > 0:
+    raise newException(ValueError,
+                       "When supporting callbacks with multiple signatures, " &
+                       "you must supply the type when calling runCallback()")
+  let impl = s.funcTable[name][0].impl
+  return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
