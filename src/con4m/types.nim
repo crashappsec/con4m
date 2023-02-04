@@ -99,14 +99,14 @@ type
     config*:   ConfigState
     contents*: Table[string, AttrOrSub]
 
-  AttrOrSub*   = object
+  AttrOrSub* = object
     case kind*: bool
     of true:
       attr*: Attribute
     of false:
       scope*: AttrScope
 
-  AttrOrErr*   = object
+  AttrOrErr* = object
     case kind*: bool
     of true:
       aos*: AttrOrSub

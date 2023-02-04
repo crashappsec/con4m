@@ -122,7 +122,7 @@ proc sCallUserDef*(s:        ConfigState,
     let msg = getCurrentExceptionMsg()
     if getCon4mVerbosity() == c4vMax:
       echo getCurrentException().getStackTrace()
-    fatal(fmt"Unhandled error when running builtin call '{name}': msg",
+    fatal(fmt"Unhandled error when running builtin call '{name}': {msg}",
           nodeOpt.get())
 
 proc sCallBuiltin(s:     ConfigState,
