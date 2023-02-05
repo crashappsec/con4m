@@ -138,7 +138,7 @@ type
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
   AttrErrEnum* = enum
-    errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
+    errOk, errNoAttr, errBadSec, errBadAttr, errCantSet
 
   AttrErr* = object
     code*:     AttrErrEnum

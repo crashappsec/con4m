@@ -15,7 +15,9 @@ export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
 export eval, dollars, spec, run, c42spec
 
 
-when isMainModule:
+when defined(CAPI):
+  import con4m/capi
+elif isMainModule:
   setCon4mVerbosity(c4vShowLoc)
   import nimutils, nimutils/help
   import json, tables, options

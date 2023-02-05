@@ -287,7 +287,7 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
   let
     parts        = fqn.split(".")
-    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrDef)
 
   if possibleAttr.isA(AttrErr):
     return possibleAttr.get(AttrErr)

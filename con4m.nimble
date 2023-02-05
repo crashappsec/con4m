@@ -18,3 +18,13 @@ let s = "nimble doc --project --git.url:https://github.com/crashappsec/con4m.git
 
 task docs, "Build our docs":
  exec s
+
+task ctest, "Build libcon4m":
+  when hostOs == "linux":
+    exec "pwd"
+    exec "if [ ! -e lib ] ; then mkdir lib; fi"
+    exec "if [ ! -e bin ] ; then mkdir bin; fi"    
+    exec "nim c --define:CAPI --app:staticlib --noMain:on src/con4m.nim"
+    exec "mv src/libcon4m.a lib"
+    exec "cc -Wall -o bin/test src/c/test.c lib/libcon4m.a -I ~/.choosenim/toolchains/nim-1.6.10/lib/ -lc -lm -ldl"
+    
