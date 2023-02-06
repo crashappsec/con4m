@@ -17,6 +17,7 @@ export eval, dollars, spec, run, c42spec
 
 when defined(CAPI):
   import con4m/capi
+  export capi
 elif isMainModule:
   setCon4mVerbosity(c4vShowLoc)
   import nimutils, nimutils/help

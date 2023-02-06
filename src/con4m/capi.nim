@@ -33,15 +33,15 @@ proc c4mOneShot*(contents: cstring, fname: cstring): cstring {.exportc.} =
     return exportStr(getCurrentExceptionMsg())
 
 proc c4mFirstRun*(contents: cstring, fname: cstring, addBuiltIns: bool,
-                  spec: C4CSpecObj): ConfigState {.exportc.} =
+                  spec: C4CSpecObj, err: var cstring): ConfigState {.exportc.} =
   var
     c42Spec: ConfigSpec  = nil
     specCtx: ConfigState = nil
-  
+
   if spec != nil:
     c42Spec = spec.spec
     specCtx = spec.state
-    
+
   try:
     let (ctx, res) = firstRun($(contents),
                               $(fname),
@@ -49,16 +49,20 @@ proc c4mFirstRun*(contents: cstring, fname: cstring, addBuiltIns: bool,
                               addBuiltIns,
                               evalCtx = specCtx)
     if not res:
+      var cstr = exportStr(getCurrentExceptionMsg())
+      err      = cstr
       return nil
     GC_ref(ctx)
     return ctx
   except:
+    var cstr = exportStr("Unknown error")
+    err      = cstr
     return nil
 
 proc c4mStack*(state: ConfigState, contents: cstring, fname: cstring,
                spec: C4CSpecObj): cstring {.exportc.} =
   var specCtx: ConfigState = nil
-  
+
   if spec != nil:
     specCtx = spec.state
 
@@ -67,7 +71,7 @@ proc c4mStack*(state: ConfigState, contents: cstring, fname: cstring,
     return nil
   except:
     return exportStr(getCurrentExceptionMsg())
-    
+
 
 proc c4mSetAttrInt*(state: ConfigState, name: cstring, val: int):
                                                            int {.exportc.} =
@@ -89,7 +93,7 @@ proc c4mGetAttrInt*(state: ConfigState, name: cstring, ok: ptr int):
     ok[]     = int(1)
     let box  = o.get()
     result = unpack[int](box)
-    
+
 
 proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
                                                            int {.exportc.} =
@@ -98,7 +102,7 @@ proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
     v = $(val)
     b = pack[string](v)
     r = attrSet(state, n, b)
-    
+
   result = int(r.code)
 
 proc c4mGetAttrStr*(state: ConfigState, name: cstring, ok: ptr int):
@@ -137,31 +141,37 @@ proc c4mGetAttrFloat*(state: ConfigState, name: cstring, ok: ptr int):
     let box   = o.get()
     result    = unpack[float](box)
 
-proc c4mSetAttr(state: ConfigState, name: cstring, b: Box): int {.exportc.} =
+proc c4mSetAttr*(state: ConfigState, name: cstring, b: Box): int {.exportc.} =
   var
     n = $(name)
     r = attrSet(state, n, b)
 
   result = int(r.code)
 
-proc c4mGetAttr(state: ConfigState, name: cstring, ok: ptr int): Box {.exportc.} =
+proc c4mGetAttr*(state:   ConfigState,
+                 name:    cstring,
+                 boxType: ptr MixedKind,
+                 ok:      ptr int): Box {.exportc.} =
   var
     n = $(name)
     o = attrLookup(state, n)
 
   if o.isNone():
-    ok[]   = int(0)
+    ok[]      = int(0)
   else:
-    ok[]   = int(1)
-    result = o.get()
+    ok[]      = int(1)
+    result    = o.get()
+    boxType[] = result.kind
     GC_ref(result)
+
+proc c4mBoxType*(box: Box): MixedKind {.exportc.} =
+  return box.kind
 
 proc c4mClose*(state: ConfigState) {.exportc.} =
   GC_unref(state)
 
 proc c4mUnpackInt*(box: Box): int {.exportc.} =
   result = unpack[int](box)
-  GC_unref(box)
 
 proc c4mPackInt*(i: int): Box {.exportc.} =
   result = pack(i)
@@ -169,7 +179,6 @@ proc c4mPackInt*(i: int): Box {.exportc.} =
 
 proc c4mUnpackFloat*(box: Box): float {.exportc.} =
   result = unpack[float](box)
-  GC_unref(box)
 
 proc c4mPackFloat*(f: float): Box {.exportc.} =
   result = pack(f)
@@ -177,7 +186,6 @@ proc c4mPackFloat*(f: float): Box {.exportc.} =
 
 proc c4UnpackString*(box: Box): cstring {.exportc.} =
   result = exportStr(unpack[string](box))
-  GC_unref(box)
 
 proc c4mPackString*(s: cstring): Box {.exportc.} =
   result = pack($(s))
@@ -187,7 +195,10 @@ proc c4mUnpackArray*(box: Box, arr: ref seq[Box]): int {.exportc.} =
   var items = unpack[seq[Box]](box)
   result    = len(items)
   arr[]     = items
-  GC_unref(box)
+  GC_ref(items)
+
+proc c4mArrayDelete*(arr: var seq[Box]) {.exportc.} =
+  GC_unref(arr)
 
 proc c4mPackArray*(arr: UncheckedArray[Box], sz: int): Box {.exportc.} =
   var s: seq[Box] = @[]
@@ -203,8 +214,8 @@ proc c4mUnpackDict*(box: Box): OrderedTableRef[Box, Box] {.exportc.} =
 proc c4mDictNew*(): OrderedTableRef[Box, Box] {.exportc.} =
   result = newOrderedTable[Box, Box]()
   GC_ref(result)
-  
-proc c4mDictDelete(dict: OrderedTableRef[Box, Box]) {.exportc.} =
+
+proc c4mDictDelete*(dict: OrderedTableRef[Box, Box]) {.exportc.} =
   GC_unref(dict)
 
 proc c4mDictLookup*(tbl: OrderedTableRef[Box, Box], b: Box): Box {.exportc.} =
@@ -213,9 +224,13 @@ proc c4mDictLookup*(tbl: OrderedTableRef[Box, Box], b: Box): Box {.exportc.} =
     GC_ref(result)
   else:
     return nil
-    
+
 proc c4mDictSet*(tbl: OrderedTableRef[Box, Box], b: Box, v: Box) {.exportc.} =
   tbl[b] = v
+
+proc c4mDictKeyDel*(tbl: OrderedTableRef[Box, Box], b: Box) {.exportc.} =
+  if b in tbl:
+    tbl.del(b)
 
 proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
   try:
@@ -226,9 +241,9 @@ proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
       result.spec  = nil
       result.state = nil
       result.err   = ""
-      
+
     let (spec, evalCtx) = opt.get()
-    
+
     result.spec  = spec
     result.state = evalCtx
     result.err   = ""
@@ -241,9 +256,18 @@ proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
 
   GC_ref(result)
 
-proc c4mGetSpecErr*(spec: C4CSpecObj): cstring {.exportc.} =
+proc c4mGetSpecErr*(spec: var C4CSpecObj): cstring {.exportc.} =
   result = exportStr(spec.err)
   GC_unref(spec)
 
-proc c4mSpecDelete*(spec: C4CSpecObj) {.exportc.}  =
+proc c4mSpecDelete*(spec: var C4CSpecObj) {.exportc.}  =
   GC_unref(spec)
+
+proc c4mStateDelete*(state: var ConfigState) {.exportc.} =
+  GC_unref(state)
+
+proc c4mBoxDelete*(box: var Box) {.exportc.} =
+  GC_unref(box)
+
+proc c4mBoxArrayDelete*(arr: var seq[Box]) {.exportc.} =
+  GC_unref(arr);
