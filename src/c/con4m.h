@@ -302,13 +302,67 @@ extern void     c4mDictKeyDel(NimDict, Box);
  */
 extern C4Spec   c4mLoadSpec(char *, char *, int64_t *);
 
+/* int64_t  c4GetSections(C4State, char *, char ***);
+ *
+ * Given a fully-qualified path to a section, produces an array
+ * containing the names of all defined sections.  The return value is
+ * the number of items in the array.
+ *
+ * - The first param is the spec object.
+ * - The second param is the dotted path to the section.  The root is just
+     the empty string.
+ * - The third array is a pointer to a char**. Nim will set this, and own
+     the memory, so call c4mArrayDelete() to dealloc.
+ *
+ * The return value is the number of items in the array that is passed back.
+ */
+extern int64_t  c4GetSections(C4State, char *, char ***);
+
+/* int64_t  c4GetFields(C4State, char *, char ***);
+ *
+ * Given a fully-qualified path to a section, produces an array
+ * containing the names of all defined fields in that section,
+ * followed by their Con4m type as a string.
+ *
+ * The return value is the number of total items in the array,
+ * including the type specs.
+ *
+ * - The first param is the spec object.
+ * - The second param is the dotted path to the section.  The root is just
+     the empty string.
+ * - The third array is a pointer to a char**. Nim will set this, and own
+     the memory, so call c4mArrayDelete() to dealloc.
+ *
+ * The return value is the number of items in the array that is passed back.
+ */
+extern int64_t  c4GetFields(C4State, char *, char ***);
+
+/* int64_t  c4EnumerateScope(C4State, char *, char ***);
+ *
+ * Given a fully-qualified path to a section, produces an array
+ * containing the names of all defined fields in that section,
+ * followed by their Con4m type as a string, or in the case of
+ * sections, the word "section".
+ *
+ * The return value is the number of total items in the array,
+ * including the type specs.
+ *
+ * - The first param is the spec object.
+ * - The second param is the dotted path to the section.  The root is just
+     the empty string.
+ * - The third array is a pointer to a char**. Nim will set this, and own
+     the memory, so call c4mArrayDelete() to dealloc.
+ *
+ * The return value is the number of items in the array that is passed back.
+ */
+extern int64_t  c4EnumerateScope(C4State, char *, char ***);
 // Below are all deallocation functions.
 extern void     c4mClose(C4State);
 extern char *   c4mGetSpecErr(C4Spec);
 extern void     c4mSpecDelete(C4Spec);
 extern void     c4mDictDelete(NimDict);
 extern void     c4mStrDelete(char *);
-extern void     c4mBoxArrayDelete(BoxArray);
+extern void     c4mArrayDelete(BoxArray);
 extern void     c4mStateDelete(C4State);
 extern void     c4mBoxDelete(Box);
 

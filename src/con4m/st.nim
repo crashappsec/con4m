@@ -142,6 +142,10 @@ proc attrLookup*(scope: AttrScope,
                  parts: openarray[string],
                  ix:    int,
                  op:    ALookupOp): AttrOrErr =
+
+  if ix == 0 and (len(parts) == 0 or (len(parts) == 1 and parts[0] == "")):
+    return either(scope)
+
   if ix >= len(parts):
     return AttrErr(code: errNoAttr)
 

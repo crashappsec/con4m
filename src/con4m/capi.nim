@@ -1,4 +1,4 @@
-import types, streams, run, st, tables, nimutils, c42spec
+import types, streams, run, st, tables, nimutils, c42spec, strutils, dollars
 
 type C4CSpecObj = ref object
   spec:  ConfigSpec
@@ -164,6 +164,106 @@ proc c4mGetAttr*(state:   ConfigState,
     boxType[] = result.kind
     GC_ref(result)
 
+proc c4GetSections*(state: ConfigState,
+                    name:  cstring,
+                    arr:   var ptr cstring): int {.exportc.} =
+  var res: seq[cstring] = @[]
+
+  let
+    parts = `$`(name).split(".")
+    aOrE  = attrLookup(state.attrs, parts, 0, vlSecUse);
+
+  if aOrE.isA(AttrErr):
+    arr = nil
+    return -1
+
+  let aOrS = aOrE.get(AttrOrSub)
+
+  if aOrS.isA(Attribute):
+    arr = nil
+    return -2
+
+  let scope = aOrS.scope
+
+  GC_ref(res)
+
+  for k, v in scope.contents:
+    if v.kind == false:
+      res.add(cstring(k))
+
+  arr = addr(res[0])
+
+  return len(res)
+
+
+proc c4GetFields*(state: ConfigState,
+                  name:  cstring,
+                  arr:   var ptr cstring): int {.exportc.} =
+  var res: seq[cstring] = @[]
+
+  let
+    parts = `$`(name).split(".")
+    aOrE  = attrLookup(state.attrs, parts, 0, vlSecUse);
+
+  if aOrE.isA(AttrErr):
+    arr = nil
+    return -1
+
+  let aOrS = aOrE.get(AttrOrSub)
+
+  if aOrS.isA(Attribute):
+    arr = nil
+    return -2
+
+  let scope = aOrS.scope
+
+  GC_ref(res)
+
+  for k, v in scope.contents:
+    if v.isA(Attribute):
+      res.add(cstring(k))
+      res.add(cstring($(v.get(Attribute).tInfo)))
+
+  arr = addr(res[0])
+
+  return len(res)
+
+
+proc c4EnumerateScope*(state: ConfigState,
+                       name:  cstring,
+                       arr:   var ptr cstring): int {.exportc.} =
+
+  var res: seq[cstring] = @[]
+
+  let
+    parts = `$`(name).split(".")
+    aOrE  = attrLookup(state.attrs, parts, 0, vlSecUse);
+
+  if aOrE.isA(AttrErr):
+    arr = nil
+    return -1
+
+  let aOrS = aOrE.get(AttrOrSub)
+
+  if aOrS.isA(Attribute):
+    arr = nil
+    return -2
+
+  let scope = aOrS.scope
+
+  GC_ref(res)
+
+  for k, v in scope.contents:
+    res.add(cstring(k))
+    if v.isA(Attribute):
+      res.add(cstring($(v.get(Attribute).tInfo)))
+    else:
+      res.add(cstring("section"))
+
+  arr = addr(res[0])
+
+  return len(res)
+
 proc c4mBoxType*(box: Box): MixedKind {.exportc.} =
   return box.kind
 
@@ -268,6 +368,3 @@ proc c4mStateDelete*(state: var ConfigState) {.exportc.} =
 
 proc c4mBoxDelete*(box: var Box) {.exportc.} =
   GC_unref(box)
-
-proc c4mBoxArrayDelete*(arr: var seq[Box]) {.exportc.} =
-  GC_unref(arr);

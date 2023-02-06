@@ -25,9 +25,7 @@ elif isMainModule:
   const helpPath   = staticExec("pwd") & "/help/"
   const helpCorpus = newOrderedFileTable(helpPath)
 
-
   discard subscribe(con4mTopic, defaultCon4mHook)
-
 
   var showFuncs = false
   proc setShowFuncs() =
