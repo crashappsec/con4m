@@ -32,7 +32,7 @@ elif isMainModule:
     specFile     = none(string)
     showFuncs    = false
     genOutLang   = none(string)
-    genOutFile   = none(string)  #
+    genOutFile   = none(string)
     currentCmd   = ""
     attrOutStyle = "default"
 
