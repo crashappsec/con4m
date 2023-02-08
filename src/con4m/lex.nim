@@ -443,7 +443,6 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "var": tok(TtVar)
       of "True", "true": tok(TtTrue)
       of "False", "false": tok(TtFalse)
-      of "Null", "null": tok(TtNull)
       of "is": tok(TtCmp)
       of "and": tok(TtAnd)
       of "or": tok(TtOr)

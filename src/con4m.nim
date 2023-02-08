@@ -83,10 +83,10 @@ elif isMainModule:
                  addBinaryFlag('h',"help")
 
   argParser.addCommand("compile", ["c"]).addArgs(min=1).
-               addFlagWithStrArg('s', "with-spec", setSpecFile).
+               addFlagWithStrArg('s', "spec", setSpecFile).
                addChoiceFlag('p', "phase", phaseOps, true, setStopPhase)
 
-  argParser.addCommand("specgen", ["spec", "c42"]).addArgs(min=1, max=1).
+  argParser.addCommand("specgen", ["spec", "c42", "genspec"]).addArgs(min=1, max=1).
                addFlagWithStrArg('l', "language", setGenOutLang).
                addFlagWithStrArg('o', "output-file", setGenOutFile)
 
@@ -140,8 +140,13 @@ elif isMainModule:
           if not genOutLang.isSome():
             raise newException(ValueError,
                                "Must supply a language to generate with " &
-                               "--language")
-          var genOutput = generateCode(ctx, genOutLang.get())
+                                 "--language, or --language=none for no output")
+          let lang = genOutLang.get()
+
+          if lang == "none":
+            stderr.writeLine(toAnsiCode(acBold) & "Spec successfully validated.")
+            quit(0)
+          var genOutput = generateCode(ctx, lang)
           if genOutFile.isNone():
             echo genOutput
           else:

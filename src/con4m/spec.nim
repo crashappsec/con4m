@@ -8,14 +8,16 @@ import options, tables, strutils, strformat, nimutils, macros, builtins
 import types, typecheck, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
-  let name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
-  raise newException(ValueError,
-                     fmt"When checking {name}: {msg}")
+  let
+    name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
+    full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
+  raise newException(ValueError, full)
 
 proc specErr*(attr: Attribute, msg: string) =
-  let name = toAnsiCode(acBCyan) & attr.fullNameAsStr() & toAnsiCode(acReset)
-  raise newException(ValueError,
-                     fmt"When checking {name}: {msg}")
+  let
+    name = toAnsiCode(acBCyan) & attr.fullNameAsStr() & toAnsiCode(acReset)
+    full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
+  raise newException(ValueError, full)
 
 proc specErr*(msg: string) =
   raise newException(ValueError,
@@ -34,7 +36,6 @@ proc defErr*(scope: Con4mSectionType, msg: string) =
 proc defErr*(msg: string) =
   raise newException(ValueError,
                      fmt"When defining a top-level section: {msg}")
-
 
 proc sectionType*(spec:       ConfigSpec,
                   name:       string,

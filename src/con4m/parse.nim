@@ -400,7 +400,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
 
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
-  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull:
+  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
     return ctx.dictLiteral()
@@ -424,7 +424,7 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtPlus, TtMinus:
     parseError("Two unarys in a row not allowed", false)
-  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull, TtLBrace,
+  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen:
     res = ctx.literal()
   of TtIdentifier:
@@ -442,7 +442,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.unaryExpr()
   of TtNot:
     return ctx.notExpr()
-  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtNull, TtLBrace,
+  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen:
     return ctx.literal()
   of TtIdentifier:
