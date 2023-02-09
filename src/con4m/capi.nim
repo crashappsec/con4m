@@ -94,6 +94,27 @@ proc c4mGetAttrInt*(state: ConfigState, name: cstring, ok: ptr int):
     let box  = o.get()
     result = unpack[int](box)
 
+proc c4mSetAttrBool*(state: ConfigState, name: cstring, val: int):
+                                                           int {.exportc.} =
+  var
+    n = $(name)
+    b = pack[bool](if val != 0: true else: false)
+    r = attrSet(state, n, b)
+  return int(r.code)
+
+proc c4mGetAttrBool*(state: ConfigState, name: cstring, ok: ptr int):
+                                                           int {.exportc.} =
+  var
+    n = $(name)
+    o = attrLookup(state, n)
+
+  if o.isNone():
+    ok[]     = int(0)
+  else:
+    ok[]     = int(1)
+    let box  = o.get()
+    result = if unpack[bool](box): 1 else: 0
+    
 
 proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
                                                            int {.exportc.} =
@@ -277,6 +298,13 @@ proc c4mPackInt*(i: int): Box {.exportc.} =
   result = pack(i)
   GC_ref(result)
 
+proc c4mUnpackBool*(box: Box): int {.exportc.} =
+  result = if unpack[bool](box): 1 else: 0
+
+proc c4mPackBool*(i: int): Box {.exportc.} =
+  result = if i == 0: pack(false) else: pack(true)
+  GC_ref(result)
+  
 proc c4mUnpackFloat*(box: Box): float {.exportc.} =
   result = unpack[float](box)
 

@@ -81,6 +81,24 @@ extern char    *c4mStack(C4State, char *, char *, C4Spec); // If err, decref.
  */
 extern int64_t  c4mGetAttrInt(C4State, char *, AttrErr *);
 
+
+/* int64_t c4mGetAttrBool(C4State, char *, AttrErr *);
+ *
+ * Returns the value of an attribute field that is a bool field.
+ * If you're using a C4Spec, you can be guaranteed that your declared
+ * types will be honored. Otherwise, use c4mGetAttr(), which will give
+ * you a Box object, and tell you the base type of the box.
+ *
+ * The bool val is cast to an int64_t, but should always be 0 or 1.
+ *
+ * If you're wrong about the type, you should get a sweet crash :)
+ *
+ * - Param 1 is the configuration state object.
+ * - Param 2 is the fully dotted name to query.
+ * - Param 3 will receive an error code of type AttrErr, defined above.
+ */
+extern int64_t  c4mGetAttrBool(C4State, char *, AttrErr *);
+
 /* char *c4mGetAttrStr(C4State, char *, AttrErr *);
  *
  * Returns the value of an attribute field that is a con4m string field.
@@ -154,6 +172,20 @@ extern Box      c4mGetAttr(C4State, char *, BoxType *, AttrErr *);
  */
 extern AttrErr  c4mSetAttrInt(C4State, char *, int64_t);
 
+/* AttrErr c4mSetAttrBool(C4State, char *, int64_t);
+ *
+ * Sets a Con4m attribute field with a bool value (passed as an int64_t)
+ *
+ * - Param 1 is the configuration state object.
+ * - Param 2 is the fully dotted name to query.
+ * - Param 3 is the value to set, 0 is false, anything else is true.
+ *
+ * If you are not using the spec functionality, any setting
+ * you do still needs to be type compatible with what is already
+ * there, or you will get an error returned.
+ */
+extern AttrErr  c4mSetAttrBool(C4State, char *, int64_t);
+
 /* AttrErr c4mSetAttrInt(C4State, char *, int64_t);
  *
  * Sets a Con4m attribute field with an int value.
@@ -212,6 +244,16 @@ extern BoxType c4BoxType(Box);
  * the box if you're done with it.
  *
  * If the box doesn't represent an int, you'll end up with a crash.
+ */
+extern int64_t  c4mUnpackInt(Box);
+
+/* int64_t c4mUnpackBool(Box)
+ *
+ * Returns the value inside a bool box. You still need to decred
+ * the box if you're done with it.  Returns it as a 64-bit int but
+ * will always be 0 or 1.
+ *
+ * If the box doesn't represent a bool, you'll end up with a crash.
  */
 extern int64_t  c4mUnpackInt(Box);
 
