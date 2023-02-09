@@ -1,18 +1,27 @@
-import strutils, strformat, tables, nimutils, unicode
+import strutils, strformat, tables, nimutils, unicode, options
 import types, st
 
 type VarDeclInfo = ref object
   name:         string
-  unquoted:     string
+  unquoted:     string       # Taken from gen_name, if provided.
   c4mType:      Con4mType
   alwaysExists: bool
   localType:    string
+  genDecl:      Option[bool] 
+  genLoader:    Option[bool] # TODO
+  genGetter:    Option[bool] # TODO
+  genSetter:    Option[bool] # TODO
 
 type SecTypeInfo = ref object
   singleton:     bool
   name:          string
-  nameOfType:    string
-  nameWhenField: string
+  nameOfType:    string    # TODO (populate from gen_typename)
+  nameWhenField: string    # TODO (populate from gen_fieldname)
+  genDecl:       bool      # TODO
+  genLoader:     bool      # TODO
+  genSetters:    bool      # TODO genDecl andnot genLoader...
+  genGetters:    bool      # TODO
+  extraDecls:    string    # TODO
   scope:         AttrScope
   inboundEdges:  seq[string]
   outboundEdges: seq[string]
@@ -91,7 +100,6 @@ template depGraphProcessOneObjectClass(kind: string, singVal: bool) =
         oneSec.singleton = singVal
       depGraphOneSection(subs, key, oneSec)
 
-
 # We want to generate type declarations in a sane order, ensuring that
 # No type is forward referenced.
 proc orderTypes(c42state: ConfigState,
@@ -136,11 +144,6 @@ proc declToNimType(v: Con4mType): string =
   of TypeProc, TypeBottom:
     unreachable # Con4m doesn't support function pointers right now.
 
-proc declareSecLoader(me:       SecTypeInfo,
-                      allSects: TableRef[string, SecTypeInfo]): string =
-  let t   = me.nameOfType
-  result  = "proc load{t} (scope: AttrScope): {t} =\n".fmt()
-
 proc genOneSectNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =
   result = "type " & me.nameOfType & "* = ref object\n"
@@ -162,7 +165,7 @@ proc genOneSectNim(me:       SecTypeInfo,
 
   result &= "\n"
 
-proc genOneLoaderNim(me: SecTypeInfo,
+proc genOneLoaderNim(me:       SecTypeInfo,
                      allSects: TableRef[string, SecTypeInfo]): string =
   result = """
 proc load{me.nameOfType}*(scope: AttrScope): {me.nameOfType} =
@@ -202,29 +205,53 @@ proc load{me.nameOfType}*(scope: AttrScope): {me.nameOfType} =
   # Need to do the asterisks?
   result &= "\n"
 
-proc genGettersNim(me:       SecTypeInfo,
-                   allSects: TableRef[string, SecTypeInfo]): string =
-  result = """
-proc getAttrScope*(self: {me.nameOfType}): AttrScope =
-  return self.`@@attrscope@@`
-
-""".fmt()
-  for edge in me.outBoundEdges:
-    let  sec      = allSects[edge]
-    if sec.singleton:
-      result &= """
+template singletonAndDeclNim(): string =
+  """
 proc get_{sec.nameWhenField}*(self: {me.nameOfType}): Option[{sec.nameOfType}] =
   if self.{sec.nameWhenField} == nil:
     return none({sec.nameOfType})
   else:
     return some(self.{sec.nameWhenField})
 """.fmt()
-    else:
-      result &= """
+
+template objAndDeclNim(): string =
+  """
 proc get_{sec.nameWhenField}*(self: {me.nameOfType}): OrderedTableRef[string, {sec.nameOfType}] =
   return self.{sec.nameWhenField}
 
 """.fmt()
+
+template singletonWoDeclNim(): string =
+  """
+""".fmt()
+
+template objWoDeclNim(): string =
+  """
+""".fmt()
+
+proc genGettersNim(me:       SecTypeInfo,
+                   allSects: TableRef[string, SecTypeInfo]): string =
+  result = ""
+  if me.genDecl:
+    # THIS IS WRONG.  Def isn't considering the object.
+    # Need one to enumerate objects too.
+    result &= """
+proc getAttrScope*(self: {me.nameOfType}): AttrScope =
+  return self.`@@attrscope@@`
+
+""".fmt()
+  if me.genGetters:
+    for edge in me.outBoundEdges:
+      let  sec = allSects[edge]
+      if sec.singleton and me.genDecl:
+        result &= singletonAndDeclNim()
+      elif sec.singleton:
+        result &= singletonWoDeclNim()
+      elif me.genDecl:
+        result &= objAndDeclNim()
+      else:
+        result &= objWoDeclNim()
+        
   for field, info in me.fieldInfo:
     if info.alwaysExists:
       result &= """
@@ -241,6 +268,7 @@ proc get_{info.unquoted}*(self: {me.nameOfType}): Option[{info.localType}] =
 
 proc genSettersNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =
+  # THIS IS WRONG.  Def isn't considering the object.
   result = ""
   for field, info in me.fieldInfo:
     if info.alwaysExists:
@@ -303,7 +331,7 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
   if "field" notin me.scope.contents:
     return
   let fieldscope = me.scope.contents["field"].get(AttrScope)
-  for fieldname, fieldAorS in fieldscope.contents:
+  for fieldName, fieldAorS in fieldscope.contents:
     let
       fieldProps = fieldAorS.get(AttrScope)
       typestr    = unpack[string](fieldProps.attrLookup("type").get())
@@ -313,21 +341,55 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
                      newTypeVar()
                    else:
                      toCon4mType(typestr)
+      genDeclBox = fieldProps.attrLookup("gen_decl")
+      genDecl    = if genDeclBox.isSome():
+                     some(unpack[bool](genDeclBox.get()))
+                   else:
+                     none(bool)
+      genLoadBox = fieldProps.attrLookup("gen_loader")
+      genLoader  = if genLoadBox.isSome():
+                     some(unpack[bool](genLoadBox.get()))
+                   else:
+                     none(bool)
+      genGetrBox = fieldProps.attrLookup("gen_getter")
+      genGetter  = if genGetrBox.isSome():
+                     some(unpack[bool](genGetrBox.get()))
+                   else:
+                     none(bool)
+      genSetrBox = fieldProps.attrLookup("gen_setter")
+      genSetter  = if genSetrBox.isSome():
+                     some(unpack[bool](genSetrBox.get()))
+                   else:
+                     none(bool)
+      genNameBox = fieldProps.attrLookup("gen_name")
+      genName    = if genNameBox.isSome():
+                     unpack[string](genNameBox.get())
+                   else:
+                     fieldName
       required   = fieldProps.attrLookup("require")
       default    = fieldProps.attrLookup("default")
-
-    let
       always     = if default.isSome() or unpack[bool](required.get()):
                      true
                    else:
                      false
-    let qfn = quote(fieldName, lang)
+    let qfn = quote(genName, lang)
+
+    # We don't fill in the localType here, because fields might
+    # not be Nim types, and it's easier / more clear to deal w/
+    # that logic when needed.
     me.fieldInfo[qfn] = VarDeclInfo(name:         qfn,
-                                    unquoted:     fieldName,
+                                    unquoted:     genName,
                                     alwaysExists: always,
-                                    c4mType:      c4mType)
+                                    c4mType:      c4mType,
+                                    genDecl:      genDecl,
+                                    genLoader:    genLoader,
+                                    genGetter:    genGetter,
+                                    genSetter:    genSetter)
 
 proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
+  # Load data from con4m into SecTypeInfo field that we're going
+  # to want to use in the generation all at once, instead of
+  # scrounging for each piece later.
   if "gen_typename" in tinfo.scope.contents:
     let opt = tinfo.scope.attrLookup("gen_typename")
     tinfo.nameOfType = quote(unpack[string](opt.get()), lang)
@@ -341,8 +403,36 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
   else:
     tinfo.nameWhenField = quote(tinfo.name & "Objs", lang)
 
-  tinfo.buildSectionVarInfo(lang)
+  if "gen_decl" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("gen_decl")
+    tinfo.genDecl = unpack[bool](opt.get())
+  else:
+    tinfo.genDecl = true
 
+  if "gen_loader" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("gen_loader")
+    tinfo.genLoader = unpack[bool](opt.get())
+  else:
+    tinfo.genLoader = true
+
+  if "gen_setters" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("gen_setters")
+    tinfo.genSetters = unpack[bool](opt.get())
+  else:
+    tinfo.genSetters = true
+
+  if "gen_getters" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("gen_getters")
+    tinfo.genGetters = unpack[bool](opt.get())
+  else:
+    tinfo.genGetters = true
+
+  if "extra_decls" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("extra_decls")
+    tinfo.extraDecls = unpack[string](opt.get())
+  
+  tinfo.buildSectionVarInfo(lang)
+  
 proc getPrologue(lang: string): string =
   case lang
   of "nim":
@@ -377,7 +467,9 @@ proc generateCode*(c42state: ConfigState, lang: string): string =
     result &= genOneSection(typeObj, typeHash, lang)
 
   for typeObj in orderedTypes:
-    result &= genOneLoader(typeObj, typeHash, lang)
+    # If there's no decl, definitely a loader makes no sense.
+    if typeObj.genDecl and typeObj.genLoader:
+      result &= genOneLoader(typeObj, typeHash, lang)
 
   for typeObj in orderedTypes:
     result &= genGetters(typeObj, typeHash, lang)

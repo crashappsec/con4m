@@ -333,6 +333,8 @@ proc c4mDictKeyDel*(tbl: OrderedTableRef[Box, Box], b: Box) {.exportc.} =
     tbl.del(b)
 
 proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
+  result = new(C4CSpecObj)
+  
   try:
     let opt = c42Spec(newStringStream($(spec)), $(fname))
 
@@ -355,6 +357,7 @@ proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
     ok[]         = int(0)
 
   GC_ref(result)
+
 
 proc c4mGetSpecErr*(spec: var C4CSpecObj): cstring {.exportc.} =
   result = exportStr(spec.err)

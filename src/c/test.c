@@ -31,7 +31,10 @@ char *read_file(char *filename) {
 
 int main(int argc, char *argv[], char *envp[]) {
   char *err;
+  int64_t ignore;
   NimMain();
+  char *samispec = read_file("tests/spec/s2-sami.c4m");
+  C4Spec specobj = c4mLoadSpec(samispec, "tests/spec/s2-sami.c4m", &ignore);
 
   char *res = c4mOneShot(configTest, "whatevs.c4m");
   printf("%s\n", res);
