@@ -69,7 +69,7 @@ proc addAttr*(sect:       Con4mSectionType,
                         tinfo:     tinfo,
                         validator: validator)
     info = FieldSpec(extType:     tobj,
-                     minRequired: if required: 1 else: 0,
+                     minRequired: if default.isSome() or required : 1 else: 0,
                      maxRequired: 1,
                      stackLimit:  stackLimit,
                      default:     default,
@@ -92,7 +92,7 @@ proc addC4TypeField*(sect:      Con4mSectionType,
   let
     tobj = ExtendedType(kind: TypeC4TypeSpec, validator: validator)
     info = FieldSpec(extType:     tobj,
-                     minRequired: if required: 1 else: 0,
+                     minRequired: if required or default.isSome(): 1 else: 0,
                      maxRequired: 1,
                      stackLimit:  stackLimit,
                      default:     default,
@@ -147,7 +147,8 @@ proc addChoiceField*[T](sect:       Con4mSectionType,
     static:
       error("addChoiceField must take a sequence of ints or strings")
 
-  addAttr(sect, name, attrType, required, lock, stackLimit, default, validator)
+  addAttr(sect, name, attrType, required or default.isSome(),
+          lock, stackLimit, default, validator)
   var tobj = sect.fields[name].extType
 
   if tobj.range[0] != tobj.range[1]:
@@ -172,7 +173,8 @@ proc addRangeField*(sect:       Con4mSectionType,
                     stackLimit: int         = -1,
                     default:    Option[Box] = none(Box),
                     validator:  string      = "") =
-  addAttr(sect, name, intType, required, lock, stackLimit, default, validator)
+  addAttr(sect, name, intType, required or default.isSome(), lock,
+          stackLimit, default, validator)
   var tobj = sect.fields[name].extType
 
   if rangemin >= rangemax:
@@ -194,7 +196,8 @@ proc addBoundedContainer*(sect:       Con4mSectionType,
                           validator:  string      = "") =
   case tinfo.getBaseType()
   of TypeDict, TypeList:
-    addAttr(sect, name, tinfo, required, lock, stackLimit, default, validator)
+    addAttr(sect, name, tinfo, required or default.isSome(), lock,
+            stackLimit, default, validator)
     if minSize < 0 and maxSize < 0:
       defErr(sect, "Constraint must apply to either min or max to use this")
     if minSize >= 0 and maxSize >= 0 and minSize >= maxSize:

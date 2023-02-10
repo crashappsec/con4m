@@ -277,8 +277,7 @@ proc populateFields(spec:       ConfigSpec,
         c4mType = toCon4mType(c4mTypeStr)
       except:
         specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
-      tInfo.addAttr(k, c4mType, require, lock, stackLimit, none(Box),
-                    validator)
+      tInfo.addAttr(k, c4mType, require, lock, stackLimit, default, validator)
 
   # Once we've processed all fields, check exclusion constraints.
   for (k, v) in exclusions:
