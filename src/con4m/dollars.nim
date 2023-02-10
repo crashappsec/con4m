@@ -21,6 +21,11 @@ else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
     of TtStringLit: return "\"" & tok.unescaped & "\""
+    of TtOtherLit:
+      let pos = tok.stream.getPosition()      
+      tok.stream.setPosition(tok.startPos)
+      result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
+      tok.stream.setPosition(pos)
     of TtWhiteSpace: return "~ws~"
     of TtNewLine: return "~nl~"
     of TtSof: return "~sof~"
@@ -28,16 +33,14 @@ else:
     of ErrorTok: return "~err~"
     of ErrorLongComment: return "~unterm comment~"
     of ErrorStringLit: return "~unterm string~"
+    of ErrorOtherLit: return "~unterm other lit~"
     else:
       let pos = tok.stream.getPosition()
 
       tok.stream.setPosition(tok.startPos)
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
-
-      if result.contains('\n'):
-        return "~multi-line value~"
-
+      
 template colorType(s: string): string =
   toAnsiCode(acGreen) & s & toAnsiCode(acReset)
 
@@ -138,7 +141,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeTypeDict:     fmtTy("TypeDict")
   of NodeTypeList:     fmtTy("TypeList")
   of NodeTypeTuple:    fmtTy("TypeTuple")
-  of NodeTypeString:   fmtTy("TypeString")
+  of NodeTypeString:   fmtTy("TypeString")  
   of NodeTypeInt:      fmtTy("TypeInt")
   of NodeTypeFloat:    fmtTy("TypeFloat")
   of NodeTypeBool:     fmtTy("TypeBool")

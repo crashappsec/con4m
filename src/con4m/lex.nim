@@ -104,6 +104,8 @@ template tok(k: Con4mTokenKind) =
                     lineNo: tokenLine,
                     lineOffset: tokenLineOffset))
 
+# The adjustment is to chop off start/end delimiters for
+# literals... strings, tristrings, and 'other' literals: << >>
 template tok(k: Con4mTokenKind, adjustment: int) =
   toks.add(Con4mToken(startPos: startPos + adjustment,
                       endPos: s.getPosition() - adjustment,
@@ -275,7 +277,19 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
     of '%':
       tok(TtMod)
     of '<':
-      if s.peekChar() == '=':
+      if s.peekChar() == '<':
+        while true:
+          case s.readChar()
+          of '\x00':
+            tok(ErrorOtherLit)
+            return (false, toks)
+          of '>':
+            if s.readChar() != '>': continue
+            tok(TtOtherLit, 2)
+            break
+          else:
+            continue
+      elif s.peekChar() == '=':
         discard s.readChar()
         tok(TtLte)
       else:
@@ -336,48 +350,58 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       else:
         tok(TtOr)
     of '0' .. '9':
-      var isFloat: bool
+      block numLit:
+        var isFloat: bool
 
-      while true:
-        case s.peekChar()
-        of '0' .. '9':
-          discard s.readChar()
-        else:
-          break
-
-      if s.peekChar() == '.':
-        discard s.readChar()
-        isFloat = true
-        case s.readChar()
-        of '0' .. '9':
-          while true:
-            case s.peekChar()
-            of '0' .. '9':
-              discard s.readChar()
-            else:
-              break
-        else:
-          tok(ErrorTok)
-          return (false, toks) # Grammar doesn't allow no digits after dot.
-      case s.peekChar():
-        of 'e', 'E':
-          discard s.readChar()
-          isFloat = true
+        while true:
           case s.peekChar()
-          of '+', '-', '0' .. '9':
+          of '0' .. '9':
             discard s.readChar()
           else:
+            break
+
+        if s.peekChar() == '.':
+          discard s.readChar()
+          isFloat = true
+          case s.readChar()
+          of '0' .. '9':
+            while true:
+              case s.peekChar()
+              of '0' .. '9':
+                discard s.readChar()
+              of '.':
+                discard s.readChar()
+                while true:
+                  case s.peekChar()
+                  of ' ', '\n', '\x00':
+                    tok(TtOtherLit)
+                    break numLit
+                  else:
+                    discard s.readChar()
+              else:
+                break
+          else:
             tok(ErrorTok)
-            return (false, toks) # e or E without numbers after it
-          while true:
+            return (false, toks) # Grammar doesn't allow no digits after dot.
+        case s.peekChar():
+          of 'e', 'E':
+            discard s.readChar()
+            isFloat = true
             case s.peekChar()
-            of '0' .. '9':
+            of '+', '-', '0' .. '9':
               discard s.readChar()
             else:
-              break
-        else:
-          discard
-      if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
+              tok(ErrorTok)
+              return (false, toks) # e or E without numbers after it
+            while true:
+              case s.peekChar()
+              of '0' .. '9':
+                discard s.readChar()
+              else:
+                break
+          else:
+            discard
+        if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
     of '"':
       var tristring = false
 

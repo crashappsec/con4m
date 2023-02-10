@@ -18,8 +18,8 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtSof, TtEof, ErrorTok,
-    ErrorLongComment, ErrorStringLit
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtOtherLit, TtSof,
+    TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
