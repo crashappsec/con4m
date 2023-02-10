@@ -84,15 +84,18 @@ proc c4mSetAttrInt*(state: ConfigState, name: cstring, val: int):
 proc c4mGetAttrInt*(state: ConfigState, name: cstring, ok: ptr int):
                                                            int {.exportc.} =
   var
-    n = $(name)
-    o = attrLookup(state, n)
+    n        = $(name)
+    (err, o) = attrLookupFull(state, n)
 
+  ok[] = int(err)
+  if err != errOk:
+    return 0
   if o.isNone():
-    ok[]     = int(0)
-  else:
-    ok[]     = int(1)
-    let box  = o.get()
-    result = unpack[int](box)
+    ok[] = int(errNoAttr)
+    return 0
+
+  let box  = o.get()
+  result = unpack[int](box)
 
 proc c4mSetAttrBool*(state: ConfigState, name: cstring, val: int):
                                                            int {.exportc.} =
@@ -105,15 +108,18 @@ proc c4mSetAttrBool*(state: ConfigState, name: cstring, val: int):
 proc c4mGetAttrBool*(state: ConfigState, name: cstring, ok: ptr int):
                                                            int {.exportc.} =
   var
-    n = $(name)
-    o = attrLookup(state, n)
+    n        = $(name)
+    (err, o) = attrLookupFull(state, n)
 
+  ok[] = int(err)
+  if err != errOk:
+    return 0
   if o.isNone():
-    ok[]     = int(0)
-  else:
-    ok[]     = int(1)
-    let box  = o.get()
-    result = if unpack[bool](box): 1 else: 0
+    ok[]     = int(errNoAttr)
+    return 0
+
+  let box = o.get()
+  result  = if unpack[bool](box): 1 else: 0
 
 
 proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
@@ -129,16 +135,20 @@ proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
 proc c4mGetAttrStr*(state: ConfigState, name: cstring, ok: ptr int):
                                                        cstring {.exportc.} =
   var
-    n = $(name)
-    o = attrLookup(state, n)
+    n        = $(name)
+    (err, o) = attrLookupFull(state, n)
 
+  ok[] = int(err)
+  if err != errOk:
+    return nil
   if o.isNone():
-    ok[]      = int(0)
-  else:
-    ok[]      = int(1)
-    let box   = o.get()
-    let res   = unpack[string](box)
-    result    = exportStr(res)
+    ok[] = int(errNoAttr)
+    return nil
+  let
+    box  = o.get()
+    res  = unpack[string](box)
+
+  result = exportStr(res)
 
 proc c4mSetAttrFloat*(state: ConfigState, name: cstring, val: float):
                                                           int {.exportc.} =
@@ -153,14 +163,18 @@ proc c4mGetAttrFloat*(state: ConfigState, name: cstring, ok: ptr int):
                                                          float {.exportc.} =
   var
     n = $(name)
-    o = attrLookup(state, n)
+    (err, o) = attrLookupFull(state, n)
 
+  ok[] = int(err)
+  if err != errOk:
+    return 0
   if o.isNone():
-    ok[]      = int(0)
-  else:
-    ok[]      = int(1)
-    let box   = o.get()
-    result    = unpack[float](box)
+    ok[] = int(errNoAttr)
+    return NaN
+
+  let
+    box  = o.get()
+  result = unpack[float](box)
 
 proc c4mSetAttr*(state: ConfigState, name: cstring, b: Box): int {.exportc.} =
   var
@@ -174,16 +188,20 @@ proc c4mGetAttr*(state:   ConfigState,
                  boxType: ptr MixedKind,
                  ok:      ptr int): Box {.exportc.} =
   var
-    n = $(name)
-    o = attrLookup(state, n)
+    n        = $(name)
+    (err, o) = attrLookupFull(state, n)
 
+  ok[] = int(err)
+  if err != errOk:
+    return nil
   if o.isNone():
-    ok[]      = int(0)
-  else:
-    ok[]      = int(1)
-    result    = o.get()
-    boxType[] = result.kind
-    GC_ref(result)
+    ok[] = int(errNoAttr)
+    return nil
+
+  result    = o.get()
+  boxType[] = result.kind
+
+  GC_ref(result)
 
 proc c4GetSections*(state: ConfigState,
                     name:  cstring,

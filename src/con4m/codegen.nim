@@ -34,7 +34,6 @@ type SecTypeInfo = ref object
   outboundEdges: seq[string]
   fieldInfo:     OrderedTable[string, VarDeclInfo]
 
-
 const reservedWords = {
   "nim": ["addr", "and", "as", "asm", "bind", "block", "break", "case", "cast",
           "concept", "const", "continue", "converter", "defer", "discard",
