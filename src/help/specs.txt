@@ -284,5 +284,56 @@ You can add the {bold}stack_limit{reset} property, which takes an integer that r
 %{H Using a working specification}%
 At the con4m command line, you can use the --spec= flag to provide your spec file.  Or, you can provide it as a string programatically.  See {bold}'{appName} help api'{reset} for more information on calling con4m programatically.
 
-%{H Coming soon}%
-We soon will be add the ability to specify how fields should get named in code generation.
+%{H Controlling Code Generation}%
+You can augment your specification with variables that control how code generation occurs.  First, you can tweak names. The Con4m name is used by default, but for instance, you might want to change the name in your target code, especially for objects.
+
+For instance, our 'key' sections in code will appear in our toplevel type as a table mapping the specified keys to a 'key' object.  We might want the field in the root section to be called 'keys', because it's just more accurate.  Or, instead of the default type name 'KeyType', you might want to call it 'KeyInfo'.  We provide the following ways to munge your names:
+%{T
+Property::Applies to...::Description
+gen_typename::Sections (including the root)::Specifies the type name to use when generating this type.
+gen_fieldname::Sections (singletons and objects), and attributes::Specify what name to use when the name is a 'field' name.  For sections, this is the variable name that will be used in other sections that allow this one, in order to reference the instance(s).
+}%
+
+Con4m does not currently check names very thoroughly. It does automatically quote any keyword collisions, and does this for your built-in fields (primarily since 'type' is a common field in Con4m specs, which often conflicts with a keyword in other languages).  Other than that, it doesn't check for name validity, nor does it attempt to detect any naming conflicts whatsoever.
+
+When Con4m is generating your data type declarations, you can also inject fields that are for internal-use only, that do not get exposed to Con4m.  Do that in sections, with the 'extra_decls' property.  For instance, if we are writing a Nim program, the following spec:
+%{c
+root {
+  field test {
+    type "int"
+    require: true
+  }
+  gen_typename: "Example"
+  extra_decls: """
+  foo: string
+  bar: string
+"""
+}%
+
+Will generate the following type declaration:
+%{c
+type Example = ref object
+  test: int
+  foo: string
+  bar: string
+}%
+Note that there is currently no way to provide different blocks for different output languages. We assume here that the apps using conform are interfacing via a single language, even if Con4m itself needs to be able to output for multiple languages.
+
+Finally, you can suppress various pieces from being output, if you don't want the extra code it will generate:
+%{T
+Property::Applies to::Description
+gen_field_decls::Sections::This is 'true' by default, but if you set it to 'false', the type declaration we produce for the section (the object or singleton) will skip adding fields. You can still query them; we do still generate a field that effectively holds a reference to the appropriate Con4m object for querying.  Setting this will still generate section declarations, though.  If you don't want *anything* declared in your native language, you must just use the direct querying APIs and not doing any code generation at all.  You can build individual getters and setters yourself if you want; the getters and setters built via code gen rely on a declared object type per section, holding on to references to the appropriate Con4m scope to deliver field values without doing a tiered lookup.
+gen_field_decl::Fields::This overrides the previous field; you can force individual fields to generate if you're skipping generation for most fields, OR you can skip individual fields if you're going with the default.
+gen_loader::Sections::Normally, we generate a function loadMyX() for each section X, to populate the fields after a Con4m run is done. You generally only call the load function for your root section, and it recurses.  You can omit generating any of these functions if you want.  This is generally a *bad* idea unless you aren't generating any fields either, because you'll have to manually populate those fields.  If you skip a particular loader, no calls to the loader will be generated either.
+gen_getters::Sections::This is 'true' by default, but if you set it to false, it won't generate get() functions for your sections and fields, unless you override it with 'gen_getter'.
+gen_getter::Fields::Use this to go against the default when it comes generating a specific field's get() function.
+gen_setters::Sections::Can be set to 'false' to skip automatic generation of set() functions (unless overridden).
+gen_setter::Fields::Use this to go against the default when it comes generating a specific field's set() function.
+}%
+
+{bold}{red}Important:{reset}
+The get/set API changes locally cached fields AND updates the con4m state if your app calls the set method. However, it does NOT automatically update your cached state if items are set from a con4m run. The expectation is that you will call your generated top-level (root section) load() routine to re-populate a new set of data structures, then replace the state wholesale (each loader allocates fresh data structures).
+
+If you wish to change that behavior, you can definitely write a custom global set hook to do it, but it's not something Con4m will currently do for you.  our reason for not making this bi-directional is because we currently expect all con4m access to be either single-threaded, or guarded with a user-managed lock.  That includes accessing the con4m state directly, as well as executing a config.  If you go to con4m to execute a config, it's much easier to be sure everything is done properly if you just reload everything at the end... you shouldn't rely on the new state until execution is done anyway.
+
+The data structures we produce can conceivably be operated in a multi-threaded environment; the sets generated may not be strictly safe, but since they're all word-sized values, most languages will provide atomic updates, but just will not make any guarantees about access order, for the code we generate.  If you stick strictly to get()s, there's certainly no problem.

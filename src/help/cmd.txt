@@ -39,7 +39,7 @@ The 'specgen' command takes only a single argument, the c42 specification file t
 %{T
 Short::Long::Description
 -l::--language=ARG::The language for which to generate output.  Currently, this MUST be provided.  Valid values are "none" (validates only), and "nim".  C is coming soon.
--os::--output-file=ARG::Instead of writing to stdout, writes the generated code to the specified file.  Ignored if the language is set to "none".
+-o::--output-file=ARG::Instead of writing to stdout, writes the generated code to the specified file.  Ignored if the language is set to "none".
 }%
 
 %{H More Information}%

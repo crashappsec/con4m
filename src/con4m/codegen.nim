@@ -2,26 +2,33 @@ import strutils, strformat, tables, nimutils, unicode, options
 import types, st
 
 type VarDeclInfo = ref object
-  name:         string
-  unquoted:     string       # Taken from gen_name, if provided.
+  name:         string       # The variable name someone asked for,
+                             # taken from gen_fieldname, if provided. This is
+                             # a base name for the target language we combine
+                             # when creating getters and setters.
+  unquoted:     string       # A version of name that's quoted in the target
+                             # lang, if quoting is needed.  Same as prev field
+                             # if not. This is used for the declared variable.
+  c4Name:       string       # This is the name when it's used in a con4m file,
+                             # for when we ask for it with attrLookup.
   c4mType:      Con4mType
   alwaysExists: bool
   localType:    string
-  genDecl:      Option[bool] 
-  genLoader:    Option[bool] # TODO
-  genGetter:    Option[bool] # TODO
-  genSetter:    Option[bool] # TODO
+  genFieldDecl: Option[bool]
+  genLoader:    Option[bool]
+  genGetter:    Option[bool]
+  genSetter:    Option[bool]
 
 type SecTypeInfo = ref object
   singleton:     bool
-  name:          string
-  nameOfType:    string    # TODO (populate from gen_typename)
-  nameWhenField: string    # TODO (populate from gen_fieldname)
-  genDecl:       bool      # TODO
-  genLoader:     bool      # TODO
-  genSetters:    bool      # TODO genDecl andnot genLoader...
-  genGetters:    bool      # TODO
-  extraDecls:    string    # TODO
+  name:          string    # c4name
+  nameOfType:    string
+  nameWhenField: string
+  genFieldDecls: bool
+  genLoader:     bool
+  genSetters:    bool
+  genGetters:    bool
+  extraDecls:    string
   scope:         AttrScope
   inboundEdges:  seq[string]
   outboundEdges: seq[string]
@@ -147,41 +154,53 @@ proc declToNimType(v: Con4mType): string =
 proc genOneSectNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =
   result = "type " & me.nameOfType & "* = ref object\n"
+  # @@attrscope@@ needs to always be there, even if we're not generating any
+  # fields.  We use it to proxy to con4m, whether or not we are locally caching.
   result &= "  `@@attrscope@@`*: AttrScope\n"
+  # Individual sections can't override whether they get declared the way fields can.
   for item in me.outboundEdges:
     let o = allSects[item]
     if o.singleton:
       result &= "  {o.nameWhenField}*: {o.nameOfType}\n".fmt()
     else:
-      result &= "  {o.nameWhenField}*: ".fmt()
-      result &= "  OrderedTableRef[string, {o.nameOfType}]\n".fmt()
+      result &= "  {o.nameWhenField}*:".fmt()
+      result &= " OrderedTableRef[string, {o.nameOfType}]\n".fmt()
   for name, info in me.fieldInfo:
     info.localType = info.c4mType.declToNimType()
 
+    if info.genFieldDecl.isSome():
+      if not info.genFieldDecl.get():
+        continue
+    elif not me.genFieldDecls:
+      continue
     if info.alwaysExists:
       result &= "  {name}*: {info.localType}\n".fmt()
     else:
       result &= "  {name}*: Option[{info.localType}]\n".fmt()
-
+  if me.extraDecls != "":
+    let lines = strutils.split(me.extraDecls, "\n")
+    for line in lines:
+      let l = strutils.strip(line)
+      if l != "":
+        result &= "  " & l & "\n"
   result &= "\n"
 
-proc genOneLoaderNim(me:       SecTypeInfo,
-                     allSects: TableRef[string, SecTypeInfo]): string =
-  result = """
+template loaderPrefixNim(): string =
+   """
 proc load{me.nameOfType}*(scope: AttrScope): {me.nameOfType} =
   result = new({me.nameOfType})
   result.`@@attrscope@@` = scope
 """.fmt()
-  for edge in me.outboundEdges:
-    let sec = allSects[edge]
-    if sec.singleton:
-      result &= """
+
+template loadSingletonNim(): string =
+  """
   if scope.contents.contains("{sec.name}"):
     result.{sec.nameWhenField} = load{sec.nameOfType}(
                scope.contents["{sec.name}"].get(AttrScope))
 """.fmt()
-    else:
-      result &= """
+
+template loadObjectNim(): string =
+  """
   result.{sec.nameWhenField} = new(OrderedTableRef[string, {sec.nameOfType}])
   if scope.contents.contains("{sec.name}"):
     let objlist = scope.contents["{sec.name}"].get(AttrScope)
@@ -189,20 +208,43 @@ proc load{me.nameOfType}*(scope: AttrScope): {me.nameOfType} =
       result.{sec.nameWhenField}[item] =
                load{sec.nameOfType}(aOrS.get(AttrScope))
 """.fmt()
-  for field, info in me.fieldInfo:
-    if info.alwaysExists:
-      result &= """
-  result.{info.name} = unpack[{info.localType}](scope.attrLookup("{info.unquoted}").get())
+
+template loadAlwaysFieldNim(): string =
+  """
+  result.{info.name} = unpack[{info.localType}](scope.attrLookup("{info.c4Name}").get())
 """.fmt()
-    else:
-      result &= """
+
+template loadMaybeFieldNim(): string =
+  """
   result.{info.name} = none({info.localType})
   if "{info.name}" in scope.contents:
-     var tmp = scope.attrLookup("{info.unquoted}")
+     var tmp = scope.attrLookup("{info.c4Name}")
      if tmp.isSome():
         result.{info.name} = some(unpack[{info.localType}](tmp.get()))
 """.fmt()
-  # Need to do the asterisks?
+
+proc genOneLoaderNim(me:       SecTypeInfo,
+                     allSects: TableRef[string, SecTypeInfo]): string =
+  result = loaderPrefixNim()
+  if me.genFieldDecls:
+    for edge in me.outboundEdges:
+      let sec = allSects[edge]
+      if not sec.genLoader:
+        continue
+      if sec.singleton:
+        result &= loadSingletonNim()
+      else:
+        result &= loadObjectNim()
+  for field, info in me.fieldInfo:
+    if info.genFieldDecl.isSome():
+      if not info.genFieldDecl.get():
+        continue
+    elif not me.genFieldDecls:
+      continue
+    if info.alwaysExists:
+      result &= loadAlwaysFieldNim()
+    else:
+      result &= loadMaybeFieldNim()
   result &= "\n"
 
 template singletonAndDeclNim(): string =
@@ -212,6 +254,7 @@ proc get_{sec.nameWhenField}*(self: {me.nameOfType}): Option[{sec.nameOfType}] =
     return none({sec.nameOfType})
   else:
     return some(self.{sec.nameWhenField})
+
 """.fmt()
 
 template objAndDeclNim(): string =
@@ -223,19 +266,109 @@ proc get_{sec.nameWhenField}*(self: {me.nameOfType}): OrderedTableRef[string, {s
 
 template singletonWoDeclNim(): string =
   """
+proc get_{sec.nameWhenField}*(self: {sec.nameOfType}): Option[{me.nameOfType}] =
+  let aOrE = self.`@@attrscope@@`.attrLookup(["{me.name}"], 0, vlSecUse)
+  if aOrE.isA(AttrErr):
+    return none({sec.nameOfType})
+  let aOrS = aOrE.get(AttrOrSub)
+  if aOrS.isA(Attribute):
+    return none({sec.nameOfType})
+  return some(sec.nameOfType(`@@attrscope@@`: aOrS.get(AttrScope)))
+
 """.fmt()
 
 template objWoDeclNim(): string =
   """
+proc get_{sec.nameWhenField}*(self: {me.nameOfType}): OrderedTableRef[string, {sec.nameOfType}] =
+  let aOrE = self.`@@attrscope@@`.attrLookup(["{me.name}"], 0, vlSecUse)
+  if aOrE.isA(AttrErr):
+    return nil
+  let aOrS = aOrE.get(AttrOrSub)
+  if aOrS.isA(Attribute):
+    return nil
+  let baseScope = aOrS.get(AttrScope)
+  result = newOrderedTable[string, {sec.nameOfType}]()
+  for k, aOrS2 in baseScope.contents:
+    if aOrS2.isA(AttrScope):
+      result[k] = {sec.nameOfType}(`@@attrscope@@`: aOrS2.get(AttrScope))
+
+""".fmt()
+
+template fieldGetWDeclDefiniteNim(): string =
+  """
+proc get_{info.unquoted}*(self: {me.nameOfType}): {info.localType} =
+  return self.{info.name}
+
+""".fmt()
+
+template fieldGetWDeclOptNim(): string =
+  """
+proc get_{info.unquoted}*(self: {me.nameOfType}): Option[{info.localType}] =
+  return self.{info.name}
+
+""".fmt()
+
+template fieldGetNoDeclDefiniteNim(): string =
+  """
+proc get_{info.unquoted}*(self: {me.nameOfType}): {info.localType} =
+  let box = self.`@@attrscope@@`.attrLookup("{info.c4Name}").get()
+  return unpack[{info.localType}](box)
+""".fmt()
+
+template fieldGetNoDeclOptNim(): string =
+  """
+proc get_{info.unquoted}*(self: {me.nameOfType}): Option[{info.localType}] =
+  let boxOpt = self.`@@attrscope@@`.attrLookup("{info.c4Name}")
+  if boxOpt.isSome():
+    return some(unpack[{info.localType}](boxOpt.get()))
+  else:
+    return none({info.localType})
+""".fmt()
+
+template fieldSetWDeclDefiniteNim(): string =
+  """
+proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
+  let res = self.`@@attrscope@@`.attrSet("{info.c4Name}", pack(val))
+  if res.code != errOk:
+    return false
+  self.{info.name} = unpack[{info.localType}](self.`@@attrscope@@`.attrLookup("{info.c4Name}").get())
+  return true
+
+""".fmt()
+
+template fieldSetWDeclOptNim(): string =
+  """
+proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
+  let res = self.`@@attrscope@@`.attrSet("{info.c4Name}", pack(val))
+  if res.code != errOk:
+    return false
+  self.{info.unquoted} = some(unpack[{info.localType}](self.`@@attrscope@@`.attrLookup("{info.c4Name}").get()))
+  return true
+
+""".fmt()
+
+template fieldSetNoDeclDefiniteNim(): string =
+  """
+proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
+  let res = self.`@@attrscope@@`.attrSet("{info.c4Name}", pack(val))
+  if res.code != errOk:
+    return false
+  return true
+
+""".fmt()
+
+template fieldSetNoDeclOptNim(): string =
+  """
+proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
+  let res = self.`@@attrscope@@`.attrSet("{info.c4Name}", pack(val))
+  if res.code != errOk:
+    return false
+
 """.fmt()
 
 proc genGettersNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =
-  result = ""
-  if me.genDecl:
-    # THIS IS WRONG.  Def isn't considering the object.
-    # Need one to enumerate objects too.
-    result &= """
+  result = """
 proc getAttrScope*(self: {me.nameOfType}): AttrScope =
   return self.`@@attrscope@@`
 
@@ -243,53 +376,57 @@ proc getAttrScope*(self: {me.nameOfType}): AttrScope =
   if me.genGetters:
     for edge in me.outBoundEdges:
       let  sec = allSects[edge]
-      if sec.singleton and me.genDecl:
+      if sec.singleton and me.genFieldDecls:
         result &= singletonAndDeclNim()
       elif sec.singleton:
         result &= singletonWoDeclNim()
-      elif me.genDecl:
+      elif me.genFieldDecls:
         result &= objAndDeclNim()
       else:
         result &= objWoDeclNim()
-        
-  for field, info in me.fieldInfo:
+
+  for name, info in me.fieldInfo:
+    if info.genGetter.isSome():
+      if not info.genGetter.get(): continue
+    elif not me.genGetters: continue
+
+    var genFieldDecls = me.genFieldDecls
+    if info.genFieldDecl.isSome():
+      genFieldDecls = info.genFieldDecl.get()
+
     if info.alwaysExists:
-      result &= """
-proc get_{info.unquoted}*(self: {me.nameOfType}): {info.localType} =
-  return self.{info.name}
-
-""".fmt()
+      if genFieldDecls:
+        result &= fieldGetWDeclDefiniteNim()
+      else:
+        result &= fieldGetNoDeclDefiniteNim()
     else:
-      result &= """
-proc get_{info.unquoted}*(self: {me.nameOfType}): Option[{info.localType}] =
-  return self.{info.name}
-
-""".fmt()
+      if genFieldDecls:
+        result &= fieldGetWDeclOptNim()
+      else:
+        result &= fieldGetNoDeclOptNim()
 
 proc genSettersNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =
-  # THIS IS WRONG.  Def isn't considering the object.
   result = ""
   for field, info in me.fieldInfo:
+    if info.genSetter.isSome():
+      if not info.genSetter.get(): continue
+    elif not me.genSetters: continue
+
+    var genFieldDecls = me.genFieldDecls
+    if info.genFieldDecl.isSome():
+      genFieldDecls = info.genFieldDecl.get()
+
     if info.alwaysExists:
-      result &= """
-proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
-  let res = self.`@@attrscope@@`.attrSet("{info.unquoted}", pack(val))
-  if res.code != errOk:
-    return false
-  self.{info.name} = unpack[{info.localType}](self.`@@attrscope@@`.attrLookup("{info.unquoted}").get())
-  return true
-
-""".fmt()
-    else: result &= """
-proc set_{info.unquoted}*(self: {me.nameOfType}, val: {info.localType}): bool {{.discardable.}} =
-  let res = self.`@@attrscope@@`.attrSet("{info.unquoted}", pack(val))
-  if res.code != errOk:
-    return false
-  self.{info.unquoted} = some(unpack[{info.localType}](self.`@@attrscope@@`.attrLookup("{info.unquoted}").get()))
-  return true
-
-""".fmt()
+      if genFieldDecls:
+        result &= fieldSetWDeclDefiniteNim()
+      else:
+        result &= fieldSetNoDeclDefiniteNim()
+    else:
+      if genFieldDecls:
+        result &= fieldSetWDeclOptNim()
+      else:
+        result &= fieldSetNoDeclOptNim()
 
 proc genOneSection(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo],
@@ -341,9 +478,9 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
                      newTypeVar()
                    else:
                      toCon4mType(typestr)
-      genDeclBox = fieldProps.attrLookup("gen_decl")
-      genDecl    = if genDeclBox.isSome():
-                     some(unpack[bool](genDeclBox.get()))
+      genFieldDeclBox = fieldProps.attrLookup("gen_field_decl")
+      genFieldDecl    = if genFieldDeclBox.isSome():
+                     some(unpack[bool](genFieldDeclBox.get()))
                    else:
                      none(bool)
       genLoadBox = fieldProps.attrLookup("gen_loader")
@@ -361,7 +498,7 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
                      some(unpack[bool](genSetrBox.get()))
                    else:
                      none(bool)
-      genNameBox = fieldProps.attrLookup("gen_name")
+      genNameBox = fieldProps.attrLookup("gen_fieldname")
       genName    = if genNameBox.isSome():
                      unpack[string](genNameBox.get())
                    else:
@@ -379,9 +516,10 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
     # that logic when needed.
     me.fieldInfo[qfn] = VarDeclInfo(name:         qfn,
                                     unquoted:     genName,
+                                    c4Name:       fieldName,
                                     alwaysExists: always,
                                     c4mType:      c4mType,
-                                    genDecl:      genDecl,
+                                    genFieldDecl: genFieldDecl,
                                     genLoader:    genLoader,
                                     genGetter:    genGetter,
                                     genSetter:    genSetter)
@@ -403,11 +541,11 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
   else:
     tinfo.nameWhenField = quote(tinfo.name & "Objs", lang)
 
-  if "gen_decl" in tinfo.scope.contents:
-    let opt = tinfo.scope.attrLookup("gen_decl")
-    tinfo.genDecl = unpack[bool](opt.get())
+  if "gen_field_decls" in tinfo.scope.contents:
+    let opt = tinfo.scope.attrLookup("gen_field_decls")
+    tinfo.genFieldDecls = unpack[bool](opt.get())
   else:
-    tinfo.genDecl = true
+    tinfo.genFieldDecls = true
 
   if "gen_loader" in tinfo.scope.contents:
     let opt = tinfo.scope.attrLookup("gen_loader")
@@ -430,9 +568,9 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
   if "extra_decls" in tinfo.scope.contents:
     let opt = tinfo.scope.attrLookup("extra_decls")
     tinfo.extraDecls = unpack[string](opt.get())
-  
+
   tinfo.buildSectionVarInfo(lang)
-  
+
 proc getPrologue(lang: string): string =
   case lang
   of "nim":
@@ -459,18 +597,13 @@ proc generateCode*(c42state: ConfigState, lang: string): string =
     rootInfo  = SecTypeInfo(singleton: true, nameOfType: "Config",
                             scope: rootDef, outboundEdges: @[])
   depGraphOneSection(rootDef, "root", rootInfo)
-  buildSectionVarInfo(rootInfo, lang)
+  rootInfo.prepareForGeneration(lang)
 
   orderedTypes.add(rootInfo)
 
   for typeObj in orderedTypes:
     result &= genOneSection(typeObj, typeHash, lang)
-
-  for typeObj in orderedTypes:
-    # If there's no decl, definitely a loader makes no sense.
-    if typeObj.genDecl and typeObj.genLoader:
+    if typeObj.genLoader:
       result &= genOneLoader(typeObj, typeHash, lang)
-
-  for typeObj in orderedTypes:
     result &= genGetters(typeObj, typeHash, lang)
     result &= genSetters(typeObj, typeHash, lang)

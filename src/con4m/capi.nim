@@ -114,7 +114,7 @@ proc c4mGetAttrBool*(state: ConfigState, name: cstring, ok: ptr int):
     ok[]     = int(1)
     let box  = o.get()
     result = if unpack[bool](box): 1 else: 0
-    
+
 
 proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
                                                            int {.exportc.} =
@@ -304,7 +304,7 @@ proc c4mUnpackBool*(box: Box): int {.exportc.} =
 proc c4mPackBool*(i: int): Box {.exportc.} =
   result = if i == 0: pack(false) else: pack(true)
   GC_ref(result)
-  
+
 proc c4mUnpackFloat*(box: Box): float {.exportc.} =
   result = unpack[float](box)
 
@@ -362,7 +362,7 @@ proc c4mDictKeyDel*(tbl: OrderedTableRef[Box, Box], b: Box) {.exportc.} =
 
 proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
   result = new(C4CSpecObj)
-  
+
   try:
     let opt = c42Spec(newStringStream($(spec)), $(fname))
 

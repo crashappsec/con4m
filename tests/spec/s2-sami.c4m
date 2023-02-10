@@ -1,8 +1,8 @@
 default_key_priority := 500
 object key {
   user_def_ok: false
-  #gen_fieldname: "keys"
-  #gen_typename:  "KeySpec"
+  gen_fieldname: "keys"
+  gen_typename:  "KeySpec"
 
   field required {
     type:        "bool"
@@ -64,8 +64,8 @@ object key {
 }
 
 object plugin {
-  #gen_fieldname: "plugins"
-  #gen_typename:  "PluginSpec"
+  gen_fieldname: "plugins"
+  gen_typename:  "PluginSpec"
   user_def_ok:   false
 
   field priority {
@@ -124,8 +124,8 @@ func key_check(keyname, value: [string]) {
 }
 
 object sink {
-  #gen_fieldname: "sinks"
-  #gen_typename:  "SinkSpec"
+  gen_fieldname: "sinks"
+  gen_typename:  "SinkSpec"
   user_def_ok:   false
 
   field uses_secret {
@@ -216,7 +216,7 @@ object sink {
 }
 
 root {
-  #gen_typename: "ChalkConfig"
+  gen_typename: "ChalkConfig"
   user_def_ok: false
 
   allow key    { }
