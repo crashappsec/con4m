@@ -487,8 +487,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of TtFalse:
       node.typeInfo = boolType
       node.value = pack(false)
-    of TtNull:
-      node.typeInfo = newTypeVar()
     else:
       unreachable
   of NodeUnary:

@@ -16,8 +16,8 @@ type
     TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
     TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
-    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse, TtNull,
-    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
+    TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtSof, TtEof, ErrorTok,
     ErrorLongComment, ErrorStringLit
 
@@ -99,14 +99,14 @@ type
     config*:   ConfigState
     contents*: Table[string, AttrOrSub]
 
-  AttrOrSub*   = object
+  AttrOrSub* = object
     case kind*: bool
     of true:
       attr*: Attribute
     of false:
       scope*: AttrScope
 
-  AttrOrErr*   = object
+  AttrOrErr* = object
     case kind*: bool
     of true:
       aos*: AttrOrSub
@@ -138,7 +138,7 @@ type
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
   AttrErrEnum* = enum
-    errNoAttr, errBadSec, errBadAttr, errCantSet, errOk
+    errOk, errNoAttr, errBadSec, errBadAttr, errCantSet
 
   AttrErr* = object
     code*:     AttrErrEnum

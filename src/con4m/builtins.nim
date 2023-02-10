@@ -816,7 +816,7 @@ proc newCallback*(s: ConfigState, name: string, tinfo: string) =
                        fmt"When adding callback '{name}({tinfo})': {msg}")
 
 type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.
-const defaultBuiltins = [
+const defaultBuiltins* = [
   # Type conversion operations
   (1,   "bool",     BiFn(c4mIToB),           "f(int) -> bool"),
   (2,   "bool",     BiFn(c4mFToB),           "f(float) -> bool"),

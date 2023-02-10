@@ -11,7 +11,6 @@
 ## SAMI SCHEMA
 sami_version := "0.2.0"
 ascii_magic  := "dadfedabbadabbed"
-config_filename = "100"
 
 key _MAGIC {
     required:     true

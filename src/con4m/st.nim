@@ -142,6 +142,10 @@ proc attrLookup*(scope: AttrScope,
                  parts: openarray[string],
                  ix:    int,
                  op:    ALookupOp): AttrOrErr =
+
+  if ix == 0 and (len(parts) == 0 or (len(parts) == 1 and parts[0] == "")):
+    return either(scope)
+
   if ix >= len(parts):
     return AttrErr(code: errNoAttr)
 
@@ -235,6 +239,22 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
+proc attrLookupFull*(attrs: AttrScope, fqn: string): (AttrErrEnum, Option[Box]) =
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
+
+  if possibleAttr.isA(AttrErr):
+    return (possibleAttr.get(AttrErr).code, none(Box))
+
+  let attr = possibleAttr.get(AttrOrSub).get(Attribute)
+
+  return (errOk, attrToVal(attr))
+
+
+proc attrLookupFull*(ctx: ConfigState, fqn: string): (AttrErrEnum, Option[Box]) =
+  return attrLookupFull(ctx.attrs, fqn)
+
 proc fullNameAsSeq*(scope: AttrScope): seq[string] =
   var sec = scope
   result  = @[]
@@ -287,7 +307,7 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
   let
     parts        = fqn.split(".")
-    possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrDef)
 
   if possibleAttr.isA(AttrErr):
     return possibleAttr.get(AttrErr)

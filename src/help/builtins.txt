@@ -1,3 +1,6 @@
+%{H Con4m's Default Builtin Functions}%
+
+Note that, via API, individual calls can be excluded by providing the ID number associated with that function.  See the API reference.
 %{T :<30:
 ID::Function::Description
 1::bool(int) -> bool::Convert an integer to a true/false value.
