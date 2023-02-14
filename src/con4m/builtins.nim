@@ -18,29 +18,6 @@ let
   trueRet  = some(pack(true))
   falseRet = some(pack(false))
 
-proc c4mIToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast integers to strings.  Exposed as `string(i)` by default.
-  let i = unpack[int](args[0])
-  var s = $(i)
-  var b = pack(s)
-
-  return some(b)
-
-proc c4mBToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast bools to strings.  Exposed as `string(b)` by default.
-  let b = unpack[bool](args[0])
-  if b:
-    return some(pack("true"))
-  else:
-    return some(pack("false"))
-
-proc c4mFToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast floats to strings.  Exposed as `string(f)` by default.
-  let f = unpack[float](args[0])
-  var s = $(f)
-
-  return some(pack(s))
-
 proc c4mItoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Cast integers to booleans (testing for non-zero).  Exposed as
   ## `bool(i)` by default.
@@ -110,21 +87,11 @@ proc c4mFToI*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(i))
 
-proc c4mDurToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let dur = unpack[Con4mDuration](args[0])
-
-  result = some(pack(nativeDurationToStr(dur)))
-
 proc c4mSelfRet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## This is used for a cast of arg[0] to a type with the exact same
   ## representation when boxed. Could technically no-op it, but
   ## whatever.
   return some(args[0])
-
-proc c4mSzToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let sz = unpack[Con4mSize](args[0])
-
-  return some(pack(nativeSizeToStrBase2(sz)))
 
 proc c4mSToDur*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
@@ -247,17 +214,73 @@ proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack[seq[string]](l))
 
-proc c4mEcho*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
+  case t.kind
+  of TypeString:
+    if lit:
+      return "\"" & unpack[string](b) & "\""
+    else:
+      return unpack[string](b)
+  of TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+    if lit:
+      return "<<" & unpack[string](b) & ">>"
+    else:
+      return unpack[string](b)
+  of TypeInt:
+    return $(unpack[int](b))
+  of TypeFloat:
+    return $(unpack[float](b))
+  of TypeBool:
+    return $(unpack[bool](b))
+  of TypeDuration:
+    return nativeDurationToStr(Con4mDuration(unpack[int](b)))
+  of TypeSize:
+    return nativeSizeToStrBase2(Con4mSize(unpack[int](b)))
+  of TypeList:
+    var
+      strs: seq[string] = @[]
+      l:    seq[Box] = unpack[seq[Box]](b)
+    for item in l:
+      strs.add(oneArgToString(t.itemType.resolveTypeVars(), item, true))
+    return "[" & strs.join(", ") & "]"
+  of TypeDict:
+    var
+      strs: seq[string] = @[]
+      tbl:  OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](b)
+
+    for k, v in tbl:
+      let
+        t1 = t.keyType.resolveTypeVars()
+        t2 = t.valType.resolveTypeVars()
+        ks = oneArgToString(t1, k, true)
+        vs = oneArgToString(t2, v, true)
+      strs.add(ks & " : " & vs)
+
+    return "{" & strs.join(", ") & "}"
+  else:
+    return "<??>"
+
+proc c4mToString*(args: seq[Box], state: ConfigState): Option[Box] =
+  let
+    actNode  = state.nodeStash.children[1]
+    itemType = actNode.children[0].typeInfo.resolveTypeVars()
+
+  return some(pack(oneArgToString(itemType, args[0])))
+
+proc c4mEcho*(args: seq[Box], state: ConfigState): Option[Box] =
   ## Exposed as `echo(*s)` by default.  Prints the parameters to
-  ## stdout, followed by a newline at the end.  Note that this does
-  ## NOT add spaces between arguments for you.
+  ## stdout, followed by a newline at the end.
 
-  var outStr: string
+  var
+    outStr: string
+    actNode = state.nodeStash.children[1]
+    toPrint: seq[string] = @[]
 
-  for item in args:
-    outStr = outStr & unpack[string](item)
+  for i, item in args:
+    let typeinfo = actNode.children[i].typeInfo.resolveTypeVars()
+    toPrint.add(oneArgToString(typeInfo, item))
 
-  stderr.writeLine(outStr)
+  stderr.writeLine(toPrint.join(" "))
 
 proc c4mEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Exposed as `env(s)` by default.  Returns the value of the
@@ -947,16 +970,7 @@ const defaultBuiltins* = [
   (5,   "bool",      BiFn(c4mDToB),            "f({@x : @y}) -> bool"),
   (6,   "float",     BiFn(c4mItoF),            "f(int) -> float"),
   (7,   "int",       BiFn(c4mFtoI),            "f(float) -> int"),
-  (8,   "string",    BiFn(c4mBToS),            "f(bool) -> string"),
-  (9,   "string",    BiFn(c4mIToS),            "f(int) -> string"),
-  (10,  "string",    BiFn(c4mFToS),            "f(float) -> string"),
-  (11,  "string",    BiFn(c4mDurToS),          "f(Duration) -> string"),
-  (12,  "string",    BiFn(c4mSelfRet),         "f(IPAddr) -> string"),
-  (13,  "string",    BiFn(c4mSelfRet),         "f(CIDR) -> string"),
-  (14,  "string",    BiFn(c4mSzToS),           "f(Size) -> string"),
-  (15,  "string",    BiFn(c4mSelfRet),         "f(Date) -> string"),
-  (16,  "string",    BiFn(c4mSelfRet),         "f(Time) -> string"),
-  (17,  "string",    BiFn(c4mselfRet),         "f(DateTime) -> string"),
+  (8,   "$",         BiFn(c4mToString),        "f(@t) -> string"),
   (18,  "Duration",  BiFn(c4mSToDur),          "f(string) -> (bool, Duration)"),
   (19,  "IPAddr",    BiFn(c4mStoIP),           "f(string) -> (bool, IPAddr)"),
   (20,  "CIDR",      BiFn(c4mSToCIDR),         "f(string) -> (bool, CIDR)"),
@@ -1030,7 +1044,7 @@ const defaultBuiltins* = [
   (318, "fileLen",     BiFn(c4mFileLen),      "f(string) -> int"),
 
   # System routines
-  (401, "echo",         BiFn(c4mEcho),         "f(*string)"),
+  (401, "echo",         BiFn(c4mEcho),         "f(*@a)"),
   (402, "abort",        BiFn(c4mAbort),        "f(string)"),
   (403, "env",          BiFn(c4mEnvAll),       "f() -> {string : string}"),
   (404, "env",          BiFn(c4mEnv),          "f(string) -> string"),

@@ -338,7 +338,7 @@ template checkSimpleType(lit, t) =
 # arrow and type to indicate no return.
 #
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
-  var n = unicode.strip(s).toLower()
+  var n = unicode.strip(s)
 
   checkSimpleType("string",   TypeString)
   checkSimpleType("bool",     TypeBool)
@@ -348,9 +348,9 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   checkSimpleType("IPAddr",   TypeIPAddr)
   checkSimpleType("CIDR",     TypeCIDR)
   checkSimpleType("Size",     TypeSize)
+  checkSimpleType("DateTime", TypeDateTime)
   checkSimpleType("Date",     TypeDate)
   checkSimpleType("Time",     TypeTime)
-  checkSimpleType("DateTime", TypeDateTime)
 
   if n.len() == 0:
     raise newException(ValueError, "Cannot convert a null string to a type")
@@ -440,7 +440,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
           n = unicode.strip(n[1 .. ^1])
           break
         else:
-          raise newException(ValueError, "Invalid function type spec")
+          raise newException(ValueError, "Invalid function type spec in: " & s)
 
     if n.len() != 0:
       if n[0] != '-':
