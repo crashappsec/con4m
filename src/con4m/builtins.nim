@@ -3,10 +3,10 @@
 ## them.
 ##
 ## :Author: John Viega (john@crashoverride.com)
-## :Copyright: 2022
+## :Copyright: 2022 - 2023
 
 import os, tables, osproc, strformat, strutils, options, streams
-import types, typecheck, st, parse, nimutils, errmsg
+import types, typecheck, st, parse, nimutils, errmsg, otherlits
 
 when defined(posix):
   import posix
@@ -109,6 +109,128 @@ proc c4mFToI*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     i = int(f)
 
   return some(pack(i))
+
+proc c4mDurToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let dur = unpack[Con4mDuration](args[0])
+
+  result = some(pack(nativeDurationToStr(dur)))
+
+proc c4mSelfRet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  ## This is used for a cast of arg[0] to a type with the exact same
+  ## representation when boxed. Could technically no-op it, but
+  ## whatever.
+  return some(args[0])
+
+proc c4mSzToS*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let sz = unpack[Con4mSize](args[0])
+
+  return some(pack(nativeSizeToStrBase2(sz)))
+
+proc c4mSToDur*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToNativeDuration(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("0 sec")]
+  return some(pack(arr))
+
+proc c4mSToIP*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToIpAddr(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("0.0.0.0")]
+  return some(pack(arr))
+
+proc c4mSToCIDR*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToCIDR(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("0.0.0.0/32")]
+  return some(pack(arr))
+
+proc c4mSToSize*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToNativeSize(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack(0)]
+  return some(pack(arr))
+
+proc c4mSToDate*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToNativeDate(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("--00")]
+  return some(pack(arr))
+
+proc c4mSToTime*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToNativeTime(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("00:00:00")]
+  return some(pack(arr))
+
+proc c4mSToDateTime*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    opt = otherLitToNativeDateTime(str)
+
+  var arr: seq[Box]
+
+  if opt.isSome():
+    arr = @[pack(true), pack(opt.get())]
+  else:
+    arr = @[pack(false), pack("--00T00:00:00")]
+  return some(pack(arr))
+
+proc c4mDurAsMsec*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    duration = unpack[int](args[0])
+    msec     = duration div 1000
+
+  result = some(pack(msec))
+
+proc c4mDurAsSec*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    duration = unpack[int](args[0])
+    sec      = duration div 1000000
+
+  result = some(pack(sec))
+
 
 proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Takes the first argument, and converts it into a list,
@@ -818,17 +940,55 @@ proc newCallback*(s: ConfigState, name: string, tinfo: string) =
 type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.
 const defaultBuiltins* = [
   # Type conversion operations
-  (1,   "bool",     BiFn(c4mIToB),           "f(int) -> bool"),
-  (2,   "bool",     BiFn(c4mFToB),           "f(float) -> bool"),
-  (3,   "bool",     BiFn(c4mSToB),           "f(string) -> bool"),
-  (4,   "bool",     BiFn(c4mLToB),           "f([@x]) -> bool"),
-  (5,   "bool",     BiFn(c4mDToB),           "f({@x : @y}) -> bool"),
-  (6,   "float",    BiFn(c4mItoF),           "f(int) -> float"),
-  (7,   "int",      BiFn(c4mFtoI),           "f(float) -> int"),
-  (8,   "string",   BiFn(c4mBToS),           "f(bool) -> string"),
-  (9,   "string",   BiFn(c4mIToS),           "f(int) -> string"),
-  (10,  "string",   BiFn(c4mFToS),           "f(float) -> string"),
-
+  (1,   "bool",      BiFn(c4mIToB),            "f(int) -> bool"),
+  (2,   "bool",      BiFn(c4mFToB),            "f(float) -> bool"),
+  (3,   "bool",      BiFn(c4mSToB),            "f(string) -> bool"),
+  (4,   "bool",      BiFn(c4mLToB),            "f([@x]) -> bool"),
+  (5,   "bool",      BiFn(c4mDToB),            "f({@x : @y}) -> bool"),
+  (6,   "float",     BiFn(c4mItoF),            "f(int) -> float"),
+  (7,   "int",       BiFn(c4mFtoI),            "f(float) -> int"),
+  (8,   "string",    BiFn(c4mBToS),            "f(bool) -> string"),
+  (9,   "string",    BiFn(c4mIToS),            "f(int) -> string"),
+  (10,  "string",    BiFn(c4mFToS),            "f(float) -> string"),
+  (11,  "string",    BiFn(c4mDurToS),          "f(Duration) -> string"),
+  (12,  "string",    BiFn(c4mSelfRet),         "f(IPAddr) -> string"),
+  (13,  "string",    BiFn(c4mSelfRet),         "f(CIDR) -> string"),
+  (14,  "string",    BiFn(c4mSzToS),           "f(Size) -> string"),
+  (15,  "string",    BiFn(c4mSelfRet),         "f(Date) -> string"),
+  (16,  "string",    BiFn(c4mSelfRet),         "f(Time) -> string"),
+  (17,  "string",    BiFn(c4mselfRet),         "f(DateTime) -> string"),
+  (18,  "Duration",  BiFn(c4mSToDur),          "f(string) -> (bool, Duration)"),
+  (19,  "IPAddr",    BiFn(c4mStoIP),           "f(string) -> (bool, IPAddr)"),
+  (20,  "CIDR",      BiFn(c4mSToCIDR),         "f(string) -> (bool, CIDR)"),
+  (21,  "Size",      BiFn(c4mSToSize),         "f(string) -> (bool, Size)"),
+  (22,  "Date",      BiFn(c4mSToDate),         "f(string) -> (bool, Date)"),
+  (23,  "Time",      BiFn(c4mSToTime),         "f(string) -> (bool, Time)"),
+  (24,  "DateTime",  BiFn(c4mSToDateTime),     "f(string) -> (bool, DateTime)"),
+  (25,  "toUsec",    BiFn(c4mSelfRet),         "f(Duration) -> int"),
+  (26,  "toMsec",    BiFn(c4mDurAsMSec),       "f(Duration) -> int"),
+  (27,  "toSec",     BiFn(c4mDurAsSec),        "f(Duration) -> int"),
+  #[ Not done yet:
+  (28,  "get_day",   BiFn(c4mGetDayFromDate),  "f(Date) -> int"),
+  (29,  "get_month", BiFn(c4mGetMonFromDate),  "f(Date) -> int"),
+  (30,  "get_year",  BiFn(c4mGetYearFromDate), "f(Date) -> int"),
+  (31,  "get_day",   BiFn(c4mGetDayFromDate),  "f(DateTime) -> int"),
+  (32,  "get_month", BiFn(c4mGetMonFromDate),  "f(DateTime) -> int"),
+  (33,  "get_year",  BiFn(c4mGetYearFromDate), "f(DateTime) -> int"),
+  (34,  "get_hour",  BiFn(c4mGetHourFromTime), "f(Time) -> int"),
+  (35,  "get_min",   BiFn(c4mGetMinFromTime),  "f(Time) -> int"),
+  (36,  "get_sec",   BiFn(c4mGetSecFromTime),  "f(Time) -> int"),
+  (37,  "fractsec",  BiFn(c4mGetFracFromTime), "f(Time) -> int"),
+  (38,  "tz_offset", BiFn(c4mGetTZOffset),     "f(Time) -> string"),
+  (40,  "get_hour",  BiFn(c4mGetHourFromTime), "f(DateTime) -> int"),
+  (41,  "get_min",   BiFn(c4mGetMinFromTime),  "f(DateTime) -> int"),
+  (42,  "get_sec",   BiFn(c4mGetSecFromTime),  "f(DateTime) -> int"),
+  (43,  "fractsec",  BiFn(c4mGetFracFromTime), "f(DateTime) -> int"),
+  (44,  "tz_offset", BiFn(c4mGetTZOffset),     "f(DateTime) -> string"),
+  (45,  "IPPart",    BiFn(c4mCIDRToIP),        "f(CIDR) -> IPAddr"),
+  (46,  "net_size",  BiFn(c4mCIDRToInt),       "f(CIDR) -> int"),
+  (47,  "to_CIDR",   BiFn(c4mToCIDR),          "f(IPAddr, int) -> CIDR"),
+  # Also, format() and echo() need to change for this project.
+  ]#
   # String manipulation functions.
   (101, "contains", BiFn(c4mContainsStrStr), "f(string, string) -> bool"),
   (102, "find",     BiFn(c4mFindFromStart),  "f(string, string) -> int"),

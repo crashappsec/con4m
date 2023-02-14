@@ -36,7 +36,7 @@ fnBody        ::= "{" coreBodyItems* "}"
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
 notExpr       ::= ("!" | "not") expression
-literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | NULL
+literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | OTHER
 accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)*
 tupleLiteral  ::= "(" expression ("," expression)*)+ ")"
 listLiteral   ::= "[" (expression ("," expression)* )? "]"
@@ -87,7 +87,7 @@ NUM         ::= ("0".."9")+
                     ("." ("0".."9")+)?
                     (("e"|"E") ("+"|"-")? ("0".."9")+)?
 STR         ::= '"' ( ('\\\\' '"') | [^"\\n] )* '"'
-OTHER_LIT   ::= "<<" " "* .* " "* ">>"
+OTHER       ::= "<<" .* ">>"
 LINECOMMENT ::= ("#" | "//") [^\n]*
 LONGCOMMENT ::= "/*" .* "*/" ; MINIMAL munch match.
 }%

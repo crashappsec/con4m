@@ -77,7 +77,6 @@ proc otherLitToCIDR*(lit: string): Option[Con4mCIDR] =
     else:
       return some(Con4mCIDR(s))
   except:
-    echo "bailing everywhere"
     return none(Con4mCIDR)
 
 proc otherLitToNativeSize*(lit: string): Option[Con4mSize] =
@@ -125,6 +124,118 @@ proc otherLitToNativeSize*(lit: string): Option[Con4mSize] =
   except:
     return none(Con4mSize)
 
+proc nativeSizeToStrBase2*(input: Con4mSize): string =
+  var n, m: uint64
+
+  if input == 0:
+    return "0 bytes"
+  else:
+    result = ""
+
+  m = input div 1099511627776'u64
+  if m != 0:
+    result = $(m) & "TB "
+    n = input mod 1099511627776'u64
+
+  m = n div 1073741824
+  if m != 0:
+    result &= $(m) & "GB "
+    n = n mod 1073741824
+
+  m = n div 1048576
+  if m != 0:
+    result &= $(m) & "MB "
+    n = n mod 1048576
+
+  m = n div 1024
+  if m != 0:
+    result &= $(m) & "KB "
+    n = n mod 1024
+
+  if n != 0:
+    result &= $(m) & "B"
+
+  result = result.strip()
+
+proc nativeDurationToStr*(d: Con4mDuration): string =
+  var
+    usec    = d mod 1000000
+    numSec  = d div 1000000
+    n: uint64
+
+  if d == 0:
+    return "0 sec"
+  else:
+    result = ""
+
+  n = numSec div (365 * 24 * 60 * 60)
+
+  case n
+  of 0:
+    discard
+  of 1:
+    result = "1 year "
+  else:
+    result = $(n) & " years "
+  numSec = numSec mod (365 * 24 * 60 * 60)
+
+  n = numSec div (24 * 60 * 60)  # number of days
+  case n div 7
+  of 0:
+    discard
+  of 1:
+    result &= "1 week "
+  else:
+    result &= $(n) & " weeks "
+
+  case n mod 7
+  of 0:
+    discard
+  of 1:
+    result &= " 1 day "
+  else:
+    result &= $(n mod 7) & " days "
+
+  numSec = numSec mod (24 * 60 * 60)
+  n      = numSec div (60 * 60)
+
+  case n
+  of 0:
+    discard
+  of 1:
+    result &= " 1 hour "
+  else:
+    result &= $(n) & " hours "
+
+  numSec = numSec mod (60 * 60)
+  n      = numSec div 60
+
+  case n
+  of 0:
+    discard
+  of 1:
+    result &= " 1 min "
+  else:
+    result &= $(n) & " mins "
+
+  numSec = numSec mod 60
+
+  case numSec
+  of 0:
+    discard
+  of 1:
+    result &= " 1 sec "
+  else:
+    result &= $(numSec) & " secs "
+
+  n = usec div 1000
+  if n != 0: result &= $(n) & " msec "
+
+  usec = usec mod 1000
+  if usec != 0: result &= $(usec) & " usec"
+
+  result = result.strip()
+
 proc otherLitToNativeDuration*(lit: string): Option[Con4mDuration] =
   var
     parts: seq[(string, string)] = @[]
@@ -144,17 +255,16 @@ proc otherLitToNativeDuration*(lit: string): Option[Con4mDuration] =
     parsedInt: int
 
   while ix < len(s):
+    startix = ix
     while ix < len(s):
       if s[ix] notin '0'..'9':
         break
       ix += 1
     if startix == ix:
-      echo "bail 1"
       return none(Con4mDuration)
     numPart = s[startix ..< ix]
     while ix < len(s) and s[ix] == ' ': ix += 1
     if ix == len(s):
-      echo "bail 2"
       return none(Con4mDuration)
     startix = ix
     while ix < len(s):
@@ -173,21 +283,17 @@ proc otherLitToNativeDuration*(lit: string): Option[Con4mDuration] =
       of '0'..'9', ' ':
         break
       else:
-        echo "bail 3"
         return none(Con4mDuration)
     if startix == ix:
-      echo "bail 4"
       return none(Con4mDuration)
     while ix < len(s) and s[ix] == ' ':
       ix = ix + 1
   if len(parts) == 0:
-    echo "bail 5"
     return none(Con4mDuration)
   for (numAsString, unitStr) in parts:
     try:
       discard numAsString.parseInt(parsedInt, 0)
     except:
-      echo "bail 6"
       return none(Con4mDuration)
     case unitStr.toLower()
     of "us", "usec", "usecs":
@@ -195,25 +301,25 @@ proc otherLitToNativeDuration*(lit: string): Option[Con4mDuration] =
       duration += uint64(parsedInt)
     of "ms", "msec", "msecs":
       if seenMsec: return none(Con4mDuration) else: seenMSec = true
-      duration += uint64(parsedInt) * 1000
+      duration += uint64(parsedInt * 1000)
     of "s", "sec", "secs", "seconds":
       if seenSec: return none(Con4mDuration) else: seenSec = true
-      duration += uint64(parsedInt) * 1000000
+      duration += uint64(parsedInt * 1000000)
     of "m", "min", "mins", "minutes":
       if seenMin: return none(Con4mDuration) else: seenMin = true
-      duration += uint64(parsedInt) * 1000000 * 60
+      duration += uint64(parsedInt * 1000000 * 60)
     of "h", "hr", "hrs", "hours":
       if seenHr: return none(Con4mDuration) else: seenHr = true
-      duration += uint64(parsedInt) * 1000000 * 60 * 60
+      duration += uint64(parsedInt * 1000000 * 60 * 60)
     of "d", "day", "days":
       if seenDay: return none(Con4mDuration) else: seenDay = true
-      duration += uint64(parsedInt) * 1000000 * 60 * 60 * 24
+      duration += uint64(parsedInt * 1000000 * 60 * 60 * 24)
     of "w", "wk", "wks", "week", "weeks":
       if seenWeek: return none(Con4mDuration) else: seenWeek = true
-      duration += uint64(parsedInt) * 1000000 * 60 * 60 * 24 * 7
+      duration += uint64(parsedInt * 1000000 * 60 * 60 * 24 * 7)
     of "y", "yr", "yrs", "year", "years":
       if seenYear: return none(Con4mDuration) else: seenYear = true
-      duration += uint64(parsedInt) * 1000000 * 60 * 60 * 24 * 365
+      duration += uint64(parsedInt * 1000000 * 60 * 60 * 24 * 365)
     else:
       return none(Con4mDuration)
   return some(Con4mDuration(duration))
@@ -376,7 +482,6 @@ proc isoDateTime(lit: string): Option[Con4mDate] =
     s = lit.strip()
     m = 0
     d = 0
-
 
   if len(s) == 4:
     if s[0] != '-' or s[1] != '-': return none(Con4mDate)
@@ -553,16 +658,13 @@ proc otherLitToNativeDateTime*(lit: string): Option[Con4mDateTime] =
     ix1 = lit.find('t')
 
   if ix0 == ix1:
-    result = lit.otherLitToNativeDate()
-    if result.isNone():
-      return lit.otherLitToNativeTime()
+    return none(Con4mDateTime)
   if ix0 >= 0 and ix1 >= 0:
     return none(Con4mDateTime)
   if ix1 > ix0:
     ix0 = ix1
   if ix0 == len(lit) - 1:
       return none(Con4mDateTime)
-
   let
     datePart = lit[0 ..< ix0]
     timePart = lit[ix0 + 1 .. ^1]
@@ -574,45 +676,76 @@ proc otherLitToNativeDateTime*(lit: string): Option[Con4mDateTime] =
 
   return some(dateRes.get() & "T" & timeRes.get())
 
+proc otherLitToValue*(lit: string): Option[(Box, Con4mType)] =
+  var dt = lit.otherLitToNativeDateTime()
+  if dt.isSome():
+    return some((pack(dt.get()), dateTimeType))
+
+  var date = lit.otherLitToNativeDate()
+  if date.isSome():
+    return some((pack(date.get()), dateType))
+
+  var time = lit.otherLitToNativeTime()
+  if time.isSome():
+    return some((pack(time.get()), timeType))
+
+  var duration = lit.otherLitToNativeDuration()
+  if duration.isSome():
+    return some((pack(int64(duration.get())), durationType))
+
+  var size = lit.otherLitToNativeSize()
+  if size.isSome():
+    return some((pack(int64(size.get())), sizeType))
+
+  var ip = lit.otherLitToIpAddr()
+  if ip.isSome():
+    return some((pack(ip.get()), ipAddrType))
+
+  var cidr = lit.otherLitToCIDR()
+  if cidr.isSome():
+    return some((pack(cidr.get()), cidrType))
 
 when isMainModule:
-  echo otherLitToNativeSize("2k")
-  echo otherLitToNativeSize("152Tb")
-  echo otherLitToIPAddr("10.228.143.7")
-  echo otherLitToIPAddr("::")
-  echo otherLitToIPAddr("2001:db8:3333:4444:5555:6666:7777:8888")
-  echo otherLitToIPAddr("2001:db8:1::ab9:C0A8:102")
-  echo otherLitToCIDR("192.168.0.0/16")
-  echo otherLitToCIDR("2001:db8:1::ab9:C0A8:102/127")
-  echo otherLitToNativeDuration("1 hr 6 min 22s")
-  echo otherLitToNativeDuration("10usec")
-  echo otherLitToNativeDuration("4yrs 2 days 4 hours 6 min 7 sec")
-  echo otherLitToNativeDate("Jan 7, 2007")
-  echo otherLitToNativeDate("Jan 18 2027")
-  echo otherLitToNativeDate("Jan 2027")
-  echo otherLitToNativeDate("Mar 0600")
-  echo otherLitToNativeDate("2 Mar 1401")
-  echo otherLitToNativeDate("2 Mar")
-  echo otherLitToNativeDate("2004-01-06")
-  echo otherLitToNativeDate("--03-02")
-  echo otherLitToNativeDate("--03")
-  echo otherLitToNativeTime("12:23:01.13131423424214214-12:00")
-  echo otherLitToNativeTime("12:23:01.13131423424214214Z")
-  echo otherLitToNativeTime("12:23:01+23:00")
-  echo otherLitToNativeTime("2:03:01+23:00")
-  echo otherLitToNativeTime("02:03+23:00")
-  echo otherLitToNativeTime("2:03+23:00")
-  echo otherLitToNativeTime("2:03")
-  echo otherLitToNativeDateTime("2004-01-06T12:23:01+23:00")
-  echo otherLitToNativeDateTime("--03T2:03")
-  echo otherLitToNativeDateTime("2 Jan, 2004 T 12:23:01+23:00")
+  echo otherLitToValue("2k")
+  echo otherLitToValue("15Tb")
+  echo otherLitToValue("1Gb")
+  echo nativeSizeToStrBase2(Con4mSize(16492674416640 + 1073741824 + 2048 + 10))
+  echo otherLitToValue("10.228.143.7")
+  echo otherLitToValue("::")
+  echo otherLitToValue("2001:db8:3333:4444:5555:6666:7777:8888")
+  echo otherLitToValue("2001:db8:1::ab9:C0A8:102")
+  echo otherLitToValue("192.168.0.0/16")
+  echo otherLitToValue("2001:db8:1::ab9:C0A8:102/127")
+  echo otherLitToValue("1 hr 6 min 22s")
+  echo otherLitToValue("10usec")
+  echo otherLitToValue("4yrs 2 days 4 hours 6 min 7 sec")
+  echo nativeDurationToStr(Con4mDuration(126331567000010))
+  echo otherLitToValue("Jan 7, 2007")
+  echo otherLitToValue("Jan 18 2027")
+  echo otherLitToValue("Jan 2027")
+  echo otherLitToValue("Mar 0600")
+  echo otherLitToValue("2 Mar 1401")
+  echo otherLitToValue("2 Mar")
+  echo otherLitToValue("2004-01-06")
+  echo otherLitToValue("--03-02")
+  echo otherLitToValue("--03")
+  echo otherLitToValue("12:23:01.13131423424214214-12:00")
+  echo otherLitToValue("12:23:01.13131423424214214Z")
+  echo otherLitToValue("12:23:01+23:00")
+  echo otherLitToValue("2:03:01+23:00")
+  echo otherLitToValue("02:03+23:00")
+  echo otherLitToValue("2:03+23:00")
+  echo otherLitToValue("2:03")
+  echo otherLitToValue("2004-01-06T12:23:01+23:00")
+  echo otherLitToValue("--03T2:03")
+  echo otherLitToValue("2 Jan, 2004 T 12:23:01+23:00")
   echo "The rest should all fail"
-  echo otherLitToNativeTime("2:3:01+23:00")
-  echo otherLitToIPAddr("10.228.143")
-  echo otherLitToIPAddr("10.283.143.7")   # Should fail
-  echo otherLitToIPAddr("2001:db8:3333:4444:5555:6666:7777:8888:9999") #fail
-  echo otherLitToIPAddr(":") # Should fail
-  echo otherLitToCIDR("192.168.0.0/33")
-  echo otherLitToCIDR("2001:db8:1::ab9:C0A8:102/129")
-  echo otherLitToNativeDuration("4yrs 2 days 4 hours 6 min 7 sec2years")
-  echo otherLitToNativeDate("Mar 600")
+  echo otherLitToValue("2:3:01+23:00")
+  echo otherLitToValue("10.228.143")
+  echo otherLitToValue("10.283.143.7")   # Should fail
+  echo otherLitToValue("2001:db8:3333:4444:5555:6666:7777:8888:9999") #fail
+  echo otherLitToValue(":") # Should fail
+  echo otherLitToValue("192.168.0.0/33")
+  echo otherLitToValue("2001:db8:1::ab9:C0A8:102/129")
+  echo otherLitToValue("4yrs 2 days 4 hours 6 min 7 sec2years")
+  echo otherLitToValue("Mar 600")

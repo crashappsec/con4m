@@ -6,14 +6,14 @@
 ## 2) Putting symbol tables into each node, inserting variables (and
 ##    constants) into the proper symbol tables as it goes.
 ##
-## 3) Setting values from string literals.  Dict/list literals are
+## 3) Setting values from simple literals.  Dict/list literals are
 ##    done at eval time.
 ##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
 import math, options, strformat, strutils, tables
-import errmsg, types, st, parse, typecheck, dollars, nimutils
+import errmsg, types, st, parse, otherlits, typecheck, dollars, nimutils
 
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
@@ -407,6 +407,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       node.typeInfo = stringType
       var s = node.getTokenText()
       node.value = pack(s)
+    of TTOtherLit:
+      var opt = node.getTokenText().otherLitToValue()
+
+      if opt.isNone():
+        fatal("Invalid literal: <<" & node.getTokenText() & ">>")
+
+      (node.value, node.typeInfo) = opt.get()
     of TTIntLit:
       node.typeInfo = intType
       try:

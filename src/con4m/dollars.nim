@@ -22,7 +22,7 @@ else:
     case tok.kind
     of TtStringLit: return "\"" & tok.unescaped & "\""
     of TtOtherLit:
-      let pos = tok.stream.getPosition()      
+      let pos = tok.stream.getPosition()
       tok.stream.setPosition(tok.startPos)
       result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
       tok.stream.setPosition(pos)
@@ -40,7 +40,7 @@ else:
       tok.stream.setPosition(tok.startPos)
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
-      
+
 template colorType(s: string): string =
   toAnsiCode(acGreen) & s & toAnsiCode(acReset)
 
@@ -58,12 +58,19 @@ proc `$`*(t: Con4mType): string =
   ## the exception of the bottom type, which prints as its
   ## mathematical symbol (`⊥`)
   case t.kind
-  of TypeString: return "string"
-  of TypeBool:   return "bool"
-  of TypeInt:    return "int"
-  of TypeFloat:  return "float"
-  of TypeList:   return fmt"[{t.itemType}]"
-  of TypeDict:   return fmt"{{{t.keyType} : {t.valType}}}"
+  of TypeString:   return "string"
+  of TypeBool:     return "bool"
+  of TypeInt:      return "int"
+  of TypeFloat:    return "float"
+  of TypeDuration: return "Duration"
+  of TypeIPAddr:   return "IPAddr"
+  of TypeCIDR:     return "CIDR"
+  of TypeSize:     return "Size"
+  of TypeDate:     return "Date"
+  of TypeTime:     return "Time"
+  of TypeDateTime: return "DateTime"
+  of TypeList:     return fmt"[{t.itemType}]"
+  of TypeDict:     return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
     var s: seq[string]
     for item in t.itemTypes:
@@ -141,7 +148,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeTypeDict:     fmtTy("TypeDict")
   of NodeTypeList:     fmtTy("TypeList")
   of NodeTypeTuple:    fmtTy("TypeTuple")
-  of NodeTypeString:   fmtTy("TypeString")  
+  of NodeTypeString:   fmtTy("TypeString")
   of NodeTypeInt:      fmtTy("TypeInt")
   of NodeTypeFloat:    fmtTy("TypeFloat")
   of NodeTypeBool:     fmtTy("TypeBool")

@@ -399,6 +399,15 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
                 discard s.readChar()
               else:
                 break
+          of ':':
+            discard s.readChar()
+            while true:
+              case s.peekChar()
+              of ' ', '\n', '\x00':
+                tok(TtOtherLit)
+                break numLit
+              else:
+                discard s.readChar()
           else:
             discard
         if isFloat: tok(TtFloatLit) else: tok(TtIntLit)

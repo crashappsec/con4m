@@ -331,20 +331,26 @@ proc nameUseContext*(node: Con4mNode, name: string, ctx: ConfigState): UseCtx =
 
   return ucNone
 
+template checkSimpleType(lit, t) =
+  if n.startsWith(lit): return (Con4mType(kind: t), n[len(lit) .. ^1])
+
 # This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
 #
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
   var n = unicode.strip(s).toLower()
 
-  if n.startsWith("string"): return (Con4mType(kind: TypeString),
-                                               n["string".len() .. ^1])
-  if n.startsWith("bool"): return(Con4mType(kind: TypeBool),
-                                  n["bool".len() .. ^1])
-  if n.startsWith("int"): return (Con4mType(kind: TypeInt),
-                                  n["int".len() .. ^1])
-  if n.startsWith("float"): return (Con4mType(kind: TypeFloat),
-                                              n["float".len() .. ^1])
+  checkSimpleType("string",   TypeString)
+  checkSimpleType("bool",     TypeBool)
+  checkSimpleType("int",      TypeInt)
+  checkSimpleType("float",    TypeFloat)
+  checkSimpleType("Duration", TypeDuration)
+  checkSimpleType("IPAddr",   TypeIPAddr)
+  checkSimpleType("CIDR",     TypeCIDR)
+  checkSimpleType("Size",     TypeSize)
+  checkSimpleType("Date",     TypeDate)
+  checkSimpleType("Time",     TypeTime)
+  checkSimpleType("DateTime", TypeDateTime)
 
   if n.len() == 0:
     raise newException(ValueError, "Cannot convert a null string to a type")
