@@ -61,6 +61,9 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
         stderr.write(toAnsiCode(acReset))
         stderr.write($tree)
 
+  if state.spec.isSome():
+    state.preEvalCheck(evalCtx)
+
   phaseEnded(phCheck)
   tree.initRun(state)
   try:
