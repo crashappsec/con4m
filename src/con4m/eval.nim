@@ -485,59 +485,65 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeNe:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `!=`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `!=`)
     of TypeFloat: cmpWork(float, `!=`)
     of TypeBool: cmpWork(bool, `!=`)
-    of TypeString: cmpWork(string, `!=`)
+    of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `!=`)
     else: unreachable
   of NodeCmp:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `==`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `==`)
     of TypeFloat: cmpWork(float, `==`)
     of TypeBool: cmpWork(bool, `==`)
-    of TypeString: cmpWork(string, `==`)
+    of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `==`)
     else:
       unreachable
   of NodeGte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `>=`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>=`)
     of TypeFloat: cmpWork(float, `>=`)
-    of TypeString: cmpWork(string, `>=`)
+    of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `>=`)
     else: unreachable
   of NodeLte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `<=`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<=`)
     of TypeFloat: cmpWork(float, `<=`)
-    of TypeString: cmpWork(string, `<=`)
+    of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `<=`)
     else: unreachable
   of NodeGt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `>`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>`)
     of TypeFloat: cmpWork(float, `>`)
-    of TypeString: cmpWork(string, `>`)
+    of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `>`)
     else: unreachable
   of NodeLt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt: cmpWork(int, `<`)
+    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<`)
     of TypeFloat: cmpWork(float, `<`)
-    of TypeString: cmpWork(string, `<`)
+    of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
+      cmpWork(string, `<`)
     else: unreachable
   of NodePlus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `+`)
+    of TypeInt, TypeDuration: binaryOpWork(int, int, `+`)
     of TypeFloat: binaryOpWork(float, float, `+`)
     of TypeString: binaryOpWork(string, string, `&`)
     else: unreachable
   of NodeMinus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `-`)
+    of TypeInt, TypeDuration: binaryOpWork(int, int, `-`)
     of TypeFloat: binaryOpWork(float, float, `-`)
     else: unreachable
   of NodeMod:

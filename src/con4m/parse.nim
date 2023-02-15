@@ -179,7 +179,7 @@ proc divExpr(ctx: ParseCtx): Option[Con4mNode] =
   case ctx.curTok().kind
   of TtDiv:
     return some(newNode(NodeDiv, ctx.consume(), @[ctx.divExprRHS()]))
-  of TtIdentifier, TtLParen:
+  of TtIdentifier, TtExportVar, TtLParen:
     return some(ctx.accessExpr())
   else:
     return
@@ -381,7 +381,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       lhs = ctx.parenExpr()
       lhs.token = t
       ctx.nlWatch = watch
-    of TtIdentifier:
+    of TtIdentifier, TtExportVar:
       lhs = newNode(NodeIdentifier, tok)
     else:
       unreachable
@@ -400,7 +400,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
 
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
-  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse:
+  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TTOtherLit:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
     return ctx.dictLiteral()
@@ -425,9 +425,9 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
   of TtPlus, TtMinus:
     parseError("Two unarys in a row not allowed", false)
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
-     TtLBracket, TtLParen:
+     TtLBracket, TtLParen, TtOtherLit:
     res = ctx.literal()
-  of TtIdentifier:
+  of TtIdentifier, TtExportVar:
     res = ctx.accessExpr()
   of TtNot:
     parseError("Unary before ! disallowed")
@@ -443,9 +443,9 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtNot:
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
-     TtLBracket, TtLParen:
+     TtLBracket, TtLParen, TtOtherLit:
     return ctx.literal()
-  of TtIdentifier:
+  of TtIdentifier, TtExportVar:
     return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
@@ -695,7 +695,7 @@ proc section(ctx: ParseCtx): Con4mNode =
   i = i + 1
   let tok = ctx.consume()
   case tok.kind
-  of TtStringLit:
+  of TtStringLit, TtOtherLit:
     result.children.add(newNode(NodeSimpLit, tok))
   of TtIdentifier:
     result.children.add(newNode(NodeIdentifier, tok))
@@ -843,6 +843,10 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
     of TtLockAttr:
       result.children.add(ctx.attrAssign())
     of TtExportVar:
+        # Instead of using lookahead to see if this might be $(),
+        # we ack that $() where the return isn't used is a noop, so
+        # we only go this route, since we'd want it to be an error
+        # anyway.
         result.children.add(ctx.varAssign(toplevel))
     of TtIdentifier:
       case ctx.lookAhead().kind
@@ -966,6 +970,7 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
         of ErrorTok: "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
         of ErrorStringLit: "Unterminated string"
+        of ErrorOtherLit: "Unterminated literal"
         else: "Unknown error" # Shouldn't be possible w/o a lex bug
 
     fatal(msg, tok)

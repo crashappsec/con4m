@@ -21,6 +21,11 @@ else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
     of TtStringLit: return "\"" & tok.unescaped & "\""
+    of TtOtherLit:
+      let pos = tok.stream.getPosition()
+      tok.stream.setPosition(tok.startPos)
+      result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
+      tok.stream.setPosition(pos)
     of TtWhiteSpace: return "~ws~"
     of TtNewLine: return "~nl~"
     of TtSof: return "~sof~"
@@ -28,15 +33,13 @@ else:
     of ErrorTok: return "~err~"
     of ErrorLongComment: return "~unterm comment~"
     of ErrorStringLit: return "~unterm string~"
+    of ErrorOtherLit: return "~unterm other lit~"
     else:
       let pos = tok.stream.getPosition()
 
       tok.stream.setPosition(tok.startPos)
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
-
-      if result.contains('\n'):
-        return "~multi-line value~"
 
 template colorType(s: string): string =
   toAnsiCode(acGreen) & s & toAnsiCode(acReset)
@@ -55,12 +58,19 @@ proc `$`*(t: Con4mType): string =
   ## the exception of the bottom type, which prints as its
   ## mathematical symbol (`⊥`)
   case t.kind
-  of TypeString: return "string"
-  of TypeBool:   return "bool"
-  of TypeInt:    return "int"
-  of TypeFloat:  return "float"
-  of TypeList:   return fmt"[{t.itemType}]"
-  of TypeDict:   return fmt"{{{t.keyType} : {t.valType}}}"
+  of TypeString:   return "string"
+  of TypeBool:     return "bool"
+  of TypeInt:      return "int"
+  of TypeFloat:    return "float"
+  of TypeDuration: return "Duration"
+  of TypeIPAddr:   return "IPAddr"
+  of TypeCIDR:     return "CIDR"
+  of TypeSize:     return "Size"
+  of TypeDate:     return "Date"
+  of TypeTime:     return "Time"
+  of TypeDateTime: return "DateTime"
+  of TypeList:     return fmt"[{t.itemType}]"
+  of TypeDict:     return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
     var s: seq[string]
     for item in t.itemTypes:
@@ -69,7 +79,24 @@ proc `$`*(t: Con4mType): string =
   of TypeTVar:
     if t.link.isSome():
       return $(t.link.get())
-    return fmt"@{t.varNum}"
+    if card(t.constraints) == 0:
+      return fmt"@{t.varNum}"
+    else:
+      var parts: seq[string] = @[]
+      for (k, v) in [(TypeString,   "string"),
+                     (TypeBool,     "bool"),
+                     (TypeInt,      "int"),
+                     (TypeFloat,    "float"),
+                     (TypeDuration, "Duration"),
+                     (TypeIPAddr,   "IPAddr"),
+                     (TypeCIDR,     "CIDR"),
+                     (TypeSize,     "Size"),
+                     (TypeDate,     "Date"),
+                     (TypeTime,     "Time"),
+                     (TypeDateTime, "DateTime")]:
+        if t.constraints.contains(k):
+          parts.add(v)
+      return parts.join("|")
   of TypeBottom: return "⊥"
   of TypeProc:
     if t.params.len() == 0:

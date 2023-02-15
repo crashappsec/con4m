@@ -331,20 +331,67 @@ proc nameUseContext*(node: Con4mNode, name: string, ctx: ConfigState): UseCtx =
 
   return ucNone
 
+const simpleTypes = { "string"   : TypeString,
+                      "bool"     : TypeBool,
+                      "int"      : TypeInt,
+                      "float"    : TypeFloat,
+                      "Duration" : TypeDuration,
+                      "IPAddr"   : TypeIPAddr,
+                      "CIDR"     : TypeCIDR,
+                      "Size"     : TypeSize,
+                      "DateTime" : TypeDateTime,
+                      "Date"     : TypeDate,
+                      "Time"     : TypeTime
+                    }
+
+proc handleOrTypes(constraints: var set[Con4mTypeKind], x: string): string =
+  var s = unicode.strip(x)
+
+  for (k, v) in simpleTypes:
+    if s.startsWith(k):
+      constraints.incl(v)
+      s = s[len(k) .. ^1]
+      s = unicode.strip(s)
+      if len(s) > 0 and s[0] == '|':
+        return handleOrTypes(constraints, s[1 .. ^1])
+      else:
+        return s
+
+  raise newException(ValueError, "Unknown type starting at: " & s)
+
+proc checkSimpleTypes(s: string): (Con4mType, string) =
+  for (k, v) in simpleTypes:
+    if s.startsWith(k):
+      if len(s) == len(k):
+        return (Con4mType(kind: v), "")
+
+      var i: int = len(k)
+      while true:
+        if i == len(s):
+          return (Con4mType(kind: v), "")
+        case s[i]
+        of ' ':
+          i += 1
+          continue
+        of '|':
+          var constraints: set[Con4mTypeKind] = {v}
+          let rest = handleOrTypes(constraints, s[i+1 .. ^1])
+          return (newTypeVar(constraints), rest)
+        else:
+          return (Con4mType(kind: v), s[i .. ^1])
+
+  return (bottomType, "")
+
 # This does not accept bottom, other than you can leave off the
 # arrow and type to indicate no return.
 #
 proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
-  var n = unicode.strip(s).toLower()
+  var
+    n          = unicode.strip(s)
+    (st, rest) = s.checkSimpleTypes()
 
-  if n.startsWith("string"): return (Con4mType(kind: TypeString),
-                                               n["string".len() .. ^1])
-  if n.startsWith("bool"): return(Con4mType(kind: TypeBool),
-                                  n["bool".len() .. ^1])
-  if n.startsWith("int"): return (Con4mType(kind: TypeInt),
-                                  n["int".len() .. ^1])
-  if n.startsWith("float"): return (Con4mType(kind: TypeFloat),
-                                              n["float".len() .. ^1])
+  if st != bottomType:
+    return (st, rest)
 
   if n.len() == 0:
     raise newException(ValueError, "Cannot convert a null string to a type")
@@ -365,7 +412,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
     n = unicode.strip(rest)
     if n[0] != ':':
       raise newException(ValueError, "Expected : in dict type")
-    var (valT, rest2) = n[1 .. ^1].toCon4mType(tv)
+    var (valT, rest2) = unicode.strip(n[1 .. ^1]).toCon4mType(tv)
     n = unicode.strip(rest2)
     if n.len() == 0:
       raise newException(ValueError, "Unterminated dict type")
@@ -434,7 +481,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
           n = unicode.strip(n[1 .. ^1])
           break
         else:
-          raise newException(ValueError, "Invalid function type spec")
+          raise newException(ValueError, "Invalid function type spec in: " & s)
 
     if n.len() != 0:
       if n[0] != '-':
@@ -465,6 +512,7 @@ proc toCon4mType*(s: string): Con4mType =
   if unicode.strip(n).len() != 0:
     raise newException(ValueError,
                        "Extraneous text after parsed type: {n}".fmt())
+
   return v
 
 proc runtimeVarLookup*(frames: VarStack, name: string): Box =

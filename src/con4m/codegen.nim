@@ -135,6 +135,20 @@ proc declToNimType(v: Con4mType): string =
     return "bool"
   of TypeString:
     return "string"
+  of TypeDuration:
+    return "Con4mDuration"
+  of TypeIPAddr:
+    return "Con4mIPAddr"
+  of TypeCIDR:
+    return "Con4mCIDR"
+  of TypeSize:
+    return "Con4mSize"
+  of TypeDate:
+    return "Con4mDate"
+  of TypeTime:
+    return "Con4mTime"
+  of TypeDateTime:
+    return "Con4mDateTime"
   of TypeInt:
     return "int"
   of TypeFloat:

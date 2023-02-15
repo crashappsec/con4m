@@ -5,7 +5,6 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-
 import streams, tables, options, sugar, macros, nimutils
 
 type
@@ -18,8 +17,8 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtSof, TtEof, ErrorTok,
-    ErrorLongComment, ErrorStringLit
+    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtOtherLit, TtSof,
+    TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -51,7 +50,8 @@ type
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
-    TypeProc, TypeTVar, TypeBottom
+    TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
+    TypeDateTime, TypeProc, TypeTVar, TypeBottom
 
   Con4mType* = ref object
     ## The internal representation of a type.  Generally, you should
@@ -74,8 +74,15 @@ type
       linksin*:     seq[Con4mType]
       cycle*:       bool
       constraints*: set[Con4mTypeKind]
-
     else: discard
+
+  Con4mDuration* = uint64
+  Con4mSize*     = uint64
+  Con4mIPAddr*   = string
+  Con4mCIDR*     = string
+  Con4mDate*     = string # Stored as an ISO 8601 date
+  Con4mTime*     = string # Stored as an ISO 8601 time
+  Con4mDateTime* = string # Stored as an ISO 8601 date/time
 
   # So I can switch between ordered and not without hardship.
   Con4mDict*[K, V] = TableRef[K, V]
@@ -250,11 +257,18 @@ let
   # These are just shared instances for types that aren't
   # parameterized, instead of having to instantiate multiple
   # instances.  Should not be exposed to the user.
-  stringType* = Con4mType(kind: TypeString)
-  boolType*   = Con4mType(kind: TypeBool)
-  intType*    = Con4mType(kind: TypeInt)
-  floatType*  = Con4mType(kind: TypeFloat)
-  bottomType* = Con4mType(kind: TypeBottom)
+  stringType*   = Con4mType(kind: TypeString)
+  boolType*     = Con4mType(kind: TypeBool)
+  intType*      = Con4mType(kind: TypeInt)
+  floatType*    = Con4mType(kind: TypeFloat)
+  durationType* = Con4mType(kind: TypeDuration)
+  ipAddrType*   = Con4mType(kind: TypeIPAddr)
+  cidrType*     = Con4mType(kind: TypeCIDR)
+  sizeType*     = Con4mType(kind: TypeSize)
+  dateType*     = Con4mType(kind: TypeDate)
+  timeType*     = Con4mType(kind: TypeTime)
+  dateTimeType* = Con4mType(kind: TypeDateTime)
+  bottomType*   = Con4mType(kind: TypeBottom)
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
   return newTable[K, V]()

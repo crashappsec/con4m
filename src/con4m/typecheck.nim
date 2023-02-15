@@ -72,7 +72,8 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     return t2.unify(t1)
 
   case t1.kind
-  of TypeString, TypeBool, TypeInt, TypeFloat:
+  of TypeString, TypeBool, TypeInt, TypeFloat, TypeDuration, TypeIPAddr,
+       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
     if t2.kind == t1.kind: return t1
     return bottomType
   of TypeBottom: return bottomType
@@ -161,6 +162,20 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
           newType = intType
         elif TypeFloat in intersection:
           newType = floatType
+        elif TypeDuration in intersection:
+          newType = durationType
+        elif TypeIPAddr in intersection:
+          newType = ipAddrType
+        elif TypeCIDR in intersection:
+          newType = cidrType
+        elif TypeSize in intersection:
+          newType = sizeType
+        elif TypeDate in intersection:
+          newType = dateType
+        elif TypeTime in intersection:
+          newType = timeType
+        elif TypeDateTime in intersection:
+          newType = dateTimeType
         elif TypeList in intersection:
           newType = Con4mType(kind: TypeList, itemType: newTypeVar())
         elif TypeDict in intersection:
@@ -244,7 +259,7 @@ proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
     if t.varNum in cache:
       return cache[t.varNum]
     if t.link.isSome():
-      result = copyType(t.link.get(), cache)
+      result = copyType(t.resolveTypeVars(), cache)
       cache[t.varNum] = result
     else:
       result = newTypeVar(t.constraints)
@@ -257,7 +272,6 @@ proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
     else:
       return t
   of TypeDict:
-    # Right now, we constrain keys to string or int
     if t.hasTypeVar():
       result = Con4mType(kind: TypeDict)
       result.keyType = copyType(t.keyType, cache)

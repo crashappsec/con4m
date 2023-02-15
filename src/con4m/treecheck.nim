@@ -6,14 +6,14 @@
 ## 2) Putting symbol tables into each node, inserting variables (and
 ##    constants) into the proper symbol tables as it goes.
 ##
-## 3) Setting values from string literals.  Dict/list literals are
+## 3) Setting values from simple literals.  Dict/list literals are
 ##    done at eval time.
 ##
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
 import math, options, strformat, strutils, tables
-import errmsg, types, st, parse, typecheck, dollars, nimutils
+import errmsg, types, st, parse, otherlits, typecheck, dollars, nimutils
 
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
@@ -407,6 +407,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       node.typeInfo = stringType
       var s = node.getTokenText()
       node.value = pack(s)
+    of TTOtherLit:
+      var txt = node.getTokenText()
+      if len(txt) >= 4 and txt[0..1] == "<<":
+        txt = txt[2..^3]
+      var opt = txt.otherLitToValue()
+
+      if opt.isNone():
+        fatal("Invalid literal: <<" & txt & ">>")
+
+      (node.value, node.typeInfo) = opt.get()
     of TTIntLit:
       node.typeInfo = intType
       try:
@@ -700,6 +710,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       assert proclist[0] != nil
     of 0:
       if s.secondPass:
+        if fname == "echo": # Echo knows to cast each argument to a string.
+          let t = toCon4mType("f(string)")
+          node.procRef  = s.findMatchingProcs("echo", t)[0]
+          node.typeInfo = bottomType
+          return
         fatal(fmt"No matching signature found for function '{fname}'. " &
               fmt"Expected type was: {$(node.children[1].typeInfo)}")
       s.waitingForTypeInfo = true
@@ -765,23 +780,32 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Each side of || and && expressions must eval to a bool", node)
     node.typeinfo = boolType
   of NodeNe, NodeCmp:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeBool},
+    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeBool,
+                          TypeDuration, TypeIPAddr, TypeCIDR, TypeSize,
+                          TypeDate, TypeTime, TypeDateTime},
                         s,
                         "Types to comparison operators must match",
                         "== and != currently do not work on lists or dicts")
     node.typeInfo = boolType
   of NodeGte, NodeLte, NodeGt, NodeLt:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString},
+    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeDuration,
+                          TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
+                          TypeDateTime},
                         s,
                         "Types to comparison operators must match",
                         "Comparison ops only work on numbers and strings")
     node.typeInfo = boolType
   of NodePlus:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString},
+    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeDuration},
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
-  of NodeMinus, NodeMul:
+  of NodeMinus:
+    node.binOpTypeCheck({TypeInt, TypeFloat, TypeDuration},
+                        s,
+                        "Types of left and right side of binary ops must match",
+                        "Invalid type for bianry operator")
+  of NodeMul:
     node.binOpTypeCheck({TypeInt, TypeFloat},
                         s,
                         "Types of left and right side of binary ops must match",
