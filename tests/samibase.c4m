@@ -296,7 +296,7 @@ key METADATA_HASH {
     system:       true
     standard:     true
     output_order: high() - 2
-    in_ptr: true
+    in_ptr:       true
     docstring:    "A hash of all the preceding metadata, in a canonicalized " +
     		  "format. This includes user-defined keys."
 }
