@@ -79,7 +79,24 @@ proc `$`*(t: Con4mType): string =
   of TypeTVar:
     if t.link.isSome():
       return $(t.link.get())
-    return fmt"@{t.varNum}"
+    if card(t.constraints) == 0:
+      return fmt"@{t.varNum}"
+    else:
+      var parts: seq[string] = @[]
+      for (k, v) in [(TypeString,   "string"),
+                     (TypeBool,     "bool"),
+                     (TypeInt,      "int"),
+                     (TypeFloat,    "float"),
+                     (TypeDuration, "Duration"),
+                     (TypeIPAddr,   "IPAddr"),
+                     (TypeCIDR,     "CIDR"),
+                     (TypeSize,     "Size"),
+                     (TypeDate,     "Date"),
+                     (TypeTime,     "Time"),
+                     (TypeDateTime, "DateTime")]:
+        if t.constraints.contains(k):
+          parts.add(v)
+      return parts.join("|")
   of TypeBottom: return "⊥"
   of TypeProc:
     if t.params.len() == 0:

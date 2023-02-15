@@ -353,7 +353,7 @@ proc handleOrTypes(constraints: var set[Con4mTypeKind], x: string): string =
       s = s[len(k) .. ^1]
       s = unicode.strip(s)
       if len(s) > 0 and s[0] == '|':
-        return handleOrTypes(constraints, s)
+        return handleOrTypes(constraints, s[1 .. ^1])
       else:
         return s
 
@@ -512,6 +512,7 @@ proc toCon4mType*(s: string): Con4mType =
   if unicode.strip(n).len() != 0:
     raise newException(ValueError,
                        "Extraneous text after parsed type: {n}".fmt())
+
   return v
 
 proc runtimeVarLookup*(frames: VarStack, name: string): Box =
