@@ -198,7 +198,6 @@ proc c4mDurAsSec*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   result = some(pack(sec))
 
-
 proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
@@ -243,6 +242,13 @@ proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
     for item in l:
       strs.add(oneArgToString(t.itemType.resolveTypeVars(), item, true))
     return "[" & strs.join(", ") & "]"
+  of TypeTuple:
+    var
+      strs: seq[string] = @[]
+      l:    seq[Box] = unpack[seq[Box]](b)
+    for i, item in l:
+      strs.add(oneArgToString(t.itemTypes[i].resolveTypeVars(), item, true))
+    return "(" & strs.join(", ") & ")"
   of TypeDict:
     var
       strs: seq[string] = @[]
@@ -325,7 +331,8 @@ proc c4mStrip*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(stripped))
 
-proc c4mContainsStrStr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+proc c4mContainsStrStr*(args: seq[Box],
+                        unused = ConfigState(nil)): Option[Box] =
   ## Returns true if `s1` contains the substring `s2`.
   ## Exposed by default as `contains(s1, s2)`
   let

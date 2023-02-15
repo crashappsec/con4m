@@ -5,7 +5,6 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-
 import streams, tables, options, sugar, macros, nimutils
 
 type
@@ -84,8 +83,6 @@ type
   Con4mDate*     = string # Stored as an ISO 8601 date
   Con4mTime*     = string # Stored as an ISO 8601 time
   Con4mDateTime* = string # Stored as an ISO 8601 date/time
-
-
 
   # So I can switch between ordered and not without hardship.
   Con4mDict*[K, V] = TableRef[K, V]
