@@ -705,7 +705,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     case len(proclist)
     of 1:
       discard proclist[0].tInfo.copyType().unify(node.children[1].typeInfo)
-      node.typeInfo = proclist[0].tInfo.copyType().retType
+      node.typeInfo = node.children[1].typeInfo.retType
       node.procRef = proclist[0]
       assert proclist[0] != nil
     of 0:
