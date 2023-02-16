@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.1"
+version       = "0.6.0"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
