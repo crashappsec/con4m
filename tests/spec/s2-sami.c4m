@@ -42,7 +42,7 @@ object key {
     default:  false
   }
   field in_ptr {
-    type:     "bool|int|string"
+    type:     "bool"
     default:  false
   }
   field output_order {

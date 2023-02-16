@@ -400,11 +400,21 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
               else:
                 break
           of ':':
+            var
+              savedPosition = s.getPosition()
+              flag          = false
+
             discard s.readChar()
             while true:
               case s.peekChar()
+              of ':':
+                flag = true
               of ' ', '\n', '\x00':
-                tok(TtOtherLit)
+                if flag:
+                  tok(TtOtherLit)
+                else:
+                  s.setPosition(savedPosition)
+                  tok(TtIntLit)
                 break numLit
               else:
                 discard s.readChar()
