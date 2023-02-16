@@ -9,12 +9,13 @@ Newlines are ignored in most expression contexts (they’re only used to separat
 %{c
 top           ::= (sectBodyItems | enum | fnOrCallback) *
 body          ::= sectBodyItems *
-coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
-                   breakStmt | returnStmt | varStmt | expression (NL|";")+
+coreBodyItems ::= ifStmt | forStmt | continueStmt | breakStmt | returnStmt |
+                  exportStmt | varStmt | assignment expression (NL|";")+
+assignment    ::= accessExpr ("," accessExpr)* eqOp expression (NL|";")+
+eqOp          ::= ("="|":"|":=")
 sectBodyItems ::= coreBodyItems | section
 enum          ::= "enum" ID ("," ID)*
-attrAssign    ::= ("~")? ID("." ID)* ("="|":") expression (NL|";")+
-varAssign     ::= ("$")? ID ("," ID)* ":=" expression (NL|";")+
+
 section       ::= ID (STR | ID)? "{" body "}"
 ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
@@ -27,6 +28,7 @@ fnOrCallback  ::= ("func" | "callback") ID formalSpec fnBody
 formalSpec    ::= "(" (paramSpec? ("," paramSpec)* ")"
 paramSpec     ::= ID (":" typeSpec)
 varDeclItem   ::= ID ("," ID)* ":" typeSpec
+varStmt       ::= "export" varDeclItem ("," varDeclItem)*
 varStmt       ::= "var" varDeclItem ("," varDeclItem)*
 typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" |
                    "{" typeSpec "}" | "(" typeSpec, (typeSpec)+ ")"

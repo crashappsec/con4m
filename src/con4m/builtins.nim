@@ -826,6 +826,26 @@ proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   except:
     return falseRet
 
+proc c4mLSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    l    = unpack[seq[Box]](args[0])
+    ix   = unpack[int](args[1])
+    item = args[2]
+
+  l[ix] = item
+
+  return some(pack[seq[Box]](l))
+
+proc c4mDSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    t    = unpack[OrderedTableRef[Box, Box]](args[0])
+    ix   = args[1]
+    item = args[2]
+
+  t[ix] = item
+
+  return some(pack[OrderedTableRef[Box,Box]](t))
+
 proc c4mSplitPath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   var s: seq[string]
 
@@ -988,6 +1008,8 @@ const defaultBuiltins* = [
   (25,  "toUsec",    BiFn(c4mSelfRet),         "f(Duration) -> int"),
   (26,  "toMsec",    BiFn(c4mDurAsMSec),       "f(Duration) -> int"),
   (27,  "toSec",     BiFn(c4mDurAsSec),        "f(Duration) -> int"),
+  (28,  "set",       BiFn(c4mLSetItem),        "f([@x], int, @x) -> [@x]"),
+  (28,  "set",       BiFn(c4mDSetItem),        "f({@k:@v},@k,@v) -> {@k:@v}"),
   #[ Not done yet:
   (28,  "get_day",   BiFn(c4mGetDayFromDate),  "f(Date) -> int"),
   (29,  "get_month", BiFn(c4mGetMonFromDate),  "f(Date) -> int"),
