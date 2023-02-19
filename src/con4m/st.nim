@@ -239,6 +239,30 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
+proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
+  let possibleAttr = attrLookup(attrs, @[name], 0, vlAttrUse)
+
+  if possibleAttr.isA(AttrErr):
+    return false
+
+  var attr      = possibleAttr.get(AttrOrSub).get(Attribute)
+  attr.override = val
+
+  return true
+
+proc setOverride*(ctx: ConfigState, fqn: string, val: Option[Box]): bool =
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(ctx.attrs, parts, 0, vlAttrUse)
+
+  if possibleAttr.isA(AttrErr):
+    return false
+
+  var attr      = possibleAttr.get(AttrOrSub).get(Attribute)
+  attr.override = val
+
+  return true
+
 proc attrLookupFull*(attrs: AttrScope, fqn: string): (AttrErrEnum, Option[Box]) =
   let
     parts        = fqn.split(".")

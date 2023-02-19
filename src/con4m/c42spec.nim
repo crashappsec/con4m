@@ -360,6 +360,9 @@ proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
 
   res.populateType(res.rootSpec, contents["root"].get(AttrScope))
 
+proc c42Spec*(c: string, fname: string): Option[(ConfigSpec, ConfigState)] =
+  return c42Spec(newStringStream(c), fname)
+
 proc c42Spec*(filename: string): Option[(ConfigSpec, ConfigState)] =
   var s = newFileStream(filename)
 

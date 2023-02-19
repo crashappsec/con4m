@@ -58,7 +58,9 @@ proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
                    typeInfo: ti, varScope: nil, attrScope: nil, value: nil,
                    id: nodeId)
 
-proc newNode(k,t: auto, c: seq[Con4mNode]= @[], ti: Con4mType= nil): Con4mNode =
+proc newNode(k,t: auto,
+             c:   seq[Con4mNode]= @[],
+             ti:  Con4mType= bottomType): Con4mNode =
     return nnbase(k, if t == nil: none(Con4mToken) else: some(t), c, ti)
 
 proc newNodeCopyToken(kind: Con4mNodeKind, borrowFrom: Con4mNode): Con4mNode =
@@ -657,6 +659,7 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
   while true:
     if ctx.consume().kind != TtLBrace:
       parseError("Expected '{' after if/elif conditional")
+    ctx.nlWatch = false
     exp.children.add(ctx.body())
     result.children.add(exp)
     ctx.nlWatch = false
@@ -664,17 +667,15 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       parseError("Expected '}' to end if/elif body")
 
     case ctx.curTok().kind
-    of TtElif:
-      let kids = @[ctx.expression()]
-      exp      = newNode(NodeConditional, ctx.consume(), kids, bottomType)
-      continue
+    of TtElIf:
+      exp = newNode(NodeConditional, ctx.consume(), @[ctx.expression])
     of TtElse:
       discard ctx.consume()
       if ctx.consume().kind != TtLBrace:
         parseError("Expected { before else body")
 
       ctx.nlWatch = false
-      exp         = newNode(NodeElse, ctx.curTok(), @[ctx.body()], bottomType)
+      exp         = newNode(NodeElse, ctx.curTok(), @[ctx.body()])
       ctx.nlWatch = false # Should prob just always do this after body
 
       if ctx.consume().kind != TtRBrace:
@@ -897,6 +898,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
           parseError("Expect a newline (or ;) at end of a body expression")
 
       except:
+        raise
         parseError("Expected an assignment, unpack (no parens), block " &
                    "start, or expression", t)
 
