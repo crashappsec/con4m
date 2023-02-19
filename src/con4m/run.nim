@@ -140,7 +140,7 @@ proc stackConfig*(s:        ConfigState,
                   filename: string,
                   evalCtx:  ConfigState = nil): bool =
   setCurrentFileName(filename)
-  return s.runBase(parse(newStringStream(filename), filename), evalCtx)
+  return s.runBase(parse(newStringStream(contents), filename), evalCtx)
 
 proc stackConfig*(s:        ConfigState,
                   filename: string,

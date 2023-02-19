@@ -898,7 +898,6 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
           parseError("Expect a newline (or ;) at end of a body expression")
 
       except:
-        raise
         parseError("Expected an assignment, unpack (no parens), block " &
                    "start, or expression", t)
 
