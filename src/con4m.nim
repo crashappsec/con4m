@@ -144,7 +144,8 @@ elif isMainModule:
           let lang = genOutLang.get()
 
           if lang == "none":
-            stderr.writeLine(toAnsiCode(acBold) & "Spec successfully validated.")
+            stderr.writeLine(toAnsiCode(acBold) &
+              "Spec successfully validated.")
             quit(0)
           var genOutput = generateCode(ctx, lang)
           if genOutFile.isNone():

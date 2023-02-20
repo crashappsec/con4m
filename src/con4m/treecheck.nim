@@ -339,11 +339,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
   of NodeUnpack:
+    node.children[^1].checkNode(s)
     let
       tup = node.children[^1]
       ti  = tup.typeInfo.resolveTypeVars()
 
-    tup.checkNode(s)
     if ti.kind == TypeTVar and not s.secondPass:
       for i in 0 ..< node.children.len() - 1:
         node.children[i].checkNode(s)
