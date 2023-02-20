@@ -253,7 +253,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     case err.code
     of errCantSet:
-      fatal(err.msg, node)
+      when defined(errOnOverride):
+        fatal(err.msg, node)
     of errOk:
       if node.kind == NodeAttrSetLock:
         node.attrRef.locked = true
