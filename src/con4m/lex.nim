@@ -238,8 +238,6 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       tok(TtLineComment)
     of '~':
       tok(TtLockAttr)
-    of '$':
-      tok(TtExportVar)
     of '+':
       tok(TtPlus)
     of '-':
@@ -502,6 +500,8 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "enum": tok(TtEnum)
       of "func": tok(TtFunc)
       of "callback": tok(TtCallback)
+      of "export": tok(TtExportVar)
+
       else: tok(TtIdentifier)
 
   unreachable

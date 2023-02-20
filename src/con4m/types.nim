@@ -37,15 +37,15 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, NodeVarSetExport,
-    NodeUnpack, NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor,
-    NodeBreak, NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot,
-    NodeMember, NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair,
-    NodeListLit, NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
-    NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
-    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict,
-    NodeTypeList, NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat,
-    NodeTypeBool, NodeVarDecl, NodeVarSymNames
+    NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, NodeUnpack,
+    NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak,
+    NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember,
+    NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit,
+    NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
+    NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum,
+    NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict, NodeTypeList,
+    NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat, NodeTypeBool,
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m

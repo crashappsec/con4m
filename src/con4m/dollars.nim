@@ -138,7 +138,6 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeAttrAssign:   fmtNt("AttrAssign")
   of NodeAttrSetLock:  fmtNt("AttrSetLock")
   of NodeVarAssign:    fmtNt("VarAssign")
-  of NodeVarSetExport: fmtNt("VarSetExport")
   of NodeUnpack:       fmtNt("Unpack")
   of NodeSection:      fmtNt("Section")
   of NodeIfStmt:       fmtNt("If Stmt")
@@ -170,6 +169,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeTypeFloat:    fmtTy("TypeFloat")
   of NodeTypeBool:     fmtTy("TypeBool")
   of NodeVarDecl:      fmtNt("VarDecl")
+  of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:

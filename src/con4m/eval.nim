@@ -205,7 +205,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
   of NodeFuncDef, NodeTypeList, NodeTypeDict, NodeTypeTuple, NodeTypeString,
-     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeVarDecl, NodeVarSymNames:
+     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeVarDecl, NodeExportDecl,
+     NodeVarSymNames:
     return # Nothing to do, everything was done in the check phase.
   of NodeReturn:
     if node.children.len() != 0:
@@ -261,7 +262,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     else:
       unreachable
 
-  of NodeVarAssign, NodeVarSetExport:
+  of NodeVarAssign:
     node.children[1].evalNode(s)
 
     let name  = node.children[0].getTokenText()

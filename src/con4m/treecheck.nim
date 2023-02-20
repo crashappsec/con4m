@@ -308,7 +308,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             fmt"""{nameParts.join(".")}.""",
             node.children[0])
     node.attrRef = entry
-  of NodeVarAssign, NodeVarSetExport:
+  of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for variables currently not supported.",
             node.children[0])
@@ -332,8 +332,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if entry.locked:
       # Could be a loop index or enum.
         fatal(fmt"Cannot assign to the (locked) value {name}", node.children[0])
-    if node.kind == NodeVarSetExport:
-      entry.persists = true
 
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
@@ -864,7 +862,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       let entry    = `var?`.get()
       typeInfo     = entry.tInfo
       node.attrRef = nil
-
+      if node.parent.get().kind == NodeExportDecl:
+        entry.persists = true
     elif `localAttr?`.isA(AttrOrSub):
       let entry     = `localAttr?`.get(AttrOrSub)
       if entry.isA(Attribute):

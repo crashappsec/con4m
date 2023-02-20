@@ -181,7 +181,7 @@ proc divExpr(ctx: ParseCtx): Option[Con4mNode] =
   case ctx.curTok().kind
   of TtDiv:
     return some(newNode(NodeDiv, ctx.consume(), @[ctx.divExprRHS()]))
-  of TtIdentifier, TtExportVar, TtLParen:
+  of TtIdentifier, TtLParen:
     return some(ctx.accessExpr())
   else:
     return
@@ -383,7 +383,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       lhs = ctx.parenExpr()
       lhs.token = t
       ctx.nlWatch = watch
-    of TtIdentifier, TtExportVar:
+    of TtIdentifier:
       lhs = newNode(NodeIdentifier, tok)
     else:
       unreachable
@@ -429,7 +429,7 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit:
     res = ctx.literal()
-  of TtIdentifier, TtExportVar:
+  of TtIdentifier:
     res = ctx.accessExpr()
   of TtNot:
     parseError("Unary before ! disallowed")
@@ -447,7 +447,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit:
     return ctx.literal()
-  of TtIdentifier, TtExportVar:
+  of TtIdentifier:
     return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
@@ -497,6 +497,21 @@ proc typeSpec(ctx: ParseCtx): Con4mNode =
       parseError("Invalid syntax for a type declaration.")
   else:
     parseError("Invalid syntax for a type declaration.")
+
+proc exportStmt(ctx: ParseCtx): Con4mNode =
+  result = newNode(NodeExportDecl, ctx.consume())
+
+  while true:
+    ctx.nlWatch = false
+    var tok = ctx.consume()
+    ctx.nlWatch = true
+
+    if tok.kind != TtIdentifier:
+      parseError("Expect a valid identifier here")
+    result.children.add(newNode(NodeIdentifier, tok))
+
+    if ctx.curTok().kind != TtComma: break
+    discard ctx.consume()
 
 proc varStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeVarDecl, ctx.consume())
@@ -720,20 +735,10 @@ proc section(ctx: ParseCtx): Con4mNode =
   if ctx.consume().kind != TtRBrace:
     parseError("Expected }")
 
-
-proc varAssign(ctx: ParseCtx, toplevel = true): Con4mNode =
+proc varAssign(ctx: ParseCtx): Con4mNode =
   var
     t         = ctx.consume()
-    doExport = if t.kind == TtExportVar: true else: false
     ids: seq[Con4mNode] = @[]
-
-  if doExport:
-    if not toplevel:
-      parseError("Only global variables may be exported, at a global " &
-                 "declaration site")
-    t = ctx.consume()
-    if t.kind != TtIdentifier:
-      parseError("Expected a variable to export after '$'")
 
   ids.add(newNode(NodeIdentifier, t))
 
@@ -760,10 +765,7 @@ proc varAssign(ctx: ParseCtx, toplevel = true): Con4mNode =
     parseError("Expected := after list of identifiers for tuple unpack.", true)
 
   if len(ids) == 1:
-    if doExport:
-      result = newNode(NodeVarSetExport, t)
-    else:
-      result = newNode(NodeVarAssign, t)
+    result = newNode(NodeVarAssign, t)
   else:
     result = newNode(NodeUnpack, t)
 
@@ -843,19 +845,13 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         parseError("Enums are only allowed at the top level of the config")
     of TtLockAttr:
       result.children.add(ctx.attrAssign())
-    of TtExportVar:
-        # Instead of using lookahead to see if this might be $(),
-        # we ack that $() where the return isn't used is a noop, so
-        # we only go this route, since we'd want it to be an error
-        # anyway.
-        result.children.add(ctx.varAssign(toplevel))
     of TtIdentifier:
       case ctx.lookAhead().kind
       of TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
         continue
       of TtLocalAssign, TtComma:
-        result.children.add(ctx.varAssign(toplevel))
+        result.children.add(ctx.varAssign())
         continue
       of TtIdentifier, TtStringLit, TtLBrace:
         result.children.add(ctx.section())
@@ -882,10 +878,12 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
         ctx.nlWatch = false
         result.children.add(ctx.fnOrCallback())
       else:
-        parseError("Functions and callbacks are only allowed at the top level",
-                   false)
+        parseError("Functions are only allowed at the top level", false)
     of TtVar:
       result.children.add(ctx.varStmt())
+    of TtExportVar:
+      if not toplevel: parseError("'export' is only valid at the top-level.")
+      result.children.add(ctx.exportStmt())
     else:
       let t = ctx.curTok()
       try:
