@@ -162,7 +162,10 @@ proc sCall*(s:       ConfigState,
   let optFunc = s.getFuncBySig(name, tinfo)
 
   if not optFunc.isSome():
-    fatal(fmt"Function '{reprSig(name, tinfo)}' not found")
+    if tinfo.kind == TypeProc and tinfo.retType != bottomType:
+      return none(Box)
+    else:
+      fatal(fmt"Function '{reprSig(name, tinfo)}' not found")
 
   return s.sCall(optFunc.get(), a1, nodeOpt.getOrElse(nil))
 
