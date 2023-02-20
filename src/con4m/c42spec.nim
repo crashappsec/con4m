@@ -38,6 +38,7 @@ proc buildC42Spec*(): ConfigSpec =
   rootSec.addAttr("gen_setters",     boolType,   false)
   rootSec.addAttr("gen_getters",     boolType,   false)
   rootSec.addAttr("extra_decls",     stringType, false)
+  rootSec.addAttr("prologue",        stringType, false)
 
   singleton.addSection("field")
   singleton.addSection("require")

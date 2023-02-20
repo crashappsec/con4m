@@ -584,10 +584,15 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
 
   tinfo.buildSectionVarInfo(lang)
 
-proc getPrologue(lang: string): string =
+proc getPrologue(rootScope: AttrScope, lang: string): string =
+  if "prologue" in rootScope.contents:
+    let opt = rootScope.attrLookup("prologue")
+    result  = unpack[string](opt.get())
+  else:
+    result  = ""
   case lang
   of "nim":
-    return "import options, tables, con4m, con4m/st, nimutils/box\n\n"
+    result &= "import options, tables, con4m, con4m/st, nimutils/box\n\n"
   else:
     raise newException(ValueError,
                        "Unsupported language for generation: " & lang)
@@ -598,17 +603,17 @@ proc generateCode*(c42state: ConfigState, lang: string): string =
     rootScope    = c42state.attrs
     orderedTypes = c42state.orderTypes(secInfo)
     typeHash     = newTable[string, SecTypeInfo]()
+  let
+    rootDef   = rootScope.contents["root"].get(AttrScope)
+    rootInfo  = SecTypeInfo(singleton: true, nameOfType: "Config",
+                            scope: rootDef, outboundEdges: @[])
 
-  result = getPrologue(lang)
+  result = getPrologue(rootDef, lang)
 
   for typeObj in orderedTypes:
     typeObj.prepareForGeneration(lang)
     typeHash[typeObj.name] = typeObj
 
-  let
-    rootDef   = rootScope.contents["root"].get(AttrScope)
-    rootInfo  = SecTypeInfo(singleton: true, nameOfType: "Config",
-                            scope: rootDef, outboundEdges: @[])
   depGraphOneSection(rootDef, "root", rootInfo)
   rootInfo.prepareForGeneration(lang)
 
