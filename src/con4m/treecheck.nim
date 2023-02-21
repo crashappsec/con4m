@@ -527,13 +527,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of TypeTuple:
       if isBottom(node.children[1], intType):
         fatal("Invalid tuple index (numbers only)", node.children[1])
-      node.typeInfo = newTypeVar()
       let v = node.children[1].value
-      if v == nil:
+      if node.children[1].typeInfo != intType:
         fatal("Tuple index must be an integer literal for " &
               "static type checking", node.children[1])
+      node.typeInfo = newTypeVar()
       let i = unpack[int](v)
-
       if i < 0 or i >= ti.itemTypes.len():
         fatal("Tuple index out of bounds", node.children[1])
       node.typeInfo = ti.itemTypes[i]
