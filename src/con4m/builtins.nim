@@ -5,14 +5,17 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2023
 
-import os, tables, osproc, strformat, strutils, options, streams
-import types, typecheck, st, parse, nimutils, errmsg, otherlits
+import os, tables, osproc, strformat, strutils, options, streams, base64, macros
+import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits
 
 when defined(posix):
   import posix
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
+
+template c4mException*(m: string): untyped =
+  newException(Con4mError, m)
 
 let
   trueRet  = some(pack(true))
@@ -93,96 +96,23 @@ proc c4mSelfRet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## whatever.
   return some(args[0])
 
-proc c4mSToDur*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToNativeDuration(str)
+macro toOtherLitDecl(name, call, err: untyped): untyped =
+  quote do:
+    proc `name`*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+      let
+        str = unpack[string](args[0])
+        opt = `call`(str)
+      if opt.isSome():
+        return some(pack(opt.get()))
+      raise c4mException(`err`)
 
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("0 sec")]
-  return some(pack(arr))
-
-proc c4mSToIP*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToIpAddr(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("0.0.0.0")]
-  return some(pack(arr))
-
-proc c4mSToCIDR*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToCIDR(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("0.0.0.0/32")]
-  return some(pack(arr))
-
-proc c4mSToSize*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToNativeSize(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack(0)]
-  return some(pack(arr))
-
-proc c4mSToDate*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToNativeDate(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("--00")]
-  return some(pack(arr))
-
-proc c4mSToTime*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToNativeTime(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("00:00:00")]
-  return some(pack(arr))
-
-proc c4mSToDateTime*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let
-    str = unpack[string](args[0])
-    opt = otherLitToNativeDateTime(str)
-
-  var arr: seq[Box]
-
-  if opt.isSome():
-    arr = @[pack(true), pack(opt.get())]
-  else:
-    arr = @[pack(false), pack("--00T00:00:00")]
-  return some(pack(arr))
+toOtherLitDecl(c4mSToDur,      otherLitToNativeDuration, "Invalid duration")
+toOtherLitDecl(c4mSToIP,       otherLitToIPAddr,         "Invalid IP address")
+toOtherLitDecl(c4mSToCIDR,     otherLitToCIDR,           "Invalid CIDR spec")
+toOtherLitDecl(c4mSToSize,     otherLitToNativeSize,     "Invalid size spec")
+toOtherLitDecl(c4mSToDate,     otherLitToNativeDate,     "Invalid date syntax")
+toOtherLitDecl(c4mSToTime,     otherLitToNativeTime,     "Invalid time syntax")
+toOtherLitDecl(c4mSToDateTime, otherLitToNativeDateTime, "Invalid date/time")
 
 proc c4mDurAsMsec*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
@@ -422,8 +352,7 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
         res.add(s[i])
         i += 1
       else:
-        raise newException(Con4mError,
-                           "Unescaped } w/o a matching { in format string")
+        raise c4mException("Unescaped } w/o a matching { in format string")
     of '{':
       i = i + 1
       if s[i] == '{':
@@ -447,7 +376,7 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
         try:
           box = runtimeVarLookup(state.frames, key)
         except:
-          raise newException(Con4mError, fmt"Error in format: {key} not found")
+          raise c4mException(fmt"Error in format: {key} not found")
 
       case box.kind
         of MkStr:
@@ -459,8 +388,8 @@ proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
         of MkBool:
           res.add($(unpack[bool](box)))
         else:
-          raise newException(Con4mError, "Error: Invalid type for format " &
-            "argument, Don't currently do lists, tuples or dicts")
+          raise c4mException("Error: Invalid type for format argument; " &
+                             "container types not supported.")
     else:
       res.add(s[i])
       i = i + 1
@@ -692,6 +621,48 @@ proc c4mFileLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     except:
       result = some(pack(-1))
 
+proc c4mTmpWrite*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  # args[0]: contents to write. args[1]: file extension. ret: full path
+  let path = joinPath("/tmp", getUlid(dash=false) & unpack[string](args[1]))
+  try:
+    let f = newFileStream(path, fmWrite)
+    f.write(unpack[string](args[0]))
+    f.close()
+    return some(pack(path))
+  except:
+    return some(pack(""))
+
+proc c4mBase64*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(encode(unpack[string](args[0]))))
+
+proc c4mBase64Web*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(encode(unpack[string](args[0]), safe = true )))
+
+proc c4mDecode64*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  try:
+    return some(pack(decode(unpack[string](args[0]))))
+  except:
+    raise c4mException(getCurrentExceptionMsg())
+
+proc c4mToHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(toHex(unpack[string](args[0]))))
+
+proc c4mFromHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  try:
+    return some(pack(parseHexStr(unpack[string](args[0]))))
+  except:
+    raise c4mException(getCurrentExceptionMsg())
+
+proc c4mSha256*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var shaCtx = initSHA[SHA256]()
+  shaCtx.update(unpack[string](args[0]))
+  return some(pack(shaCtx.final().toHex().toLowerAscii()))
+
+proc c4mSha512*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var shaCtx = initSHA[SHA512]()
+  shaCtx.update(unpack[string](args[0]))
+  return some(pack(shaCtx.final().toHex().toLowerAscii()))
+
 proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
@@ -732,6 +703,9 @@ proc c4mIntHigh*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mIntLow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(low(int64)))
+
+proc c4mRandom*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(secureRand[uint64]()))
 
 proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
@@ -939,8 +913,8 @@ proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
     tinfo = tStr.toCon4mType()
 
   if tinfo.kind != TypeProc:
-    raise newException(Con4mError, fmt"Signature provided for {coreName} " &
-                       "is not a function signature.")
+    raise c4mException(fmt"Signature provided for {coreName} " &
+                          "is not a function signature.")
 
   let b = if fn == nil:
             FuncTableEntry(kind:        FnCallback,
@@ -959,16 +933,15 @@ proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
 
   if fn == nil:
     if tinfo.retType.isBottom():
-      raise newException(Con4mError, fmt"{coreName}: user callbacks must " &
-        "have a return type")
+      raise c4mException(fmt"{coreName}: callbacks must have a return type")
 
   if not s.funcTable.contains(name):
     s.funcTable[name] = @[b]
   else:
     for item in s.funcTable[name]:
       if not isBottom(copyType(tinfo), copyType(item.tinfo)):
-        raise newException(Con4mError, fmt"Type for {coreName} conflicts " &
-          "with existing entry in the function table")
+        raise c4mException(fmt"Type for {coreName} conflicts with existing " &
+                               "entry in the function table")
     s.funcTable[name].add(b)
 
 proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
@@ -998,18 +971,16 @@ const defaultBuiltins* = [
   (6,   "float",     BiFn(c4mItoF),            "f(int) -> float"),
   (7,   "int",       BiFn(c4mFtoI),            "f(float) -> int"),
   (8,   "$",         BiFn(c4mToString),        "f(@t) -> string"),
-  (18,  "Duration",  BiFn(c4mSToDur),          "f(string) -> (bool, Duration)"),
-  (19,  "IPAddr",    BiFn(c4mStoIP),           "f(string) -> (bool, IPAddr)"),
-  (20,  "CIDR",      BiFn(c4mSToCIDR),         "f(string) -> (bool, CIDR)"),
-  (21,  "Size",      BiFn(c4mSToSize),         "f(string) -> (bool, Size)"),
-  (22,  "Date",      BiFn(c4mSToDate),         "f(string) -> (bool, Date)"),
-  (23,  "Time",      BiFn(c4mSToTime),         "f(string) -> (bool, Time)"),
-  (24,  "DateTime",  BiFn(c4mSToDateTime),     "f(string) -> (bool, DateTime)"),
+  (18,  "Duration",  BiFn(c4mSToDur),          "f(string) -> Duration"),
+  (19,  "IPAddr",    BiFn(c4mStoIP),           "f(string) -> IPAddr"),
+  (20,  "CIDR",      BiFn(c4mSToCIDR),         "f(string) -> CIDR"),
+  (21,  "Size",      BiFn(c4mSToSize),         "f(string) -> Size"),
+  (22,  "Date",      BiFn(c4mSToDate),         "f(string) -> Date"),
+  (23,  "Time",      BiFn(c4mSToTime),         "f(string) -> Time"),
+  (24,  "DateTime",  BiFn(c4mSToDateTime),     "f(string) -> DateTime"),
   (25,  "to_usec",   BiFn(c4mSelfRet),         "f(Duration) -> int"),
   (26,  "to_msec",   BiFn(c4mDurAsMSec),       "f(Duration) -> int"),
   (27,  "to_sec",    BiFn(c4mDurAsSec),        "f(Duration) -> int"),
-  (28,  "set",       BiFn(c4mLSetItem),        "f([@x], int, @x) -> [@x]"),
-  (28,  "set",       BiFn(c4mDSetItem),        "f({@k:@v},@k,@v) -> {@k:@v}"),
   #[ Not done yet:
   (28,  "get_day",   BiFn(c4mGetDayFromDate),  "f(Date) -> int"),
   (29,  "get_month", BiFn(c4mGetMonFromDate),  "f(Date) -> int"),
@@ -1033,15 +1004,22 @@ const defaultBuiltins* = [
   # Also, format() and echo() need to change for this project.
   ]#
   # String manipulation functions.
-  (101, "contains", BiFn(c4mContainsStrStr), "f(string, string) -> bool"),
-  (102, "find",     BiFn(c4mFindFromStart),  "f(string, string) -> int"),
-  (103, "len",      BiFn(c4mStrLen),         "f(string) -> int"),
-  (104, "slice",    BiFn(c4mSliceToEnd),     "f(string, int) -> string"),
-  (105, "slice",    BiFn(c4mSlice),          "f(string, int, int) -> string"),
-  (106, "split",    BiFn(c4mSplit),          "f(string, string) -> [string]"),
-  (107, "strip",    BiFn(c4mStrip),          "f(string) -> string"),
-  (108, "pad",      BiFn(c4mPad),            "f(string, int) -> string"),
-  (109, "format",   BiFn(c4mFormat),         "f(string) -> string"),
+  (101, "contains",   BiFn(c4mContainsStrStr), "f(string, string) -> bool"),
+  (102, "find",       BiFn(c4mFindFromStart),  "f(string, string) -> int"),
+  (103, "len",        BiFn(c4mStrLen),         "f(string) -> int"),
+  (104, "slice",      BiFn(c4mSliceToEnd),     "f(string, int) -> string"),
+  (105, "slice",      BiFn(c4mSlice),          "f(string, int, int) -> string"),
+  (106, "split",      BiFn(c4mSplit),          "f(string, string) -> [string]"),
+  (107, "strip",      BiFn(c4mStrip),          "f(string) -> string"),
+  (108, "pad",        BiFn(c4mPad),            "f(string, int) -> string"),
+  (109, "format",     BiFn(c4mFormat),         "f(string) -> string"),
+  (110, "base64",     BiFn(c4mBase64),         "f(string) -> string"),
+  (111, "base64_web", BiFn(c4mBase64Web),      "f(string) -> string"),
+  (112, "debase64",   BiFn(c4mDecode64),       "f(string) -> string"),
+  (113, "hex",        BiFn(c4mToHex),          "f(string) -> string"),
+  (114, "dehex",      BiFn(c4mFromHex),        "f(string) -> string"),
+  (115, "sha256",     BiFn(c4mSha256),         "f(string) -> string"),
+  (116, "sha512",     BiFn(c4mSha512),         "f(string) -> string"),
 
   # Container (list and dict) basics.
   (201, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
@@ -1051,6 +1029,8 @@ const defaultBuiltins* = [
   (205, "items",    BiFn(c4mDictItems),       "f({@x: @y}) -> [(@x, @y)]"),
   (206, "contains", BiFn(c4mListContains),    "f([@x], @x) -> bool"),
   (207, "contains", BiFn(c4mDictContains),    "f({@x : @y}, @x) -> bool"),
+  (208, "set",      BiFn(c4mLSetItem),        "f([@x], int, @x) -> [@x]"),
+  (209, "set",      BiFn(c4mDSetItem),        "f({@k:@v},@k,@v) -> {@k:@v}"),
 
   # File system routines
   (301, "list_dir",     BiFn(c4mListDir),      "f() -> [string]"),
@@ -1071,6 +1051,7 @@ const defaultBuiltins* = [
   (316, "is_link",      BiFn(c4mIsFile),       "f(string) -> bool"),
   (317, "chmod",        BiFn(c4mChmod),        "f(string, int) -> bool"),
   (318, "file_len",     BiFn(c4mFileLen),      "f(string) -> int"),
+  (319, "to_tmp_file",  BiFn(c4mTmpWrite),     "f(string, string) -> string"),
 
   # System routines
   (401, "echo",         BiFn(c4mEcho),         "f(*@a)"),
@@ -1088,6 +1069,7 @@ const defaultBuiltins* = [
   (413, "program_name", BiFn(c4mGetExeName),   "f() -> string"),
   (414, "high",         BiFn(c4mIntHigh),      "f() -> int"),
   (415, "low",          BiFn(c4mIntLow),       "f() -> int"),
+  (416, "rand",         BiFn(c4mRandom),       "f() -> int"),
 
   # Binary ops
   (501, "bitor",        BiFn(c4mBitOr),        "f(int, int) -> int"),
