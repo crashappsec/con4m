@@ -7,6 +7,7 @@
 
 import os, tables, osproc, strformat, strutils, options, streams, base64, macros
 import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits
+from unicode import toLower, toUpper
 
 when defined(posix):
   import posix
@@ -663,6 +664,12 @@ proc c4mSha512*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   shaCtx.update(unpack[string](args[0]))
   return some(pack(shaCtx.final().toHex().toLowerAscii()))
 
+proc c4mUpper*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(unicode.toUpper(unpack[string](args[0]))))
+
+proc c4mLower*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(unicode.toLower(unpack[string](args[0]))))
+
 proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
@@ -1020,6 +1027,8 @@ const defaultBuiltins* = [
   (114, "dehex",      BiFn(c4mFromHex),        "f(string) -> string"),
   (115, "sha256",     BiFn(c4mSha256),         "f(string) -> string"),
   (116, "sha512",     BiFn(c4mSha512),         "f(string) -> string"),
+  (117, "upper",      BiFn(c4mUpper),          "f(string) -> string"),
+  (118, "lower",      BiFn(c4mLower),          "f(string) -> string"),
 
   # Container (list and dict) basics.
   (201, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
