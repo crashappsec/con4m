@@ -26,6 +26,9 @@ proc resolveTypeVars*(t: Con4mType): Con4mType =
   else:
     return t
 
+proc getType*(n: Con4mNode): Con4mType =
+  return n.typeInfo.resolveTypeVars()
+
 proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
   if t1 == t2:
     return

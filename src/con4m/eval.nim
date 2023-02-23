@@ -347,13 +347,14 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     let
       sign = node.getTokenText()
-      bx = node.children[0].value
+      bx   = node.children[0].value
+      typ  = node.children[0].getType()
 
     if sign[0] != '-':
       node.value = bx
       return
 
-    case node.children[0].typeinfo.kind
+    case typ.kind
     of TypeInt:
       node.value = pack(-unpack[int](bx))
     of TypeFloat:
@@ -387,8 +388,10 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     let
       containerBox = node.children[0].value
       indexBox     = node.children[1].value
+      containerTy  = node.children[0].getType()
+      ixTy         = node.children[1].getType()
 
-    case node.children[0].getBaseType()
+    case containerTy.kind
     of TypeTuple:
       let
         l = unpack[seq[Box]](containerBox)
@@ -406,7 +409,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = l[i]
     of TypeDict:
       let
-        kt           = node.children[0].typeInfo.keyType
+        kt           = containerTy.keyType.resolveTypeVars()
         containerBox = node.children[0].value
         indexBox     = node.children[1].value
       case kt.kind
@@ -447,20 +450,16 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
   of NodeDictLit:
     node.evalKids(s)
-    if node.typeInfo.kind == TypeTVar:
-      node.value = pack(newCon4mDict[Box, Box]())
-    else:
-      case node.typeInfo.keyType.kind
-      of TypeString, TypeInt, TypeBool, TypeFloat:
-        var dict = newCon4mDict[Box, Box]()
-        for kvpair in node.children:
-          let
-            boxedKey = kvpair.children[0].value
-            boxedVal = kvpair.children[1].value
-          dict[boxedKey] = boxedVal
-          node.value = pack(dict)
-      else:
-        unreachable # Should already be restricted to primitive types
+    let nodeType = node.getType()
+    var dict     = newCon4mDict[Box, Box]()
+
+    for kvpair in node.children:
+      let
+        boxedKey = kvpair.children[0].value
+        boxedVal = kvpair.children[1].value
+      dict[boxedKey] = boxedVal
+
+    node.value = pack(dict)
   of NodeKVPair:
     node.evalKids(s)
   of NodeListLit:
