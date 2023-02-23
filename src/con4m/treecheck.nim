@@ -81,7 +81,7 @@ proc binOpTypeCheck(node: Con4mNode,
     paramCheck = unify(node.children[0], node.children[1])
 
   if paramCheck.isBottom():
-    fatal2Type(e1, node, node.children[0].typeInfo, node.children[1].typeInfo)
+    fatal2Type(e1, node, node.children[0].getType(), node.children[1].getType())
 
   node.typeInfo = unify(tv, paramCheck)
 
@@ -123,7 +123,7 @@ when defined(disallowRecursion):
         for item in entries:
           if item.kind == FnBuiltIn:
             return
-          let t = unify(n.children[1].typeInfo, item.tinfo)
+          let t = unify(n.children[1].getType(), item.tinfo)
           if not t.isBottom():
             stack.add(item)
             # This must be present if checking passed.
@@ -217,15 +217,15 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       let
         entry = node.varUse("result").get()
       if entry.firstDef.isNone():
-        entry.tinfo = node.children[0].typeInfo
+        entry.tinfo = node.children[0].getType()
         entry.firstDef = some(node)
       else:
-        let t = unify(entry.tinfo, node.children[0].typeInfo)
+        let t = unify(entry.tinfo, node.children[0].getType())
         if t.isBottom():
           fatal2Type("Inconsistent return type for function",
                      node.children[0],
                      entry.tInfo,
-                     node.children[0].typeInfo)
+                     node.children[0].getType())
         entry.tinfo = t
   of NodeEnum:
     if not s.secondPass:
@@ -279,7 +279,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     else:
       nameParts = @[node.children[0].getTokenText()]
     node.children[1].checkNode(s)
-    let tinfo = node.children[1].typeinfo
+    let tinfo = node.children[1].getType()
 
     if not s.secondPass:
       for name in nameParts:
@@ -317,7 +317,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     let
       name  = node.children[0].getTokenText()
-      tinfo = node.children[1].typeinfo
+      tinfo = node.children[1].getType()
 
     if not s.secondPass:
       if name == "result" and not s.funcOrigin:
@@ -340,7 +340,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.children[^1].checkNode(s)
     let
       tup = node.children[^1]
-      ti  = tup.typeInfo.resolveTypeVars()
+      ti  = tup.getType()
 
     if ti.kind == TypeTVar and not s.secondPass:
       for i in 0 ..< node.children.len() - 1:
@@ -394,8 +394,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for i in 1 ..< node.children.len():
       node.children[i].checkNode(s)
 
-    if node.children[1].typeInfo.unify(intType).isBottom() or
-       node.children[2].typeInfo.unify(intType).isBottom():
+    if node.children[1].getType().unify(intType).isBottom() or
+       node.children[2].getType().unify(intType).isBottom():
       fatal("For index ranges must be integers.")
   of NodeSimpLit:
     if s.secondPass:
@@ -499,7 +499,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       unreachable
   of NodeUnary:
     node.checkKids(s)
-    let t = node.children[0].typeInfo
+    let t = node.children[0].getType()
     case t.kind
     of TypeInt, TypeFloat: node.typeInfo = t
     else:
@@ -522,13 +522,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = node.attrRef.tInfo
   of NodeIndex:
     node.checkKids(s)
-    let ti = node.children[0].typeInfo.resolveTypeVars()
+    let ti = node.children[0].getType()
     case ti.kind
     of TypeTuple:
       if isBottom(node.children[1], intType):
         fatal("Invalid tuple index (numbers only)", node.children[1])
       let v = node.children[1].value
-      if node.children[1].typeInfo != intType:
+      if node.children[1].getType() != intType:
         fatal("Tuple index must be an integer literal for " &
               "static type checking", node.children[1])
       node.typeInfo = newTypeVar()
@@ -551,7 +551,21 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal("Dict indicies can only be strings or ints", node.children[1])
     of TypeTVar:
       if not s.secondPass:
-        node.typeInfo = newTypeVar()
+        if node.children[1].getBaseType() == TypeInt:
+          let options      = {TypeDict, TypeList, TypeTuple, TypeTVar}
+          let tv           = newTypeVar(constraints = options)
+          if tv.unify(node.children[0].getType()).isBottom():
+            fatal("Invalid type constraint for this index operation")
+        else:
+          let
+            tv1      = newTypeVar()
+            tv2      = newTypeVar()
+            kType    = tv1.unify(node.children[1].getType())
+            ctrType  = Con4mType(kind: TypeDict, keyType: kType, valType: tv2)
+
+          node.typeInfo = newTypeVar()
+          discard node.children[0].getType().unify(ctrType)
+          discard node.getType().unify(ctrType.valType)
     else:
       var n = node
       while n.parent.isSome():
@@ -698,11 +712,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     let
       fname    = node.children[0].getTokenText()
-      procList = s.findMatchingProcs(fname, node.children[1].typeInfo)
+      procList = s.findMatchingProcs(fname, node.children[1].getType())
     case len(proclist)
     of 1:
-      discard proclist[0].tInfo.copyType().unify(node.children[1].typeInfo)
-      node.typeInfo = node.children[1].typeInfo.retType
+      discard proclist[0].tInfo.copyType().unify(node.children[1].getType())
+      node.typeInfo = node.children[1].getType().retType
       node.procRef = proclist[0]
       assert proclist[0] != nil
     of 0:
@@ -715,10 +729,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal(fmt"No matching signature found for function '{fname}'. " &
               fmt"Expected type was: {$(node.children[1].typeInfo)}")
       s.waitingForTypeInfo = true
-      node.typeInfo = node.children[1].typeInfo.retType
+      node.typeInfo = node.children[1].getType().retType
     else:
       if not s.secondPass:
-        node.typeInfo = node.children[1].typeInfo.retType
+        node.typeInfo = node.children[1].getType().retType
         s.waitingForTypeInfo = true
       else:
         var err = "Ambiguous call (matched multiple implementations):\n"
@@ -738,14 +752,14 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.checkKids(s)
 
     for item in node.children:
-      t.add(item.typeInfo)
+      t.add(item.getType())
 
     node.typeInfo = newProcType(t, newTypeVar())
   of NodeDictLit:
     node.checkKids(s)
     var ct = newTypeVar()
     for item in node.children:
-      ct = unify(ct, item.typeinfo)
+      ct = unify(ct, item.getType())
       if ct.isBottom():
         fatal("Dict items must all be the same type.", node)
     node.typeInfo = ct
@@ -753,13 +767,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.checkKids(s)
     if node.children[0].isBottom() or node.children[1].isBottom():
       fatal("Invalid type for dictionary keypair", node)
-    node.typeInfo = newDictType(node.children[0].typeInfo,
-                                node.children[1].typeInfo)
+    node.typeInfo = newDictType(node.children[0].getType(),
+                                node.children[1].getType())
   of NodeListLit:
     node.checkKids(s)
     var ct = newTypeVar()
     for item in node.children:
-      ct = unify(ct, item.typeinfo)
+      ct = unify(ct, item.getType())
       if ct.isBottom():
         fatal("List items must all be the same type", node)
     node.typeInfo = newListType(ct)
@@ -768,7 +782,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     var itemTypes: seq[Con4mType]
 
     for item in node.children:
-      itemTypes.add(item.typeInfo)
+      itemTypes.add(item.getType())
     node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: itemTypes)
   of NodeOr, NodeAnd:
     node.checkKids(s)
@@ -829,21 +843,20 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeTypeList:
     node.checkKids(s)
     node.typeInfo = Con4mType(kind:     TypeList,
-                              itemType: node.children[0].typeInfo)
+                              itemType: node.children[0].getType())
   of NodeTypeDict:
     node.checkKids(s)
     node.typeInfo = Con4mType(kind:    TypeDict,
-                              keyType: node.children[0].typeInfo,
-                              valType: node.children[1].typeInfo)
+                              keyType: node.children[0].getType(),
+                              valType: node.children[1].getType())
   of NodeTypeTuple:
     node.checkKids(s)
     var types: seq[Con4mType] = @[]
 
     for item in node.children:
-      types.add(item.typeInfo)
+      types.add(item.getType())
 
-    node.typeInfo = Con4mType(kind: TypeTuple,
-                              itemTypes: types)
+    node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: types)
 
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
@@ -883,12 +896,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     if len(node.children) != 0:
       node.checkKids(s)
-      node.typeInfo = typeInfo.unify(node.children[0].typeInfo)
+      node.typeInfo = typeInfo.unify(node.children[0].getType())
       if node.typeInfo.isBottom():
         fatal2Type("Declared type conflicts with existing type",
-                   node.children[0],
-                   node.children[0].typeInfo,
-                   typeInfo)
+                   node.children[0], node.children[0].getType(), typeInfo)
     else:
       node.typeInfo = typeInfo
   else:

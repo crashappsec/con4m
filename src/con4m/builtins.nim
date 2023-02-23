@@ -200,7 +200,7 @@ proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
 proc c4mToString*(args: seq[Box], state: ConfigState): Option[Box] =
   let
     actNode  = state.nodeStash.children[1]
-    itemType = actNode.children[0].typeInfo.resolveTypeVars()
+    itemType = actNode.children[0].getType()
 
   return some(pack(oneArgToString(itemType, args[0])))
 
@@ -214,7 +214,7 @@ proc c4mEcho*(args: seq[Box], state: ConfigState): Option[Box] =
     toPrint: seq[string] = @[]
 
   for i, item in args:
-    let typeinfo = actNode.children[i].typeInfo.resolveTypeVars()
+    let typeinfo = actNode.children[i].getType()
     toPrint.add(oneArgToString(typeInfo, item))
 
   stderr.writeLine(toPrint.join(" "))
