@@ -1,15 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Con4m: Configuration for Mortals](#con4m-configuration-for-mortals)
-- [Basic Example](#basic-example)
-- [Getting Started](#getting-started)
-- [More Information](#more-information)
-- [About](#about)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Con4m: Configuration for Mortals
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
@@ -22,15 +10,17 @@
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-Con4m implements an Apache-like configuration file format, with the following benefits:
+I got tired of building mini-DSLs on top of YAML, especially since YAML has many syntactic quirks that make it bad for such things.
 
-- The configuration file writer is able to write code in their configuration, giving a lot of flexibility, somewhat like HCL (but far less insane; Con4m is much simpler).
-- The programmer can load a config file and validate it, with a minimum of effort.
-- It’s designed to allow stacked configuration files. For instance, the app can load its own, then layer a system-level config over it, then layer a local config on top.
+To the typical user, Con4m looks like a normal config file, somewhere in the NginX family. But! power users get a statically typed go-like language that seamlessly integrates, for any power user needs, but is tailored for configuration use cases (for instance, having built-in data types for things like dates, times, durations and sizes). But, Con4m can be invisible when people don't need the extra power.
 
-As Con4m develops, we expect it to do things like: handle command-line flags and arguments, allow callbacks into the config file after the config has loaded, and so on.
+Con4m validates configuration files before loading them, even making sure the types and values all what YOU need them to be, if your provide a brief specification defining the schema you want for your config files.  That validation can include common constraints, (like the value must be from a fixed list, must be in a particular range).  There are also constraints for field dependencies, and the ability to write custom field checkers. You basically just write a spec for what you want to accept in your config file, in Con4m, naturally.
 
-Currently, Con4m is built for Nim, but we intend to support other language environments.
+Con4m also allows you to 'stack' configuration files. For instance, the app can load an internal default configuration hardcoded into the program, then layer a system-level config over it, then layer a local config on top.
+
+After the configuration file loads, you can call any user-defined functions provided, if your application might need feedback from the user after configuration loads.
+
+You can also create your own builtin functions to make available to users who use the scripting capabilities.  Con4m currently offers about 100 builtins, which you can selectively disable if you so choose.
 
 # Basic Example
 
@@ -54,54 +44,58 @@ host workstation {
 }
 ```
 
-Con4m provides a number of builtin functions like `env()`, and makes it easy to add your own.
+In this example, the conditional runs when the config file is evaluated (if something needs to be evaluated dynamically, you can do that with a callback).
 
-Let’s say the application writer has loaded this configuration file into the variable `s`. She may then write the following spec (in Nim; other languages will eventually use Con4m to do the same thing).
+Con4m provides a number of builtin functions like env(), which makes it easy for you to check environment variables, but also for your users to customize environment variables to suit their needs.  You can easily provide your own built-in functions.
 
-```python
-var config = con4m(MyApp, s):
-  attr("max_timeout", int, required = false) # required = true is the default.
-  attr("use_color", bool, true) # defaultVal = works too
-  section(host, allowedSubSections = @["*"]):
-      attr("ip", string, required = true)
-      attr("port", string, required = true)
-      attr("use_tls", bool, defaultAttr = true)
-```
-
-This code will:
-
-1. Parse the configuration file, making sure it’s syntactically correct, and that types are consistent.
-2. “Run” the configuration file, evaluating all the code.
-3. Check that the config file provides everything the spec requires, and nothing more (though you can allow user-defined attributes).
-4. Fill in any default values declared in the spec, when the config omits them. After the above code block, the user can then do:
+Let’s say the application writer has loaded this configuration file into the variable s. She may then write the following c42 spec:
 
 ```python
-echo "use_color = ", config.use_color # prints false
-for host in config.host:
-  echo host, host.ip, ":", host.port, "(use_tls = ", host.use_tls
-# The above prints, assuming no environment variable set:
-127.0.0.1:8080, use_tls = true
-10.12.1.10:8080, use_tls = true
+object host {
+  field ip {
+    type: "string"
+    required: true
+  }
+
+  field port {
+    type: "int"
+    required: true
+  }
+
+  field use_tls {
+    type: "bool"
+    default: true
+  }
+}
 ```
+When you load a user configuration file via Con4m, if you also pass it the above spec, the following will happen (in roughly this order):
+- The spec file loads and is validated.
+- The user's configuration is read in, and checked for syntax and type safety.
+- If the user skips attributes where you've provided a default, those values will be loaded from your spec before evaluation. If you didn't provide a value, but the field is required, then the user gets an appropriate error before the configuration is evaluated.
+- The user's config is evaluated.
+- The user's config file is checked against the constraints provided in the spec.  You can also provide additional validation constraints, like forcing strings to be from a particular set of values, or having integers be in a range. Whenever these constraints are violated, the user gets a descriptive error message.
+You then get an easy API for querying and setting these values as your code runs. And, you can call back into the user's config via callback whenever needed.
 
 # Getting Started
 
-Conform is [written in Nim](https://nim-lang.org/), and currently requires it. Nim is fast like C and Rust, but with a memory model closer to Rust’s, so nice and safe. It easily compiles to a single, statically (like Go). Plus, it mostly looks like Python.
+Currently, Con4m hasn't been officially released. We expect to provide a distro with the stand-alone compiler (for testing specs and config files), libcon4m and various language integrations (currently it's just C/C++ and Nim, but we will do at least Python and Go before 1.0).
+
+Right now, you have to build from source, which requires Nim (https://nim-lang.org/), a systems language that's fast and has strong memory safety by default, yet somehow feels like Python.
 
 If you have Nim installed, you can easily install the current version with nimble:
 
 ```bash
-nimble install con4m
+nimble install https://github.com/crashappsec/con4m
 ```
 
-Then, from your Nim application, you only need to: `import con4m`
+Then, you can run the `con4m` compiler, link to libcon4m, or, if you're a Nim user, simply `import con4m`
 
 # More Information
 
 - Getting started.
-- [Learn about the Con4m configuration file syntax](docs/writing.md). It’s familiar, fast, easy, while being just powerful enough. And it always terminates.
+- [Learn about the Con4m configuration file syntax](docs/writing.md). It’s familiar, fast, easy, while being just powerful enough. And it always terminates.  This is currently a bit out of date... we'll do a doc run before 1.0.
 - [Con4m API docs for Nim.](docs/nim-api.md)
-- Browse the current list of [builtin function calls](docs/builtins.md).
+- Browse the current list of [builtin function calls](docs/builtins.md).  This is similarly a bit out of date.
 - Learn about planned features in [the Github backlog](https://github.com/crashappsec/con4m/issues).
 
 # About

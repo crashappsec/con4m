@@ -501,13 +501,13 @@ proc c4mReadFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
       f.close()
 
 proc c4mWriteFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  try:
-    let f = newFileStream(resolvePath(unpack[string](args[0])), fmWrite)
-    f.write(unpack[string](args[1]))
-    f.close()
-    return trueRet
-  except:
-    return falseRet
+  let f = newFileStream(resolvePath(unpack[string](args[0])), fmWrite)
+
+  if f == nil: return falseRet
+
+  f.write(unpack[string](args[1]))
+  f.close()
+  return trueRet
 
 proc c4mJoinPath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let res = joinPath(unpack[string](args[0]), unpack[string](args[1]))
