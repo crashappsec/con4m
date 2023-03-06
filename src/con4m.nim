@@ -70,40 +70,39 @@ elif isMainModule:
     else:
       discard
   let
-    phaseOps = ["tokenize", "parse", "check", "eval"]
-    outOps   = ["json", "pretty", "none"]
-    argParser  = newArgSpec(defaultCmd = true).
-                 addChoiceFlag('a', "attr-output", outOps, true, setOutStyle).
-                 addBinaryFlag('k', "show-tokens", setDumpToks).
-                 addBinaryFlag('t', "show-parse-tree", setShowParse).
-                 addBinaryFlag('x', "show-checked-tree", setShowChecked).
-                 addBinaryFlag('F', "show-funcs", setShowFuncs).
-                 addPairedFlag('c', 'C', "color", setShowColors).
-                 addBinaryFlag('d', "debug", setCTrace).
-                 addBinaryFlag('h',"help")
+    phaseOps  = ["tokenize", "parse", "check", "eval"]
+    outOps    = ["json", "pretty", "none"]
+    argParser =
+      newCmdLineSpec().
+        addChoiceFlag("attr-output", outOps, true, ["a"], callback=setOutStyle).
+        addBinaryFlag("show-tokens", ["k"], callback = setDumpToks).
+        addBinaryFlag("show-parse-tree", ["t"], callback = setShowParse).
+        addBinaryFlag("show-checked-tree", ["x"], callback = setShowChecked).
+        addBinaryFlag("show-funcs", ["F"], callback = setShowFuncs).
+        addBinaryFlag("debug", ["d"], callback = setCTrace).
+        addBinaryFlag("help", ["h"]).
+        addYesNoFlag("color", some('c'), some('C'), callback = setShowColors)
 
-  argParser.addCommand("compile", ["c"]).addArgs(min=1).
-               addFlagWithStrArg('s', "spec", setSpecFile).
-               addChoiceFlag('p', "phase", phaseOps, true, setStopPhase)
+  argParser.addCommand("compile", ["c"]).
+    addArgs(min=1).
+    addFlagWithArg("spec", ["s"], callback = setSpecFile).
+    addChoiceFlag("phase", phaseOps, true, ["p"], callback = setStopPhase)
 
-  argParser.addCommand("specgen", ["spec", "c42", "genspec"]).addArgs(min=1, max=1).
-               addFlagWithStrArg('l', "language", setGenOutLang).
-               addFlagWithStrArg('o', "output-file", setGenOutFile)
+  argParser.addCommand("specgen", ["spec", "c42", "genspec"]).
+    addFlagWithArg("language", ["l"], callback = setGenOutLang).
+    addFlagWithArg("output-file", ["o"], callback = setGenOutFile).
+    addArgs(min=1, max=1)
+
 
   argParser.addCommand("help", ["h"]).addArgs(min=0)
 
   try:
-    let (parsed, done) = argParser.mostlyParse(topHasDefault = true)
+    let
+      parse = argParser.parse(defaultCmd = some("compile"))
+      flags = parse.flags
 
-    if parsed.getCurrentCommandName().isNone():
-      applyDefault(parsed, "compile")
-
-    let flags   = parsed.getFlags()
-    parsed.commit()
-
-    currentCmd = parsed.getCurrentCommandName().get()
-
-    var args = parsed.getSubCommand().get().getArgs()
+    currentCmd = parse.getCommand()
+    var args   = parse.getArgs(currentCmd).get()
     if "help" in flags:
       if len(args) == 0: args = @["help"]
       echo getHelp(helpCorpus, args)
@@ -112,7 +111,7 @@ elif isMainModule:
     case currentCmd
     of "compile":
       var
-        spec:    ConfigSpec = nil
+        spec:    ConfigSpec  = nil
         specCtx: ConfigState = nil
       if specFile.isSome():
         let `spec?` = c42Spec(specfile.get())

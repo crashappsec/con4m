@@ -131,6 +131,8 @@ type
     locked*:      bool
     lockOnWrite*: bool
     firstDef*:    Option[Con4mNode]
+    defs*:        seq[Con4mNode]
+    uses*:        seq[Con4mNode]
 
   VarSym*    = ref object
     name*:     string
@@ -140,6 +142,7 @@ type
     locked*:   bool
     firstDef*: Option[Con4mNode]
     defs*:     seq[Con4mNode]
+    uses*:     seq[Con4mNode]
 
   VLookupOp*   = enum vlDef, vlUse, vlMask, vlFormal
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists

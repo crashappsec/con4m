@@ -41,8 +41,7 @@ proc findMatchingProcs*(s:          ConfigState,
 
   for item in s.funcTable[name]:
     if not unify(tInfo.copyType(), item.tInfo.copyType()).isBottom():
-      if (item.kind != FnBuiltIn) and item.impl.isNone():
-          continue
+      if (item.kind != FnBuiltIn) and item.impl.isNone(): continue
       result.add(item)
 
   if len(s.funcTable[name]) == 0 and not s.secondpass:
@@ -726,13 +725,25 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           node.procRef  = s.findMatchingProcs("echo", t)[0]
           node.typeInfo = bottomType
           return
-        fatal(fmt"No matching signature found for function '{fname}'. " &
-              fmt"Expected type was: {$(node.children[1].typeInfo)}")
-      s.waitingForTypeInfo = true
-      node.typeInfo = node.children[1].getType().retType
+        # Don't bail for missing f()'s if we're not executing, since we may
+        # not have them if the runtime environment adds their own functions.
+        if stopPhase > phCheck:
+          node.children[1].typeInfo.retType = node.typeInfo
+          fatal(fmt"No matching signature found for function '{fname}'. " &
+                fmt"Expected type was: {$(node.children[1].typeInfo)}")
+        else:
+          let
+            y = toAnsiCode(acYellow)
+            r = toAnsiCode(acReset)
+          node.children[1].typeInfo.retType = node.typeInfo
+          echo(fmt"{y}warning:{r} No matching signature found for function " &
+               fmt"'{fname}'. Expected type was: {$(node.children[1].typeInfo)}")
+      else:
+        s.waitingForTypeInfo = true
+        node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)
     else:
       if not s.secondPass:
-        node.typeInfo = node.children[1].getType().retType
+        node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)
         s.waitingForTypeInfo = true
       else:
         var err = "Ambiguous call (matched multiple implementations):\n"
@@ -940,6 +951,7 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
   # Now that we've finished the first pass, unlink any nodes that are
   # function decls, so they don't participate in the primary program
   # execution.
+  #
   var n = node.children.len()
   while n != 0:
     n = n - 1
@@ -965,6 +977,16 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
       item.checkNode(s)
     for funcRoot in s.moduleFuncImpls:
       funcRoot.checkNode(s)
+
+  # After the second pass, if any of those functions have 'result'
+  # variables that were never used, then set the result variable's
+  # type to ⊥ (the null type).
+  for funcRoot in s.moduleFuncImpls:
+    let resultVarSym = funcRoot.varScope.varLookup("result", vlUse).get()
+    if len(resultVarSym.uses) == 0:
+      discard resultVarSym.tInfo.unify(bottomType)
+
+
 
   when defined(disallowRecursion):
     # This cycle check waits until we are sure all forward references

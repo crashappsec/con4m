@@ -82,17 +82,28 @@ proc newVarSym(name: string): VarSym =
 ## either a symbol or an error.  Since there is only a max of one error
 ## condition for each type of lookup, we model this with an Option.
 
-proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
+proc varLookup*(scope: VarScope,
+                name:  string,
+                op:    VLookupOp,
+                node:  Con4mNode = nil): Option[VarSym] =
   if name in scope.contents:
     case op
-    of vlDef, vlUse:
-      return some(scope.contents[name])
+    of vlDef:
+      let sym = scope.contents[name]
+      if node != nil and node notin sym.defs: sym.defs.add(node)
+
+      return some(sym)
+    of vlUse:
+      let sym = scope.contents[name]
+      if node != nil and node notin sym.uses: sym.uses.add(node)
+      return some(sym)
     of vlMask:
-      return some(scope.contents[name])
+      let sym = scope.contents[name]
+      if node != nil and node notin sym.defs: sym.defs.add(node)
+      return some(sym)
     of vlFormal:
       let sym = scope.contents[name]
-      if not sym.persists:
-        return none(VarSym)
+      if not sym.persists: return none(VarSym)
       # else fall through and stick in a new symbol.
 
   case op
@@ -100,33 +111,34 @@ proc varLookup*(scope: VarScope, name: string, op: VLookupOp): Option[VarSym] =
     var sym              = newVarSym(name)
     result               = some(sym)
     scope.contents[name] = sym
+    if node != nil:
+      sym.firstDef = some(node)
+      sym.defs     = @[node]
   of vlDef:
     if scope.parent.isSome():
       # it's a def lookup in OUR scope, but a use lookup in
       # parent scopes, if we have to recurse.
       let maybe = scope.parent.get().varLookup(name, vlUse)
-      if maybe.isSome():
-        return maybe
+      if maybe.isSome(): return maybe
 
     var sym              = newVarSym(name)
     result               = some(sym)
     scope.contents[name] = sym
+    if node != nil:
+      sym.firstDef = some(node)
+      sym.defs     = @[node]
   of vlUse:
-    if scope.parent.isSome():
-      return scope.parent.get().varLookup(name, vlUse)
-    else:
-      return none(VarSym)
+    if scope.parent.isSome(): return scope.parent.get().varLookup(name, vlUse)
+    else:                     return none(VarSym)
 
 proc varUse*(node: Con4mNode, name: string): Option[VarSym] =
-  return varLookup(node.varScope, name, vlUse)
+  return varLookup(node.varScope, name, vlUse, node)
 
 proc addVariable*(node: Con4mNode, name: string): VarSym =
   result = varLookup(node.varScope, name, vlDef).get()
 
-  if result.firstDef.isNone():
-    result.firstDef = some(node)
-  if node notin result.defs:
-    result.defs.add(node)
+  if result.firstDef.isNone(): result.firstDef = some(node)
+  if node notin result.defs:   result.defs.add(node)
 
 ## With var scopes, we have a single name, where we are always
 ## searching back up a stack when we need to search.
