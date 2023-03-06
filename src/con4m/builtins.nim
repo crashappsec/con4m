@@ -827,6 +827,43 @@ proc c4mDSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack[OrderedTableRef[Box,Box]](t))
 
+proc c4mLDeleteItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    l           = unpack[seq[Box]](args[0])
+    toDel       = unpack[Box](args[1])
+    n: seq[Box] = @[]
+
+  for item in l:
+    if item != toDel:
+      n.add(item)
+
+  return some(pack(n))
+
+proc c4mDDeleteItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    t     = unpack[OrderedTableRef[Box, Box]](args[0])
+    toDel = args[1]
+    ret   = OrderedTableRef[Box, Box]()
+
+  for k, v in t:
+    if k != toDel:
+      ret[k] = v
+
+  return some(pack(ret))
+
+proc c4mLRemoveIx*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    l           = unpack[seq[Box]](args[0])
+    ix          = unpack[int](args[1])
+    n: seq[Box] = @[]
+
+  for i, item in l:
+    if ix != i:
+      n.add(item)
+
+  return some(pack(n))
+
+
 proc c4mSplitPath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   var s: seq[string]
 
@@ -894,6 +931,18 @@ when defined(posix):
 
   proc c4mGetEuid*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     return some(pack(geteuid()))
+
+  proc c4mUname*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+    var
+      unameInfo: Utsname
+      items:     seq[string] = @[]
+    discard posix.uname(unameInfo)
+    items.add($(cast[cstring](addr unameInfo.sysname[0])))
+    items.add($(cast[cstring](addr unameInfo.nodename[0])))
+    items.add($(cast[cstring](addr unameInfo.release[0])))
+    items.add($(cast[cstring](addr unameInfo.version[0])))
+    items.add($(cast[cstring](addr unameInfo.machine[0])))
+    result = some(pack(items))
 
 else:
   ## I don't know the permissions models on any non-posix OS, so
@@ -982,7 +1031,7 @@ const defaultBuiltins* = [
   (10,  "IPAddr",    BiFn(c4mStoIP),           "f(string) -> IPAddr"),
   (11,  "CIDR",      BiFn(c4mSToCIDR),         "f(string) -> CIDR"),
   (12,  "Size",      BiFn(c4mSToSize),         "f(string) -> Size"),
-  (12,  "Date",      BiFn(c4mSToDate),         "f(string) -> Date"),
+  (13,  "Date",      BiFn(c4mSToDate),         "f(string) -> Date"),
   (14,  "Time",      BiFn(c4mSToTime),         "f(string) -> Time"),
   (15,  "DateTime",  BiFn(c4mSToDateTime),     "f(string) -> DateTime"),
   (16,  "to_usec",   BiFn(c4mSelfRet),         "f(Duration) -> int"),
@@ -1040,6 +1089,9 @@ const defaultBuiltins* = [
   (207, "contains", BiFn(c4mDictContains),    "f({@x : @y}, @x) -> bool"),
   (208, "set",      BiFn(c4mLSetItem),        "f([@x], int, @x) -> [@x]"),
   (209, "set",      BiFn(c4mDSetItem),        "f({@k:@v},@k,@v) -> {@k:@v}"),
+  (210, "delete",   BiFn(c4mLDeleteItem),     "f([@x], @x) -> [@x]"),
+  (211, "delete",   BiFn(c4mDDeleteItem),     "f({@k:@v}, @k) -> {@k:@v}"),
+  (212, "remove",   BiFn(c4mLRemoveIx),       "f([@x], int) -> [@x]"),
 
   # File system routines
   (301, "list_dir",     BiFn(c4mListDir),      "f() -> [string]"),
@@ -1097,7 +1149,9 @@ when defined(posix):
     (901, "run",       BiFn(c4mCmd),          "f(string) -> string"),
     (902, "system",    BiFn(c4mSystem),       "f(string) -> (string, int)"),
     (903, "getuid",    BiFn(c4mGetUid),       "f() -> int"),
-    (904, "geteuid",   BiFn(c4mGetEuid),      "f() -> int")
+    (904, "geteuid",   BiFn(c4mGetEuid),      "f() -> int"),
+    (905, "uname",     BiFn(c4mUname),        "f() -> [string]"),
+
    ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
