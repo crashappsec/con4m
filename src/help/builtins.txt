@@ -34,11 +34,12 @@ ID::Function::Description
 111::base64_web(string) -> string::Base64 encode a string using the web-safe character scheme.
 112::debase64(string) -> string::Decode a base64 encoded string (works with regular or web character sets)
 113::hex(string) -> string::Hex-encode a string.
-114::dehex(string) -> string::Decode a hex-encoded string.
-115::sha256(string) -> string::Compute the SHA256 checksum of a value, returning a hex-encoded value.
-116::sha512(string) -> string::Compute the SHA512 checksum of a value, returning a hex-encoded value.
-117::upper(string) -> string::Convert all lower case code points in a string to upper case.
-118::lower(string) -> string::Converts all upper case code points in a string to lower case.
+114::hex(int) -> string::Hex-encode an integer.
+115::dehex(string) -> string::Decode a hex-encoded string.
+116::sha256(string) -> string::Compute the SHA256 checksum of a value, returning a hex-encoded value.
+117::sha512(string) -> string::Compute the SHA512 checksum of a value, returning a hex-encoded value.
+118::upper(string) -> string::Convert all lower case code points in a string to upper case.
+119::lower(string) -> string::Converts all upper case code points in a string to lower case.
 201::len([@T]) -> int::Returns the number of items in a list.
 202::len({@K : @V}) -> int:: Returns the number of items in a dictionary.
 203::keys({@K : @V}) -> [@K]::Returns a list of the keys in a dictionary.
@@ -98,6 +99,5 @@ ID::Function::Description
 903::getuid() -> int:: Returns the current uid of the process.
 904::geteuid() -> int::Returns the current euid of the process. Note, however, that, even if the process has euid 0, those permissions will be dropped before any call that runs a command or might modify the file system.
 905::uname() -> [string]:: Returns five items, the sysname (the name of the operating system implementation), the nodename (the network name of this machine), the release level of the operating system, the version level of the operating system and the machine hardware platform.  This is just proxying the uname() system call, but usually the version string (result[3]) will be everything-in-one.
-
 }%
 The function ID can be used to remove the function from a con4m runtime instance.  Functions starting with 900 are Posix-specific, and may not be available on every platform (i.e., Windows)

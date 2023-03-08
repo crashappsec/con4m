@@ -465,12 +465,12 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       else:
         s.setPosition(s.getPosition() - 1)
         r = s.readRune()
-      if not r.isIdStart():
+      if not r.isIdStart() and r != Rune('$'):
         tok(ErrorTok)
         return (false, toks)
       while true:
         r = s.peekRune()
-        if r.isIdContinue():
+        if r.isIdContinue() or r == Rune('$'):
           discard s.readRune()
         else:
           break

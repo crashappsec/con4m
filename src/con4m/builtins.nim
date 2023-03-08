@@ -648,6 +648,10 @@ proc c4mDecode64*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mToHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(toHex(unpack[string](args[0]))))
 
+proc c4mInttoHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let i = unpack[int](args[0])
+  return some(pack(toHex(unpack[int](args[0]))))
+
 proc c4mFromHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     return some(pack(parseHexStr(unpack[string](args[0]))))
@@ -1073,11 +1077,12 @@ const defaultBuiltins* = [
   (111, "base64_web", BiFn(c4mBase64Web),      "f(string) -> string"),
   (112, "debase64",   BiFn(c4mDecode64),       "f(string) -> string"),
   (113, "hex",        BiFn(c4mToHex),          "f(string) -> string"),
-  (114, "dehex",      BiFn(c4mFromHex),        "f(string) -> string"),
-  (115, "sha256",     BiFn(c4mSha256),         "f(string) -> string"),
-  (116, "sha512",     BiFn(c4mSha512),         "f(string) -> string"),
-  (117, "upper",      BiFn(c4mUpper),          "f(string) -> string"),
-  (118, "lower",      BiFn(c4mLower),          "f(string) -> string"),
+  (114, "hex",        BiFn(c4mIntToHex),       "f(int) -> string"),
+  (115, "dehex",      BiFn(c4mFromHex),        "f(string) -> string"),
+  (116, "sha256",     BiFn(c4mSha256),         "f(string) -> string"),
+  (117, "sha512",     BiFn(c4mSha512),         "f(string) -> string"),
+  (118, "upper",      BiFn(c4mUpper),          "f(string) -> string"),
+  (119, "lower",      BiFn(c4mLower),          "f(string) -> string"),
 
   # Container (list and dict) basics.
   (201, "len",      BiFn(c4mListLen),         "f([@x]) -> int"),
