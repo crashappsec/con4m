@@ -832,6 +832,42 @@ proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
 
   return some(pack($(sym.tInfo)))
 
+proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  ## Arg 0 is the field we're type-checking.
+  ## Arg 1 is the field that we expect to contain a typespec,
+  ## where that typespec should indicate the type of arg 0.
+  let
+    varName = unpack[string](args[0])
+    tsField = unpack[string](args[1])
+    state   = replacementState.getOrElse(localState)
+    aOrE1   = attrLookup(state.attrs, varName.split("."), 0, vlExists)
+    aOrE2   = attrLookup(state.attrs, tsField.split("."), 0, vlExists)
+
+  if aOrE1.isA(AttrErr):       return some(pack($(bottomType)))
+  if aOrE2.isA(AttrErr):       return some(pack($(bottomType)))
+  let
+    aOrS1 = aOrE1.get(AttrOrSub)
+    aOrS2 = aOrE2.get(AttrOrSub)
+    
+  if not aOrS1.isA(Attribute): return some(pack($(bottomType)))
+  if not aOrS2.isA(Attribute): return some(pack($(bottomType)))
+  
+  var
+    symToCheck = aOrS1.get(Attribute)
+    tsFieldSym = aOrS2.get(Attribute)
+    tsValOpt   = tsFieldSym.attrToVal()
+
+  if tsFieldSym.tInfo.unify(typeSpecType).isBottom():
+    raise c4mException("Field '" & tsField & "' is not a typespec.")
+
+  if tsValOpt.isNone():
+    raise c4mException("Field '" & tsField & "' has no value provided.")
+
+  var tsValType = (unpack[string](tsValOpt.get())).toCon4mType()
+
+  return some(pack(not tsValType.unify(symToCheck.tInfo).isBottom()))
+  
+
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -1182,10 +1218,11 @@ const defaultBuiltins* = [
   (506, "bitnot",       BiFn(c4mBitNot),       "f(int) -> int"),
 
   # Con4m-specific stuff
-  (601, "sections",    BiFn(c4mSections),    "f(string) -> [string]"),
-  (602, "typeof",      BiFn(c4mTypeOf),      "f(@a) -> typespec"),
-  (603, "typecmp",     BiFn(c4mCmpTypes),    "f(typespec, typespec) -> bool"),
-  (604, "attr_type",   BiFn(c4mAttrGetType), "f(string) -> typespec"),
+  (601, "sections",     BiFn(c4mSections),    "f(string) -> [string]"),
+  (602, "typeof",       BiFn(c4mTypeOf),      "f(@a) -> typespec"),
+  (603, "typecmp",      BiFn(c4mCmpTypes),    "f(typespec, typespec) -> bool"),
+  (604, "attr_type",    BiFn(c4mAttrGetType), "f(string) -> typespec"),
+  (605, "attr_typecmp", BiFn(c4mRefTypeCmp),  "f(string, string) -> bool")
 
   # Should also add get_attr() that requires runtime type checking;
   # the user basically specifies what type they are expecting for the
