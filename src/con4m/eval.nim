@@ -205,8 +205,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
   of NodeFuncDef, NodeTypeList, NodeTypeDict, NodeTypeTuple, NodeTypeString,
-     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeVarDecl, NodeExportDecl,
-     NodeVarSymNames:
+     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeTypeLit, NodeTypeCallback,
+     NodeVarDecl, NodeExportDecl, NodeVarSymNames:
     return # Nothing to do, everything was done in the check phase.
   of NodeReturn:
     if node.children.len() != 0:

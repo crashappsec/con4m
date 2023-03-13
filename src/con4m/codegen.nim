@@ -149,6 +149,10 @@ proc declToNimType(v: Con4mType): string =
     return "Con4mTime"
   of TypeDateTime:
     return "Con4mDateTime"
+  of TypeTypeSpec:
+    return "typespec"
+  of TypeCallback:
+    return "callback"
   of TypeInt:
     return "int"
   of TypeFloat:

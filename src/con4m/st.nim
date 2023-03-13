@@ -377,7 +377,9 @@ const simpleTypes = { "string"   : TypeString,
                       "Size"     : TypeSize,
                       "DateTime" : TypeDateTime,
                       "Date"     : TypeDate,
-                      "Time"     : TypeTime
+                      "Time"     : TypeTime,
+                      "callback" : TypeCallback,
+                      "typespec" : TypeTypeSpec
                     }
 
 proc handleOrTypes(constraints: var set[Con4mTypeKind], x: string): string =
@@ -426,8 +428,7 @@ proc toCon4mType(s: string, tv: TableRef): (Con4mType, string) =
     n          = unicode.strip(s)
     (st, rest) = s.checkSimpleTypes()
 
-  if st != bottomType:
-    return (st, rest)
+  if st != bottomType: return (st, rest)
 
   if n.len() == 0:
     raise newException(ValueError, "Cannot convert a null string to a type")

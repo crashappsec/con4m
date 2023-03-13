@@ -17,7 +17,7 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtCallback, TtVar, TtOtherLit, TtSof,
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtSof,
     TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
 
   Con4mToken* = ref object
@@ -45,13 +45,13 @@ type
     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum,
     NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict, NodeTypeList,
     NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat, NodeTypeBool,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames
+    NodeTypeLit, NodeTypeCallback, NodeVarDecl, NodeExportDecl, NodeVarSymNames
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
     TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-    TypeDateTime, TypeProc, TypeTVar, TypeBottom
+    TypeDateTime, TypeTypeSpec, TypeCallback, TypeProc, TypeTVar, TypeBottom
 
   Con4mType* = ref object
     ## The internal representation of a type.  Generally, you should
@@ -271,10 +271,11 @@ let
   dateType*     = Con4mType(kind: TypeDate)
   timeType*     = Con4mType(kind: TypeTime)
   dateTimeType* = Con4mType(kind: TypeDateTime)
+  typeSpecType* = Con4mType(kind: TypeTypeSpec)
+  callbackType* = Con4mType(kind: TypeCallback)
   bottomType*   = Con4mType(kind: TypeBottom)
 
-proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
-  return newTable[K, V]()
+proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
 
 type
   LookupErr* = enum

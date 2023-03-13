@@ -203,7 +203,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   case node.kind
   of NodeReturn:
     if not s.funcOrigin:
-      fatal("Return not allowed outside function or callback definition")
+      fatal("Return not allowed outside function definition")
     if len(node.children) == 0:
       let
         entry = node.varUse("result").get()
@@ -249,7 +249,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         maybeEntry: AttrOrErr
 
       if s.funcOrigin:
-        fatal("Cannot introduce a section within a func or callback", node)
+        fatal("Cannot introduce a section within a function", node)
 
       node.nameConflictCheck(secname, s, [ucAttr, ucNone])
 
@@ -270,7 +270,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeAttrAssign, NodeAttrSetLock:
     var nameParts: seq[string]
     if s.funcOrigin:
-      fatal("Cannot assign to attributes within functions or callbacks.", node)
+      fatal("Cannot assign to attributes within functions.", node)
     if node.children[0].kind != NodeIdentifier:
       nameParts = @[]
       for child in node.children[0].children:
@@ -851,6 +851,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = boolType
   of NodeTypeString:
     node.typeInfo = stringType
+  of NodeTypeLit:
+    node.checkKids(s)
+    node.typeInfo = typeSpecType
+    node.value    = pack($(node.children[0].getType()))
+  of NodeTypeCallback:
+    node.typeInfo = callbackType
+    node.value    = pack(node.children[0].getTokenText())
   of NodeTypeList:
     node.checkKids(s)
     node.typeInfo = Con4mType(kind:     TypeList,

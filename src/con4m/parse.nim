@@ -42,7 +42,6 @@ proc getTokenText*(node: Con4mNode): string {.inline.} =
   ## This returns the raw string associated with a token.  Internal.
   return node.token.get().getTokenText()
 
-
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
 type ParseCtx = ref object
@@ -103,6 +102,8 @@ proc lookAhead(ctx: ParseCtx, numToks: int = 1): Con4mToken =
   result = ctx.curTok()
   ctx.curTokIx = cur
 
+proc isColonLiteral(ctx: ParseCtx): bool = ctx.lookAhead().kind == TtColon
+
 # When outputting errors, we might want to back up a token.
 # need to skip ws when doing that.
 proc unconsume(ctx: ParseCtx) =
@@ -137,6 +138,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode
 proc accessExpr(ctx: ParseCtx): Con4mNode
 proc literal(ctx: ParseCtx): Con4mNode
 proc divExpr(ctx: ParseCtx): Option[Con4mNode]
+proc typeSpec(ctx: ParseCtx): Con4mNode
 
 template exprProds(exprName: untyped,
                    rhsName: untyped,
@@ -419,6 +421,22 @@ proc notExpr(ctx: ParseCtx): Con4mNode =
 
   return newNode(NodeNot, tok, @[res])
 
+proc colonLiteral(ctx: ParseCtx): Con4mNode =
+  case ctx.curTok().getTokenText()
+  of "type":
+    result = newNode(NodeTypeLit, ctx.consume())
+    discard ctx.consume()
+    result.children = @[ctx.typeSpec()]
+  of "callback":
+    result = newNode(NodeTypeCallback, ctx.consume())
+    discard ctx.consume()
+    let tok = ctx.consume()
+    if tok.kind != TtIdentifier:
+      parseError("Expected an identifier here for a callback literal")
+    result.children = @[newNode(NodeIdentifier, tok)]
+  else:
+    parseError("Invalid literal type")
+
 proc unaryExpr(ctx: ParseCtx): Con4mNode =
   let tok = ctx.consume()
   var res: Con4mNode
@@ -430,7 +448,10 @@ proc unaryExpr(ctx: ParseCtx): Con4mNode =
      TtLBracket, TtLParen, TtOtherLit:
     res = ctx.literal()
   of TtIdentifier:
-    res = ctx.accessExpr()
+    if ctx.isColonLiteral():
+      res = ctx.colonLiteral()
+    else:
+      res = ctx.accessExpr()
   of TtNot:
     parseError("Unary before ! disallowed")
   else:
@@ -448,7 +469,8 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
      TtLBracket, TtLParen, TtOtherLit:
     return ctx.literal()
   of TtIdentifier:
-    return ctx.accessExpr()
+    if ctx.isColonLiteral(): return ctx.colonLiteral()
+    else:                    return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
 
@@ -548,18 +570,18 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
     else:
       parseError("Expected a newline, or more vars")
 
-proc fnOrCallback(ctx: ParseCtx): Con4mNode =
+proc funcDecl(ctx: ParseCtx): Con4mNode =
   let
     t  = ctx.consume()
     id = ctx.consume()
 
   if id.kind != TtIdentifier:
-    parseError("Expected identifier to name function or callback")
+    parseError("Expected identifier to name function")
 
   let formals = newNode(NodeFormalList, ctx.curTok())
 
   if ctx.consume().kind != TtLParen:
-    parseError("Expected '(' to start func or callback parameter defs")
+    parseError("Expected '(' to start func parameter defs")
 
   case ctx.curTok().kind
   of TtRParen:
@@ -870,13 +892,13 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       result.children.add(ctx.breakStmt())
     of TtReturn:
       result.children.add(ctx.returnStmt())
-    of TtFunc, TtCallback:
+    of TtFunc:
       # These will get skipped in top-level execution, but we leave
       # them in the main tree until the tree checking gets here, just
       # to make life a bit easier.
       if toplevel:
         ctx.nlWatch = false
-        result.children.add(ctx.fnOrCallback())
+        result.children.add(ctx.funcDecl())
       else:
         parseError("Functions are only allowed at the top level", false)
     of TtVar:

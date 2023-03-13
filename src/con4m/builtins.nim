@@ -6,7 +6,8 @@
 ## :Copyright: 2022 - 2023
 
 import os, tables, osproc, strformat, strutils, options, streams, base64, macros
-import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits
+import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits,
+       dollars
 from unicode import toLower, toUpper
 
 when defined(posix):
@@ -156,6 +157,10 @@ proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
       return "<<" & unpack[string](b) & ">>"
     else:
       return unpack[string](b)
+  of TypeTypeSpec:
+    return "type: " & unpack[string](b)
+  of TypeCallback:
+    return "callback: " & unpack[string](b)
   of TypeInt:
     return $(unpack[int](b))
   of TypeFloat:
@@ -793,8 +798,39 @@ proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
     if aOrS.isA(AttrScope):
       res.add(key)
 
-
   return some(pack(res))
+
+proc c4mTypeOf*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  let
+    actNode  = localstate.nodeStash.children[1]
+    itemType = actNode.children[0].getType()
+
+  return some(pack($(itemType)))
+
+proc c4mCmpTypes*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    t1str = unpack[string](args[0])
+    t2str = unpack[string](args[1])
+    t1    = t1str.toCon4mType()
+    t2    = t2str.toCon4mType()
+
+  return some(pack(not t1.unify(t2).isBottom()))
+
+proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  ## This allows us to, from within a c42 spec, query the type of an
+  ## attr in the actual con4m file we're checking.  Otherwise, we
+  ## could simply use the previous function to get the type of an attribute.
+  let
+    varName = unpack[string](args[0])
+    state   = replacementState.getOrElse(localState)
+    aOrE    = attrLookup(state.attrs, varName.split("."), 0, vlExists)
+
+  if aOrE.isA(AttrErr):       return some(pack($(bottomType)))
+  let aOrS = aOrE.get(AttrOrSub)
+  if not aOrS.isA(Attribute): return some(pack($(bottomType)))
+  var sym  = aOrS.get(Attribute)
+
+  return some(pack($(sym.tInfo)))
 
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
@@ -1146,7 +1182,17 @@ const defaultBuiltins* = [
   (506, "bitnot",       BiFn(c4mBitNot),       "f(int) -> int"),
 
   # Con4m-specific stuff
-  (601, "sections",     BiFn(c4mSections),     "f(string) -> [string]"),
+  (601, "sections",    BiFn(c4mSections),    "f(string) -> [string]"),
+  (602, "typeof",      BiFn(c4mTypeOf),      "f(@a) -> typespec"),
+  (603, "typecmp",     BiFn(c4mCmpTypes),    "f(typespec, typespec) -> bool"),
+  (604, "attr_type",   BiFn(c4mAttrGetType), "f(string) -> typespec"),
+
+  # Should also add get_attr() that requires runtime type checking;
+  # the user basically specifies what type they are expecting for the
+  # return value, and that gets checked before returning.  And
+  # possibly typespec(string) -> typespec that's a dynamic form of the
+  # typespec: literal indicator?  get_attr() would require some
+  # binding indicator.
 ]
 
 when defined(posix):

@@ -69,6 +69,8 @@ proc `$`*(t: Con4mType): string =
   of TypeDate:     return "Date"
   of TypeTime:     return "Time"
   of TypeDateTime: return "DateTime"
+  of TypeTypeSpec: return "typespec"
+  of TypeCallback: return "callback"
   of TypeList:     return fmt"[{t.itemType}]"
   of TypeDict:     return fmt"{{{t.keyType} : {t.valType}}}"
   of TypeTuple:
@@ -171,6 +173,8 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeVarDecl:      fmtNt("VarDecl")
   of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")
+  of NodeTypeLit:      fmtNt("TypeLit")
+  of NodeTypeCallback: fmtNtNamed("TypeCallback")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))

@@ -76,7 +76,8 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
 
   case t1.kind
   of TypeString, TypeBool, TypeInt, TypeFloat, TypeDuration, TypeIPAddr,
-       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
+       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime, TypeTypeSpec,
+       TypeCallback:
     if t2.kind == t1.kind: return t1
     return bottomType
   of TypeBottom: return bottomType

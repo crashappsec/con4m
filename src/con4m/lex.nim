@@ -499,7 +499,6 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "return": tok(TtReturn)
       of "enum": tok(TtEnum)
       of "func": tok(TtFunc)
-      of "callback": tok(TtCallback)
       of "export": tok(TtExportVar)
 
       else: tok(TtIdentifier)

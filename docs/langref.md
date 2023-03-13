@@ -23,14 +23,15 @@ Major lexical elements are  are all-uppercase here. Minor ones are inlined, in d
 are ignored in most expression contexts (they’re only used to separate statements where there would otherwise be ambiguity).
 
 ```ebnf
-top           ::= (sectBodyItems | enum | fnOrCallback) *
+top           ::= (sectBodyItems | enum | funcDecl) *
 body          ::= sectBodyItems *
 coreBodyItems ::= attrAssign | varAssign | ifStmt | forStmt | continueStmt |
-                   breakStmt | returnStmt | varStmt | expression (NL|";")+
+                   breakStmt | returnStmt | varStmt | exportSmt |
+		   expression (NL|";")+
 sectBodyItems ::= coreBodyItems | section
 enum          ::= "enum" ID ("," ID)*
 attrAssign    ::= ("~")? ID("." ID)* ("="|":") expression (NL|";")+
-varAssign     ::= ("$")? ID ("," ID)* ":=" expression (NL|";")+
+varAssign     ::= ID ("," ID)* ":=" expression (NL|";")+
 section       ::= ID (STR | ID)? "{" body "}"
 ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
@@ -39,11 +40,12 @@ forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
 continueStmt  ::= "continue" (";")?
 breakStmt     ::= "break" (";")?
 returnStmt    ::= "return" expression? (";")?
-fnOrCallback  ::= ("func" | "callback") ID formalSpec fnBody
+funcDecl      ::= "func" ID formalSpec fnBody
 formalSpec    ::= "(" (paramSpec? ("," paramSpec)* ")"
 paramSpec     ::= ID (":" typeSpec)
 varDeclItem   ::= ID ("," ID)* ":" typeSpec 
 varStmt       ::= "var" varDeclItem ("," varDeclItem)*
+exportStmt    ::= "export" ID ("," ID)*
 typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" | 
                    "{" typeSpec "}" | "(" typeSpec, (typeSpec)+ ")"
 fnBody        ::= "{" coreBodyItems* "}"
@@ -52,12 +54,15 @@ fnBody        ::= "{" coreBodyItems* "}"
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
 notExpr       ::= ("!" | "not") expression
-literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | NULL
+literal       ::= NUM | STR | listLiteral | dictLiteral | tupleLiteral |
+                  TRUE | FALSE | NULL | typeLiteral | cbLiteral
 accessExpr    ::= (ID | parenExpr) (memberExpr | indexExpr | callActuals)*
 tupleLiteral  ::= "(" expression ("," expression)*)+ ")"
 listLiteral   ::= "[" (expression ("," expression)* )? "]"
 dictLiteral   ::= "{" (expression ":" expression
                        ("," expression ":" expression)*) "}"
+typeLiteral   ::= "type" ":" typeSpec
+cbLiteral     ::= "callback" ":" ID
 parenExpr     ::= "(" expression ")"
 memberExpr    ::= "." ID
 indexExpr     ::= "[" expression "]"
@@ -98,7 +103,7 @@ Most of the lexical elements are inlined above, exxcept for the following:
 ```ebnf
 WS          ::= (" " | "\t")+  ; Whitespace
 NL          ::= ("\r\n" | "\n") ; Newline
-ID          ::= IdStart (IdContinue)* ; As defined by unicode standard
+ID          ::= IdStart|"$" (IdContinue|"$")* ; As defined by unicode standard
 TRUE        ::= "True" | "true"
 FALSE       ::= "False" | "false"
 NULL        ::= "Null" | "null"
