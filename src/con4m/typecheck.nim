@@ -4,13 +4,78 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import types
-import st
-import tables
+import types, st, tables, dollars, options
 
-import dollars
-import options
-
+proc extractType*(node: Con4mNode, state: var Table): Con4mType =
+  case node.kind
+  of NodeVoid:         return bottomType
+  of NodeBoolType:     return boolType
+  of NodeIntType:      return intType
+  of NodeFloatType:    return floatType
+  of NodeStringType:   return stringType
+  of NodeDurationType: return durationType
+  of NodeIPAddrType:   return ipAddrType
+  of NodeCidrType:     return cidrType
+  of NodeSizeType:     return sizeType
+  of NodeDateType:     return dateType
+  of NodeTimeType:     return timeType
+  of NodeDateTimeType: return dateTimeType
+  of NodeTVar:
+    let tvName = node.children[0].getTokenText()
+    # First check the state table.  If we've seen this before, and
+    # there are constraints here, and the variable already has some
+    # constraints defined, then that's an error, they have to be
+    # defined the first time they appear in a type object.
+    if tvName in state:
+      result = newTypeVar()
+      if len(node.children) != 1:
+        parseError("Type constraints must appear with the first instance of " &
+                   "a type variable for a single type declaration")
+    else:
+      result           = newTypeVar()
+      result.localName = tvName
+      state[tvName]    = result      
+      for item in result.children[1..^1]:
+        result.constraints.add(item.extractType())
+      for i, in 0 .. (len(result.constraints) - 1):
+        for j in i+1 ..< len(result.constraints):
+          if not result.constraints[i].unify(result.constraints[j]).isBottom():
+            parseError("Type constraints may not overlap: '" &
+                       $(result.constraints[i]) & "' and '" &
+                       $(result.constraints[j]) & "'")
+  of NodeTSpecType:
+    result = Con4mType(kind: TypeTypeSpec)
+    if len(node.children) != 0:
+      result.binding = node.children[0].extractType(state)
+    else:
+      result.binding = newTypeVar()
+  of NodeTupleType:
+    result = Con4mType(kind: TypeTuple)
+    for item in node.children:
+      result.itemTypes.add(item.extractType(state))
+  of NodeListType:
+    result          = Con4mType(kind: TypeList)
+    result.itemType = node.children[0].extractType(state)
+  of NodeDictType:
+    result         = Con4mType(kind: TypeDict)
+    result.keyType = node.children[0].extractType(state)
+    result.valType = node.children[1].extractType(state)
+  of NodeFuncType:
+    result         = Con4mType(kind: TypeFunc, va: false)
+    result.retType = node.children[^1].extractType(state)
+    
+    for item in node.children[0..^2]:
+      if item.kind == NodeVarargsType:
+        result.va = true
+      else:
+        result.params.add(item.extractType(state))
+  else:
+      parseError("Invalid parse tree for type extraction")
+      
+proc extractType*(node: Con4mNode): Con4mType =
+  var t = {}.toTable()
+  return node.extractType(t)
+    
 proc resolveTypeVars*(t: Con4mType): Con4mType =
   case t.kind
   of TypeTVar:
@@ -30,8 +95,7 @@ proc getType*(n: Con4mNode): Con4mType =
   return n.typeInfo.resolveTypeVars()
 
 proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
-  if t1 == t2:
-    return
+  if t1 == t2: return
   if t2.kind == TypeTVar:
     t2.linksin.add(t1)
     t1.link = some(t2)
@@ -62,10 +126,6 @@ proc getBaseType*(node: Con4mNode): Con4mTypeKind =
 # uncomment the debug wrapper for unify below.
 # proc unify*(param1: Con4mType, param2: Con4mType): Con4mType
 
-
-# Just in case someone manages to clone a singleton, we
-# always check against the .kind field, instead of looking at
-# object equivolence for singletons (e.g., int, bottom)
 proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
   let
     t1 = param1.resolveTypeVars()
@@ -75,55 +135,57 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     return t2.unify(t1)
 
   case t1.kind
+  # Just in case someone manages to clone a singleton, we
+  # always check against the .kind field, instead of looking at
+  # object equivolence for singletons (e.g., int, bottom)
   of TypeString, TypeBool, TypeInt, TypeFloat, TypeDuration, TypeIPAddr,
-       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime, TypeTypeSpec,
-       TypeCallback:
+       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
     if t2.kind == t1.kind: return t1
     return bottomType
   of TypeBottom: return bottomType
-  of TypeProc:
-    case t2.kind
-    of TypeProc:
-      var
-        newParams: seq[Con4mType]
-        newRet: Con4mType
-        vaResult: bool
+  of TypeTypeSpec:
+    if t2.kind != TypeTypeSpec: return bottomType
+    return t1.binding.unify(t2.binding)
+  of TypeFunc:
+    if t2.kind != TypeFunc: return bottomType
+    var
+      newParams: seq[Con4mType]
+      newRet: Con4mType
+      vaResult: bool
 
-      # Actuals will never be varargs, so if we have two vararg
-      # functions, it's only because we're trying to unify two formals.
-      if ((not t1.va) and (not t2.va)) or (t1.va and t2.va):
-        if t1.params.len() != t2.params.len(): return bottomType
-        for i in 0 ..< t1.params.len():
+    # Actuals will never be varargs, so if we have two vararg
+    # functions, it's only because we're trying to unify two formals.
+    if ((not t1.va) and (not t2.va)) or (t1.va and t2.va):
+      if t1.params.len() != t2.params.len(): return bottomType
+      for i in 0 ..< t1.params.len():
+        let p = t1.params[i].unify(t2.params[i])
+
+        if p.kind == TypeBottom: return bottomType
+        newParams.add(p)
+      if t1.va: vaResult = true
+    else:
+      if t1.va:
+        vaResult = true
+        if t2.params.len() < t1.params.len() - 1: return bottomType
+        for i in 0 ..< t1.params.len() - 1:
           let p = t1.params[i].unify(t2.params[i])
-
           if p.kind == TypeBottom: return bottomType
           newParams.add(p)
-        if t1.va: vaResult = true
+        var vargType: Con4mType = t1.params[^1]
+        for i in t1.params.len()-1 ..< t2.params.len():
+          vargType = vargType.unify(t2.params[i])
+          if vargType.kind == TypeBottom: return bottomType
+        newParams.add(vargType)
       else:
-        if t1.va:
-          vaResult = true
-          if t2.params.len() < t1.params.len() - 1: return bottomType
-          for i in 0 ..< t1.params.len() - 1:
-            let p = t1.params[i].unify(t2.params[i])
-            if p.kind == TypeBottom: return bottomType
-            newParams.add(p)
-          var vargType: Con4mType = t1.params[^1]
-          for i in t1.params.len()-1 ..< t2.params.len():
-            vargType = vargType.unify(t2.params[i])
-            if vargType.kind == TypeBottom: return bottomType
-          newParams.add(vargType)
-        else:
-          return t2.unify(t1)
+        return t2.unify(t1)
 
-      newRet = t1.retType.unify(t2.retType)
-      if newRet.kind == TypeBottom:
-        if not (t1.retType.kind in [TypeBottom, TypeTVar]) or
-           not (t2.retType.kind in [TypeBottom, TypeTVar]):
-          return bottomType
+    newRet = t1.retType.unify(t2.retType)
+    if newRet.kind == TypeBottom:
+      if not (t1.retType.kind in [TypeBottom, TypeTVar]) or
+         not (t2.retType.kind in [TypeBottom, TypeTVar]):
+        return bottomType
 
-      return newProcType(newParams, newRet, vaResult)
-
-    else: return bottomType
+    return newProcType(newParams, newRet, vaResult)
   of TypeTuple:
     if t2.kind != TypeTuple: return bottomType
     if len(t2.itemTypes) != len(t1.itemTypes): return bottomType
@@ -146,6 +208,7 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     if kt.kind == TypeBottom or vt.kind == TypeBottom: return bottomType
     return newDictType(kt, vt)
   of TypeTVar:
+    
     if t2.kind == TypeTVar:
       let intersection = t1.constraints * t2.constraints
       if t1.constraints == {}:

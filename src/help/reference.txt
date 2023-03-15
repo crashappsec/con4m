@@ -30,15 +30,21 @@ paramSpec     ::= ID (":" typeSpec)
 varDeclItem   ::= ID ("," ID)* ":" typeSpec
 varStmt       ::= "export" varDeclItem ("," varDeclItem)*
 varStmt       ::= "var" varDeclItem ("," varDeclItem)*
-typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" |
-                   "{" typeSpec "}" | "(" typeSpec, (typeSpec)+ ")"
+typeVar       ::= "`" ID ("[" typeSpec (("||"|"or") typeSpec)+ "]")?
+typeSpec      ::= "bool" | "int" | "string" | "float" | "void" |
+                  "typespec" ("[" typeVar "]")? |
+                  "list"  "[" typeSpec "]" |
+		  "dict"  "[" typeSpec "," typeSpec "]" |
+		  "tuple" "[" typeSpec "," (typeSpec)+ "]" |
+		  "func"  "(" (typeSpec ("," typeSpec)*)? ")" ("->" typeSpec)? |
+                  typeVar
 fnBody        ::= "{" coreBodyItems* "}"
 # Note that literal matches before accessExpr, so a lparen at an exprStart
 # or in a unaryExpr will be treated as a tuple literal.
 exprStart     ::= unaryExpr | notExpr | literal | accessExpr
 unaryExpr     ::= ("+" | "-") (literal | accessExpr)
 notExpr       ::= ("!" | "not") expression
-literal       ::= NUM | STR | listLiteral | dictLiteral | TRUE | FALSE | OTHER
+literal       ::= NUM | STR | listLiteral | dictLiteral | typeSpec | TRUE | FALSE | OTHER
 accessExpr    ::= (ID | "$" | parenExpr) (memberExpr | indexExpr | callActuals)*
 tupleLiteral  ::= "(" expression ("," expression)*)+ ")"
 listLiteral   ::= "[" (expression ("," expression)* )? "]"

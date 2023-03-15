@@ -102,8 +102,6 @@ proc lookAhead(ctx: ParseCtx, numToks: int = 1): Con4mToken =
   result = ctx.curTok()
   ctx.curTokIx = cur
 
-proc isColonLiteral(ctx: ParseCtx): bool = ctx.lookAhead().kind == TtColon
-
 # When outputting errors, we might want to back up a token.
 # need to skip ws when doing that.
 proc unconsume(ctx: ParseCtx) =
@@ -389,8 +387,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       lhs = newNode(NodeIdentifier, tok)
     else:
       unreachable
-
-
+      
   while true:
     case ctx.curTok().kind
     of TtPeriod:
@@ -404,6 +401,11 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
 
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
+  of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
+     TtTuple:
+       return ctx.typeSpec()
+  of TtCallback:
+    return ctx.callBack()
   of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TTOtherLit:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
@@ -421,41 +423,18 @@ proc notExpr(ctx: ParseCtx): Con4mNode =
 
   return newNode(NodeNot, tok, @[res])
 
-proc colonLiteral(ctx: ParseCtx): Con4mNode =
-  case ctx.curTok().getTokenText()
-  of "type":
-    result = newNode(NodeTypeLit, ctx.consume())
-    discard ctx.consume()
-    result.children = @[ctx.typeSpec()]
-  of "callback":
-    result = newNode(NodeTypeCallback, ctx.consume())
-    discard ctx.consume()
-    let tok = ctx.consume()
-    if tok.kind != TtIdentifier:
-      parseError("Expected an identifier here for a callback literal")
-    result.children = @[newNode(NodeIdentifier, tok)]
-  else:
-    parseError("Invalid literal type")
-
 proc unaryExpr(ctx: ParseCtx): Con4mNode =
   let tok = ctx.consume()
   var res: Con4mNode
 
   case ctx.curTok().kind
-  of TtPlus, TtMinus:
-    parseError("Two unarys in a row not allowed", false)
-  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
-     TtLBracket, TtLParen, TtOtherLit:
-    res = ctx.literal()
-  of TtIdentifier:
-    if ctx.isColonLiteral():
-      res = ctx.colonLiteral()
-    else:
-      res = ctx.accessExpr()
-  of TtNot:
-    parseError("Unary before ! disallowed")
+  of TtPlus, TtMinus: parseError("Two unarys in a row not allowed", false)
+  of TtintLit, TTFloatLit, TtLParen, TtOtherLit: res = ctx.literal()
+  of TtIdentifier:                               res = ctx.accessExpr()
+  of TtNot: parseError("Unary before ! disallowed")
   else:
-    parseError("Invalid expression start after unary operator", false)
+    parseError("Invalid expression start after unary operator " &
+               "(only numeric values are allowed)", false)
 
   return newNode(NodeUnary, tok, @[res])
 
@@ -466,60 +445,117 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtNot:
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
-     TtLBracket, TtLParen, TtOtherLit:
+     TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
+     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtCallback:
     return ctx.literal()
-  of TtIdentifier:
-    if ctx.isColonLiteral(): return ctx.colonLiteral()
-    else:                    return ctx.accessExpr()
+  of TtIdentifier: return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
 
+proc funcProto(ctx: ParseCtx): Con4mNode =
+  result = newNode(NodeFuncType, t)
+
+  if ctx.curTok().kind == TtRParen:
+    discard ctx.consume()
+  else:
+    while true:
+      if ctx.curTok().kind == TtMul:
+        let t = ctx.consume()
+        result.children.add(ctx.typeSpec())
+        result.children.add(newNode(NodeVarargsType, t))
+        if ctx.consume().kind != TtRParen:
+          parseError("Varargs indicator can only appear before the final arg")
+        break
+      else:
+        result.children.add(ctx.typeSpec())
+        case ctx.consume().kind
+        of TtComma:  continue
+        of TtRParen: break
+        else:
+          parseError("Unknown token in function type specification " &
+                     "(was looking for ',' or end parenthesis)")    
+  if ctx.curTok().kind == TtArrow:
+    discard ctx.consume()
+    result.children.add(ctx.typeSpec())
+  else:
+    result.children.add(newNode(NodeVoidType, t) # lookbehind not t?
+  
 proc typeSpec(ctx: ParseCtx): Con4mNode =
   let t = ctx.consume()
-
   case t.kind
-  of TtLBrace:
-    result = newNode(NodeTypeDict, t)
+  of TtBool:   result = newNode(NodeBoolType, t)
+  of TtInt:    result = newNode(NodeIntType, t)
+  of TtString: result = newNode(NodeStringType, t)
+  of TtFloat:  result = newNode(NodeFloatType, t)
+  of TtVoid:   result = newNode(NodeVoidType, t)
+  of TtBacktick:
+    result = newNode(NodeTVar, t)
+    if ctx.curTok().kind != TtIdentifier:
+      parseError("Type var needs a valid identifier after the backtick (`)")
+    result.children.add(newNode(NodeIdentifier, ctx.consume()))
+    if ctx.curTok().kind == TtLBracket:
+      discard ctx.consume()
+      result.children.add(ctx.typeSpec())
+      if ctx.curTok().kind != TtOr:
+        parseError("Type option requires more than one type or'd together")
+      while true:
+        case ctx.consume().kind
+        of TtOr:       result.children.add(ctx.typeSpec())
+        of TtRBracket: break
+        else:          parseError("Expected 'or' or ']'")
+  of TtTypeSpec:
+    result = newNode(NodeTSpecType, t)
+    if ctx.curTok().kind == TtLBracket:
+      discard ctx.consume()
+      if ctx.curTok() != TtBacktick:
+        parseError("Type parameter for typespecs must be a valid type variable")
+      result.children.add(ctx.typeSpec())
+      if ctx.consume() != TtRBracket:
+        parseError("Type parameter is missing closing bracket")
+  of TtTuple:
+    result = newNode(NodeTupleType, t)
+    if ctx.consume().kind != TtLBracket:
+      parseError("Tuple type requires brackets [] to specify item types")
     result.children.add(ctx.typeSpec())
-    if ctx.consume().kind != TtColon:
-      parseError("Invalid dictionary type declaration; expected a colon here")
-    result.children.add(ctx.typeSpec())
-    if ctx.consume().kind != TtRBrace:
-      parseError("Invalid dictionary type declaration; expected '}' here.")
-  of TTLBracket:
-    result = newNode(NodeTypeList, t)
+    if ctx.curTok().kind != TtComma:
+      parseError("Tuples must have more than one field.")
+    while true:
+      case ctx.consume().kind
+      of TtComma:    result.children.add(ctx.typeSpec())
+      of TtRBracket: break
+      else:          parseError("Expected a ',' or ']' after item type")
+  of TtList:
+    result = newNode(NodeListType, t)
+    if ctx.consume().kind != TtLBracket:
+      parseError("List type requires brackets [] to specify item type")
     result.children.add(ctx.typeSpec())
     if ctx.consume().kind != TtRBracket:
-      parseError("Invalid list type declaration; expected ']' here.")
-  of TtLParen:
-    result = newNode(NodeTypeTuple, t)
+      parseError("List type expects ']' after its single parameter")
+  of TtDict:
+    result = newNode(NodeDictType, t)
+    if ctx.consume().kind != TtLBracket:
+      parseError("Dict type requires brackets [] to specify key/value types")
     result.children.add(ctx.typeSpec())
     if ctx.consume().kind != TtComma:
-      parseError("Tuples may not be singletons (expected ',' here).")
-    while true:
-      result.children.add(ctx.typeSpec())
-      case ctx.consume().kind
-      of TtComma:
-        continue
-      of TtRParen:
-        return
-      else:
-        parseError("Expected either ',' or ')' here")
-  of TTIdentifier:
-    case t.getTokenText()
-    of "int":
-      result = newNode(NodeTypeInt, t)
-    of "float":
-      result = newNode(NodeTypeFloat, t)
-    of "string":
-      result = newNode(NodeTypeString, t)
-    of "bool":
-      result = newNode(NodeTypeBool, t)
-    else:
-      parseError("Invalid syntax for a type declaration.")
+      parseError("Dict type requires two type parameters")
+    result.children.add(ctx.typeSpec())
+    if ctx.consume().kind != TtRBracket:
+      parseError("Dict type expects ']' after its two parameters")
+  of TtFunc:
+    if ctx.curTok().kind != TtLParen:
+      parseError("Type specification requires '(' after 'func'")
+    result = ctx.funcProto()
   else:
     parseError("Invalid syntax for a type declaration.")
 
+proc callback(ctx: ParseCtx): Con4mNode =
+  let t = ctx.consume()
+  if t.kind != TtIdentifier:
+    parseError("An identifier is required after the callback keyword")
+  result = newNode(NodeCallbackLit, t)
+  if ctx.curTok().kind != TtLParen: return
+  result.children.add(ctx.funcProto())
+    
 proc exportStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeExportDecl, ctx.consume())
 

@@ -238,10 +238,17 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       tok(TtLineComment)
     of '~':
       tok(TtLockAttr)
+    of '`':
+      tok(TtBacktick)
     of '+':
       tok(TtPlus)
     of '-':
-      tok(TtMinus)
+      case s.peekChar()
+      of '>':
+        discard s.readChar()
+        tok(TtArrow)
+      else:
+        tok(TtMinus)
     of '*':
       tok(TtMul)
     of '/':
@@ -481,27 +488,43 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       s.setPosition(pos)
 
       case txt
-      of "var": tok(TtVar)
-      of "True", "true": tok(TtTrue)
+      of "var":            tok(TtVar)
+      of "True", "true":   tok(TtTrue)
       of "False", "false": tok(TtFalse)
-      of "is": tok(TtCmp)
-      of "and": tok(TtAnd)
-      of "or": tok(TtOr)
-      of "not": tok(TtNot)
-      of "if": tok(TtIf)
-      of "elif": tok(TtElIf)
-      of "else": tok(TtElse)
-      of "for": tok(TtFor)
-      of "from": tok(TtFrom)
-      of "to": tok(TtTo)
-      of "break": tok(TtBreak)
-      of "continue": tok(TtContinue)
-      of "return": tok(TtReturn)
-      of "enum": tok(TtEnum)
-      of "func": tok(TtFunc)
-      of "export": tok(TtExportVar)
-
-      else: tok(TtIdentifier)
+      of "is":             tok(TtCmp)
+      of "and":            tok(TtAnd)
+      of "or":             tok(TtOr)
+      of "not":            tok(TtNot)
+      of "if":             tok(TtIf)
+      of "elif":           tok(TtElIf)
+      of "else":           tok(TtElse)
+      of "for":            tok(TtFor)
+      of "from":           tok(TtFrom)
+      of "to":             tok(TtTo)
+      of "break":          tok(TtBreak)
+      of "continue":       tok(TtContinue)
+      of "return":         tok(TtReturn)
+      of "enum":           tok(TtEnum)
+      of "func":           tok(TtFunc)
+      of "export":         tok(TtExportVar)
+      of "bool":           tok(TtBool)
+      of "int":            tok(TtInt)
+      of "float":          tok(TtFloat)
+      of "string":         tok(TtString)
+      of "void":           tok(TtVoid)
+      of "list":           tok(TtList)
+      of "dict":           tok(TtDict)
+      of "tuple":          tok(TtTuple)
+      of "typespec":       tok(TtTypeSpec)
+      of "Duration":       tok(TtDuration)
+      of "IPAddr":         tok(TtIPAddr)
+      of "CIDR":           tok(TtCIDR)
+      of "Size":           tok(TtSize)
+      of "Date":           tok(TtDate)
+      of "Time":           tok(TtTime)
+      of "DateTime":       tok(TtDateTime)
+      of "callback":       tok(TtCallback)
+      else:                tok(TtIdentifier)
 
   unreachable
 

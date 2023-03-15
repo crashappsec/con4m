@@ -17,8 +17,10 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtSof,
-    TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
+    TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypespec, TtList, TtDict,
+    TtTuple, TtCallback, TtSof, TtEof, ErrorTok, ErrorLongComment,
+    ErrorStringLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -43,19 +45,19 @@ type
     NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit,
     NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum,
-    NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeDict, NodeTypeList,
-    NodeTypeTuple, NodeTypeString, NodeTypeInt, NodeTypeFloat, NodeTypeBool,
-    NodeTypeLit, NodeTypeCallback, NodeVarDecl, NodeExportDecl, NodeVarSymNames
+    NodeIdentifier, NodeFuncDef, NodeFormalList, NodeDictType, NodeListType,
+    NodeTupleType, NodeStringType, NodeIntType, NodeFloatType, NodeBoolType,
+    NodeTSpecType, NodeFuncType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
+    NodeCallbackLit, NodeVarargsType, NodeDurationType, NodeIpAddrType,
+    NodeCidrType, NodeSizeType, NodeDateType, NodeTimeType, NodeDateTimeType
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
     TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-    TypeDateTime, TypeTypeSpec, TypeCallback, TypeProc, TypeTVar, TypeBottom
+    TypeDateTime, TypeTypeSpec, TypeCallback, TypeFunc, TypeTVar, TypeBottom
 
-  Con4mType* = ref object
-    ## The internal representation of a type.  Generally, you should
-    ## write strings, and con4m will parse them.
+  Con4mType* = ref object of RootRef
     case kind*:     Con4mTypeKind
     of TypeTuple:
       itemTypes*:   seq[Con4mType]
@@ -64,16 +66,19 @@ type
     of TypeDict:
       keyType*:     Con4mType
       valType*:     Con4mType
-    of TypeProc:
+    of TypeFunc:
       params*:      seq[Con4mType]
       va*:          bool
       retType*:     Con4mType
+    of TypeTypeSpec:
+      binding*:     Con4mType
     of TypeTVar:
       varNum*:      int
+      localName*:   Option[string]
       link*:        Option[Con4mType]
       linksin*:     seq[Con4mType]
       cycle*:       bool
-      constraints*: set[Con4mTypeKind]
+      constraints*: seq[Con4mType]
     else: discard
 
   Con4mDuration* = uint64
@@ -271,12 +276,14 @@ let
   dateType*     = Con4mType(kind: TypeDate)
   timeType*     = Con4mType(kind: TypeTime)
   dateTimeType* = Con4mType(kind: TypeDateTime)
-  typeSpecType* = Con4mType(kind: TypeTypeSpec)
-  callbackType* = Con4mType(kind: TypeCallback)
+  typeSpecType* = Con4mType(kind: TypeTypeSpec) # DELETE
+  callbackType* = Con4mType(kind: TypeCallback) # DELETE
   bottomType*   = Con4mType(kind: TypeBottom)
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
-
+proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)
+proc customUnpack*(b: Box, res: var Con4mType) =
+  res = Con4mType(b.o)
 type
   LookupErr* = enum
     errBadSubscope, errNotFound, errBadSpec, errAlreadyExists
