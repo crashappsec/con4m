@@ -34,7 +34,7 @@ proc extractType*(node: Con4mNode, state: var Table): Con4mType =
     else:
       result           = newTypeVar()
       result.localName = tvName
-      state[tvName]    = result      
+      state[tvName]    = result
       for item in result.children[1..^1]:
         result.constraints.add(item.extractType())
       for i, in 0 .. (len(result.constraints) - 1):
@@ -63,7 +63,7 @@ proc extractType*(node: Con4mNode, state: var Table): Con4mType =
   of NodeFuncType:
     result         = Con4mType(kind: TypeFunc, va: false)
     result.retType = node.children[^1].extractType(state)
-    
+
     for item in node.children[0..^2]:
       if item.kind == NodeVarargsType:
         result.va = true
@@ -71,11 +71,11 @@ proc extractType*(node: Con4mNode, state: var Table): Con4mType =
         result.params.add(item.extractType(state))
   else:
       parseError("Invalid parse tree for type extraction")
-      
+
 proc extractType*(node: Con4mNode): Con4mType =
   var t = {}.toTable()
   return node.extractType(t)
-    
+
 proc resolveTypeVars*(t: Con4mType): Con4mType =
   case t.kind
   of TypeTVar:
@@ -208,7 +208,7 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     if kt.kind == TypeBottom or vt.kind == TypeBottom: return bottomType
     return newDictType(kt, vt)
   of TypeTVar:
-    
+
     if t2.kind == TypeTVar:
       let intersection = t1.constraints * t2.constraints
       if t1.constraints == {}:

@@ -387,7 +387,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       lhs = newNode(NodeIdentifier, tok)
     else:
       unreachable
-      
+
   while true:
     case ctx.curTok().kind
     of TtPeriod:
@@ -473,14 +473,14 @@ proc funcProto(ctx: ParseCtx): Con4mNode =
         of TtRParen: break
         else:
           parseError("Unknown token in function type specification " &
-                     "(was looking for ',' or end parenthesis)")    
+                     "(was looking for ',' or end parenthesis)")
   if ctx.curTok().kind == TtArrow:
     discard ctx.consume()
     result.children.add(ctx.typeSpec())
   else:
     result.children.add(newNode(NodeVoidType, t) # lookbehind not t?
-  
-proc typeSpec(ctx: ParseCtx): Con4mNode =
+
+proc OneTypeSpec(ctx: ParseCtx): Con4mNode =
   let t = ctx.consume()
   case t.kind
   of TtBool:   result = newNode(NodeBoolType, t)
@@ -493,16 +493,6 @@ proc typeSpec(ctx: ParseCtx): Con4mNode =
     if ctx.curTok().kind != TtIdentifier:
       parseError("Type var needs a valid identifier after the backtick (`)")
     result.children.add(newNode(NodeIdentifier, ctx.consume()))
-    if ctx.curTok().kind == TtLBracket:
-      discard ctx.consume()
-      result.children.add(ctx.typeSpec())
-      if ctx.curTok().kind != TtOr:
-        parseError("Type option requires more than one type or'd together")
-      while true:
-        case ctx.consume().kind
-        of TtOr:       result.children.add(ctx.typeSpec())
-        of TtRBracket: break
-        else:          parseError("Expected 'or' or ']'")
   of TtTypeSpec:
     result = newNode(NodeTSpecType, t)
     if ctx.curTok().kind == TtLBracket:
@@ -548,6 +538,19 @@ proc typeSpec(ctx: ParseCtx): Con4mNode =
   else:
     parseError("Invalid syntax for a type declaration.")
 
+proc typeSpec(ctx: ParseCtx): Con4mNode =
+  var
+    nodes: seq[Con4mNode] = @[]
+    t:     ctx.curTok()
+
+  nodes.add(ctx.OneTypeSpec())
+  while ctx.curTok().kind == TtOr:
+    discard ctx.consume()
+    nodes.add(ctx.OneTypeSpec())
+    
+  if len(nodes) == 1: return nodes[0]
+  else: return newNode(NodeUnionType, t)
+  
 proc callback(ctx: ParseCtx): Con4mNode =
   let t = ctx.consume()
   if t.kind != TtIdentifier:
@@ -555,7 +558,7 @@ proc callback(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeCallbackLit, t)
   if ctx.curTok().kind != TtLParen: return
   result.children.add(ctx.funcProto())
-    
+
 proc exportStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeExportDecl, ctx.consume())
 

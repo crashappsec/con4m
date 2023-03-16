@@ -848,10 +848,10 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
     aOrS1 = aOrE1.get(AttrOrSub)
     aOrS2 = aOrE2.get(AttrOrSub)
-    
+
   if not aOrS1.isA(Attribute): return some(pack($(bottomType)))
   if not aOrS2.isA(Attribute): return some(pack($(bottomType)))
-  
+
   var
     symToCheck = aOrS1.get(Attribute)
     tsFieldSym = aOrS2.get(Attribute)
@@ -866,7 +866,7 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
   var tsValType = (unpack[string](tsValOpt.get())).toCon4mType()
 
   return some(pack(not tsValType.unify(symToCheck.tInfo).isBottom()))
-  
+
 
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:

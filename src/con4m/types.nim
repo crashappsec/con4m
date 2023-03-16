@@ -49,13 +49,15 @@ type
     NodeTupleType, NodeStringType, NodeIntType, NodeFloatType, NodeBoolType,
     NodeTSpecType, NodeFuncType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
     NodeCallbackLit, NodeVarargsType, NodeDurationType, NodeIpAddrType,
-    NodeCidrType, NodeSizeType, NodeDateType, NodeTimeType, NodeDateTimeType
+    NodeCidrType, NodeSizeType, NodeDateType, NodeTimeType, NodeDateTimeType,
+    NodeUnionType
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
     TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-    TypeDateTime, TypeTypeSpec, TypeCallback, TypeFunc, TypeTVar, TypeBottom
+    TypeDateTime, TypeTypeSpec, TypeCallback, TypeFunc, TypeTVar, TypeUnion,
+    TypeBottom
 
   Con4mType* = ref object of RootRef
     case kind*:     Con4mTypeKind
@@ -72,13 +74,14 @@ type
       retType*:     Con4mType
     of TypeTypeSpec:
       binding*:     Con4mType
+    of TypeUnion:
+      components*:  seq[Con4mType]
     of TypeTVar:
       varNum*:      int
       localName*:   Option[string]
       link*:        Option[Con4mType]
       linksin*:     seq[Con4mType]
       cycle*:       bool
-      constraints*: seq[Con4mType]
     else: discard
 
   Con4mDuration* = uint64
