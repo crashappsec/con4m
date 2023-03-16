@@ -330,17 +330,17 @@ proc c4mPackFloat*(f: float): Box {.exportc.} =
   result = pack(f)
   GC_ref(result)
 
-proc c4UnpackString*(box: Box): cstring {.exportc.} =
+proc c4mUnpackString*(box: Box): cstring {.exportc.} =
   result = exportStr(unpack[string](box))
 
 proc c4mPackString*(s: cstring): Box {.exportc.} =
   result = pack($(s))
   GC_ref(result)
 
-proc c4mUnpackArray*(box: Box, arr: ref seq[Box]): int {.exportc.} =
+proc c4mUnpackArray*(box: Box, arr: var ptr Box): int {.exportc.} =
   var items = unpack[seq[Box]](box)
   result    = len(items)
-  arr[]     = items
+  arr       = addr(items[0])
   GC_ref(items)
 
 proc c4mArrayDelete*(arr: var seq[Box]) {.exportc.} =

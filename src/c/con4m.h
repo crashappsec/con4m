@@ -7,16 +7,17 @@ typedef void * C4State;
 typedef void * C4Spec;
 typedef void * NimDict;
 typedef void * Box;
-typedef void * BoxArray;
-typedef enum { BoxInt, BoxStr, BoxArr, BoxBool, BoxDict,
-    BoxUnused = 0x7fffffffffffffff} BoxType; // BoxUnused forces 64-bit ints.
+typedef Box  * BoxArray;
+// BoxUnused forces 64-bit ints.
+typedef enum { BoxInt, BoxStr, BoxFloat, BoxSeq, BoxBool, BoxTable,
+    BoxObj, BoxUnused = 0x7fffffffffffffff} BoxType;
 typedef enum { ErrAttrOk, ErrNoAttr, ErrBadSec, ErrBadAttr, ErrCantSet,
     ErrAttrUnused = 0x7fffffffffffffff} AttrErr;
 
 // Call this to initialize the garbage collector.
 extern void     NimMain();
 
-/* char c4mOneShot(char *, char *)
+/* char *c4mOneShot(char *, char *)
  *
  * This call will run con4m once.  The first parameter is the code to
  * run, and the second parameter is the file name for reporting.  The
@@ -289,6 +290,13 @@ extern char    *c4mUnpackString(Box);
  * Use c4mArrayDelete() to dealloc the outter array.
  */
 extern int64_t  c4mUnpackArray(Box, BoxArray *);
+extern BoxArray c4mUnpackArray2(Box, int64_t *);
+
+/* NimDict c4mUnpackDict(Box);
+ *
+ * Unpacks a boxed NimDict, and decref's the box.
+ */
+extern NimDict  c4mUnpackDict(Box); // Input is decref'd, output incref'd
 
 /* Box c4mPackArray(Box *, int64_t);
  *
@@ -296,13 +304,11 @@ extern int64_t  c4mUnpackArray(Box, BoxArray *);
  * array can be freed when this call returns. The result is incref'd
  * and will need to be decref'd.
  */
+extern Box      c4mPackString(char *);
+extern Box      c4mPackFloat(float);
+extern Box      c4mPackInt(int64_t);
+extern Box      c4mPackBool(int64_t);
 extern Box      c4mPackArray(Box *, int64_t);
-
-/* NimDict c4mUnpackDict(Box);
- *
- * Unpacks a boxed NimDict, and decref's the box.
- */
-extern NimDict  c4mUnpackDict(Box); // Input is decref'd, output incref'd
 
 /* NimDict c4DictNew();
  *
