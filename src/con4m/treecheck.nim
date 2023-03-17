@@ -617,7 +617,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # We look them back up in the symbol table.
     # Note that, for now anyway, we are not accepting varargs functions.
     let
-      tinfo = Con4mType(kind: TypeProc, va: false)
+      tinfo = Con4mType(kind: TypeFunc, va: false)
       entry = node.varScope.varLookup("result", vlUse).get()
 
     # If the return variable was never set, firstDef will be nothing,
@@ -721,7 +721,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of 0:
       if s.secondPass:
         if fname == "echo": # Echo knows to cast each argument to a string.
-          let t = toCon4mType("f(string)")
+          let t = toCon4mType("func(string)")
           node.procRef  = s.findMatchingProcs("echo", t)[0]
           node.typeInfo = bottomType
           return
@@ -737,7 +737,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             r = toAnsiCode(acReset)
           node.children[1].typeInfo.retType = node.typeInfo
           echo(fmt"{y}warning:{r} No matching signature found for function " &
-               fmt"'{fname}'. Expected type was: {$(node.children[1].typeInfo)}")
+               fmt"'{fname}'. Expected type was: " &
+               $(node.children[1].typeInfo))
       else:
         s.waitingForTypeInfo = true
         node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)
@@ -843,39 +844,15 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
     node.typeInfo = floatType
-  of NodeTypeInt:
-    node.typeInfo = intType
-  of NodeTypeFloat:
-    node.typeInfo = floatType
-  of NodeTypeBool:
-    node.typeInfo = boolType
-  of NodeTypeString:
-    node.typeInfo = stringType
-  of NodeTypeLit:
+  of NodeCallbackLit:
     node.checkKids(s)
-    node.typeInfo = typeSpecType
-    node.value    = pack($(node.children[0].getType()))
-  of NodeTypeCallback:
-    node.typeInfo = callbackType
-    node.value    = pack(node.children[0].getTokenText())
-  of NodeTypeList:
-    node.checkKids(s)
-    node.typeInfo = Con4mType(kind:     TypeList,
-                              itemType: node.children[0].getType())
-  of NodeTypeDict:
-    node.checkKids(s)
-    node.typeInfo = Con4mType(kind:    TypeDict,
-                              keyType: node.children[0].getType(),
-                              valType: node.children[1].getType())
-  of NodeTypeTuple:
-    node.checkKids(s)
-    var types: seq[Con4mType] = @[]
-
-    for item in node.children:
-      types.add(item.getType())
-
-    node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: types)
-
+    if len(node.children) > 0:
+      node.typeInfo = node.children[0].typeInfo.binding
+    else:
+      node.typeInfo = Con4mType(kind: TypeFunc, noSpec: true)
+    # Note that we do not bother type checking against valid functions
+    # yet; this is a spec, we only type check when a callback is
+    # going to be run.
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -890,7 +867,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     if `var?`.isSome():
       let entry    = `var?`.get()
-      typeInfo     = entry.tInfo
+      typeInfo     = entry.tInfo.resolveTypeVars()
       node.attrRef = nil
       if node.parent.get().kind == NodeExportDecl:
         entry.persists = true
@@ -898,7 +875,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       let entry     = `localAttr?`.get(AttrOrSub)
       if entry.isA(Attribute):
         let attr     = entry.get(Attribute)
-        typeInfo     = attr.tInfo
+        typeInfo     = attr.tInfo.resolveTypeVars()
         node.attrRef = attr
       else:
         node.attrScope = entry.get(AttrScope)
@@ -907,17 +884,18 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       let entry     = `globalAttr?`.get(AttrOrSub)
       if entry.isA(Attribute):
         let attr     = entry.get(Attribute)
-        typeInfo     = attr.tInfo
+        typeInfo     = attr.tInfo.resolveTypeVars()
         node.attrRef = attr
     elif len(node.children) == 0:
       fatal(fmt"Variable {name} used before definition", node)
 
     if len(node.children) != 0:
       node.checkKids(s)
-      node.typeInfo = typeInfo.unify(node.children[0].getType())
+      let kidType = node.children[0].getType().binding
+      node.typeInfo = typeInfo.unify(kidType)
       if node.typeInfo.isBottom():
         fatal2Type("Declared type conflicts with existing type",
-                   node.children[0], node.children[0].getType(), typeInfo)
+                   node.children[0], kidType, typeInfo)
     else:
       node.typeInfo = typeInfo
   else:

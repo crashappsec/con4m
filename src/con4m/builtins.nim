@@ -159,7 +159,7 @@ proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
       return unpack[string](b)
   of TypeTypeSpec:
     return "type: " & unpack[string](b)
-  of TypeCallback:
+  of TypeFunc:
     return "callback: " & unpack[string](b)
   of TypeInt:
     return $(unpack[int](b))
@@ -857,7 +857,7 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
     tsFieldSym = aOrS2.get(Attribute)
     tsValOpt   = tsFieldSym.attrToVal()
 
-  if tsFieldSym.tInfo.unify(typeSpecType).isBottom():
+  if tsFieldSym.tInfo.resolveTypeVars().kind != TypeTypeSpec:
     raise c4mException("Field '" & tsField & "' is not a typespec.")
 
   if tsValOpt.isNone():
@@ -1044,7 +1044,7 @@ proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
     coreName = if fn == nil: "callback" else: "builtin"
     tinfo = tStr.toCon4mType()
 
-  if tinfo.kind != TypeProc:
+  if tinfo.kind != TypeFunc:
     raise c4mException(fmt"Signature provided for {coreName} " &
                           "is not a function signature.")
 

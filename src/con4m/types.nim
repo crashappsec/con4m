@@ -19,8 +19,8 @@ type
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
     TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypespec, TtList, TtDict,
-    TtTuple, TtCallback, TtSof, TtEof, ErrorTok, ErrorLongComment,
-    ErrorStringLit, ErrorOtherLit
+    TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime, TtDateTime,
+    TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -43,21 +43,23 @@ type
     NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak,
     NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember,
     NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit,
-    NodeTupleLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
-    NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeEnum,
-    NodeIdentifier, NodeFuncDef, NodeFormalList, NodeDictType, NodeListType,
-    NodeTupleType, NodeStringType, NodeIntType, NodeFloatType, NodeBoolType,
-    NodeTSpecType, NodeFuncType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
-    NodeCallbackLit, NodeVarargsType, NodeDurationType, NodeIpAddrType,
-    NodeCidrType, NodeSizeType, NodeDateType, NodeTimeType, NodeDateTimeType,
-    NodeUnionType
+    NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
+    NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames,
+
+    # These nodes are not presented in parse trees; types really don't
+    # need to even generate these nodes; I expect them to be gone soon.
+    TmpDictType, TmpListType, TmpTupleType, TmpStringType, TmpIntType,
+    TmpFloatType, TmpBoolType, TmpTSpecType, TmpFuncType, TmpVarargsType,
+    TmpTVar, TmpDurationType, TmpIpAddrType, TmpCidrType, TmpSizeType,
+    TmpDateType, TmpTimeType, TmpDateTimeType, TmpUnionType, TmpVoidType
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
     TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-    TypeDateTime, TypeTypeSpec, TypeCallback, TypeFunc, TypeTVar, TypeUnion,
-    TypeBottom
+    TypeDateTime, TypeTypeSpec, TypeFunc, TypeTVar, TypeUnion, TypeBottom
 
   Con4mType* = ref object of RootRef
     case kind*:     Con4mTypeKind
@@ -72,6 +74,7 @@ type
       params*:      seq[Con4mType]
       va*:          bool
       retType*:     Con4mType
+      noSpec*:      bool   # Was a sig there? For callbacks, it is optional.
     of TypeTypeSpec:
       binding*:     Con4mType
     of TypeUnion:
@@ -82,6 +85,22 @@ type
       link*:        Option[Con4mType]
       linksin*:     seq[Con4mType]
       cycle*:       bool
+      constraints*: set[Con4mTypeKind]
+      # Constraints are different than unions; with a tvar, we assume
+      # we are looking to instantiate a concrete type.
+      #
+      # But, if we can't infer just a single concrete type, yet we
+      # have ruled out some things, we could then convert seamlessly
+      # to union types.
+      #
+      # However, we don't currently need to do that explicitly,
+      # because the implementation currently keeps all values in a
+      # "box".
+      #
+      # Note also that these constraints could be lifted in order to
+      # be more complicated (in which case they'd be a seq of
+      # Con4mTypes, as with TypeUnion). We'd have to work harder to
+      # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
   Con4mDuration* = uint64
@@ -279,8 +298,6 @@ let
   dateType*     = Con4mType(kind: TypeDate)
   timeType*     = Con4mType(kind: TypeTime)
   dateTimeType* = Con4mType(kind: TypeDateTime)
-  typeSpecType* = Con4mType(kind: TypeTypeSpec) # DELETE
-  callbackType* = Con4mType(kind: TypeCallback) # DELETE
   bottomType*   = Con4mType(kind: TypeBottom)
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()

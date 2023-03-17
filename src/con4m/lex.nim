@@ -192,7 +192,6 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
       result.add(t)
     i += 1
 
-
 proc lex*(s: Stream): (bool, seq[Con4mToken]) =
   ## Lexical analysis. Doesn't need to be exported.
   var
@@ -523,7 +522,6 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "Date":           tok(TtDate)
       of "Time":           tok(TtTime)
       of "DateTime":       tok(TtDateTime)
-      of "callback":       tok(TtCallback)
       else:                tok(TtIdentifier)
 
   unreachable

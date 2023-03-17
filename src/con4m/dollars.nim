@@ -58,6 +58,7 @@ proc `$`*(t: Con4mType): string =
   ## the exception of the bottom type, which prints as its
   ## mathematical symbol (`⊥`)
   case t.kind
+  of TypeBottom:   return "void"
   of TypeString:   return "string"
   of TypeBool:     return "bool"
   of TypeInt:      return "int"
@@ -69,20 +70,20 @@ proc `$`*(t: Con4mType): string =
   of TypeDate:     return "Date"
   of TypeTime:     return "Time"
   of TypeDateTime: return "DateTime"
-  of TypeTypeSpec: return "typespec"
-  of TypeCallback: return "callback"
-  of TypeList:     return fmt"[{t.itemType}]"
-  of TypeDict:     return fmt"{{{t.keyType} : {t.valType}}}"
+  of TypeList:     return fmt"list[{t.itemType}]"
+  of TypeDict:     return fmt"dict[{t.keyType}, {t.valType}]"
   of TypeTuple:
-    var s: seq[string]
+    var s: seq[string] = @[]
     for item in t.itemTypes:
       s.add($(item))
-    return fmt"""({s.join(", ")})"""
+    return fmt"""tuple[{s.join(", ")}]"""
+  of TypeTypeSpec:
+    result = "typespec"
+    if t.binding.localName.isSome() or t.binding.link.isSome():
+      result &= "[" & $(t.binding) & "]"
   of TypeTVar:
     if t.link.isSome():
       return $(t.link.get())
-    if card(t.constraints) == 0:
-      return fmt"@{t.varNum}"
     else:
       var parts: seq[string] = @[]
       for (k, v) in [(TypeString,   "string"),
@@ -95,14 +96,17 @@ proc `$`*(t: Con4mType): string =
                      (TypeSize,     "Size"),
                      (TypeDate,     "Date"),
                      (TypeTime,     "Time"),
+                     (TypeTypeSpec, "typespec"),
                      (TypeDateTime, "DateTime")]:
         if t.constraints.contains(k):
           parts.add(v)
-      return parts.join("|")
-  of TypeBottom: return "⊥"
-  of TypeProc:
+      if len(parts) == 0:
+        return "`" & t.localName.getOrElse($(t.varNum))
+      else:
+        return parts.join(" or ")
+  of TypeFunc:
     if t.params.len() == 0:
-      return fmt"f() -> {$(t.retType)}"
+      return fmt"func() -> {$(t.retType)}"
     else:
       var paramTypes: seq[string]
       for item in t.params:
@@ -110,6 +114,11 @@ proc `$`*(t: Con4mType): string =
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
       return "f({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
+  of TypeUnion:
+    var s: seq[string] = @[]
+    for item in t.components:
+      s.add($(item))
+    return s.join(" or ")
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string
 
@@ -160,21 +169,34 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeKVPair:       fmtNt("KVPair")
   of NodeListLit:      fmtNt("ListLit")
   of NodeTupleLit:     fmtNt("TupleLit")
+  of NodeCallbackLit:  fmtNt("CallbackLit")
   of NodeEnum:         fmtNt("Enum")
   of NodeFuncDef:      fmtNtNamed("Def")
   of NodeFormalList:   fmtNt("Formals")
-  of NodeTypeDict:     fmtTy("TypeDict")
-  of NodeTypeList:     fmtTy("TypeList")
-  of NodeTypeTuple:    fmtTy("TypeTuple")
-  of NodeTypeString:   fmtTy("TypeString")
-  of NodeTypeInt:      fmtTy("TypeInt")
-  of NodeTypeFloat:    fmtTy("TypeFloat")
-  of NodeTypeBool:     fmtTy("TypeBool")
+  of TmpDictType:     fmtTy("DictType")
+  of TmpListType:     fmtTy("ListType")
+  of TmpTupleType:    fmtTy("TupleType")
+  of TmpStringType:   fmtTy("StringType")
+  of TmpIntType:      fmtTy("IntType")
+  of TmpFloatType:    fmtTy("FloatType")
+  of TmpBoolType:     fmtTy("BoolType")
+  of TmpTSpecType:    fmtTy("TSpecType")
+  of TmpFuncType:     fmtTy("FuncType")
+  of TmpDurationType: fmtTy("DurationType")
+  of TmpIPAddrType:   fmtTy("IpAddrType")
+  of TmpCidrType:     fmtTy("CidrType")
+  of TmpSizeType:     fmtTy("SizeType")
+  of TmpDateType:     fmtTy("DateType")
+  of TmpTimeType:     fmtTy("TimeType")
+  of TmpDateTimeType: fmtTy("DateTimeType")
+  of TmpUnionType:    fmtTy("UnionType")
+  of TmpVoidType:     fmtTy("VoidType")
+  of TmpVarargsType:  fmtNt("VarargsType")
+  of TmpTVar:         fmtNt("TVar")
+  of NodeType:        fmtNt("Type")
   of NodeVarDecl:      fmtNt("VarDecl")
   of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")
-  of NodeTypeLit:      fmtNt("TypeLit")
-  of NodeTypeCallback: fmtNtNamed("TypeCallback")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))

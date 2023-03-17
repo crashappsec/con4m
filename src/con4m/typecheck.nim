@@ -4,77 +4,41 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import types, st, tables, dollars, options
+import types, tables, options, nimutils, dollars
 
-proc extractType*(node: Con4mNode, state: var Table): Con4mType =
-  case node.kind
-  of NodeVoid:         return bottomType
-  of NodeBoolType:     return boolType
-  of NodeIntType:      return intType
-  of NodeFloatType:    return floatType
-  of NodeStringType:   return stringType
-  of NodeDurationType: return durationType
-  of NodeIPAddrType:   return ipAddrType
-  of NodeCidrType:     return cidrType
-  of NodeSizeType:     return sizeType
-  of NodeDateType:     return dateType
-  of NodeTimeType:     return timeType
-  of NodeDateTimeType: return dateTimeType
-  of NodeTVar:
-    let tvName = node.children[0].getTokenText()
-    # First check the state table.  If we've seen this before, and
-    # there are constraints here, and the variable already has some
-    # constraints defined, then that's an error, they have to be
-    # defined the first time they appear in a type object.
-    if tvName in state:
-      result = newTypeVar()
-      if len(node.children) != 1:
-        parseError("Type constraints must appear with the first instance of " &
-                   "a type variable for a single type declaration")
-    else:
-      result           = newTypeVar()
-      result.localName = tvName
-      state[tvName]    = result
-      for item in result.children[1..^1]:
-        result.constraints.add(item.extractType())
-      for i, in 0 .. (len(result.constraints) - 1):
-        for j in i+1 ..< len(result.constraints):
-          if not result.constraints[i].unify(result.constraints[j]).isBottom():
-            parseError("Type constraints may not overlap: '" &
-                       $(result.constraints[i]) & "' and '" &
-                       $(result.constraints[j]) & "'")
-  of NodeTSpecType:
-    result = Con4mType(kind: TypeTypeSpec)
-    if len(node.children) != 0:
-      result.binding = node.children[0].extractType(state)
-    else:
-      result.binding = newTypeVar()
-  of NodeTupleType:
-    result = Con4mType(kind: TypeTuple)
-    for item in node.children:
-      result.itemTypes.add(item.extractType(state))
-  of NodeListType:
-    result          = Con4mType(kind: TypeList)
-    result.itemType = node.children[0].extractType(state)
-  of NodeDictType:
-    result         = Con4mType(kind: TypeDict)
-    result.keyType = node.children[0].extractType(state)
-    result.valType = node.children[1].extractType(state)
-  of NodeFuncType:
-    result         = Con4mType(kind: TypeFunc, va: false)
-    result.retType = node.children[^1].extractType(state)
+var tVarNum: int
 
-    for item in node.children[0..^2]:
-      if item.kind == NodeVarargsType:
-        result.va = true
-      else:
-        result.params.add(item.extractType(state))
+proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
+  tVarNum.inc()
+  return Con4mType(kind:        TypeTVar,
+                   varNum:      tVarNum,
+                   link:        none(Con4mType),
+                   linksin:     @[],
+                   cycle:       false,
+                   constraints: constraints)
+
+# This should only be called when we know that the type variable
+# is going to be unique for the context.  It's mainly meant
+# for compile-time usage.
+proc newTypeVar*(num: int): Con4mType =
+  return Con4mType(kind: TypeTVar, varNum: num)
+
+proc newListType*(contained: Con4mType): Con4mType =
+  return Con4mType(kind: TypeList, itemType: contained)
+
+proc newDictType*(keyType, valType: Con4mType): Con4mType =
+  return Con4mType(kind: TypeDict, keyType: keyType, valType: valType)
+
+proc newProcType*(params:  seq[Con4mType],
+                  retType: Con4mType,
+                  va:      bool = false): Con4mType =
+  if params.len() != 0:
+    return Con4mType(kind: TypeFunc,
+                    params: params,
+                    va: va,
+                    retType: retType)
   else:
-      parseError("Invalid parse tree for type extraction")
-
-proc extractType*(node: Con4mNode): Con4mType =
-  var t = {}.toTable()
-  return node.extractType(t)
+    return Con4mType(kind: TypeFunc, retType: retType)
 
 proc resolveTypeVars*(t: Con4mType): Con4mType =
   case t.kind
@@ -120,6 +84,8 @@ proc getBaseType*(t: Con4mType): Con4mTypeKind =
 
 proc getBaseType*(node: Con4mNode): Con4mTypeKind =
   return node.typeInfo.getBaseType()
+
+proc isBottom*(t: Con4mType): bool = return t.kind == TypeBottom
 
 # Uncomment this if you need a trace of unify() calls,
 # rename unify below to unifyactual, and then
@@ -207,8 +173,23 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     let vt = t1.valType.unify(t2.valType)
     if kt.kind == TypeBottom or vt.kind == TypeBottom: return bottomType
     return newDictType(kt, vt)
+  of TypeUnion:
+    if t2.kind != TypeUnion: return bottomType
+    var foundTypes: seq[Con4mType] = @[]
+    for t1item in t1.components:
+      var found = false
+      for t2item in t2.components:
+        let res = t1item.unify(t2item)
+        if res.isBottom(): continue
+        if found: return bottomType  # Overlapping?! Shouldn't be possible.
+        foundTypes.add(t2item)
+        found = true
+      if not found: return bottomType
+    for t2item in t2.components:
+      if t2item notin foundTypes:
+        return bottomType # not statically compatable, could require a cast,
+                          # or could be super invalid.
   of TypeTVar:
-
     if t2.kind == TypeTVar:
       let intersection = t1.constraints * t2.constraints
       if t1.constraints == {}:
@@ -282,9 +263,6 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
 #  result = unifyActual(param1, param2)
 #  echo fmt"{s1} ⋃ {s2} = {`$`(result)}"
 
-proc isBottom*(t: Con4mType): bool =
-  return t.kind == TypeBottom
-
 proc isBottom*(t1, t2: Con4mType): bool =
   return unify(t1, t2).isBottom()
 
@@ -302,7 +280,7 @@ proc isBottom*(n: Con4mNode, t: Con4mType): bool =
 
 proc hasTypeVar*(t: Con4mType): bool =
   case t.kind
-  of TypeTVar:
+  of TypeTVar, TypeTypeSpec:
     # Doesn't matter if it's a forward, return true and
     # get a clean copy!
     return true
@@ -313,60 +291,59 @@ proc hasTypeVar*(t: Con4mType): bool =
   of TypeTuple:
     for item in t.itemTypes:
       if item.hasTypeVar(): return true
-  of TypeProc:
+  of TypeFunc:
     for item in t.params:
       if item.hasTypeVar(): return true
     return t.retType.hasTypeVar()
+  of TypeUnion:
+    for item in t.components:
+      if item.hasTypeVar(): return true
   else:
     return false
 
 proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
+  if not t.hasTypeVar(): return t
+
   case t.kind
   of TypeTVar:
     if t.varNum in cache:
       return cache[t.varNum]
     if t.link.isSome():
-      result = copyType(t.resolveTypeVars(), cache)
+      result = t.resolveTypeVars().copyType(cache)
       cache[t.varNum] = result
     else:
       result = newTypeVar(t.constraints)
       result.cycle = false
       cache[t.varNum] = result
+    result.localName = t.localName
+  of TypeTypeSpec:
+    result = Con4mType(kind: TypeTypeSpec, binding: t.binding.copyType(cache))
   of TypeList:
-    if t.itemType.hasTypeVar():
-      result = Con4mType(kind: TypeList)
-      result.itemType = copyType(t.itemType, cache)
-    else:
-      return t
+    result = Con4mType(kind: TypeList)
+    result.itemType = t.itemType.copyType(cache)
   of TypeDict:
-    if t.hasTypeVar():
-      result = Con4mType(kind: TypeDict)
-      result.keyType = copyType(t.keyType, cache)
-      result.valType = copyType(t.valType, cache)
-    else:
-      return t
+    result = Con4mType(kind: TypeDict)
+    result.keyType = t.keyType.copyType(cache)
+    result.valType = t.valType.copyType(cache)
   of TypeTuple:
-    if t.hasTypeVar():
-      result = Con4mType(kind: TypeTuple)
-      for param in t.itemTypes:
-        result.itemTypes.add(param.copyType(cache))
-    else:
-      return t
-  of TypeProc:
-    if t.hasTypeVar():
-      result = Con4mType(kind: TypeProc)
-      for param in t.params:
-        result.params.add(param.copyType(cache))
-      result.va = t.va
-      result.retType = t.retType.copyType(cache)
-    else:
-      return t
-  else:
-    return t
+    result = Con4mType(kind: TypeTuple)
+    for param in t.itemTypes:
+      result.itemTypes.add(param.copyType(cache))
+  of TypeFunc:
+    result = Con4mType(kind: TypeFunc)
+    for param in t.params:
+      result.params.add(param.copyType(cache))
+    result.va = t.va
+    result.retType = t.retType.copyType(cache)
+  of TypeUnion:
+    result = Con4mType(kind: TypeUnion)
+    for item in t.components:
+      result.components.add(item.copyType(cache))
+  else: unreachable
 
 proc copyType*(t: Con4mType): Con4mType =
   var tVarCache = newTable[int, Con4mType]()
-  return copytype(t, tVarCache)
+  return t.copytype(tVarCache)
 
 proc reprSig*(name: string, t: Con4mType): string =
   return name & (($(t))[1 .. ^1])

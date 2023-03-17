@@ -6,7 +6,7 @@
 ## :Copyright: 2022
 
 import tables, options, streams, types, nimutils, nimutils/logging
-import errmsg, lex, dollars, strformat
+import errmsg, lex, typecheck, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
 
@@ -44,11 +44,11 @@ proc getTokenText*(node: Con4mNode): string {.inline.} =
 
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
-type ParseCtx = ref object
-  tokens:        seq[Con4mToken]
-  curTokIx:       int
-  nlWatch:        bool
-  nesting:        int
+type ParseCtx* = ref object
+  tokens*:   seq[Con4mToken]
+  curTokIx*: int
+  nlWatch*:  bool
+  nesting*:  int
 
 var nodeId = 0
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
@@ -69,7 +69,7 @@ proc isSkipped(self: Con4mToken): bool =
   if self.kind in [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]:
     return true
 
-proc curTok(ctx: ParseCtx): Con4mToken {.inline.} =
+proc curTok*(ctx: ParseCtx): Con4mToken {.inline.} =
   while true:
     if ctx.curTokIx >= len(ctx.tokens):
       return ctx.tokens[^1]
@@ -109,7 +109,7 @@ proc unconsume(ctx: ParseCtx) =
     ctx.curTokIx.dec()
     if not ctx.curTok().isSkipped(): return
 
-template parseError(msg: string, backup: bool = true) =
+template parseError*(msg: string, backup: bool = true) =
   const info = instantiationInfo()
   var   st   = ""
 
@@ -136,7 +136,141 @@ proc exprStart(ctx: ParseCtx): Con4mNode
 proc accessExpr(ctx: ParseCtx): Con4mNode
 proc literal(ctx: ParseCtx): Con4mNode
 proc divExpr(ctx: ParseCtx): Option[Con4mNode]
-proc typeSpec(ctx: ParseCtx): Con4mNode
+proc typeSpec(ctx: ParseCtx, state: var Table[string, Con4mType]): Con4mType
+
+proc oneTypeSpec(ctx:    ParseCtx,
+                 state:  var Table[string, Con4mType]): Con4mType =
+  let t = ctx.consume()
+  case t.kind
+  of TtVoid:     result = bottomType
+  of TtBool:     result = boolType
+  of TtInt:      result = intType
+  of TtString:   result = stringType
+  of TtFloat:    result = floatType
+  of TtDuration: result = durationType
+  of TtIPAddr:   result = ipAddrType
+  of TtCidr:     result = cidrType
+  of TtSize:     result = sizeType
+  of TtDate:     result = dateType
+  of TtTime:     result = timeType
+  of TtDateTime: result = dateTimeType
+  of TtBacktick:
+    let varName = $(ctx.consume())
+    if varName in state:
+      result = state[varName]
+    else:
+      result           = newTypeVar()
+      result.localName = some(varName)
+      state[varName]   = result
+  of TtTypeSpec:
+    result = Con4mType(kind: TypeTypeSpec)
+    if ctx.curTok().kind == TtLBracket:
+      discard ctx.consume()
+      if ctx.curTok().kind != TtBacktick:
+        parseError("Type parameter for typespecs must be a valid type variable")
+      result.binding =  ctx.typeSpec(state)
+      if ctx.consume().kind != TtRBracket:
+        parseError("Type parameter is missing closing bracket")
+      else:
+        result.binding = newTypeVar()
+  of TtTuple:
+    result = Con4mType(kind: TypeTuple)
+    if ctx.consume().kind != TtLBracket:
+      parseError("Tuple type requires brackets [] to specify item types")
+    result.itemTypes.add(ctx.typeSpec(state))
+    if ctx.curTok().kind != TtComma:
+      parseError("Tuples must have more than one field.")
+    while true:
+      case ctx.consume().kind
+      of TtComma:    result.itemTypes.add(ctx.typeSpec(state))
+      of TtRBracket: break
+      else:          parseError("Expected a ',' or ']' after item type")
+  of TtList:
+    result = Con4mType(kind: TypeList)
+    if ctx.consume().kind != TtLBracket:
+      parseError("List type requires brackets [] to specify item type")
+    result.itemType = ctx.typeSpec(state)
+    if ctx.consume().kind != TtRBracket:
+      parseError("List type expects ']' after its single parameter")
+  of TtDict:
+    result = Con4mType(kind: TypeDict)
+    if ctx.consume().kind != TtLBracket:
+      parseError("Dict type requires brackets [] to specify key/value types")
+    result.keyType = ctx.typeSpec(state)
+    if ctx.consume().kind != TtComma:
+      parseError("Dict type requires two type parameters")
+    result.valType = ctx.typeSpec(state)
+    if ctx.consume().kind != TtRBracket:
+      parseError("Dict type expects ']' after its two parameters")
+  of TtFunc:
+    result = Con4mType(kind: TypeFunc)
+    if ctx.consume().kind != TtLParen:
+      parseError("Func type expects '('")
+    if ctx.curTok().kind == TtRParen:
+      discard ctx.consume()
+    else:
+      while true:
+        if ctx.curTok().kind == TtMul:
+          discard ctx.consume()
+          result.va = true
+          result.params.add(ctx.typeSpec(state))
+          if ctx.consume().kind != TtRParen:
+            parseError("Varargs indicator can only appear before the final arg")
+          break
+        else:
+          result.params.add(ctx.typeSpec(state))
+          case ctx.consume().kind
+          of TtComma:  continue
+          of TtRParen: break
+          else:
+            parseError("Unknown token in function type specification " &
+                       "(was looking for ',' or end parenthesis)")
+      if ctx.curTok().kind == TtArrow:
+        discard ctx.consume()
+        result.retType = ctx.typeSpec(state)
+      else:
+        result.retType = bottomType
+  else:
+    parseError("Invalid syntax for a type declaration.")
+
+proc typeSpec(ctx:    ParseCtx,
+              state:  var Table[string, Con4mType]): Con4mType =
+  var components: seq[Con4mType] = @[]
+
+  components.add(ctx.oneTypeSpec(state))
+  while ctx.curTok().kind == TtOr:
+    discard ctx.consume()
+    components.add(ctx.oneTypeSpec(state))
+
+  if len(components) == 1:
+    result = components[0]
+  else:
+    result = Con4mType(kind: TypeUnion, components: components)
+    for i in 0 .. (len(components) - 1):
+      for j in i+1 ..< len(components):
+        if not components[i].unify(components[j]).isBottom():
+          parseError("Union type options must not overlap: '" &
+                     $(components[i]) & "' and '" & $(components[j]) & "'")
+
+proc typeSpec(ctx: ParseCtx): Con4mNode =
+  result          = newNode(NodeType, ctx.curTok())
+  var cache       = initTable[string, Con4mType]()
+  result.typeInfo = ctx.typeSpec(cache)
+
+proc toCon4mType*(s: string): Con4mType =
+  ## Converts a string to a Con4m type object.
+  let (valid, tokens) = s.newStringStream().lex()
+
+  if not valid:
+    raise newException(ValueError, "Invalid character found in type")
+
+  var
+    ctx   = ParseCtx(tokens: tokens, curTokIx: 0, nesting: 0, nlWatch: false)
+    cache = initTable[string, Con4mType]()
+  result  = ctx.typeSpec(cache)
+
+  if ctx.curTok().kind != TtEof:
+    parseError("Unexpected token after type spec", true)
 
 template exprProds(exprName: untyped,
                    rhsName: untyped,
@@ -399,13 +533,21 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
     else:
       return lhs
 
+proc callback(ctx: ParseCtx): Con4mNode =
+  let t = ctx.consume()
+  if t.kind != TtIdentifier:
+    parseError("An identifier is required after the 'func' keyword")
+  result = newNode(NodeCallbackLit, t)
+  if ctx.curTok().kind != TtLParen: return
+  result.children.add(ctx.typeSpec())
+
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
      TtTuple:
        return ctx.typeSpec()
-  of TtCallback:
-    return ctx.callBack()
+  of TtFunc:
+    return ctx.callback()
   of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TTOtherLit:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
@@ -446,118 +588,11 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
-     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtCallback:
+     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc:
     return ctx.literal()
   of TtIdentifier: return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
-
-proc funcProto(ctx: ParseCtx): Con4mNode =
-  result = newNode(NodeFuncType, t)
-
-  if ctx.curTok().kind == TtRParen:
-    discard ctx.consume()
-  else:
-    while true:
-      if ctx.curTok().kind == TtMul:
-        let t = ctx.consume()
-        result.children.add(ctx.typeSpec())
-        result.children.add(newNode(NodeVarargsType, t))
-        if ctx.consume().kind != TtRParen:
-          parseError("Varargs indicator can only appear before the final arg")
-        break
-      else:
-        result.children.add(ctx.typeSpec())
-        case ctx.consume().kind
-        of TtComma:  continue
-        of TtRParen: break
-        else:
-          parseError("Unknown token in function type specification " &
-                     "(was looking for ',' or end parenthesis)")
-  if ctx.curTok().kind == TtArrow:
-    discard ctx.consume()
-    result.children.add(ctx.typeSpec())
-  else:
-    result.children.add(newNode(NodeVoidType, t) # lookbehind not t?
-
-proc OneTypeSpec(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
-  case t.kind
-  of TtBool:   result = newNode(NodeBoolType, t)
-  of TtInt:    result = newNode(NodeIntType, t)
-  of TtString: result = newNode(NodeStringType, t)
-  of TtFloat:  result = newNode(NodeFloatType, t)
-  of TtVoid:   result = newNode(NodeVoidType, t)
-  of TtBacktick:
-    result = newNode(NodeTVar, t)
-    if ctx.curTok().kind != TtIdentifier:
-      parseError("Type var needs a valid identifier after the backtick (`)")
-    result.children.add(newNode(NodeIdentifier, ctx.consume()))
-  of TtTypeSpec:
-    result = newNode(NodeTSpecType, t)
-    if ctx.curTok().kind == TtLBracket:
-      discard ctx.consume()
-      if ctx.curTok() != TtBacktick:
-        parseError("Type parameter for typespecs must be a valid type variable")
-      result.children.add(ctx.typeSpec())
-      if ctx.consume() != TtRBracket:
-        parseError("Type parameter is missing closing bracket")
-  of TtTuple:
-    result = newNode(NodeTupleType, t)
-    if ctx.consume().kind != TtLBracket:
-      parseError("Tuple type requires brackets [] to specify item types")
-    result.children.add(ctx.typeSpec())
-    if ctx.curTok().kind != TtComma:
-      parseError("Tuples must have more than one field.")
-    while true:
-      case ctx.consume().kind
-      of TtComma:    result.children.add(ctx.typeSpec())
-      of TtRBracket: break
-      else:          parseError("Expected a ',' or ']' after item type")
-  of TtList:
-    result = newNode(NodeListType, t)
-    if ctx.consume().kind != TtLBracket:
-      parseError("List type requires brackets [] to specify item type")
-    result.children.add(ctx.typeSpec())
-    if ctx.consume().kind != TtRBracket:
-      parseError("List type expects ']' after its single parameter")
-  of TtDict:
-    result = newNode(NodeDictType, t)
-    if ctx.consume().kind != TtLBracket:
-      parseError("Dict type requires brackets [] to specify key/value types")
-    result.children.add(ctx.typeSpec())
-    if ctx.consume().kind != TtComma:
-      parseError("Dict type requires two type parameters")
-    result.children.add(ctx.typeSpec())
-    if ctx.consume().kind != TtRBracket:
-      parseError("Dict type expects ']' after its two parameters")
-  of TtFunc:
-    if ctx.curTok().kind != TtLParen:
-      parseError("Type specification requires '(' after 'func'")
-    result = ctx.funcProto()
-  else:
-    parseError("Invalid syntax for a type declaration.")
-
-proc typeSpec(ctx: ParseCtx): Con4mNode =
-  var
-    nodes: seq[Con4mNode] = @[]
-    t:     ctx.curTok()
-
-  nodes.add(ctx.OneTypeSpec())
-  while ctx.curTok().kind == TtOr:
-    discard ctx.consume()
-    nodes.add(ctx.OneTypeSpec())
-    
-  if len(nodes) == 1: return nodes[0]
-  else: return newNode(NodeUnionType, t)
-  
-proc callback(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
-  if t.kind != TtIdentifier:
-    parseError("An identifier is required after the callback keyword")
-  result = newNode(NodeCallbackLit, t)
-  if ctx.curTok().kind != TtLParen: return
-  result.children.add(ctx.funcProto())
 
 proc exportStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeExportDecl, ctx.consume())
@@ -1035,3 +1070,5 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
 
     fatal(msg, tok)
     return
+
+
