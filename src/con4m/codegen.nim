@@ -1,5 +1,5 @@
 import strutils, strformat, tables, nimutils, unicode, options
-import types, st
+import types, parse, typecheck, st
 
 type VarDeclInfo = ref object
   name:         string       # The variable name someone asked for,
@@ -151,8 +151,8 @@ proc declToNimType(v: Con4mType): string =
     return "Con4mDateTime"
   of TypeTypeSpec:
     return "typespec"
-  of TypeCallback:
-    return "callback"
+  of TypeFunc:
+    return "func"  # TODO
   of TypeInt:
     return "int"
   of TypeFloat:
@@ -165,8 +165,8 @@ proc declToNimType(v: Con4mType): string =
     return "TableRef[" &
       v.keyType.declToNimType() & ", " &
       v.valType.declToNimType() & "]"
-  of TypeProc, TypeBottom:
-    unreachable # Con4m doesn't support function pointers right now.
+  of TypeUnion, TypeBottom:  # TODO
+    unreachable
 
 proc genOneSectNim(me:       SecTypeInfo,
                    allSects: TableRef[string, SecTypeInfo]): string =

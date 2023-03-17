@@ -54,9 +54,10 @@ template colorT(s: string): string =
   toAnsiCode(acYellow) & s & toAnsiCode(acReset)
 
 proc `$`*(t: Con4mType): string =
-  ## Prints a type object the way it should be written for input, with
-  ## the exception of the bottom type, which prints as its
-  ## mathematical symbol (`⊥`)
+  ## Prints a type object the way it should be written for input.
+  ## Note that, in some contexts, 'func' might be required to
+  ## distinguish a leading parenthesis from other expressions,
+  ## as that is not printed out here.
   case t.kind
   of TypeBottom:   return "void"
   of TypeString:   return "string"
@@ -106,14 +107,14 @@ proc `$`*(t: Con4mType): string =
         return parts.join(" or ")
   of TypeFunc:
     if t.params.len() == 0:
-      return fmt"func() -> {$(t.retType)}"
+      return fmt"() -> {$(t.retType)}"
     else:
       var paramTypes: seq[string]
       for item in t.params:
         paramTypes.add($(item))
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
-      return "f({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
+      return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
   of TypeUnion:
     var s: seq[string] = @[]
     for item in t.components:
@@ -173,27 +174,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeEnum:         fmtNt("Enum")
   of NodeFuncDef:      fmtNtNamed("Def")
   of NodeFormalList:   fmtNt("Formals")
-  of TmpDictType:     fmtTy("DictType")
-  of TmpListType:     fmtTy("ListType")
-  of TmpTupleType:    fmtTy("TupleType")
-  of TmpStringType:   fmtTy("StringType")
-  of TmpIntType:      fmtTy("IntType")
-  of TmpFloatType:    fmtTy("FloatType")
-  of TmpBoolType:     fmtTy("BoolType")
-  of TmpTSpecType:    fmtTy("TSpecType")
-  of TmpFuncType:     fmtTy("FuncType")
-  of TmpDurationType: fmtTy("DurationType")
-  of TmpIPAddrType:   fmtTy("IpAddrType")
-  of TmpCidrType:     fmtTy("CidrType")
-  of TmpSizeType:     fmtTy("SizeType")
-  of TmpDateType:     fmtTy("DateType")
-  of TmpTimeType:     fmtTy("TimeType")
-  of TmpDateTimeType: fmtTy("DateTimeType")
-  of TmpUnionType:    fmtTy("UnionType")
-  of TmpVoidType:     fmtTy("VoidType")
-  of TmpVarargsType:  fmtNt("VarargsType")
-  of TmpTVar:         fmtNt("TVar")
-  of NodeType:        fmtNt("Type")
+  of NodeType:         fmtNt("Type")
   of NodeVarDecl:      fmtNt("VarDecl")
   of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")

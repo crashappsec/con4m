@@ -202,9 +202,13 @@ proc oneTypeSpec(ctx:    ParseCtx,
     result.valType = ctx.typeSpec(state)
     if ctx.consume().kind != TtRBracket:
       parseError("Dict type expects ']' after its two parameters")
-  of TtFunc:
+  of TtFunc, TtLParen:
     result = Con4mType(kind: TypeFunc)
-    if ctx.consume().kind != TtLParen:
+    # Once we know we're parsing a type, we don't require the leading
+    # "func".  It's only necessary for distinguishing generic
+    # parenthesized expressions in an expression context.  We could
+    # deal with that problem unambiguously, but requires more logic.
+    if t.kind != TtLParen and ctx.consume().kind != TtLParen:
       parseError("Func type expects '('")
     if ctx.curTok().kind == TtRParen:
       discard ctx.consume()
@@ -225,11 +229,11 @@ proc oneTypeSpec(ctx:    ParseCtx,
           else:
             parseError("Unknown token in function type specification " &
                        "(was looking for ',' or end parenthesis)")
-      if ctx.curTok().kind == TtArrow:
-        discard ctx.consume()
-        result.retType = ctx.typeSpec(state)
-      else:
-        result.retType = bottomType
+    if ctx.curTok().kind == TtArrow:
+      discard ctx.consume()
+      result.retType = ctx.typeSpec(state)
+    else:
+      result.retType = bottomType
   else:
     parseError("Invalid syntax for a type declaration.")
 
@@ -502,7 +506,6 @@ proc tupleLiteral(ctx: ParseCtx): Con4mNode =
     else:
       unreachable
 
-
 proc accessExpr(ctx: ParseCtx): Con4mNode =
   var lhs: Con4mNode
   let tok = ctx.consume()
@@ -534,10 +537,12 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       return lhs
 
 proc callback(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
-  if t.kind != TtIdentifier:
+  let
+    t  = ctx.consume()
+    id = ctx.consume()
+  if id.kind != TtIdentifier:
     parseError("An identifier is required after the 'func' keyword")
-  result = newNode(NodeCallbackLit, t)
+  result = newNode(NodeCallbackLit, id)
   if ctx.curTok().kind != TtLParen: return
   result.children.add(ctx.typeSpec())
 

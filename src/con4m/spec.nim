@@ -5,7 +5,7 @@
 ## :Copyright: 2022
 
 import options, tables, strutils, strformat, nimutils, macros, builtins
-import types, typecheck, eval, st, dollars
+import types, typecheck, parse, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
   let
@@ -490,7 +490,7 @@ proc validateOneAttrField(attrs:  AttrScope,
       fieldType = stringType
 
     let
-      callType = Con4mType(kind:   TypeProc,
+      callType = Con4mType(kind:   TypeFunc,
                            params: @[stringType, fieldType],
                            va:     false,
                            retType: stringType)

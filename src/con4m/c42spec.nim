@@ -9,7 +9,7 @@
 ## :Copyright: 2023
 
 import tables, strformat, options, streams, nimutils, strutils
-import types, run, spec, st,  errmsg, typecheck, dollars
+import types, parse, run, spec, errmsg, typecheck, dollars
 
 proc buildC42Spec*(): ConfigSpec =
   # We're going to read a con4m file in from users with their specification

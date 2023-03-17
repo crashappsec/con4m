@@ -46,14 +46,7 @@ type
     NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames,
-
-    # These nodes are not presented in parse trees; types really don't
-    # need to even generate these nodes; I expect them to be gone soon.
-    TmpDictType, TmpListType, TmpTupleType, TmpStringType, TmpIntType,
-    TmpFloatType, TmpBoolType, TmpTSpecType, TmpFuncType, TmpVarargsType,
-    TmpTVar, TmpDurationType, TmpIpAddrType, TmpCidrType, TmpSizeType,
-    TmpDateType, TmpTimeType, TmpDateTimeType, TmpUnionType, TmpVoidType
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -224,6 +217,15 @@ type
     of FnUserDefined, FnCallback:
       impl*:      Option[Con4mNode]
 
+  CallbackObj* = ref object of RootRef
+    # Right now, this doesn't even stash a pointer; we could cache
+    # this, but we accept callbacks that aren't provided, so we
+    # currently just defer until runtime to look up the function
+    # anyway.  Also helps make it easy to handle the case where a
+    # function's entry is dynamically replaced via a stack.
+    name*:  string
+    tInfo*: Con4mType
+
   ExtendedTypeKind* = enum
     TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
@@ -304,6 +306,9 @@ proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
 proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)
 proc customUnpack*(b: Box, res: var Con4mType) =
   res = Con4mType(b.o)
+proc customPack*(cb: CallbackObj): Box = Box(kind: MkObj, o: cb)
+proc customUnpack*(b: Box, res: var CallbackObj) =
+  res = CallbackObj(b.o)
 type
   LookupErr* = enum
     errBadSubscope, errNotFound, errBadSpec, errAlreadyExists

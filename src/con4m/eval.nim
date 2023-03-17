@@ -162,7 +162,7 @@ proc sCall*(s:       ConfigState,
   let optFunc = s.getFuncBySig(name, tinfo)
 
   if not optFunc.isSome():
-    if tinfo.kind == TypeProc and tinfo.retType != bottomType:
+    if tinfo.kind == TypeFunc and tinfo.retType != bottomType:
       return none(Box)
     else:
       fatal(fmt"Function '{reprSig(name, tinfo)}' not found")
@@ -204,9 +204,8 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   case node.kind
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
-  of NodeFuncDef, NodeTypeList, NodeTypeDict, NodeTypeTuple, NodeTypeString,
-     NodeTypeInt, NodeTypeFloat, NodeTypeBool, NodeTypeLit, NodeTypeCallback,
-     NodeVarDecl, NodeExportDecl, NodeVarSymNames:
+  of NodeFuncDef, NodeType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
+       NodeCallbackLit:
     return # Nothing to do, everything was done in the check phase.
   of NodeReturn:
     if node.children.len() != 0:

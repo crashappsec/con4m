@@ -845,14 +845,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                         "Invalid type for bianry operator")
     node.typeInfo = floatType
   of NodeCallbackLit:
+    # Note that we do not bother type checking against valid functions
+    # yet; this is a spec, we only type check when a callback is
+    # going to be run.
     node.checkKids(s)
     if len(node.children) > 0:
       node.typeInfo = node.children[0].typeInfo.binding
     else:
       node.typeInfo = Con4mType(kind: TypeFunc, noSpec: true)
-    # Note that we do not bother type checking against valid functions
-    # yet; this is a spec, we only type check when a callback is
-    # going to be run.
+
+    let cbObj  = CallbackObj(name: node.getTokenText(), tInfo: node.typeInfo)
+    node.value = pack(cbObj)
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -890,7 +893,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal(fmt"Variable {name} used before definition", node)
 
     if len(node.children) != 0:
-      node.checkKids(s)
+      # We do NOT recurse into the node here. The binding was set at
+      # parse time, and if we descend into it, then that's going to
+      # tell the NodeType object that it's a type literal.
       let kidType = node.children[0].getType().binding
       node.typeInfo = typeInfo.unify(kidType)
       if node.typeInfo.isBottom():
@@ -898,6 +903,14 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
                    node.children[0], kidType, typeInfo)
     else:
       node.typeInfo = typeInfo
+  of NodeType:
+    ## Type nodes only get called if they're type literals (e.g., for
+    ## assignment).  If they're used to annotate a variable, this does
+    ## not get called.  Here, we basically cast the node into a
+    ## typespec object, and set the 'value' field to the type we
+    ## actually had read in.
+    node.typeInfo = Con4mType(kind: TypeTypeSpec, binding: node.typeInfo)
+    node.value    = pack[Con4mType](node.typeInfo.binding)
   else:
     # Many nodes need no semantic checking, just ask their children,
     # if any, to check.
@@ -970,8 +983,6 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     let resultVarSym = funcRoot.varScope.varLookup("result", vlUse).get()
     if len(resultVarSym.uses) == 0:
       discard resultVarSym.tInfo.unify(bottomType)
-
-
 
   when defined(disallowRecursion):
     # This cycle check waits until we are sure all forward references

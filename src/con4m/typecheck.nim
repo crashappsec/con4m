@@ -345,5 +345,4 @@ proc copyType*(t: Con4mType): Con4mType =
   var tVarCache = newTable[int, Con4mType]()
   return t.copytype(tVarCache)
 
-proc reprSig*(name: string, t: Con4mType): string =
-  return name & (($(t))[1 .. ^1])
+proc reprSig*(name: string, t: Con4mType): string = return name & $(t)
