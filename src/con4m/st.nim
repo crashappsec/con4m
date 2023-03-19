@@ -242,7 +242,8 @@ proc setOverride*(ctx: ConfigState, fqn: string, val: Option[Box]): bool =
 
   return true
 
-proc attrLookupFull*(attrs: AttrScope, fqn: string): (AttrErrEnum, Option[Box]) =
+proc attrLookupFull*(attrs: AttrScope, fqn: string):
+                   (AttrErrEnum, Option[Box]) =
   let
     parts        = fqn.split(".")
     possibleAttr = attrLookup(attrs, parts, 0, vlAttrUse)
@@ -255,7 +256,8 @@ proc attrLookupFull*(attrs: AttrScope, fqn: string): (AttrErrEnum, Option[Box]) 
   return (errOk, attrToVal(attr))
 
 
-proc attrLookupFull*(ctx: ConfigState, fqn: string): (AttrErrEnum, Option[Box]) =
+proc attrLookupFull*(ctx: ConfigState, fqn: string):
+                   (AttrErrEnum, Option[Box]) =
   return attrLookupFull(ctx.attrs, fqn)
 
 proc fullNameAsSeq*(scope: AttrScope): seq[string] =
@@ -377,6 +379,38 @@ proc lockAttribute*(state: ConfigState, fqn: string): bool =
   return state.attrs.lockAttribute(fqn)
 
 const nullstr = "\"null\""
+
+proc oneValToJson(box: Box, tInfo: Con4mType): string =
+  case tInfo.kind
+  of TypeInt:
+    return $(unpack[int](box))
+  of TypeFloat:
+    return $(unpack[float](box))
+  of TypeTuple:
+    var
+      x              = unpack[seq[Box]](box)
+      l: seq[string] = @[]
+    for i, item in x: l.add(item.oneValToJson(tInfo.itemTypes[i]))
+    result = "[" & l.join(", ") & "]"
+  of TypeList:
+    var
+      x              = unpack[seq[Box]](box)
+      l: seq[string] = @[]
+    for item in x: l.add(item.oneValToJson(tInfo.itemType))
+    result = "[" & l.join(", ") & "]"
+  of TypeDict:
+    var
+      x              = unpack[Con4mDict[Box, Box]](box)
+      l: seq[string] = @[]
+    for k, v in x:
+      let
+        kstr = k.oneValToJson(tInfo.keyType)
+        vstr = v.oneValToJson(tInfo.valType)
+      l.add(kstr & ":" & vstr)
+    result = "{" & l.join(", ") & "}"
+  else:
+    result = "\"" & tInfo.oneArgToString(box) & "\""
+    
 proc scopeToJson*(scope: AttrScope): string =
   var kvpairs: seq[string] = @[]
 
@@ -387,13 +421,13 @@ proc scopeToJson*(scope: AttrScope): string =
         boxOpt = attr.attrToVal()
       if boxOpt.isSome():
         let
-          val     = attr.tInfo.oneArgToString(boxOpt.get())
+          val     = boxOpt.get().oneValToJson(attr.tInfo) 
           typeStr = fmt("\"type\": \"{$(attr.tInfo)}\"")
-          valStr  = fmt("\"value\": \"{val}\"")
+          valStr  = fmt("\"value\": {val}")
         
         kvpairs.add(fmt(""""{k}" : {{{typeStr}, {valStr}}}"""))
       else:
         kvpairs.add(fmt""""{k}" : {nullstr}""")
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
-  return "{ " & kvpairs.join(", ") & "}"
+  result = "{ " & kvpairs.join(", ") & "}"
