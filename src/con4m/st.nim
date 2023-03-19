@@ -432,4 +432,3 @@ proc scopeToJson*(scope: AttrScope): string =
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
   result = "{ " & kvpairs.join(", ") & "}"
-  echo result
