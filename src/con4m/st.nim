@@ -12,7 +12,7 @@
 ## :Copyright: 2022
 
 import tables, options, strutils, strformat, nimutils, types, algorithm,
-       typecheck, dollars
+       typecheck, dollars, json
 
 proc newVarSym(name: string): VarSym =
   return VarSym(name:     name,
@@ -403,9 +403,10 @@ proc oneValToJson(box: Box, tInfo: Con4mType): string =
       x              = unpack[Con4mDict[Box, Box]](box)
       l: seq[string] = @[]
     for k, v in x:
-      let
+      var
         kstr = k.oneValToJson(tInfo.keyType)
         vstr = v.oneValToJson(tInfo.valType)
+      if not kstr.startsWith("\""): kstr = escapeJson(kstr)
       l.add(kstr & ":" & vstr)
     result = "{" & l.join(", ") & "}"
   else:
@@ -431,3 +432,4 @@ proc scopeToJson*(scope: AttrScope): string =
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
   result = "{ " & kvpairs.join(", ") & "}"
+  echo result
