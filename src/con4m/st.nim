@@ -12,7 +12,7 @@
 ## :Copyright: 2022
 
 import tables, options, strutils, strformat, nimutils, types, algorithm,
-       typecheck
+       typecheck, dollars
 
 proc newVarSym(name: string): VarSym =
   return VarSym(name:     name,
@@ -382,10 +382,16 @@ proc scopeToJson*(scope: AttrScope): string =
 
   for k, v in scope.contents:
     if v.isA(Attribute):
-      let attr = v.get(Attribute)
-      let boxOpt = attr.attrToVal()
+      let
+        attr   = v.get(Attribute)
+        boxOpt = attr.attrToVal()
       if boxOpt.isSome():
-        kvpairs.add(fmt(""""{k}" : {boxOpt.get().boxToJson()}"""))
+        let
+          val     = attr.tInfo.oneArgToString(boxOpt.get())
+          typeStr = fmt("\"type\": \"{$(attr.tInfo)}\"")
+          valStr  = fmt("\"value\": \"{val}\"")
+        
+        kvpairs.add(fmt(""""{k}" : {{{typeStr}, {valStr}}}"""))
       else:
         kvpairs.add(fmt""""{k}" : {nullstr}""")
     else:

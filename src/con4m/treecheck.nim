@@ -909,8 +909,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     ## not get called.  Here, we basically cast the node into a
     ## typespec object, and set the 'value' field to the type we
     ## actually had read in.
-    node.typeInfo = Con4mType(kind: TypeTypeSpec, binding: node.typeInfo)
-    node.value    = pack[Con4mType](node.typeInfo.binding)
+    if not s.secondPass:
+      node.typeInfo = Con4mType(kind: TypeTypeSpec, binding: node.typeInfo)
+      node.value    = pack[Con4mType](node.typeInfo.binding)
   else:
     # Many nodes need no semantic checking, just ask their children,
     # if any, to check.

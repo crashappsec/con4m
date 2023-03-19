@@ -171,8 +171,8 @@ proc oneTypeSpec(ctx:    ParseCtx,
       result.binding =  ctx.typeSpec(state)
       if ctx.consume().kind != TtRBracket:
         parseError("Type parameter is missing closing bracket")
-      else:
-        result.binding = newTypeVar()
+    else:
+      result.binding = newTypeVar()
   of TtTuple:
     result = Con4mType(kind: TypeTuple)
     if ctx.consume().kind != TtLBracket:
@@ -245,7 +245,7 @@ proc typeSpec(ctx:    ParseCtx,
   while ctx.curTok().kind == TtOr:
     discard ctx.consume()
     components.add(ctx.oneTypeSpec(state))
-
+    
   if len(components) == 1:
     result = components[0]
   else:
@@ -267,12 +267,12 @@ proc toCon4mType*(s: string): Con4mType =
 
   if not valid:
     raise newException(ValueError, "Invalid character found in type")
-
+ 
   var
     ctx   = ParseCtx(tokens: tokens, curTokIx: 0, nesting: 0, nlWatch: false)
     cache = initTable[string, Con4mType]()
   result  = ctx.typeSpec(cache)
-
+    
   if ctx.curTok().kind != TtEof:
     parseError("Unexpected token after type spec", true)
 
@@ -545,7 +545,7 @@ proc callback(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeCallbackLit, id)
   if ctx.curTok().kind != TtLParen: return
   result.children.add(ctx.typeSpec())
-
+      
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
@@ -1076,4 +1076,4 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
     fatal(msg, tok)
     return
 
-
+    

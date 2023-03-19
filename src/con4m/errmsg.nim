@@ -12,10 +12,10 @@ type
   Con4mError*  = object of CatchableError
 
 let
-  con4mTopic*       = registerTopic("con4m")
-  `hook?`           = configSink(getSink("stderr").get(),
-                                 filters = @[MsgFilter(logLevelFilter),
-                                             MsgFilter(logPrefixFilter)])
+  con4mTopic*  = registerTopic("con4m")
+  `hook?`       = configSink(getSink("stderr").get(),
+                             filters = @[MsgFilter(logLevelFilter),
+                                         MsgFilter(logPrefixFilter)])
   defaultCon4mHook* = `hook?`.get()
 
 var

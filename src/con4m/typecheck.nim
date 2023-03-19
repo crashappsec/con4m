@@ -33,30 +33,9 @@ proc newProcType*(params:  seq[Con4mType],
                   retType: Con4mType,
                   va:      bool = false): Con4mType =
   if params.len() != 0:
-    return Con4mType(kind: TypeFunc,
-                    params: params,
-                    va: va,
-                    retType: retType)
+    return Con4mType(kind: TypeFunc, params: params, va: va, retType: retType)
   else:
     return Con4mType(kind: TypeFunc, retType: retType)
-
-proc resolveTypeVars*(t: Con4mType): Con4mType =
-  case t.kind
-  of TypeTVar:
-    if t.cycle:
-      return bottomType
-    if t.link.isSome():
-      t.cycle = true
-      result = resolveTypeVars(t.link.get())
-      t.cycle = false
-      return
-    else:
-      return t
-  else:
-    return t
-
-proc getType*(n: Con4mNode): Con4mType =
-  return n.typeInfo.resolveTypeVars()
 
 proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
   if t1 == t2: return
@@ -74,10 +53,8 @@ proc linkTypeVar(t1: Con4mType, t2: Con4mType) =
   t1.linksin = @[]
 
 proc getBaseType*(t: Con4mType): Con4mTypeKind =
-  case t.kind
-  of TypeTVar:
-    if t.link.isSome():
-      return t.link.get().getBaseType()
+  if t.kind == TypeTVar:
+    if t.link.isSome(): return t.link.get().getBaseType()
     return TypeTVar
   else:
     return t.kind
@@ -86,12 +63,11 @@ proc getBaseType*(node: Con4mNode): Con4mTypeKind =
   return node.typeInfo.getBaseType()
 
 proc isBottom*(t: Con4mType): bool = return t.kind == TypeBottom
-
+  
 # Uncomment this if you need a trace of unify() calls,
 # rename unify below to unifyactual, and then
 # uncomment the debug wrapper for unify below.
 # proc unify*(param1: Con4mType, param2: Con4mType): Con4mType
-
 proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
   let
     t1 = param1.resolveTypeVars()
@@ -110,8 +86,9 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     return bottomType
   of TypeBottom: return bottomType
   of TypeTypeSpec:
-    if t2.kind != TypeTypeSpec: return bottomType
-    return t1.binding.unify(t2.binding)
+    if t2.kind != TypeTypeSpec or t1.binding.unify(t2.binding).isBottom():
+      return bottomType
+    return t1
   of TypeFunc:
     if t2.kind != TypeFunc: return bottomType
     var
@@ -189,6 +166,7 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
       if t2item notin foundTypes:
         return bottomType # not statically compatable, could require a cast,
                           # or could be super invalid.
+    return t1
   of TypeTVar:
     if t2.kind == TypeTVar:
       let intersection = t1.constraints * t2.constraints
@@ -263,14 +241,12 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
 #  result = unifyActual(param1, param2)
 #  echo fmt"{s1} ⋃ {s2} = {`$`(result)}"
 
-proc isBottom*(t1, t2: Con4mType): bool =
-  return unify(t1, t2).isBottom()
+proc isBottom*(t1, t2: Con4mType): bool = return unify(t1, t2).isBottom()
 
 proc unify*(n2, n1: Con4mNode): Con4mType =
   return unify(n1.typeInfo, n2.typeInfo)
 
-proc isBottom*(n: Con4mNode): bool =
-  return n.typeInfo.isBottom()
+proc isBottom*(n: Con4mNode): bool = return n.typeInfo.isBottom()
 
 proc isBottom*(n1, n2: Con4mNode): bool =
   return isBottom(n1.typeInfo, n2.typeInfo)
@@ -303,19 +279,21 @@ proc hasTypeVar*(t: Con4mType): bool =
 
 proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
   if not t.hasTypeVar(): return t
-
+  
   case t.kind
   of TypeTVar:
     if t.varNum in cache:
       return cache[t.varNum]
     if t.link.isSome():
-      result = t.resolveTypeVars().copyType(cache)
-      cache[t.varNum] = result
+      let n    = t.varNum
+      result   = t.resolveTypeVars().copyType(cache)
+      cache[n] = result
     else:
       result = newTypeVar(t.constraints)
       result.cycle = false
       cache[t.varNum] = result
-    result.localName = t.localName
+    if result.kind == TypeTVar:
+      result.localName = t.localName
   of TypeTypeSpec:
     result = Con4mType(kind: TypeTypeSpec, binding: t.binding.copyType(cache))
   of TypeList:

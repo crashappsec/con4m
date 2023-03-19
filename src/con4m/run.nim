@@ -84,11 +84,11 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
 
 proc firstRun*(stream:      Stream,
                fileName:    string,
-               spec:        ConfigSpec = nil,
-               addBuiltins: bool = true,
-               customFuncs: openarray[(string, BuiltinFn, string)] = [],
-               exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = [],
+               spec:        ConfigSpec                     = nil,
+               addBuiltins: bool                           = true,
+               customFuncs: openarray[(string, BuiltinFn)] = [],
+               exclude:     openarray[int]                 = [],
+               callbacks:   openarray[string]              = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
     setCurrentFileName(fileName)
     # Parse throws an error if it doesn't succeed.
@@ -96,11 +96,11 @@ proc firstRun*(stream:      Stream,
       tree  = parse(stream, filename)
       state = newConfigState(tree, spec, addBuiltins, exclude)
 
-    for (name, fn, tinfo) in customFuncs:
-      state.newBuiltIn(name, fn, tinfo)
+    for (sig, fn) in customFuncs:
+      state.newBuiltIn(sig, fn)
 
-    for (name, tinfo) in callbacks:
-      state.newCallback(name, tinfo)
+    for sig in callbacks:
+      state.newCallback(sig)
 
     if state.runBase(tree, evalCtx):
       return (state, true)
@@ -111,9 +111,9 @@ proc firstRun*(contents:    string,
                fileName:    string,
                spec:        ConfigSpec = nil,
                addBuiltins: bool = true,
-               customFuncs: openarray[(string, BuiltinFn, string)] = [],
+               customFuncs: openarray[(string, BuiltinFn)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = [],
+               callbacks:   openarray[string] = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newStringStream(contents), fileName, spec, addBuiltins,
                   customFuncs, exclude, callbacks, evalCtx)
@@ -121,9 +121,9 @@ proc firstRun*(contents:    string,
 proc firstRun*(fileName:    string,
                spec:        ConfigSpec = nil,
                addBuiltins: bool = true,
-               customFuncs: openarray[(string, BuiltinFn, string)] = [],
+               customFuncs: openarray[(string, BuiltinFn)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[(string, string)] = [],
+               callbacks:   openarray[string] = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newFileStream(fileName, fmRead), fileName, spec,
                   addBuiltins, customFuncs, exclude, callbacks, evalCtx)

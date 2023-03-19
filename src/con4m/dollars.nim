@@ -5,8 +5,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, strutils, streams, tables, json, unicode, algorithm
+import options, strformat, streams, tables, json, unicode, algorithm
 import nimutils, types
+from strutils import join, repeat
+
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.
@@ -77,11 +79,12 @@ proc `$`*(t: Con4mType): string =
     var s: seq[string] = @[]
     for item in t.itemTypes:
       s.add($(item))
-    return fmt"""tuple[{s.join(", ")}]"""
+    return fmt"""tuple[{join(s, ", ")}]"""
   of TypeTypeSpec:
     result = "typespec"
-    if t.binding.localName.isSome() or t.binding.link.isSome():
-      result &= "[" & $(t.binding) & "]"
+    if t.binding.kind == TypeTVar:
+      if t.binding.localName.isSome() or t.binding.link.isSome():
+        result &= "[" & $(t.binding) & "]"
   of TypeTVar:
     if t.link.isSome():
       return $(t.link.get())
@@ -170,7 +173,7 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeKVPair:       fmtNt("KVPair")
   of NodeListLit:      fmtNt("ListLit")
   of NodeTupleLit:     fmtNt("TupleLit")
-  of NodeCallbackLit:  fmtNt("CallbackLit")
+  of NodeCallbackLit:  fmtNtNamed("CallbackLit")
   of NodeEnum:         fmtNt("Enum")
   of NodeFuncDef:      fmtNtNamed("Def")
   of NodeFormalList:   fmtNt("Formals")
@@ -200,6 +203,155 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     let subitem = item.`$`(i + 2)
     result = indentTemplate.fmt()
 
+proc nativeSizeToStrBase2*(input: Con4mSize): string =
+  var n, m: uint64
+
+  if input == 0: return "0 bytes"
+  else:          result = ""
+
+  m = input div 1099511627776'u64
+  if m != 0:
+    result = $(m) & "TB "
+    n = input mod 1099511627776'u64
+
+  m = n div 1073741824
+  if m != 0:
+    result &= $(m) & "GB "
+    n = n mod 1073741824
+
+  m = n div 1048576
+  if m != 0:
+    result &= $(m) & "MB "
+    n = n mod 1048576
+
+  m = n div 1024
+  if m != 0:
+    result &= $(m) & "KB "
+    n = n mod 1024
+
+  if n != 0:
+    result &= $(m) & "B"
+
+  result = result.strip()
+
+proc nativeDurationToStr*(d: Con4mDuration): string =
+  var
+    usec    = d mod 1000000
+    numSec  = d div 1000000
+    n: uint64
+
+  if d == 0: return "0 sec"
+  else:      result = ""
+
+  n = numSec div (365 * 24 * 60 * 60)
+
+  case n
+  of 0:  discard
+  of 1:  result = "1 year "
+  else:  result = $(n) & " years "
+  
+  numSec = numSec mod (365 * 24 * 60 * 60)
+
+  n = numSec div (24 * 60 * 60)  # number of days
+  case n div 7
+  of 0:    discard
+  of 1:    result &= "1 week "
+  else:    result &= $(n) & " weeks "
+
+  case n mod 7
+  of 0:    discard
+  of 1:    result &= " 1 day "
+  else:    result &= $(n mod 7) & " days "
+
+  numSec = numSec mod (24 * 60 * 60)
+  n      = numSec div (60 * 60)
+
+  case n
+  of 0:    discard
+  of 1:    result &= " 1 hour "
+  else:    result &= $(n) & " hours "
+
+  numSec = numSec mod (60 * 60)
+  n      = numSec div 60
+
+  case n
+  of 0:    discard
+  of 1:    result &= " 1 min "
+  else:    result &= $(n) & " mins "
+
+  numSec = numSec mod 60
+
+  case numSec
+  of 0:    discard
+  of 1:    result &= " 1 sec "
+  else:    result &= $(numSec) & " secs "
+
+  n = usec div 1000
+  if n != 0: result &= $(n) & " msec "
+
+  usec = usec mod 1000
+  if usec != 0: result &= $(usec) & " usec"
+
+  result = result.strip()
+
+proc oneArgToString*(t: Con4mType, b: Box, lit = false): string =
+  case t.kind
+  of TypeString:
+    if lit:
+      return "\"" & unpack[string](b) & "\""
+    else:
+      return unpack[string](b)
+  of TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+    if lit:
+      return "<<" & unpack[string](b) & ">>"
+    else:
+      return unpack[string](b)
+  of TypeTypeSpec:
+    return $(unpack[Con4mType](b))
+  of TypeFunc:
+    let cb = unpack[CallbackObj](b)
+    return "func " & cb.name & $(cb.tInfo)
+  of TypeInt:
+    return $(unpack[int](b))
+  of TypeFloat:
+    return $(unpack[float](b))
+  of TypeBool:
+    return $(unpack[bool](b))
+  of TypeDuration:
+    return nativeDurationToStr(Con4mDuration(unpack[int](b)))
+  of TypeSize:
+    return nativeSizeToStrBase2(Con4mSize(unpack[int](b)))
+  of TypeList:
+    var
+      strs: seq[string] = @[]
+      l:    seq[Box] = unpack[seq[Box]](b)
+    for item in l:
+      strs.add(oneArgToString(t.itemType.resolveTypeVars(), item, true))
+    return "[" & strs.join(", ") & "]"
+  of TypeTuple:
+    var
+      strs: seq[string] = @[]
+      l:    seq[Box] = unpack[seq[Box]](b)
+    for i, item in l:
+      strs.add(oneArgToString(t.itemTypes[i].resolveTypeVars(), item, true))
+    return "(" & strs.join(", ") & ")"
+  of TypeDict:
+    var
+      strs: seq[string] = @[]
+      tbl:  OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](b)
+
+    for k, v in tbl:
+      let
+        t1 = t.keyType.resolveTypeVars()
+        t2 = t.valType.resolveTypeVars()
+        ks = oneArgToString(t1, k, true)
+        vs = oneArgToString(t2, v, true)
+      strs.add(ks & " : " & vs)
+
+    return "{" & strs.join(", ") & "}"
+  else:
+    return "<??>"
+    
 proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
   path.add(self.name)
 
@@ -213,7 +365,8 @@ proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
     if v.isA(Attribute):
       var attr = v.get(Attribute)
       if attr.value.isSome():
-        row.add(@[attr.name, $(attr.tInfo), $(attr.value.get())])
+        let val = oneArgToString(attr.tInfo, attr.value.get())
+        row.add(@[attr.name, $(attr.tInfo), val])
       else:
         row.add(@[attr.name, $(attr.tInfo), "<not set>"])
     else:
@@ -292,3 +445,5 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
                          oRowFmt       = @[acBGWhite, acBBlack])
 
   return result & tbl.render()
+
+  

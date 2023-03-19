@@ -96,6 +96,7 @@ type
       # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
+  
   Con4mDuration* = uint64
   Con4mSize*     = uint64
   Con4mIPAddr*   = string
@@ -301,6 +302,17 @@ let
   timeType*     = Con4mType(kind: TypeTime)
   dateTimeType* = Con4mType(kind: TypeDateTime)
   bottomType*   = Con4mType(kind: TypeBottom)
+
+proc resolveTypeVars*(t: Con4mType): Con4mType =
+  result = t
+  if t.kind == TypeTVar:
+    if t.cycle: return bottomType
+    if t.link.isSome():
+      t.cycle = true
+      result  = t.link.get().resolveTypeVars()
+      t.cycle = false
+
+proc getType*(n: Con4mNode): Con4mType = return n.typeInfo.resolveTypeVars()
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
 proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)

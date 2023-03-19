@@ -145,63 +145,6 @@ proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack[seq[string]](l))
 
-proc oneArgToString(t: Con4mType, b: Box, lit = false): string =
-  case t.kind
-  of TypeString:
-    if lit:
-      return "\"" & unpack[string](b) & "\""
-    else:
-      return unpack[string](b)
-  of TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
-    if lit:
-      return "<<" & unpack[string](b) & ">>"
-    else:
-      return unpack[string](b)
-  of TypeTypeSpec:
-    return "type: " & unpack[string](b)
-  of TypeFunc:
-    return "callback: " & unpack[string](b)
-  of TypeInt:
-    return $(unpack[int](b))
-  of TypeFloat:
-    return $(unpack[float](b))
-  of TypeBool:
-    return $(unpack[bool](b))
-  of TypeDuration:
-    return nativeDurationToStr(Con4mDuration(unpack[int](b)))
-  of TypeSize:
-    return nativeSizeToStrBase2(Con4mSize(unpack[int](b)))
-  of TypeList:
-    var
-      strs: seq[string] = @[]
-      l:    seq[Box] = unpack[seq[Box]](b)
-    for item in l:
-      strs.add(oneArgToString(t.itemType.resolveTypeVars(), item, true))
-    return "[" & strs.join(", ") & "]"
-  of TypeTuple:
-    var
-      strs: seq[string] = @[]
-      l:    seq[Box] = unpack[seq[Box]](b)
-    for i, item in l:
-      strs.add(oneArgToString(t.itemTypes[i].resolveTypeVars(), item, true))
-    return "(" & strs.join(", ") & ")"
-  of TypeDict:
-    var
-      strs: seq[string] = @[]
-      tbl:  OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](b)
-
-    for k, v in tbl:
-      let
-        t1 = t.keyType.resolveTypeVars()
-        t2 = t.valType.resolveTypeVars()
-        ks = oneArgToString(t1, k, true)
-        vs = oneArgToString(t2, v, true)
-      strs.add(ks & " : " & vs)
-
-    return "{" & strs.join(", ") & "}"
-  else:
-    return "<??>"
-
 proc c4mToString*(args: seq[Box], state: ConfigState): Option[Box] =
   let
     actNode  = state.nodeStash.children[1]
@@ -805,15 +748,13 @@ proc c4mTypeOf*(args: seq[Box], localstate: ConfigState): Option[Box] =
     actNode  = localstate.nodeStash.children[1]
     itemType = actNode.children[0].getType()
 
-  return some(pack($(itemType)))
+  return some(pack(itemType))
 
 proc c4mCmpTypes*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
-    t1str = unpack[string](args[0])
-    t2str = unpack[string](args[1])
-    t1    = t1str.toCon4mType()
-    t2    = t2str.toCon4mType()
-
+    t1 = unpack[Con4mType](args[0])
+    t2 = unpack[Con4mType](args[1])
+    
   return some(pack(not t1.unify(t2).isBottom()))
 
 proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
@@ -825,12 +766,12 @@ proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
     state   = replacementState.getOrElse(localState)
     aOrE    = attrLookup(state.attrs, varName.split("."), 0, vlExists)
 
-  if aOrE.isA(AttrErr):       return some(pack($(bottomType)))
+  if aOrE.isA(AttrErr):       return some(pack(bottomType))
   let aOrS = aOrE.get(AttrOrSub)
-  if not aOrS.isA(Attribute): return some(pack($(bottomType)))
+  if not aOrS.isA(Attribute): return some(pack(bottomType))
   var sym  = aOrS.get(Attribute)
 
-  return some(pack($(sym.tInfo)))
+  return some(pack(sym.tInfo))
 
 proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
   ## Arg 0 is the field we're type-checking.
@@ -843,14 +784,14 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
     aOrE1   = attrLookup(state.attrs, varName.split("."), 0, vlExists)
     aOrE2   = attrLookup(state.attrs, tsField.split("."), 0, vlExists)
 
-  if aOrE1.isA(AttrErr):       return some(pack($(bottomType)))
-  if aOrE2.isA(AttrErr):       return some(pack($(bottomType)))
+  if aOrE1.isA(AttrErr):       return falseRet
+  if aOrE2.isA(AttrErr):       return falseRet
   let
     aOrS1 = aOrE1.get(AttrOrSub)
     aOrS2 = aOrE2.get(AttrOrSub)
 
-  if not aOrS1.isA(Attribute): return some(pack($(bottomType)))
-  if not aOrS2.isA(Attribute): return some(pack($(bottomType)))
+  if not aOrS1.isA(Attribute): return falseRet
+  if not aOrS2.isA(Attribute): return falseRet
 
   var
     symToCheck = aOrS1.get(Attribute)
@@ -863,11 +804,27 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
   if tsValOpt.isNone():
     raise c4mException("Field '" & tsField & "' has no value provided.")
 
-  var tsValType = (unpack[string](tsValOpt.get())).toCon4mType()
+  var tsValType = unpack[Con4mType](tsValOpt.get())
 
   return some(pack(not tsValType.unify(symToCheck.tInfo).isBottom()))
 
+proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  let
+    attrName     = unpack[string](args[0])
+    expectedType = (unpack[Con4mType](args[1])).binding
+    state        = replacementState.getOrElse(localState)
+    aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
 
+  if aOrE.isA(AttrErr): return none(Box)
+  let aOrS = aorE.get(AttrOrSub)
+
+  if not aOrS.isA(Attribute): return none(Box)
+  let sym = aOrS.get(Attribute)
+
+  if sym.tInfo.unify(expectedType).isBottom(): return none(Box)
+  return sym.value
+  
+  
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -1034,15 +991,17 @@ else:
 
     return some(pack(output))
 
-proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
+proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
   ## the parameter used to specify the name exposed to con4m.  `tinfo`
   ## is the Conform type signature.
 
   let
+    ix       = sig.find('(')
+    name     = sig[0 ..< ix]
     coreName = if fn == nil: "callback" else: "builtin"
-    tinfo = tStr.toCon4mType()
+    tinfo    = sig[ix .. ^1].toCon4mType()
 
   if tinfo.kind != TypeFunc:
     raise c4mException(fmt"Signature provided for {coreName} " &
@@ -1076,180 +1035,172 @@ proc newCoreFunc*(s: ConfigState, name: string, tStr: string, fn: BuiltInFn) =
                                "entry in the function table")
     s.funcTable[name].add(b)
 
-proc newBuiltIn*(s: ConfigState, name: string, fn: BuiltInFn, tinfo: string) =
+proc newBuiltIn*(s: ConfigState, sig: string, fn: BuiltInFn) =
   try:
-    newCoreFunc(s, name, tinfo, fn)
+    newCoreFunc(s, sig, fn)
   except:
     let msg = getCurrentExceptionMsg()
     raise newException(ValueError,
-                       fmt"When adding builtin '{name}({tinfo})': {msg}")
+                       fmt"When adding builtin '{sig}': {msg}")
 
-proc newCallback*(s: ConfigState, name: string, tinfo: string) =
+proc newCallback*(s: ConfigState, sig: string) =
   try:
-    newCoreFunc(s, name, tinfo, nil)
+    newCoreFunc(s, sig, nil)
   except:
     let msg = getCurrentExceptionMsg()
     raise newException(ValueError,
-                       fmt"When adding callback '{name}({tinfo})': {msg}")
+                       fmt"When adding callback '{sig}': {msg}")
 
-type BiFn = BuiltInFn # Alias the type to avoid cursed line wrap.
 const defaultBuiltins* = [
   # Type conversion operations
-  (1,   "bool",      BiFn(c4mIToB),            "(int) -> bool"),
-  (2,   "bool",      BiFn(c4mFToB),            "(float) -> bool"),
-  (3,   "bool",      BiFn(c4mSToB),            "(string) -> bool"),
-  (4,   "bool",      BiFn(c4mLToB),            "(list[`x]) -> bool"),
-  (5,   "bool",      BiFn(c4mDToB),            "(dict[`x,`y]) -> bool"),
-  (6,   "float",     BiFn(c4mItoF),            "(int) -> float"),
-  (7,   "int",       BiFn(c4mFtoI),            "(float) -> int"),
-  (8,   "$",         BiFn(c4mToString),        "(`t) -> string"),
-  (9,   "Duration",  BiFn(c4mSToDur),          "(string) -> Duration"),
-  (10,  "IPAddr",    BiFn(c4mStoIP),           "(string) -> IPAddr"),
-  (11,  "CIDR",      BiFn(c4mSToCIDR),         "(string) -> CIDR"),
-  (12,  "Size",      BiFn(c4mSToSize),         "(string) -> Size"),
-  (13,  "Date",      BiFn(c4mSToDate),         "(string) -> Date"),
-  (14,  "Time",      BiFn(c4mSToTime),         "(string) -> Time"),
-  (15,  "DateTime",  BiFn(c4mSToDateTime),     "(string) -> DateTime"),
-  (16,  "to_usec",   BiFn(c4mSelfRet),         "(Duration) -> int"),
-  (17,  "to_msec",   BiFn(c4mDurAsMSec),       "(Duration) -> int"),
-  (18,  "to_sec",    BiFn(c4mDurAsSec),        "(Duration) -> int"),
+  (1,   "bool(int) -> bool",            BuiltInFn(c4mIToB)),
+  (2,   "bool(float) -> bool",          BuiltInFn(c4mFToB)),
+  (3,   "bool(string) -> bool",         BuiltInFn(c4mSToB)),
+  (4,   "bool(list[`x]) -> bool",       BuiltInFn(c4mLToB)),
+  (5,   "bool(dict[`x,`y]) -> bool",    BuiltInFn(c4mDToB)),
+  (6,   "float(int) -> float",          BuiltInFn(c4mItoF)),
+  (7,   "int(float) -> int",            BuiltInFn(c4mFtoI)),
+  (8,   "$(`t) -> string",              BuiltInFn(c4mToString)),
+  (9,   "Duration(string) -> Duration", BuiltInFn(c4mSToDur)),
+  (10,  "IPAddr(string) -> IPAddr",     BuiltInFn(c4mStoIP)),
+  (11,  "CIDR(string) -> CIDR",         BuiltInFn(c4mSToCIDR)),
+  (12,  "Size(string) -> Size",         BuiltInFn(c4mSToSize)),
+  (13,  "Date(string) -> Date",         BuiltInFn(c4mSToDate)),
+  (14,  "Time(string) -> Time",         BuiltInFn(c4mSToTime)),
+  (15,  "DateTime(string) -> DateTime", BuiltInFn(c4mSToDateTime)),
+  (16,  "to_usec(Duration) -> int",     BuiltInFn(c4mSelfRet)),
+  (17,  "to_msec(Duration) -> int",     BuiltInFn(c4mDurAsMSec)),
+  (18,  "to_sec(Duration) -> int",      BuiltInFn(c4mDurAsSec)),
   #[ Not done yet:
-  (28,  "get_day",   BiFn(c4mGetDayFromDate),  "(Date) -> int"),
-  (29,  "get_month", BiFn(c4mGetMonFromDate),  "(Date) -> int"),
-  (30,  "get_year",  BiFn(c4mGetYearFromDate), "(Date) -> int"),
-  (31,  "get_day",   BiFn(c4mGetDayFromDate),  "(DateTime) -> int"),
-  (32,  "get_month", BiFn(c4mGetMonFromDate),  "(DateTime) -> int"),
-  (33,  "get_year",  BiFn(c4mGetYearFromDate), "(DateTime) -> int"),
-  (34,  "get_hour",  BiFn(c4mGetHourFromTime), "(Time) -> int"),
-  (35,  "get_min",   BiFn(c4mGetMinFromTime),  "(Time) -> int"),
-  (36,  "get_sec",   BiFn(c4mGetSecFromTime),  "(Time) -> int"),
-  (37,  "fractsec",  BiFn(c4mGetFracFromTime), "(Time) -> int"),
-  (38,  "tz_offset", BiFn(c4mGetTZOffset),     "(Time) -> string"),
-  (40,  "get_hour",  BiFn(c4mGetHourFromTime), "(DateTime) -> int"),
-  (41,  "get_min",   BiFn(c4mGetMinFromTime),  "(DateTime) -> int"),
-  (42,  "get_sec",   BiFn(c4mGetSecFromTime),  "(DateTime) -> int"),
-  (43,  "fractsec",  BiFn(c4mGetFracFromTime), "(DateTime) -> int"),
-  (44,  "tz_offset", BiFn(c4mGetTZOffset),     "(DateTime) -> string"),
-  (45,  "ip_part",   BiFn(c4mCIDRToIP),        "(CIDR) -> IPAddr"),
-  (46,  "net_size",  BiFn(c4mCIDRToInt),       "(CIDR) -> int"),
-  (47,  "to_CIDR",   BiFn(c4mToCIDR),          "(IPAddr, int) -> CIDR"),
+  (28,  "get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
+  (29,  "get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),
+  (30,  "get_year(Date) -> int",         BuiltInFn(c4mGetYearFromDate)),
+  (31,  "get_day(DateTime) -> int",      BuiltInFn(c4mGetDayFromDate)),
+  (32,  "get_month(DateTime) -> int",    BuiltInFn(c4mGetMonFromDate)),
+  (33,  "get_year(DateTime) -> int",     BuiltInFn(c4mGetYearFromDate)),
+  (34,  "get_hour(Time) -> int",         BuiltInFn(c4mGetHourFromTime)),
+  (35,  "get_min(Time) -> int",          BuiltInFn(c4mGetMinFromTime)),
+  (36,  "get_sec(Time) -> int",          BuiltInFn(c4mGetSecFromTime)),
+  (37,  "fractsec(Time) -> int",         BuiltInFn(c4mGetFracFromTime)),
+  (38,  "tz_offset(Time) -> string",     BuiltInFn(c4mGetTZOffset)),
+  (40,  "get_hour(DateTime) -> int",     BuiltInFn(c4mGetHourFromTime)),
+  (41,  "get_min(DateTime) -> int",      BuiltInFn(c4mGetMinFromTime)),
+  (42,  "get_sec(DateTime) -> int",      BuiltInFn(c4mGetSecFromTime)),
+  (43,  "fractsec(DateTime) -> int",     BuiltInFn(c4mGetFracFromTime)),
+  (44,  "tz_offset(DateTime) -> string", BuiltInFn(c4mGetTZOffset)),
+  (45,  "ip_part(CIDR) -> IPAddr",       BuiltInFn(c4mCIDRToIP)),
+  (46,  "net_size(CIDR) -> int",         BuiltInFn(c4mCIDRToInt)),
+  (47,  "to_CIDR(IPAddr, int) -> CIDR",  BuiltInFn(c4mToCIDR)),
   # Also, format() and echo() need to change for this project.
   ]#
   # String manipulation functions.
-  (101, "contains",   BiFn(c4mContainsStrStr), "(string, string) -> bool"),
-  (102, "find",       BiFn(c4mFindFromStart),  "(string, string) -> int"),
-  (103, "len",        BiFn(c4mStrLen),         "(string) -> int"),
-  (104, "slice",      BiFn(c4mSliceToEnd),     "(string, int) -> string"),
-  (105, "slice",      BiFn(c4mSlice),          "(string, int, int) -> string"),
-  (106, "split",      BiFn(c4mSplit),          "(string,string)->list[string]"),
-  (107, "strip",      BiFn(c4mStrip),          "(string) -> string"),
-  (108, "pad",        BiFn(c4mPad),            "(string, int) -> string"),
-  (109, "format",     BiFn(c4mFormat),         "(string) -> string"),
-  (110, "base64",     BiFn(c4mBase64),         "(string) -> string"),
-  (111, "base64_web", BiFn(c4mBase64Web),      "(string) -> string"),
-  (112, "debase64",   BiFn(c4mDecode64),       "(string) -> string"),
-  (113, "hex",        BiFn(c4mToHex),          "(string) -> string"),
-  (114, "hex",        BiFn(c4mIntToHex),       "(int) -> string"),
-  (115, "dehex",      BiFn(c4mFromHex),        "(string) -> string"),
-  (116, "sha256",     BiFn(c4mSha256),         "(string) -> string"),
-  (117, "sha512",     BiFn(c4mSha512),         "(string) -> string"),
-  (118, "upper",      BiFn(c4mUpper),          "(string) -> string"),
-  (119, "lower",      BiFn(c4mLower),          "(string) -> string"),
+  (101, "contains(string, string) -> bool",     BuiltInFn(c4mContainsStrStr)),
+  (102, "find(string, string) -> int",          BuiltInFn(c4mFindFromStart)),
+  (103, "len(string) -> int",                   BuiltInFn(c4mStrLen)),
+  (104, "slice(string, int) -> string",         BuiltInFn(c4mSliceToEnd)),
+  (105, "slice(string, int, int) -> string",    BuiltInFn(c4mSlice)),
+  (106, "split(string,string) -> list[string]", BuiltInFn(c4mSplit)),
+  (107, "strip(string) -> string",              BuiltInFn(c4mStrip)),
+  (108, "pad(string, int) -> string",           BuiltInFn(c4mPad)),
+  (109, "format(string) -> string",             BuiltInFn(c4mFormat)),
+  (110, "base64(string) -> string",             BuiltInFn(c4mBase64)),
+  (111, "base64_web(string) -> string",         BuiltInFn(c4mBase64Web)),
+  (112, "debase64(string) -> string",           BuiltInFn(c4mDecode64)),
+  (113, "hex(string) -> string",                BuiltInFn(c4mToHex)),
+  (114, "hex(int) -> string",                   BuiltInFn(c4mIntToHex)),
+  (115, "dehex(string) -> string",              BuiltInFn(c4mFromHex)),
+  (116, "sha256(string) -> string",             BuiltInFn(c4mSha256)),
+  (117, "sha512(string) -> string",             BuiltInFn(c4mSha512)),
+  (118, "upper(string) -> string",              BuiltInFn(c4mUpper)),
+  (119, "lower(string) -> string",              BuiltInFn(c4mLower)),
 
   # Container (list and dict) basics.
-  (201, "len",      BiFn(c4mListLen),      "(list[`x]) -> int"),
-  (202, "len",      BiFn(c4mDictLen),      "(dict[`x, `y]) -> int"),
-  (203, "keys",     BiFn(c4mDictKeys),     "(dict[`x, `y]) -> list[`x]"),
-  (204, "values",   BiFn(c4mDictValues),   "(dict[`x, `y]) -> list[`y]"),
-  (205, "items",    BiFn(c4mDictItems),    "(dict[`x, `y])->list[(`x, `y)]"),
-  (206, "contains", BiFn(c4mListContains), "(list[`x], `x) -> bool"),
-  (207, "contains", BiFn(c4mDictContains), "(dict[`x , `y], `x) -> bool"),
-  (208, "set",      BiFn(c4mLSetItem),     "(list[`x], int, `x) -> list[`x]"),
-  (209, "set",      BiFn(c4mDSetItem),     "(dict[`k,`v],`k,`v)-> dict[`k,`v]"),
-  (210, "delete",   BiFn(c4mLDeleteItem),  "(list[`x], `x) -> list[`x]"),
-  (211, "delete",   BiFn(c4mDDeleteItem),  "(dict[`k,`v], `k) -> dict[`k,`v]"),
-  (212, "remove",   BiFn(c4mLRemoveIx),    "(list[`x], int) -> list[`x]"),
+  (201, "len(list[`x]) -> int",                   BuiltInFn(c4mListLen)),
+  (202, "len(dict[`x,`y]) -> int",                BuiltInFn(c4mDictLen)),
+  (203, "keys(dict[`x,`y]) -> list[`x]",          BuiltInFn(c4mDictKeys)),
+  (204, "values(dict[`x,`y]) -> list[`y]",        BuiltInFn(c4mDictValues)),
+  (205, "items(dict[`x,`y]) -> list[(`x,`y)]",    BuiltInFn(c4mDictItems)),
+  (206, "contains(list[`x],`x) -> bool",          BuiltInFn(c4mListContains)),
+  (207, "contains(dict[`x ,`y],`x) -> bool",      BuiltInFn(c4mDictContains)),
+  (208, "set(list[`x], int, `x) -> list[`x]",     BuiltInFn(c4mLSetItem)),
+  (209, "set(dict[`k,`v],`k,`v) -> dict[`k,`v]",  BuiltInFn(c4mDSetItem)),
+  (210, "delete(list[`x], `x) -> list[`x]",       BuiltInFn(c4mLDeleteItem)),
+  (211, "delete(dict[`k,`v], `k) -> dict[`k,`v]", BuiltInFn(c4mDDeleteItem)),
+  (212, "remove(list[`x], int) -> list[`x]",      BuiltInFn(c4mLRemoveIx)),
 
   # File system routines
-  (301, "list_dir",     BiFn(c4mListDir),      "() -> list[string]"),
-  (302, "list_dir",     BiFn(c4mListDir),      "(string) -> list[string]"),
-  (303, "read_file",    BiFn(c4mReadFile),     "(string) -> string"),
-  (304, "write_file",   BiFn(c4mWriteFile),    "(string, string) -> bool"),
-  (305, "copy_file",    BiFn(c4mCopyFile),     "(string, string) -> bool"),
-  (306, "move_file",    BiFn(c4mMove),         "(string, string) -> bool"),
-  (307, "rm_file",      BiFn(c4mRm),           "(string)->bool"),
-  (308, "join_path",    BiFn(c4mJoinPath),     "(string, string) -> string"),
-  (309, "resolve_path", BiFn(c4mResolvePath),  "(string) -> string"),
-  (310, "split_path",   BiFn(c4mSplitPath),    "(string) -> (string, string)"),
-  (311, "cwd",          BiFn(c4mCwd),          "()->string"),
-  (312, "chdir",        BiFn(c4mChdir),        "(string) -> bool"),
-  (313, "mkdir",        BiFn(c4mMkdir),        "(string) -> bool"),
-  (314, "is_dir",       BiFn(c4mIsDir),        "(string) -> bool"),
-  (315, "is_file",      BiFn(c4mIsFile),       "(string) -> bool"),
-  (316, "is_link",      BiFn(c4mIsFile),       "(string) -> bool"),
-  (317, "chmod",        BiFn(c4mChmod),        "(string, int) -> bool"),
-  (318, "file_len",     BiFn(c4mFileLen),      "(string) -> int"),
-  (319, "to_tmp_file",  BiFn(c4mTmpWrite),     "(string, string) -> string"),
+  (301, "list_dir() -> list[string]",             BuiltInFn(c4mListDir)),
+  (302, "list_dir(string) -> list[string]",       BuiltInFn(c4mListDir)),
+  (303, "read_file(string) -> string",            BuiltInFn(c4mReadFile)),
+  (304, "write_file(string, string) -> bool",     BuiltInFn(c4mWriteFile)),
+  (305, "copy_file(string, string) -> bool",      BuiltInFn(c4mCopyFile)),
+  (306, "move_file(string, string) -> bool",      BuiltInFn(c4mMove)),
+  (307, "rm_file(string) -> bool",                BuiltInFn(c4mRm)),
+  (308, "join_path(string, string) -> string",    BuiltInFn(c4mJoinPath)),
+  (309, "resolve_path(string) -> string",         BuiltInFn(c4mResolvePath)),
+  (310, "split_path(string) -> (string, string)", BuiltInFn(c4mSplitPath)),
+  (311, "cwd()->string",                          BuiltInFn(c4mCwd)),
+  (312, "chdir(string) -> bool",                  BuiltInFn(c4mChdir)),
+  (313, "mkdir(string) -> bool",                  BuiltInFn(c4mMkdir)),
+  (314, "is_dir(string) -> bool",                 BuiltInFn(c4mIsDir)),
+  (315, "is_file(string) -> bool",                BuiltInFn(c4mIsFile)),
+  (316, "is_link(string) -> bool",                BuiltInFn(c4mIsFile)),
+  (317, "chmod(string, int) -> bool",             BuiltInFn(c4mChmod)),
+  (318, "file_len(string) -> int",                BuiltInFn(c4mFileLen)),
+  (319, "to_tmp_file(string, string) -> string",  BuiltInFn(c4mTmpWrite)),
 
   # System routines
-  (401, "echo",         BiFn(c4mEcho),         "(*`a)"),
-  (402, "abort",        BiFn(c4mAbort),        "(string)"),
-  (403, "env",          BiFn(c4mEnvAll),       "() -> dict[string , string]"),
-  (404, "env",          BiFn(c4mEnv),          "(string) -> string"),
-  (405, "env_exists",   BiFn(c4mEnvExists),    "(string) -> bool"),
-  (406, "set_env",      BiFn(c4mSetEnv),       "(string, string) -> bool"),
-  (407, "getpid",       BiFn(c4mGetPid),       "() -> int"),
-  (408, "quote",        BiFn(c4mQuote),        "(string)->string"),
-  (409, "osname",       BiFn(c4mGetOsName),    "() -> string"),
-  (410, "arch",         BiFn(c4mGetArch),      "() -> string"),
-  (411, "program_args", BiFn(c4mGetArgv),      "() -> list[string]"),
-  (412, "program_path", BiFn(c4mGetExePath),   "() -> string"),
-  (413, "program_name", BiFn(c4mGetExeName),   "() -> string"),
-  (414, "high",         BiFn(c4mIntHigh),      "() -> int"),
-  (415, "low",          BiFn(c4mIntLow),       "() -> int"),
-  (416, "rand",         BiFn(c4mRandom),       "() -> int"),
+  (401, "echo(*`a)",                       BuiltInFn(c4mEcho)),
+  (402, "abort(string)",                   BuiltInFn(c4mAbort)),
+  (403, "env() -> dict[string, string]",   BuiltInFn(c4mEnvAll)),
+  (404, "env(string) -> string",           BuiltInFn(c4mEnv)),
+  (405, "env_exists(string) -> bool",      BuiltInFn(c4mEnvExists)),
+  (406, "set_env(string, string) -> bool", BuiltInFn(c4mSetEnv)),
+  (407, "getpid() -> int",                 BuiltInFn(c4mGetPid)),
+  (408, "quote(string)->string",           BuiltInFn(c4mQuote)),
+  (409, "osname() -> string",              BuiltInFn(c4mGetOsName)),
+  (410, "arch() -> string",                BuiltInFn(c4mGetArch)),
+  (411, "program_args() -> list[string]",  BuiltInFn(c4mGetArgv)),
+  (412, "program_path() -> string",        BuiltInFn(c4mGetExePath)),
+  (413, "program_name() -> string",        BuiltInFn(c4mGetExeName)),
+  (414, "high() -> int",                   BuiltInFn(c4mIntHigh)),
+  (415, "low() -> int",                    BuiltInFn(c4mIntLow)),
+  (416, "rand() -> int",                   BuiltInFn(c4mRandom)),
 
   # Binary ops
-  (501, "bitor",        BiFn(c4mBitOr),        "(int, int) -> int"),
-  (502, "bitand",       BiFn(c4mBitAnd),       "(int, int) -> int"),
-  (503, "xor",          BiFn(c4mBitXor),       "(int, int) -> int"),
-  (504, "shl",          BiFn(c4mBitShl),       "(int, int) -> int"),
-  (505, "shr",          BiFn(c4mBitShr),       "(int, int) -> int"),
-  (506, "bitnot",       BiFn(c4mBitNot),       "(int) -> int"),
+  (501, "bitor(int, int) -> int",          BuiltInFn(c4mBitOr)),
+  (502, "bitand(int, int) -> int",         BuiltInFn(c4mBitAnd)),
+  (503, "xor(int, int) -> int",            BuiltInFn(c4mBitXor)),
+  (504, "shl(int, int) -> int",            BuiltInFn(c4mBitShl)),
+  (505, "shr(int, int) -> int",            BuiltInFn(c4mBitShr)),
+  (506, "bitnot(int) -> int",              BuiltInFn(c4mBitNot)),
 
   # Con4m-specific stuff
-  (601, "sections",     BiFn(c4mSections),    "(string) -> list[string]"),
-  (602, "typeof",       BiFn(c4mTypeOf),      "(`a) -> typespec"),
-  (603, "typecmp",      BiFn(c4mCmpTypes),    "(typespec, typespec) -> bool"),
-  (604, "attr_type",    BiFn(c4mAttrGetType), "(string) -> typespec"),
-  (605, "attr_typecmp", BiFn(c4mRefTypeCmp),  "(string, string) -> bool")
-
-  # Should also add get_attr() that requires runtime type checking;
-  # the user basically specifies what type they are expecting for the
-  # return value, and that gets checked before returning.  And
-  # possibly typespec(string) -> typespec that's a dynamic form of the
-  # typespec: literal indicator?  get_attr() would require some
-  # binding indicator.
+  (601, "sections(string) -> list[string]",     BuiltInFn(c4mSections)),
+  (602, "typeof(`a) -> typespec",               BuiltInFn(c4mTypeOf)),
+  (603, "typecmp(typespec, typespec) -> bool",  BuiltInFn(c4mCmpTypes)),
+  (604, "attr_type(string) -> typespec",        BuiltInFn(c4mAttrGetType)),
+  (605, "attr_typecmp(string, string) -> bool", BuiltInFn(c4mRefTypeCmp)),
+  (606, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr)),
 ]
 
 when defined(posix):
   const posixBuiltins = [
-    (901, "run",       BiFn(c4mCmd),          "(string) -> string"),
-    (902, "system",    BiFn(c4mSystem),       "(string) -> (string, int)"),
-    (903, "getuid",    BiFn(c4mGetUid),       "() -> int"),
-    (904, "geteuid",   BiFn(c4mGetEuid),      "() -> int"),
-    (905, "uname",     BiFn(c4mUname),        "() -> list[string]"),
-
+    (901, "run(string) -> string",           BuiltInFn(c4mCmd)),
+    (902, "system(string) -> (string, int)", BuiltInFn(c4mSystem)),
+    (903, "getuid() -> int",                 BuiltInFn(c4mGetUid)),
+    (904, "geteuid() -> int",                BuiltInFn(c4mGetEuid)),
+    (905, "uname() -> list[string]",         BuiltInFn(c4mUname))
    ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
   for item in bi:
-    let (id, name, impl, sig) = item
+    let (id, name, impl) = item
 
     if id in exclusions:
       continue
 
-    s.newBuiltIn(name, impl, sig)
+    s.newBuiltIn(name, impl)
 
 proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
   ## This function loads existing default builtins. It gets called
