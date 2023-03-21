@@ -8,8 +8,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import tables, strformat, options, streams, nimutils, strutils
+import tables, strformat, options, streams, nimutils
 import types, parse, run, spec, errmsg, typecheck, dollars
+
+const validatorSig = "func(string, `t)->string"
 
 proc buildC42Spec*(): ConfigSpec =
   # We're going to read a con4m file in from users with their specification
@@ -70,13 +72,13 @@ proc buildC42Spec*(): ConfigSpec =
   rootScope.addSection("singleton")
   rootScope.addSection("object")
 
-  field.addAttr("type",           stringType,   true)
+  field.addAttr("type",           toCon4mType("typespec or string"), true)
   field.addAttr("default",        newTypeVar(), true)
   field.addAttr("require",        boolType,     true)
   field.addAttr("write_lock",     boolType,     false)
-  field.addAttr("range",          toCon4mType("(int, int)"), false)
-  field.addAttr("choice",         toCon4mType("[@T]"),       false)
-  field.addAttr("validator",      stringType,   false)
+  field.addAttr("range",          toCon4mType("tuple[int, int]"), false)
+  field.addAttr("choice",         toCon4mType("list[`T]"),   false)
+  field.addAttr("validator",      toCon4mType(validatorSig), false)
   field.addAttr("stack_limit",    intType,      false)
   field.addAttr("min_items",      intType,      false)
   field.addAttr("max_items",      intType,      false)
@@ -124,9 +126,9 @@ proc unpackValue[T](scope: AttrScope, attr: Attribute, typeStr: string): T =
     c4Type = toCon4mType(typeStr)
     valOpt = attr.value
 
-  if attr.tInfo.unify(c4Type).isBottom():
+  if attr.getType().unify(c4Type).isBottom():
     specErr(attr, "Field '" & attr.name & "' should be " & typeStr &
-                   ", but got: " & $(attr.tInfo))
+                   ", but got: " & $(attr.getType()))
   if valOpt.isNone():
     specErr(attr,
             "Expected '" & attr.name & "' to have a value; none was provided")
@@ -141,7 +143,7 @@ proc unpackValue[T](scope: AttrScope, attr: Attribute, typeStr: string): T =
   except:
     specErr(attr,
             "Wrong type for '" & attr.name & "', expected a '" & typeStr &
-              "', but got a '" & $(attr.tInfo) & "'")
+              "', but got a '" & $(attr.getType()) & "'")
 
 template getValOfType(fields:  Table[string, AttrOrSub],
                       name:    string,
@@ -154,19 +156,15 @@ template valIfPresent(fields:  Table[string, AttrOrSub],
                       c4mType: string,
                       nimType: typedesc,
                       default: untyped): untyped =
-  if name in fields:
-    getValOfType(fields, name, c4mType, nimType)
-  else:
-    default
+  if name in fields: getValOfType(fields, name, c4mType, nimType)
+  else:              default
 
 template optValIfPresent(fields:  Table[string, AttrOrSub],
                          name:    string,
                          c4mType: string,
                          nimType: typedesc): untyped =
-  if name in fields:
-    some(getValOfType(fields, name, c4mType, nimType))
-  else:
-    none(nimType)
+  if name in fields:  some(getValOfType(fields, name, c4mType, nimType))
+  else:               none(nimType)
 
 proc populateFields(spec:       ConfigSpec,
                     tInfo:      Con4mSectionType,
@@ -181,53 +179,40 @@ proc populateFields(spec:       ConfigSpec,
       # choiceOpt is a snowflake b/c we have to make a type decision before
       # we pull the value out.
       fields     = v.get(AttrScope).contents
-      c4mTypeStr = getValOfType(fields, "type", "string", string) #Not opt.
+      typeField  = getField(fields, "type")
+      typeTSpec  = typeField.getType()
       lock       = valIfPresent(fields, "write_lock", "bool", bool, false)
-      validator  = valIfPresent(fields, "validator", "string", string, "")
+      validator  = valIfPresent(fields, "validator", validatorSig,
+                                CallbackObj, nil)
       stackLimit = valIfPresent(fields, "stack_limit", "int", int, -1)
       require    = valIfPresent(fields, "require", "bool", bool, false)
-      `range?`   = optValIfPresent(fields, "range", "(int, int)", (int, int))
+      `range?`   = optValIfPresent(fields, "range", "tuple[int, int]",
+                                   (int, int))
       `min?`     = optValIfPresent(fields, "min_items", "int", int)
       `max?`     = optValIfPresent(fields, "max_items", "int", int)
-      choiceOpt  = if "choice" in fields:
-                     some(getField(fields, "choice"))
-                   else:
-                     none(Attribute)
+      choiceOpt  = if "choice" in fields: some(getField(fields, "choice"))
+                   else:                  none(Attribute)
 
     if "default" in fields:
       if "require" in fields:
         specErr(scope, "Cannot have 'require' and 'default' together")
       let
         attr         = getField(fields, "default")
-        attrType     = attr.tInfo
-        attrTypeStr  = $(attrType)
+        attrTypeStr  = $(attr.getType())
 
-      if len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
+      if not typeTSpec.unify(stringType).isBottom():
         specErr(scope, "Fields that get their type from other fields may " &
                        "not have a default value")
-      elif c4mTypeStr == "typespec":
-        var ok = true
-        if attrType != stringType or attr.value.isNone():
-          ok = false
-        else:
-          try:
-            discard toCon4mType(unpack[string](attr.value.get()))
-          except:
-            ok = false
-        if not ok:
-          specErr(scope, "Default values for 'typespec' fields must be " &
-                         "valid con4m type strings.")
       else:
-        let fieldType = toCon4mType(c4mTypeStr)
-        if fieldType.unify(attr.tInfo).isBottom():
+        let usersType = unpack[Con4mType](typeField.value.get())
+        if usersType.unify(attr.getType()).isBottom():
           specErr(scope, fmt"for {k}: default value actual type " &
                          fmt"({attrTypeStr}) does not match the provided " &
-                         fmt"'type' field, which had type: {c4mTypeStr}")
+                         fmt"'type' field, which had type: {`$`(usersType)}")
 
       default = attr.value # We leave it as a boxed option.
     elif "require" notin fields:
-      specErr(scope, "Fields must specify either a 'require' or " &
-                     "'defaults' field")
+      specErr(scope, "Fields must specify one of 'require' or 'defaults'")
 
     var count = 0
     if choiceOpt.isSome():                 count = count + 1
@@ -236,49 +221,42 @@ proc populateFields(spec:       ConfigSpec,
 
     if count > 1:
       specErr(scope, "Can't specify multiple constraint types on one field.")
-    if count != 0 and c4mTypeStr.startsWith("="):
+    if count != 0 and not typeTSpec.unify(stringType).isBottom():
       specErr(scope, "Fields typed from another field can't have constraints")
 
-    # Time to add.
-    if choiceOpt.isSome():
-      case c4mTypeStr
-      of "string":
-        let v = unpackValue[seq[string]](scope, choiceOpt.get(), "[string]")
-        addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
-                       validator)
-      of "int":
-        let v = unpackValue[seq[int]](scope, choiceOpt.get(), "[int]")
-        addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
-                       validator)
-      else:
-        specErr(scope, "Choice field must have type 'int' or 'string'")
-    elif `range?`.isSome():
-      let (l, h) = `range?`.get()
-      tInfo.addRangeField(k, l, h, require, lock, stackLimit, default,
-                          validator)
-    elif `min?`.isSome() or `max?`.isSome():
-      var
-        min_val = `min?`.getOrElse(-1)
-        max_val = `max?`.getOrElse(-1)
-        c4mType: Con4mType
-      try:
-        c4mType = toCon4mType(c4mTypeStr)
-      except:
-        specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
-      tInfo.addBoundedContainer(k, min_val, max_val, c4mType, require,
-                                lock, stackLimit, default, validator)
-    elif c4mTypeStr == "typespec":
-      tInfo.addC4TypeField(k, require, lock, stackLimit, default, validator)
-    elif len(c4mTypeStr) != 0 and c4mTypeStr[0] == '=':
-      let refField   = c4mTypeStr[1..^1]
+    if not typeTSpec.unify(stringType).isBottom():
+      let refField = unpack[string](typeField.value.get())
       tInfo.addC4TypePtr(k, refField, require, lock, stackLimit, validator)
     else:
-      var c4mType: Con4mType
-      try:
-        c4mType = toCon4mType(c4mTypeStr)
-      except:
-        specErr(scope, fmt"Invalid con4m type in spec: {c4mTypeStr}")
-      tInfo.addAttr(k, c4mType, require, lock, stackLimit, default, validator)
+      let usrType = unpack[Con4mType](typeField.value.get())
+
+      if choiceOpt.isSome():
+        case usrType.kind
+        of TypeString:
+          let v = unpackValue[seq[string]](scope, choiceOpt.get(),
+                                           "list[string]")
+          addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
+                         validator)
+        of TypeInt:
+          let v = unpackValue[seq[int]](scope, choiceOpt.get(), "list[int]")
+          addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
+                         validator)
+        else:
+          specErr(scope, "Choice field must have type 'int' or 'string'")
+      elif `range?`.isSome():
+        let (l, h) = `range?`.get()
+        tInfo.addRangeField(k, l, h, require, lock, stackLimit, default,
+                            validator)
+      elif `min?`.isSome() or `max?`.isSome():
+        var
+          min_val = `min?`.getOrElse(-1)
+          max_val = `max?`.getOrElse(-1)
+        tInfo.addBoundedContainer(k, min_val, max_val, usrType, require,
+                                  lock, stackLimit, default, validator)
+      elif usrType.kind == TypeTypeSpec:
+        tInfo.addC4TypeField(k, require, lock, stackLimit, default, validator)
+      else:
+        tInfo.addAttr(k, usrType, require, lock, stackLimit, default, validator)
 
   # Once we've processed all fields, check exclusion constraints.
   for (k, v) in exclusions:
@@ -316,7 +294,6 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
 
   if unpack[bool](attr.value.get()):
     addAttr(tInfo, "*", newTypeVar(), false)
-
 
 proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)

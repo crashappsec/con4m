@@ -411,7 +411,7 @@ proc oneValToJson(box: Box, tInfo: Con4mType): string =
     result = "{" & l.join(", ") & "}"
   else:
     result = "\"" & tInfo.oneArgToString(box) & "\""
-    
+
 proc scopeToJson*(scope: AttrScope): string =
   var kvpairs: seq[string] = @[]
 
@@ -422,10 +422,10 @@ proc scopeToJson*(scope: AttrScope): string =
         boxOpt = attr.attrToVal()
       if boxOpt.isSome():
         let
-          val     = boxOpt.get().oneValToJson(attr.tInfo) 
+          val     = boxOpt.get().oneValToJson(attr.tInfo)
           typeStr = fmt("\"type\": \"{$(attr.tInfo)}\"")
           valStr  = fmt("\"value\": {val}")
-        
+
         kvpairs.add(fmt(""""{k}" : {{{typeStr}, {valStr}}}"""))
       else:
         kvpairs.add(fmt""""{k}" : {nullstr}""")

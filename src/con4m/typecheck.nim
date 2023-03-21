@@ -8,27 +8,30 @@ import types, tables, options, nimutils, dollars
 
 var tVarNum: int
 
-proc newTypeVar*(constraints: set[Con4mTypeKind] = {}): Con4mType =
+proc copyType*(t: Con4mType): Con4mType
+proc newTypeVar*(constraints: seq[Con4mType] = @[]): Con4mType =
   tVarNum.inc()
   return Con4mType(kind:        TypeTVar,
                    varNum:      tVarNum,
                    link:        none(Con4mType),
                    linksin:     @[],
                    cycle:       false,
-                   constraints: constraints)
+                   components:  constraints)
 
 # This should only be called when we know that the type variable
 # is going to be unique for the context.  It's mainly meant
 # for compile-time usage.
 proc newTypeVar*(num: int): Con4mType =
   return Con4mType(kind: TypeTVar, varNum: num)
-
+proc newTypeSpec*(): Con4mType =
+  return Con4mType(kind: TypeTypeSpec, binding: newTypeVar())
 proc newListType*(contained: Con4mType): Con4mType =
   return Con4mType(kind: TypeList, itemType: contained)
-
 proc newDictType*(keyType, valType: Con4mType): Con4mType =
   return Con4mType(kind: TypeDict, keyType: keyType, valType: valType)
-
+proc genericList*(): Con4mType = newListType(newTypeVar())
+proc genericDict*(): Con4mType = newDictType(newTypeVar(), newTypeVar())
+proc anyTuple*():    Con4mType = Con4mType(kind: TypeTuple, itemTypes: @[])
 proc newProcType*(params:  seq[Con4mType],
                   retType: Con4mType,
                   va:      bool = false): Con4mType =
@@ -63,7 +66,7 @@ proc getBaseType*(node: Con4mNode): Con4mTypeKind =
   return node.typeInfo.getBaseType()
 
 proc isBottom*(t: Con4mType): bool = return t.kind == TypeBottom
-  
+
 # Uncomment this if you need a trace of unify() calls,
 # rename unify below to unifyactual, and then
 # uncomment the debug wrapper for unify below.
@@ -74,7 +77,7 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     t2 = param2.resolveTypeVars()
 
   if t2.kind == TypeTVar and t1.kind != TypeTVar:
-    return t2.unify(t1)
+    return t2.unify(t1) # autocast will be irrelevant here.
 
   case t1.kind
   # Just in case someone manages to clone a singleton, we
@@ -91,10 +94,12 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     return t1
   of TypeFunc:
     if t2.kind != TypeFunc: return bottomType
+    if t2.noSpec: return t1
+    if t1.noSpec: return t2
     var
       newParams: seq[Con4mType]
-      newRet: Con4mType
-      vaResult: bool
+      newRet:    Con4mType
+      vaResult:  bool
 
     # Actuals will never be varargs, so if we have two vararg
     # functions, it's only because we're trying to unify two formals.
@@ -130,8 +135,13 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
 
     return newProcType(newParams, newRet, vaResult)
   of TypeTuple:
-    if t2.kind != TypeTuple: return bottomType
-    if len(t2.itemTypes) != len(t1.itemTypes): return bottomType
+    # If a tuple has no item types, then this is "any tuple", which
+    # can only be specified in the context of an internal type
+    # constraint.
+    if t2.kind != TypeTuple:     return bottomType
+    elif len(t1.itemTypes) == 0: return t2
+    elif len(t2.itemTypes) == 0: return t1
+    elif len(t2.itemTypes) != len(t1.itemTypes): return bottomType
     result = Con4mType(kind: TypeTuple, itemTypes: @[])
     for i, item in t1.itemTypes:
       let l = unify(item, t2.itemTypes[i])
@@ -150,86 +160,43 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
     let vt = t1.valType.unify(t2.valType)
     if kt.kind == TypeBottom or vt.kind == TypeBottom: return bottomType
     return newDictType(kt, vt)
-  of TypeUnion:
-    if t2.kind != TypeUnion: return bottomType
+  of TypeTVar:
+    if t2.kind != TypeTVar:
+      if len(t1.components) != 0:
+        for item in t1.components:
+          let v = item.copyType().unify(t2.copyType())
+          if not v.isBottom():
+            t1.linkTypeVar(t2)
+            return t2
+        return bottomType
+      else:
+        t1.linkTypeVar(t2)
+        return t2
+    elif len(t1.components) == 0:
+      t1.linkTypeVar(t2)
+      return t2
+    elif len(t2.components) == 0:
+      t2.linkTypeVar(t1)
+      return t1
+    # Here, both types are constrained, so we need to compute the
+    # intersection.
     var foundTypes: seq[Con4mType] = @[]
     for t1item in t1.components:
-      var found = false
       for t2item in t2.components:
         let res = t1item.unify(t2item)
-        if res.isBottom(): continue
-        if found: return bottomType  # Overlapping?! Shouldn't be possible.
-        foundTypes.add(t2item)
-        found = true
-      if not found: return bottomType
-    for t2item in t2.components:
-      if t2item notin foundTypes:
-        return bottomType # not statically compatable, could require a cast,
-                          # or could be super invalid.
-    return t1
-  of TypeTVar:
-    if t2.kind == TypeTVar:
-      let intersection = t1.constraints * t2.constraints
-      if t1.constraints == {}:
-        t1.linkTypeVar(t2)
-        return t2
-      elif t2.constraints == {}:
-        t2.linkTypeVar(t1)
-        return t1
-      elif intersection == {}:
-        return bottomType
-      elif card(intersection) == 1:
-        var newType: Con4mType
-        if TypeBool in intersection:
-          newType = boolType
-        elif TypeString in intersection:
-          newType = stringType
-        elif TypeInt in intersection:
-          newType = intType
-        elif TypeFloat in intersection:
-          newType = floatType
-        elif TypeDuration in intersection:
-          newType = durationType
-        elif TypeIPAddr in intersection:
-          newType = ipAddrType
-        elif TypeCIDR in intersection:
-          newType = cidrType
-        elif TypeSize in intersection:
-          newType = sizeType
-        elif TypeDate in intersection:
-          newType = dateType
-        elif TypeTime in intersection:
-          newType = timeType
-        elif TypeDateTime in intersection:
-          newType = dateTimeType
-        elif TypeList in intersection:
-          newType = Con4mType(kind: TypeList, itemType: newTypeVar())
-        elif TypeDict in intersection:
-          newType = Con4mType(kind: TypeDict,
-                              keyType: newTypeVar(),
-                              valType: newTypeVar())
-        else:
-          # This can only be TypeTuple.
-          # If two type variables are somehow constrained so that they
-          # could only possibly be tuples, we don't have any info on
-          # number of elements, which we cannot generically represent,
-          # so this is against our type rules.
-          return bottomType
-        # The above elif-branches all come down here
-        t1.linkTypeVar(newType)
-        t2.linkTypeVar(newType)
-        return newType
-      else: #card(intersection) > 1
-        t1.constraints = intersection
-        t2.constraints = intersection
-        t1.linkTypeVar(t2)
-        return t2
+        if not res.isBottom():
+          foundTypes.add(t2item)
+          break
+    case len(foundTypes)
+    of 0:
+      return bottomType
+    of 1:
+      t1.linkTypeVar(foundTypes[0])
+      t2.linkTypeVar(foundTypes[0])
     else:
-      if t1.constraints == {} or t2.kind in t1.constraints:
-        t1.linkTypeVar(t2)
-        return t2
-      else:
-        return bottomType
+      t1.components = foundTypes
+      t2.linkTypeVar(t1)
+    return t1
 
 # If you need a trace of unify calls, follow the instructions above, then
 # uncomment the blow wrapper.
@@ -268,18 +235,16 @@ proc hasTypeVar*(t: Con4mType): bool =
     for item in t.itemTypes:
       if item.hasTypeVar(): return true
   of TypeFunc:
+    if t.nospec: return false
     for item in t.params:
       if item.hasTypeVar(): return true
     return t.retType.hasTypeVar()
-  of TypeUnion:
-    for item in t.components:
-      if item.hasTypeVar(): return true
   else:
     return false
 
 proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
   if not t.hasTypeVar(): return t
-  
+
   case t.kind
   of TypeTVar:
     if t.varNum in cache:
@@ -289,9 +254,11 @@ proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
       result   = t.resolveTypeVars().copyType(cache)
       cache[n] = result
     else:
-      result = newTypeVar(t.constraints)
-      result.cycle = false
+      result          = newTypeVar(t.components)
+      result.cycle    = false
       cache[t.varNum] = result
+      for item in t.components:
+        result.components.add(item.copyType(cache))
     if result.kind == TypeTVar:
       result.localName = t.localName
   of TypeTypeSpec:
@@ -313,10 +280,6 @@ proc copyType*(t: Con4mType, cache: TableRef[int, Con4mType]): Con4mType =
       result.params.add(param.copyType(cache))
     result.va = t.va
     result.retType = t.retType.copyType(cache)
-  of TypeUnion:
-    result = Con4mType(kind: TypeUnion)
-    for item in t.components:
-      result.components.add(item.copyType(cache))
   else: unreachable
 
 proc copyType*(t: Con4mType): Con4mType =

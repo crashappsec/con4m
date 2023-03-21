@@ -245,11 +245,13 @@ proc typeSpec(ctx:    ParseCtx,
   while ctx.curTok().kind == TtOr:
     discard ctx.consume()
     components.add(ctx.oneTypeSpec(state))
-    
+
   if len(components) == 1:
     result = components[0]
   else:
-    result = Con4mType(kind: TypeUnion, components: components)
+    result            = newTypeVar()
+    result.components = components
+
     for i in 0 .. (len(components) - 1):
       for j in i+1 ..< len(components):
         if not components[i].unify(components[j]).isBottom():
@@ -267,12 +269,12 @@ proc toCon4mType*(s: string): Con4mType =
 
   if not valid:
     raise newException(ValueError, "Invalid character found in type")
- 
+
   var
     ctx   = ParseCtx(tokens: tokens, curTokIx: 0, nesting: 0, nlWatch: false)
     cache = initTable[string, Con4mType]()
   result  = ctx.typeSpec(cache)
-    
+
   if ctx.curTok().kind != TtEof:
     parseError("Unexpected token after type spec", true)
 
@@ -537,19 +539,18 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       return lhs
 
 proc callback(ctx: ParseCtx): Con4mNode =
-  let
-    t  = ctx.consume()
-    id = ctx.consume()
-  if id.kind != TtIdentifier:
-    parseError("An identifier is required after the 'func' keyword")
-  result = newNode(NodeCallbackLit, id)
+  let t = ctx.consume()
+  if ctx.curTok().kind != TtIdentifier:
+    if ctx.curTok().kind == TtLParen: return ctx.typeSpec()
+    parseError("An identifier or params required after the 'func' keyword")
+  result = newNode(NodeCallbackLit, ctx.consume())
   if ctx.curTok().kind != TtLParen: return
   result.children.add(ctx.typeSpec())
-      
+
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
-     TtTuple:
+     TtTuple, TtBackTick:
        return ctx.typeSpec()
   of TtFunc:
     return ctx.callback()
@@ -593,7 +594,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
-     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc:
+     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick:
     return ctx.literal()
   of TtIdentifier: return ctx.accessExpr()
   else:
@@ -1076,4 +1077,4 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
     fatal(msg, tok)
     return
 
-    
+

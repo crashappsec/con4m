@@ -71,7 +71,7 @@ proc checkKids(node: Con4mNode, s: ConfigState) {.inline.} =
     item.checkNode(s)
 
 proc binOpTypeCheck(node: Con4mNode,
-                    constraints: set[Con4mTypeKind],
+                    constraints: seq[Con4mType],
                     s: ConfigState,
                     e1, e2: string) =
   node.checkKids(s)
@@ -551,7 +551,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     of TypeTVar:
       if not s.secondPass:
         if node.children[1].getBaseType() == TypeInt:
-          let options      = {TypeDict, TypeList, TypeTuple, TypeTVar}
+          let options      = @[genericDict(), genericList(), anyTuple()]
           let tv           = newTypeVar(constraints = options)
           if tv.unify(node.children[0].getType()).isBottom():
             fatal("Invalid type constraint for this index operation")
@@ -803,43 +803,40 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       fatal("Each side of || and && expressions must eval to a bool", node)
     node.typeinfo = boolType
   of NodeNe, NodeCmp:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeBool,
-                          TypeDuration, TypeIPAddr, TypeCIDR, TypeSize,
-                          TypeDate, TypeTime, TypeDateTime},
-                        s,
+    node.binOpTypeCheck(@[], s,
                         "Types to comparison operators must match",
                         "== and != currently do not work on lists or dicts")
     node.typeInfo = boolType
   of NodeGte, NodeLte, NodeGt, NodeLt:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeDuration,
-                          TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-                          TypeDateTime},
+    node.binOpTypeCheck(@[intType, floatType, stringType, durationType,
+                          ipAddrType, cidrType, sizeType, dateType, timeType,
+                          dateTimeType],
                         s,
                         "Types to comparison operators must match",
                         "Comparison ops only work on numbers and strings")
     node.typeInfo = boolType
   of NodePlus:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeString, TypeDuration},
+    node.binOpTypeCheck(@[intType, floatType, stringType, durationType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMinus:
-    node.binOpTypeCheck({TypeInt, TypeFloat, TypeDuration},
+    node.binOpTypeCheck(@[intType, floatType, durationType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMul:
-    node.binOpTypeCheck({TypeInt, TypeFloat},
+    node.binOpTypeCheck(@[intType, floatType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMod:
-    node.binOpTypeCheck({TypeInt},
+    node.binOpTypeCheck(@[intType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeDiv:
-    node.binOpTypeCheck({TypeInt, TypeFloat},
+    node.binOpTypeCheck(@[intType, floatType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
@@ -896,11 +893,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # We do NOT recurse into the node here. The binding was set at
       # parse time, and if we descend into it, then that's going to
       # tell the NodeType object that it's a type literal.
-      let kidType = node.children[0].getType().binding
-      node.typeInfo = typeInfo.unify(kidType)
+      node.typeInfo = typeInfo.unify(node.children[0].getType())
       if node.typeInfo.isBottom():
         fatal2Type("Declared type conflicts with existing type",
-                   node.children[0], kidType, typeInfo)
+                   node.children[0], node.children[0].getType(), typeInfo)
     else:
       node.typeInfo = typeInfo
   of NodeType:

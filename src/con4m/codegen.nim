@@ -152,7 +152,7 @@ proc declToNimType(v: Con4mType): string =
   of TypeTypeSpec:
     return "typespec"
   of TypeFunc:
-    return "func"  # TODO
+    return "CallbackObj"
   of TypeInt:
     return "int"
   of TypeFloat:
@@ -165,7 +165,7 @@ proc declToNimType(v: Con4mType): string =
     return "TableRef[" &
       v.keyType.declToNimType() & ", " &
       v.valType.declToNimType() & "]"
-  of TypeUnion, TypeBottom:  # TODO
+  of TypeBottom:
     unreachable
 
 proc genOneSectNim(me:       SecTypeInfo,

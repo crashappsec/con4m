@@ -93,7 +93,6 @@ elif isMainModule:
     addFlagWithArg("output-file", ["o"], callback = setGenOutFile).
     addArgs(min=1, max=1)
 
-
   argParser.addCommand("help", ["h"]).addArgs(min=0)
 
   try:

@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strformat
+import options, tables, strformat, dollars
 import types, st, parse, treecheck, typecheck, nimutils, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
@@ -404,6 +404,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         i = unpack[int](indexBox)
 
       if i >= l.len() or i < 0:
+        echo node
         fatal("Runtime error in config: array index out of bounds", node)
       node.value = l[i]
     of TypeDict:
@@ -590,3 +591,11 @@ proc runCallback*(s:     ConfigState,
                        "you must supply the type when calling runCallback()")
   let impl = s.funcTable[name][0].impl
   return s.sCallUserDef(name, args, callback = true, nodeOpt = impl)
+
+proc runCallback*(s:    ConfigState,
+                  fptr: CallbackObj,
+                  args: seq[Box]): Option[Box] =
+  if fptr.tInfo == nil:
+    return s.runCallback(fptr.name, args)
+  else:
+    return s.runCallback(fptr.name, args, some(fptr.tInfo))

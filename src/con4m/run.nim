@@ -42,8 +42,7 @@ proc postRun(state: ConfigState) =
   state.frames  = @[]
 
 var showChecked = false
-proc setShowChecked*() =
-  showChecked = true
+proc setShowChecked*() = showChecked = true
 
 proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   if tree == nil: return false

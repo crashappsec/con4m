@@ -5,7 +5,7 @@
 ## :Copyright: 2022
 
 import options, tables, strutils, strformat, nimutils, macros, builtins
-import types, typecheck, parse, eval, st, dollars
+import types, typecheck, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
   let
@@ -48,6 +48,32 @@ proc sectionType*(spec:       ConfigSpec,
   if name != "":
     spec.secSpecs[name] = result
 
+proc runValidator(v:      CallbackObj,
+                  ft:     Con4mType,
+                  attr:   Attribute,
+                  c42Env: ConfigState,
+                  sect:   Con4mSectionType) =
+  if v == nil: return
+  let expected = newProcType(@[stringType, ft], stringType)
+
+  if v.tInfo.unify(expected.copyType()).isBottom():
+    defErr(sect, "Specified validation routine is not of the right type " &
+      "(needed: '" & $(expected) & "', but got: '" & $(v.tInfo) & "'")
+
+  let
+    args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
+    ret  = c42Env.runCallback(v, args)
+
+  if ret.isNone():
+    # Actually, this error doesn't display right now, since we are
+    # not try-catching the runCallback.  Instead, we should get:
+    # "Function '...' not found"
+    specErr(attr, "A validator was specified, but no function of the " &
+            fmt"correct type exists in spec file: {$v}")
+  let errMsg = unpack[string](ret.get())
+
+  if errMsg != "": specErr(attr, errMsg)
+
 proc addAttr*(sect:       Con4mSectionType,
               name:       string,
               tinfo:      Con4mType,
@@ -55,7 +81,7 @@ proc addAttr*(sect:       Con4mSectionType,
               lock:       bool = false,
               stackLimit: int = -1,
               default:    Option[Box] = none(Box),
-              validator:  string = ""): Con4mSectionType {.discardable.} =
+              validator:  CallbackObj = nil): Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: {name}")
   if "*" in name:
@@ -78,13 +104,14 @@ proc addAttr*(sect:       Con4mSectionType,
   sect.fields[name] = info
   return sect
 
-proc addC4TypeField*(sect:      Con4mSectionType,
-                     name:      string,
-                     required:  bool = true,
-                     lock:      bool = false,
+proc addC4TypeField*(sect:       Con4mSectionType,
+                     name:       string,
+                     required:   bool = true,
+                     lock:       bool = false,
                      stackLimit: int = -1,
-                     default:   Option[Box] = none(Box),
-                     validator: string = ""): Con4mSectionType {.discardable.} =
+                     default:    Option[Box] = none(Box),
+                     validator:  CallbackObj = nil):
+                       Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: {name}")
   if "*" in name:
@@ -106,7 +133,8 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
                    required:    bool   = true,
                    lock:        bool   = false,
                    stackLimit:  int    = -1,
-                   validator:   string = ""): Con4mSectionType {.discardable.} =
+                   validator:   CallbackObj = nil):
+                     Con4mSectionType {.discardable.} =
   if name in sect.fields:
     defErr(sect, fmt"Duplicate field name: '{name}'")
   if "*" in name:
@@ -136,7 +164,7 @@ proc addChoiceField*[T](sect:       Con4mSectionType,
                         lock:       bool        = false,
                         stackLimit: int         = -1,
                         default:    Option[Box] = none(Box),
-                        validator:  string = "") =
+                        validator:  CallbackObj = nil) =
   var attrType: Con4mType
 
   when T is string:
@@ -172,7 +200,7 @@ proc addRangeField*(sect:       Con4mSectionType,
                     lock:       bool        = false,
                     stackLimit: int         = -1,
                     default:    Option[Box] = none(Box),
-                    validator:  string      = "") =
+                    validator:  CallbackObj = nil) =
   addAttr(sect, name, intType, required or default.isSome(), lock,
           stackLimit, default, validator)
   var tobj = sect.fields[name].extType
@@ -193,7 +221,7 @@ proc addBoundedContainer*(sect:       Con4mSectionType,
                           lock:       bool        = false,
                           stackLimit: int         = -1,
                           default:    Option[Box] = none(Box),
-                          validator:  string      = "") =
+                          validator:  CallbackObj = nil) =
   case tinfo.getBaseType()
   of TypeDict, TypeList:
     addAttr(sect, name, tinfo, required or default.isSome(), lock,
@@ -454,15 +482,14 @@ proc validateOneAttrField(attrs:  AttrScope,
       specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a " &
                      fmt"con4m type for field '{name}', but that type is " &
                         "missing.")
-    if refAttr.tInfo.unify(stringType).isBottom():
+    if refAttr.tInfo.unify(newTypeSpec()).isBottom():
       specErr(attrs, fmt"Field '{fieldRef}' is supposed to contain a con4m " &
                      fmt"type for field '{name}', but the field is not a " &
                      "valid con4m string.")
-    let typeString = unpack[string](refAttr.attrToVal().get())
+    let fieldT = unpack[Con4mType](refAttr.attrToVal().get())
     try:
-      let fieldType = typeString.toCon4mType()
-      if attr.tInfo.unify(fieldType).isBottom():
-        specErr(attrs, fmt"Wrong type for {name} (expected {typeString} per " &
+      if attr.tInfo.unify(fieldT).isBottom():
+        specErr(attrs, fmt"Wrong type for {name} (expected {`$`(fieldT)} per " &
                        fmt"the type read from field '{fieldRef}'), but got: " &
                        fmt"{`$`(attr.tInfo)}")
     except:
@@ -482,18 +509,12 @@ proc validateOneAttrField(attrs:  AttrScope,
     if getReplacementState().get().numExecutions >= spec.stackLimit:
       attr.locked = true
 
-  if spec.extType.validator != "" and attr.attrToVal().isSome():
+  if spec.extType.validator != nil and attr.attrToVal().isSome():
     var fieldType: Con4mType
-    if spec.extType.kind == TypePrimitive:
-      fieldType = spec.extType.tinfo
+    if spec.extType.kind in [TypePrimitive, TypeC4TypeSpec]:
+      fieldType = spec.extType.tinfo.resolveTypeVars()
     else:
       fieldType = stringType
-
-    let
-      callType = Con4mType(kind:   TypeFunc,
-                           params: @[stringType, fieldType],
-                           va:     false,
-                           retType: stringType)
 
     if c42env == nil:
       specErr(attr, "A validator was specified, but the application " &
@@ -502,14 +523,13 @@ proc validateOneAttrField(attrs:  AttrScope,
       let
         box = attr.attrToVal().get()
         ret = c42env.runCallback(spec.extType.validator,
-                                 @[pack(attr.fullNameAsStr()), box],
-                                 some(callType))
+                                 @[pack(attr.fullNameAsStr()), box])
       if ret.isNone():
         # Actually, this error doesn't display right now, since we are
         # not try-catching the runCallback.  Instead, we should get:
         # "Function '...' not found"
         specErr(attr, "A validator was specified, but no function of the " &
-                fmt"correct type exists in spec file: {$callType}")
+                fmt"correct type is in spec file: {$spec.extType.validator}")
       let
         errMsg = unpack[string](ret.get())
 

@@ -77,8 +77,7 @@ proc `$`*(t: Con4mType): string =
   of TypeDict:     return fmt"dict[{t.keyType}, {t.valType}]"
   of TypeTuple:
     var s: seq[string] = @[]
-    for item in t.itemTypes:
-      s.add($(item))
+    for item in t.itemTypes: s.add($(item))
     return fmt"""tuple[{join(s, ", ")}]"""
   of TypeTypeSpec:
     result = "typespec"
@@ -89,26 +88,15 @@ proc `$`*(t: Con4mType): string =
     if t.link.isSome():
       return $(t.link.get())
     else:
-      var parts: seq[string] = @[]
-      for (k, v) in [(TypeString,   "string"),
-                     (TypeBool,     "bool"),
-                     (TypeInt,      "int"),
-                     (TypeFloat,    "float"),
-                     (TypeDuration, "Duration"),
-                     (TypeIPAddr,   "IPAddr"),
-                     (TypeCIDR,     "CIDR"),
-                     (TypeSize,     "Size"),
-                     (TypeDate,     "Date"),
-                     (TypeTime,     "Time"),
-                     (TypeTypeSpec, "typespec"),
-                     (TypeDateTime, "DateTime")]:
-        if t.constraints.contains(k):
-          parts.add(v)
-      if len(parts) == 0:
-        return "`" & t.localName.getOrElse($(t.varNum))
-      else:
+      if len(t.components) != 0:
+        var parts: seq[string] = @[]
+        for item in t.components:
+          parts.add($(item))
         return parts.join(" or ")
+      else:
+        return "`" & t.localName.getOrElse($(t.varNum))
   of TypeFunc:
+    if t.noSpec: return "(...)"
     if t.params.len() == 0:
       return fmt"() -> {$(t.retType)}"
     else:
@@ -118,11 +106,11 @@ proc `$`*(t: Con4mType): string =
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
       return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
-  of TypeUnion:
-    var s: seq[string] = @[]
-    for item in t.components:
-      s.add($(item))
-    return s.join(" or ")
+
+
+proc `$`*(c: CallbackObj): string =
+  result = "func " & c.name
+  if not c.getType().noSpec: result &= $(c.tInfo)
 
 proc formatNonTerm(self: Con4mNode, name: string, i: int): string
 
@@ -195,7 +183,7 @@ proc formatNonTerm(self: Con4mNode, name: string, i: int): string =
     spaces = ' '.repeat(i)
     ti = self.typeInfo
     typeRepr = if ti == nil: "" else: colorType($(ti))
-    typeVal = if ti == nil: "" else: typeTemplate.fmt()
+    typeVal  = if ti == nil: "" else: typeTemplate.fmt()
 
   result = mainTemplate.fmt()
 
@@ -249,7 +237,7 @@ proc nativeDurationToStr*(d: Con4mDuration): string =
   of 0:  discard
   of 1:  result = "1 year "
   else:  result = $(n) & " years "
-  
+
   numSec = numSec mod (365 * 24 * 60 * 60)
 
   n = numSec div (24 * 60 * 60)  # number of days
@@ -351,7 +339,7 @@ proc oneArgToString*(t: Con4mType, b: Box, lit = false): string =
     return "{" & strs.join(", ") & "}"
   else:
     return "<??>"
-    
+
 proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
   path.add(self.name)
 
@@ -445,5 +433,3 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
                          oRowFmt       = @[acBGWhite, acBBlack])
 
   return result & tbl.render()
-
-  

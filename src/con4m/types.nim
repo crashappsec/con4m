@@ -52,7 +52,7 @@ type
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
     TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
-    TypeDateTime, TypeTypeSpec, TypeFunc, TypeTVar, TypeUnion, TypeBottom
+    TypeDateTime, TypeTypeSpec, TypeFunc, TypeTVar, TypeBottom
 
   Con4mType* = ref object of RootRef
     case kind*:     Con4mTypeKind
@@ -70,15 +70,13 @@ type
       noSpec*:      bool   # Was a sig there? For callbacks, it is optional.
     of TypeTypeSpec:
       binding*:     Con4mType
-    of TypeUnion:
-      components*:  seq[Con4mType]
     of TypeTVar:
       varNum*:      int
       localName*:   Option[string]
       link*:        Option[Con4mType]
       linksin*:     seq[Con4mType]
       cycle*:       bool
-      constraints*: set[Con4mTypeKind]
+      components*:  seq[Con4mType]
       # Constraints are different than unions; with a tvar, we assume
       # we are looking to instantiate a concrete type.
       #
@@ -96,7 +94,7 @@ type
       # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
-  
+
   Con4mDuration* = uint64
   Con4mSize*     = uint64
   Con4mIPAddr*   = string
@@ -168,8 +166,7 @@ type
   VLookupOp*   = enum vlDef, vlUse, vlMask, vlFormal
   ALookupOp*   = enum vlSecDef, vlAttrDef, vlSecUse, vlAttrUse, vlExists
   UseCtx*      = enum ucNone, ucFunc, ucAttr, ucVar
-  AttrErrEnum* = enum
-    errOk, errNoAttr, errBadSec, errBadAttr, errCantSet
+  AttrErrEnum* = enum errOk, errNoAttr, errBadSec, errBadAttr, errCantSet
 
   AttrErr* = object
     code*:     AttrErrEnum
@@ -231,10 +228,10 @@ type
     TypePrimitive, TypeSection, TypeC4TypeSpec, TypeC4TypePtr
 
   ExtendedType* = ref object
-    validator*: string   # A con4m call used in fields, not sections.
+    validator*: CallbackObj
     case kind*: ExtendedTypeKind
-    of TypePrimitive:
-      tinfo*:      Con4mType
+    of TypePrimitive, TypeC4TypeSpec:
+      tInfo*:      Con4mType
       range*:      tuple[low: int, high: int] # Only for int types; INCLUSIVE.
       itemCount*:  tuple[low: int, high: int] # Should reuse (TODO)
       intChoices*: seq[int]
@@ -243,8 +240,6 @@ type
       sinfo*: Con4mSectionType
     of TypeC4TypePtr:
       fieldRef*: string
-    of TypeC4TypeSpec:
-      discard
 
   FieldSpec* = ref object
     extType*:      ExtendedType
@@ -312,7 +307,10 @@ proc resolveTypeVars*(t: Con4mType): Con4mType =
       result  = t.link.get().resolveTypeVars()
       t.cycle = false
 
-proc getType*(n: Con4mNode): Con4mType = return n.typeInfo.resolveTypeVars()
+proc getType*(n: Con4mNode):    Con4mType = n.typeInfo.resolveTypeVars()
+proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
+proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
+proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()
 
 proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
 proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)

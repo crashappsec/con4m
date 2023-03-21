@@ -754,7 +754,7 @@ proc c4mCmpTypes*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     t1 = unpack[Con4mType](args[0])
     t2 = unpack[Con4mType](args[1])
-    
+
   return some(pack(not t1.unify(t2).isBottom()))
 
 proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
@@ -823,8 +823,8 @@ proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
 
   if sym.tInfo.unify(expectedType).isBottom(): return none(Box)
   return sym.value
-  
-  
+
+
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
@@ -1053,24 +1053,24 @@ proc newCallback*(s: ConfigState, sig: string) =
 
 const defaultBuiltins* = [
   # Type conversion operations
-  (1,   "bool(int) -> bool",            BuiltInFn(c4mIToB)),
-  (2,   "bool(float) -> bool",          BuiltInFn(c4mFToB)),
-  (3,   "bool(string) -> bool",         BuiltInFn(c4mSToB)),
-  (4,   "bool(list[`x]) -> bool",       BuiltInFn(c4mLToB)),
-  (5,   "bool(dict[`x,`y]) -> bool",    BuiltInFn(c4mDToB)),
-  (6,   "float(int) -> float",          BuiltInFn(c4mItoF)),
-  (7,   "int(float) -> int",            BuiltInFn(c4mFtoI)),
-  (8,   "$(`t) -> string",              BuiltInFn(c4mToString)),
-  (9,   "Duration(string) -> Duration", BuiltInFn(c4mSToDur)),
-  (10,  "IPAddr(string) -> IPAddr",     BuiltInFn(c4mStoIP)),
-  (11,  "CIDR(string) -> CIDR",         BuiltInFn(c4mSToCIDR)),
-  (12,  "Size(string) -> Size",         BuiltInFn(c4mSToSize)),
-  (13,  "Date(string) -> Date",         BuiltInFn(c4mSToDate)),
-  (14,  "Time(string) -> Time",         BuiltInFn(c4mSToTime)),
-  (15,  "DateTime(string) -> DateTime", BuiltInFn(c4mSToDateTime)),
-  (16,  "to_usec(Duration) -> int",     BuiltInFn(c4mSelfRet)),
-  (17,  "to_msec(Duration) -> int",     BuiltInFn(c4mDurAsMSec)),
-  (18,  "to_sec(Duration) -> int",      BuiltInFn(c4mDurAsSec)),
+  (1,   "bool(int) -> bool",               BuiltInFn(c4mIToB)),
+  (2,   "bool(float) -> bool",             BuiltInFn(c4mFToB)),
+  (3,   "bool(string) -> bool",            BuiltInFn(c4mSToB)),
+  (4,   "bool(list[`x]) -> bool",          BuiltInFn(c4mLToB)),
+  (5,   "bool(dict[`x,`y]) -> bool",       BuiltInFn(c4mDToB)),
+  (6,   "float(int) -> float",             BuiltInFn(c4mItoF)),
+  (7,   "int(float) -> int",               BuiltInFn(c4mFtoI)),
+  (8,   "$(`t) -> string",                 BuiltInFn(c4mToString)),
+  (9,   "Duration(string) -> Duration",    BuiltInFn(c4mSToDur)),
+  (10,  "IPAddr(string) -> IPAddr",        BuiltInFn(c4mStoIP)),
+  (11,  "CIDR(string) -> CIDR",            BuiltInFn(c4mSToCIDR)),
+  (12,  "Size(string) -> Size",            BuiltInFn(c4mSToSize)),
+  (13,  "Date(string) -> Date",            BuiltInFn(c4mSToDate)),
+  (14,  "Time(string) -> Time",            BuiltInFn(c4mSToTime)),
+  (15,  "DateTime(string) -> DateTime",    BuiltInFn(c4mSToDateTime)),
+  (16,  "to_usec(Duration) -> int",        BuiltInFn(c4mSelfRet)),
+  (17,  "to_msec(Duration) -> int",        BuiltInFn(c4mDurAsMSec)),
+  (18,  "to_sec(Duration) -> int",         BuiltInFn(c4mDurAsSec)),
   #[ Not done yet:
   (28,  "get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
   (29,  "get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),
