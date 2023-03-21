@@ -130,6 +130,10 @@ proc c4mDurAsSec*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   result = some(pack(sec))
 
+proc c4mStrToType*(args: seq[Box], unused: ConfigState): Option[Box] =
+  try:    return some(pack(toCon4mType(unpack[string](args[0]))))
+  except: raise c4mException(getCurrentExceptionMsg())
+
 proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
@@ -1071,6 +1075,7 @@ const defaultBuiltins* = [
   (16,  "to_usec(Duration) -> int",        BuiltInFn(c4mSelfRet)),
   (17,  "to_msec(Duration) -> int",        BuiltInFn(c4mDurAsMSec)),
   (18,  "to_sec(Duration) -> int",         BuiltInFn(c4mDurAsSec)),
+  (19,  "to_type(string) -> typespec",     BuiltInFn(c4mStrToType)),
   #[ Not done yet:
   (28,  "get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
   (29,  "get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),

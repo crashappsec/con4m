@@ -550,21 +550,23 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal("Dict indicies can only be strings or ints", node.children[1])
     of TypeTVar:
       if not s.secondPass:
+        # Note, we should *not* allow tuples as an option unless we
+        # know the type of the tuple at the time of checking, and we
+        # can statically resolve the index, otherwise we cannot tie
+        # the return type to the type of the tuple field.
+        node.typeInfo = newTypeVar()
         if node.children[1].getBaseType() == TypeInt:
-          let options      = @[genericDict(), genericList(), anyTuple()]
-          let tv           = newTypeVar(constraints = options)
+          let
+            keyType = node.typeInfo
+            options = @[newListType(keyType), newDictType(intType, keyType)]
+            tv      = newTypeVar(constraints = options)
           if tv.unify(node.children[0].getType()).isBottom():
             fatal("Invalid type constraint for this index operation")
         else:
-          let
-            tv1      = newTypeVar()
-            tv2      = newTypeVar()
-            kType    = tv1.unify(node.children[1].getType())
-            ctrType  = Con4mType(kind: TypeDict, keyType: kType, valType: tv2)
+          let ctrType = newDictType(node.typeInfo, newTypeVar())
+          if ctrType.unify(node.children[0].getType()).isBottom():
+            fatal("Index type doesn't match container key type")
 
-          node.typeInfo = newTypeVar()
-          discard node.children[0].getType().unify(ctrType)
-          discard node.getType().unify(ctrType.valType)
     else:
       var n = node
       while n.parent.isSome():
@@ -777,6 +779,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = ct
   of NodeKVPair:
     node.checkKids(s)
+    echo $node
     if node.children[0].isBottom() or node.children[1].isBottom():
       fatal("Invalid type for dictionary keypair", node)
     node.typeInfo = newDictType(node.children[0].getType(),
