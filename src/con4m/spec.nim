@@ -373,7 +373,7 @@ proc validateOneAttrField(attrs:  AttrScope,
 
   if name notin attrs.contents:
     if spec.minRequired == 1 and exclusion == "":
-      if spec.default.isSome() and pass1:
+      if not pass1 and spec.default.isSome():
         let t = spec.extType.tinfo
         # While we set the default here, it does have to drop down
         # below to properly type check.

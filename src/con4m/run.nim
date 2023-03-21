@@ -46,6 +46,7 @@ proc setShowChecked*() = showChecked = true
 
 proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   if tree == nil: return false
+  state.secondPass = false
   tree.checkTree(state)
   if showChecked or stopPhase == phCheck:
     stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" & toAnsiCode(acReset))
