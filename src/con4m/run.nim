@@ -49,16 +49,16 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   tree.checkTree(state)
   if showChecked or stopPhase == phCheck:
     stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" & toAnsiCode(acReset))
-    stderr.write($tree)
+    stderr.writeLine($tree)
     for item in state.moduleFuncDefs:
       if item.kind == FnBuiltIn: unreachable
       elif item.impl.isNone(): unreachable
       else:
-        let typeStr = `$`(item.tInfo)[1 .. ^1]
+        let typeStr = `$`(item.tInfo)
         stderr.write(toAnsiCode(acBCyan))
         stderr.writeLine(fmt"Function: {item.name}{typeStr}")
         stderr.write(toAnsiCode(acReset))
-        stderr.write($tree)
+        stderr.writeLine($item.impl.get())
 
   if state.spec.isSome():
     state.preEvalCheck(evalCtx)
