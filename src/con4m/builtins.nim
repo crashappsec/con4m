@@ -670,6 +670,9 @@ proc c4mIntLow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mRandom*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(secureRand[uint64]()))
 
+proc c4mNow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(unixTimeInMS()))
+  
 proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
@@ -1171,6 +1174,7 @@ const defaultBuiltins* = [
   (414, "high() -> int",                   BuiltInFn(c4mIntHigh)),
   (415, "low() -> int",                    BuiltInFn(c4mIntLow)),
   (416, "rand() -> int",                   BuiltInFn(c4mRandom)),
+  (417, "now() -> int",                    BuiltInFn(c4mNow)),
 
   # Binary ops
   (501, "bitor(int, int) -> int",          BuiltInFn(c4mBitOr)),
