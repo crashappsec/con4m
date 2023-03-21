@@ -779,7 +779,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.typeInfo = ct
   of NodeKVPair:
     node.checkKids(s)
-    echo $node
     if node.children[0].isBottom() or node.children[1].isBottom():
       fatal("Invalid type for dictionary keypair", node)
     node.typeInfo = newDictType(node.children[0].getType(),
