@@ -340,8 +340,8 @@ proc oneArgToString*(t: Con4mType, b: Box, lit = false): string =
   else:
     return "<??>"
 
-proc reprOneLevel(self: AttrScope, path: var seq[string]): string =
-  path.add(self.name)
+proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
+  var path = inpath & @[self.name]
 
   result = toAnsiCode([acBold]) & path.join(".") & toAnsiCode([acReset]) & "\n"
   var rows = @[@["Name", "Type", "Value"]]
