@@ -122,7 +122,7 @@ elif isMainModule:
       if ok:
         ctx.styleOutput(false)
         for arg in args[1 .. ^1]:
-          discard ctx.stackConfig(arg)
+          discard ctx.stackConfig(arg, evalCtx = specCtx)
           ctx.styleOutput(false)
         ctx.styleOutput(true)
         if showFuncs:
