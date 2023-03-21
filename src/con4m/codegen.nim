@@ -1,5 +1,5 @@
 import strutils, strformat, tables, nimutils, unicode, options
-import types, parse, typecheck, st
+import types, typecheck, st
 
 type VarDeclInfo = ref object
   name:         string       # The variable name someone asked for,
@@ -30,8 +30,8 @@ type SecTypeInfo = ref object
   genGetters:    bool
   extraDecls:    string
   scope:         AttrScope
-  inboundEdges:  seq[string]
-  outboundEdges: seq[string]
+  backRefs:      seq[string] # List of types we use.
+  requiredBy:    seq[string] # types that use us.
   fieldInfo:     OrderedTable[string, VarDeclInfo]
 
 const reservedWords = {
@@ -73,8 +73,8 @@ template depGraphOneSection(subs:    AttrScope,
       else:
         targetSec = SecTypeInfo(name: k, scope: nil)
         secInfo[k] = targetsec
-      onesec.outboundEdges.add(k)
-      targetSec.inboundEdges.add(key)
+      onesec.backRefs.add(k)
+      targetSec.requiredBy.add(key)
   if "allow" in subs.contents:
     var allowed = subs.contents["allow"].get(AttrScope)
     for k, v in allowed.contents:
@@ -86,8 +86,8 @@ template depGraphOneSection(subs:    AttrScope,
       else:
         targetSec = SecTypeInfo(name: k, scope: nil)
         secInfo[k] = targetsec
-      oneSec.outboundEdges.add(k)
-      targetSec.inboundEdges.add(key)
+      oneSec.backRefs.add(k)
+      targetSec.requiredBy.add(key)
 
 template depGraphProcessOneObjectClass(kind: string, singVal: bool) =
   let aOrE = attrLookup(c42state.attrs, [kind], 0, vlSecUse)
@@ -117,13 +117,13 @@ proc orderTypes(c42state: ConfigState,
   while len(secInfo) != 0:
     block outer:
       for k, v in secInfo:
-        if len(v.inboundEdges) == 0:
+        if len(v.backRefs) == 0:
           result.add(v)
-          for link in v.outboundEdges:
+          for link in v.requiredBy:
             var
               linkedSect = secInfo[link]
-              ix         = linkedSect.inboundEdges.find(k)
-            linkedSect.inboundEdges.del(ix)
+              ix         = linkedSect.backRefs.find(k)
+            linkedSect.backRefs.del(ix)
           secInfo.del(k)
           break outer
       raise newException(ValueError, "Cannot produce code for types with " &
@@ -150,7 +150,7 @@ proc declToNimType(v: Con4mType): string =
   of TypeDateTime:
     return "Con4mDateTime"
   of TypeTypeSpec:
-    return "typespec"
+    return "Con4mType"
   of TypeFunc:
     return "CallbackObj"
   of TypeInt:
@@ -175,7 +175,7 @@ proc genOneSectNim(me:       SecTypeInfo,
   # fields.  We use it to proxy to con4m, whether or not we are locally caching.
   result &= "  `@@attrscope@@`*: AttrScope\n"
   # Individual sections can't override whether they get declared the way fields can.
-  for item in me.outboundEdges:
+  for item in me.backRefs:
     let o = allSects[item]
     if o.singleton:
       result &= "  {o.nameWhenField}*: {o.nameOfType}\n".fmt()
@@ -244,7 +244,7 @@ proc genOneLoaderNim(me:       SecTypeInfo,
                      allSects: TableRef[string, SecTypeInfo]): string =
   result = loaderPrefixNim()
   if me.genFieldDecls:
-    for edge in me.outboundEdges:
+    for edge in me.backRefs:
       let sec = allSects[edge]
       if not sec.genLoader:
         continue
@@ -391,7 +391,7 @@ proc getAttrScope*(self: {me.nameOfType}): AttrScope =
 
 """.fmt()
   if me.genGetters:
-    for edge in me.outBoundEdges:
+    for edge in me.backRefs:
       let  sec = allSects[edge]
       if sec.singleton and me.genFieldDecls:
         result &= singletonAndDeclNim()
@@ -488,13 +488,9 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
   for fieldName, fieldAorS in fieldscope.contents:
     let
       fieldProps = fieldAorS.get(AttrScope)
-      typestr    = unpack[string](fieldProps.attrLookup("type").get())
-      c4mType    = if typestr == "typespec":
-                     stringType
-                   elif len(typestr) >= 1 and typestr[0] == '=':
-                     newTypeVar()
-                   else:
-                     toCon4mType(typestr)
+      typeBox    = fieldProps.attrLookup("type").get()
+      c4mType    = if typeBox.kind  == MkStr:  newTypeVar()
+                   else:                       unpack[Con4mType](typeBox)
       genFieldDeclBox = fieldProps.attrLookup("gen_field_decl")
       genFieldDecl    = if genFieldDeclBox.isSome():
                      some(unpack[bool](genFieldDeclBox.get()))
@@ -516,17 +512,15 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
                    else:
                      none(bool)
       genNameBox = fieldProps.attrLookup("gen_fieldname")
-      genName    = if genNameBox.isSome():
-                     unpack[string](genNameBox.get())
-                   else:
-                     fieldName
+      genName    = if genNameBox.isSome(): unpack[string](genNameBox.get())
+                   else:                   fieldName
       required   = fieldProps.attrLookup("require")
       default    = fieldProps.attrLookup("default")
       always     = if default.isSome() or unpack[bool](required.get()):
                      true
                    else:
                      false
-    let qfn = quote(genName, lang)
+    let qfn      = quote(genName, lang)
 
     # We don't fill in the localType here, because fields might
     # not be Nim types, and it's easier / more clear to deal w/
@@ -596,7 +590,7 @@ proc getPrologue(rootScope: AttrScope, lang: string): string =
     result  = ""
   case lang
   of "nim":
-    result &= "import options, tables, con4m, con4m/st, nimutils/box\n\n"
+    result &= "import options, tables, con4m, nimutils/box\n\n"
   else:
     raise newException(ValueError,
                        "Unsupported language for generation: " & lang)
@@ -610,7 +604,7 @@ proc generateCode*(c42state: ConfigState, lang: string): string =
   let
     rootDef   = rootScope.contents["root"].get(AttrScope)
     rootInfo  = SecTypeInfo(singleton: true, nameOfType: "Config",
-                            scope: rootDef, outboundEdges: @[])
+                            scope: rootDef, requiredBy: @[])
 
   result = getPrologue(rootDef, lang)
 

@@ -1076,5 +1076,3 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
 
     fatal(msg, tok)
     return
-
-
