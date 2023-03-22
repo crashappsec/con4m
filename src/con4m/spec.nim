@@ -364,6 +364,8 @@ proc validateOneSectField(attrs:  AttrScope,
       specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
                      fmt"of '{name}', but got {len(sectAttr.contents)}.")
 
+var validatorsToRun: seq[(CallbackObj, Attribute, seq[Box])] = @[]
+
 proc validateOneAttrField(attrs:  AttrScope,
                           name:   string,
                           spec:   FieldSpec,
@@ -497,8 +499,7 @@ proc validateOneAttrField(attrs:  AttrScope,
                      fmt"(to type check the field '{name}'), got a parse " &
                      "error parsing the type: " & getCurrentExceptionMsg())
 
-  if pass1:
-    return
+  if pass1: return
 
   if spec.lock:
     if attr.value.isSome():
@@ -520,21 +521,8 @@ proc validateOneAttrField(attrs:  AttrScope,
       specErr(attr, "A validator was specified, but the application " &
                     "didn't provide an evaluation context.")
     else:
-      let
-        box = attr.attrToVal().get()
-        ret = c42env.runCallback(spec.extType.validator,
-                                 @[pack(attr.fullNameAsStr()), box])
-      if ret.isNone():
-        # Actually, this error doesn't display right now, since we are
-        # not try-catching the runCallback.  Instead, we should get:
-        # "Function '...' not found"
-        specErr(attr, "A validator was specified, but no function of the " &
-                fmt"correct type is in spec file: {$spec.extType.validator}")
-      let
-        errMsg = unpack[string](ret.get())
-
-      if errMsg != "":
-        specErr(attr, errMsg)
+      let args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
+      validatorsToRun.add((spec.extType.validator, attr, args))
 
 proc validateOneSection(attrs:  AttrScope,
                         spec:   Con4mSectionType,
@@ -552,6 +540,32 @@ proc validateOneSection(attrs:  AttrScope,
     for name, _ in attrs.contents:
       if name notin spec.fields:
         specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
+
+proc runCallbacks(spec: ConfigState, env: ConfigState) =
+  for (validator, attr, args) in validatorsToRun:
+      let ret = env.runCallback(validator, args)
+      if ret.isNone():
+        # Actually, this error doesn't display right now, since we are
+        # not try-catching the runCallback.  Instead, we should get:
+        # "Function '...' not found"
+        specErr(attr, "A validator was specified, but no function of the " &
+                fmt"correct type is in spec file: {$validator}")
+      let
+        errMsg = unpack[string](ret.get())
+
+      if errMsg != "":
+        specErr(attr, errMsg)
+
+  validatorsToRun = @[]
+
+  let
+    sig   = some(newProcType(@[], stringType))
+    cbres = env.runCallback("final_check", seq[Box](@[]), sig)
+
+  if cbres.isSome():
+    let msg = unpack[string](cbres.get())
+    if msg != "": specErr(msg)
+
 
 proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
   ## This is the post-evaluation validation routine.  There used to
@@ -589,6 +603,7 @@ proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
 
   setReplacementState(state)
   validateOneSection(state.attrs, state.spec.get().rootSpec, c42env, false)
+  if c42env != nil: state.runCallbacks(c42env)
   clearReplacementState()
 
 proc preEvalCheck*(state: ConfigState, c42env: ConfigState = nil) =

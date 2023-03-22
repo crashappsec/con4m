@@ -136,7 +136,9 @@ proc sCallBuiltin(s:     ConfigState,
   except Con4mError:
     fatal(getCurrentExceptionMsg(), node)
   except:
-    fatal(fmt"Unhandled error when running builtin call: {name}", node)
+    fatal("Unhandled error when running builtin call: " & name & "\n" &
+          "error is: " & getCurrentExceptionMsg(), node)
+
 
 proc sCall*(s:       ConfigState,
             fInfo:   FuncTableEntry,

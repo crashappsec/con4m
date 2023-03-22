@@ -672,7 +672,7 @@ proc c4mRandom*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mNow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unixTimeInMS()))
-  
+
 proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
@@ -818,17 +818,21 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
     attrName     = unpack[string](args[0])
-    expectedType = (unpack[Con4mType](args[1])).binding
+    expectedType = (unpack[Con4mType](args[1]))
     state        = replacementState.getOrElse(localState)
     aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
 
-  if aOrE.isA(AttrErr): return none(Box)
+  if aOrE.isA(AttrErr):
+    raise c4mException("Field not found: " & attrName)
   let aOrS = aorE.get(AttrOrSub)
 
-  if not aOrS.isA(Attribute): return none(Box)
+  if not aOrS.isA(Attribute):
+    raise c4mException("Got a section (expected attribute) for: "  & attrName)
   let sym = aOrS.get(Attribute)
 
-  if sym.tInfo.unify(expectedType).isBottom(): return none(Box)
+  if sym.tInfo.unify(expectedType).isBottom():
+    raise c4mException("Typecheck failed for: " & attrName)
+
   return sym.value
 
 
