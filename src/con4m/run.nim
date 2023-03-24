@@ -88,7 +88,6 @@ proc firstRun*(stream:      Stream,
                addBuiltins: bool                           = true,
                customFuncs: openarray[(string, BuiltinFn)] = [],
                exclude:     openarray[int]                 = [],
-               callbacks:   openarray[string]              = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
     setCurrentFileName(fileName)
     # Parse throws an error if it doesn't succeed.
@@ -98,9 +97,6 @@ proc firstRun*(stream:      Stream,
 
     for (sig, fn) in customFuncs:
       state.newBuiltIn(sig, fn)
-
-    for sig in callbacks:
-      state.newCallback(sig)
 
     if state.runBase(tree, evalCtx):
       return (state, true)
@@ -113,20 +109,18 @@ proc firstRun*(contents:    string,
                addBuiltins: bool = true,
                customFuncs: openarray[(string, BuiltinFn)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[string] = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newStringStream(contents), fileName, spec, addBuiltins,
-                  customFuncs, exclude, callbacks, evalCtx)
+                  customFuncs, exclude, evalCtx)
 
 proc firstRun*(fileName:    string,
                spec:        ConfigSpec = nil,
                addBuiltins: bool = true,
                customFuncs: openarray[(string, BuiltinFn)] = [],
                exclude:     openarray[int] = [],
-               callbacks:   openarray[string] = [],
                evalCtx:     ConfigState = nil): (ConfigState, bool) =
   return firstRun(newFileStream(fileName, fmRead), fileName, spec,
-                  addBuiltins, customFuncs, exclude, callbacks, evalCtx)
+                  addBuiltins, customFuncs, exclude, evalCtx)
 
 proc stackConfig*(s:        ConfigState,
                   stream:   Stream,

@@ -672,7 +672,7 @@ proc c4mRandom*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mNow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unixTimeInMS()))
-
+  
 proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
@@ -1053,14 +1053,6 @@ proc newBuiltIn*(s: ConfigState, sig: string, fn: BuiltInFn) =
     let msg = getCurrentExceptionMsg()
     raise newException(ValueError,
                        fmt"When adding builtin '{sig}': {msg}")
-
-proc newCallback*(s: ConfigState, sig: string) =
-  try:
-    newCoreFunc(s, sig, nil)
-  except:
-    let msg = getCurrentExceptionMsg()
-    raise newException(ValueError,
-                       fmt"When adding callback '{sig}': {msg}")
 
 const defaultBuiltins* = [
   # Type conversion operations
