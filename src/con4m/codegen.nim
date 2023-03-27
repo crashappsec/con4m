@@ -31,6 +31,7 @@ type SecTypeInfo = ref object
   extraDecls:    string
   scope:         AttrScope
   backRefs:      seq[string] # List of types we use.
+  backRefCount:  int         # Used to know when a type can be added.
   requiredBy:    seq[string] # types that use us.
   fieldInfo:     OrderedTable[string, VarDeclInfo]
 
@@ -117,13 +118,11 @@ proc orderTypes(c42state: ConfigState,
   while len(secInfo) != 0:
     block outer:
       for k, v in secInfo:
-        if len(v.backRefs) == 0:
+        if len(v.backRefs) == v.backRefCount:
           result.add(v)
           for link in v.requiredBy:
-            var
-              linkedSect = secInfo[link]
-              ix         = linkedSect.backRefs.find(k)
-            linkedSect.backRefs.del(ix)
+            var linkedSect = secInfo[link]
+            linkedSect.backRefCount = linkedSect.backRefCount + 1
           secInfo.del(k)
           break outer
       raise newException(ValueError, "Cannot produce code for types with " &
