@@ -762,7 +762,7 @@ proc c4mCmpTypes*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     t1 = unpack[Con4mType](args[0])
     t2 = unpack[Con4mType](args[1])
 
-  return some(pack(not t1.unify(t2).isBottom()))
+  return some(pack(not t1.copyType().unify(t2.copyType()).isBottom()))
 
 proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
   ## This allows us to, from within a c42 spec, query the type of an
@@ -818,7 +818,7 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
     attrName     = unpack[string](args[0])
-    expectedType = (unpack[Con4mType](args[1]))
+    expectedType = (unpack[Con4mType](args[1])).copyType()
     state        = replacementState.getOrElse(localState)
     aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
 
@@ -830,11 +830,11 @@ proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
     raise c4mException("Got a section (expected attribute) for: "  & attrName)
   let sym = aOrS.get(Attribute)
 
-  if sym.tInfo.unify(expectedType).isBottom():
-    raise c4mException("Typecheck failed for: " & attrName)
+  if sym.tInfo.copyType().unify(expectedType).isBottom():
+    raise c4mException("Typecheck failed for: " & attrName & " (attr type: " &
+        $(sym.tInfo) & "; passed type: " & $(expectedType) & ")")
 
   return sym.value
-
 
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
@@ -1186,7 +1186,7 @@ const defaultBuiltins* = [
   (603, "typecmp(typespec, typespec) -> bool",  BuiltInFn(c4mCmpTypes)),
   (604, "attr_type(string) -> typespec",        BuiltInFn(c4mAttrGetType)),
   (605, "attr_typecmp(string, string) -> bool", BuiltInFn(c4mRefTypeCmp)),
-  (606, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr)),
+  (606, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr))
 ]
 
 when defined(posix):

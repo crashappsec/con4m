@@ -751,7 +751,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       else:
         var err = "Ambiguous call (matched multiple implementations):\n"
         for call in procList:
-          err &= "  " & call.name & `$`(call.tinfo)[1..^1] & "\n"
+          err &= "  " & call.name & `$`(call.tinfo) & "\n"
         if s.funcOrigin:
           err &= "This is most likely because a parameter to your function "
           err &= "could be different types depending on the calling context. "

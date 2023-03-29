@@ -712,7 +712,7 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
     except:
       parseError("Expected valid expression after return")
     case ctx.consume().kind
-    of TtSemi, TtNewLine:
+    of TtSemi, TtNewLine, TtRBrace:
       while ctx.curTok().kind == TtSemi: discard ctx.consume()
     else:
       parseError("Unexpected input after return")

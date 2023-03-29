@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strformat, dollars
+import options, tables, strformat
 import types, st, parse, treecheck, typecheck, nimutils, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
@@ -124,7 +124,6 @@ proc sCallUserDef*(s:        ConfigState,
       echo getCurrentException().getStackTrace()
     fatal(fmt"Unhandled error when running builtin call '{name}': {msg}",
           nodeOpt.get())
-
 proc sCallBuiltin(s:     ConfigState,
                   name:  string,
                   a1:    seq[Box],
@@ -138,7 +137,7 @@ proc sCallBuiltin(s:     ConfigState,
   except:
     fatal("Unhandled error when running builtin call: " & name & "\n" &
           "error is: " & getCurrentExceptionMsg(), node)
-
+    
 
 proc sCall*(s:       ConfigState,
             fInfo:   FuncTableEntry,
@@ -194,7 +193,7 @@ template binaryOpWork(typeWeAreOping: typedesc,
   let
     v1 = unpack[typeWeAreOping](node.children[0].value)
     v2 = unpack[typeWeAreOping](node.children[1].value)
-
+      
   var ret: returnType = cast[returnType](op(v1, v2))
 
   node.value = pack(ret)
@@ -406,7 +405,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         i = unpack[int](indexBox)
 
       if i >= l.len() or i < 0:
-        echo node
         fatal("Runtime error in config: array index out of bounds", node)
       node.value = l[i]
     of TypeDict:
