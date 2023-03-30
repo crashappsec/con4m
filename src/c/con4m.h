@@ -233,11 +233,11 @@ extern AttrErr  c4mSetAttrFloat(C4State, char *, float);
  */
 extern AttrErr  c4mSetAttr(C4State, char *, Box);
 
-/* BoxType c4BoxType(Box);
+/* BoxType c4mBoxType(Box);
  *
  * Returns the outmost type of a box.
  */
-extern BoxType c4BoxType(Box);
+extern BoxType c4mBoxType(Box);
 
 /* int64_t c4mUnpackInt(Box)
  *
@@ -310,7 +310,7 @@ extern Box      c4mPackInt(int64_t);
 extern Box      c4mPackBool(int64_t);
 extern Box      c4mPackArray(Box *, int64_t);
 
-/* NimDict c4DictNew();
+/* NimDict c4mDictNew();
  *
  * Creates a new NimDict object.  It will need deallocation.
  */
@@ -350,7 +350,7 @@ extern void     c4mDictKeyDel(NimDict, Box);
  */
 extern C4Spec   c4mLoadSpec(char *, char *, int64_t *);
 
-/* int64_t  c4GetSections(C4State, char *, char ***);
+/* int64_t  c4mGetSections(C4State, char *, char ***);
  *
  * Given a fully-qualified path to a section, produces an array
  * containing the names of all defined sections.  The return value is
@@ -364,9 +364,9 @@ extern C4Spec   c4mLoadSpec(char *, char *, int64_t *);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4GetSections(C4State, char *, char ***);
+extern int64_t  c4mGetSections(C4State, char *, char ***);
 
-/* int64_t  c4GetFields(C4State, char *, char ***);
+/* int64_t  c4mGetFields(C4State, char *, char ***);
  *
  * Given a fully-qualified path to a section, produces an array
  * containing the names of all defined fields in that section,
@@ -383,9 +383,9 @@ extern int64_t  c4GetSections(C4State, char *, char ***);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4GetFields(C4State, char *, char ***);
+extern int64_t  c4mGetFields(C4State, char *, char ***);
 
-/* int64_t  c4EnumerateScope(C4State, char *, char ***);
+/* int64_t  c4mEnumerateScope(C4State, char *, char ***);
  *
  * Given a fully-qualified path to a section, produces an array
  * containing the names of all defined fields in that section,
@@ -403,7 +403,7 @@ extern int64_t  c4GetFields(C4State, char *, char ***);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4EnumerateScope(C4State, char *, char ***);
+extern int64_t  c4mEnumerateScope(C4State, char *, char ***);
 // Below are all deallocation functions.
 extern void     c4mClose(C4State);
 extern char *   c4mGetSpecErr(C4Spec);
