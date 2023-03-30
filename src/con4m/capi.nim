@@ -203,9 +203,9 @@ proc c4mGetAttr*(state:   ConfigState,
 
   GC_ref(result)
 
-proc c4GetSections*(state: ConfigState,
-                    name:  cstring,
-                    arr:   var ptr cstring): int {.exportc.} =
+proc c4mGetSections*(state: ConfigState,
+                     name:  cstring,
+                     arr:   var ptr cstring): int {.exportc.} =
   var res: seq[cstring] = @[]
 
   let
@@ -235,9 +235,9 @@ proc c4GetSections*(state: ConfigState,
   return len(res)
 
 
-proc c4GetFields*(state: ConfigState,
-                  name:  cstring,
-                  arr:   var ptr cstring): int {.exportc.} =
+proc c4mGetFields*(state: ConfigState,
+                   name:  cstring,
+                   arr:   var ptr cstring): int {.exportc.} =
   var res: seq[cstring] = @[]
 
   let
@@ -268,9 +268,9 @@ proc c4GetFields*(state: ConfigState,
   return len(res)
 
 
-proc c4EnumerateScope*(state: ConfigState,
-                       name:  cstring,
-                       arr:   var ptr cstring): int {.exportc.} =
+proc c4mEnumerateScope*(state: ConfigState,
+                        name:  cstring,
+                        arr:   var ptr cstring): int {.exportc.} =
 
   var res: seq[cstring] = @[]
 
