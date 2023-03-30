@@ -20,10 +20,10 @@ proc exportStr(s: string): cstring {.inline.} =
   result = cstring(s)
   strPool[cast[uint](result)] = result
 
-proc c4mStrDelete*(s: cstring) {.exportc.} =
+proc c4mStrDelete*(s: cstring) {.exportc, dynlib.} =
   strPool.del(cast[uint](s))
 
-proc c4mOneShot*(contents: cstring, fname: cstring): cstring {.exportc.} =
+proc c4mOneShot*(contents: cstring, fname: cstring): cstring {.exportc, dynlib.} =
   try:
     let (ctx, res) = firstRun($(contents), $(fname))
     if not res:
@@ -33,7 +33,7 @@ proc c4mOneShot*(contents: cstring, fname: cstring): cstring {.exportc.} =
     return exportStr(getCurrentExceptionMsg())
 
 proc c4mFirstRun*(contents: cstring, fname: cstring, addBuiltIns: bool,
-                  spec: C4CSpecObj, err: var cstring): ConfigState {.exportc.} =
+                  spec: C4CSpecObj, err: var cstring): ConfigState {.exportc, dynlib.} =
   var
     c42Spec: ConfigSpec  = nil
     specCtx: ConfigState = nil
@@ -60,7 +60,7 @@ proc c4mFirstRun*(contents: cstring, fname: cstring, addBuiltIns: bool,
     return nil
 
 proc c4mStack*(state: ConfigState, contents: cstring, fname: cstring,
-               spec: C4CSpecObj): cstring {.exportc.} =
+               spec: C4CSpecObj): cstring {.exportc, dynlib.} =
   var specCtx: ConfigState = nil
 
   if spec != nil:
@@ -74,7 +74,7 @@ proc c4mStack*(state: ConfigState, contents: cstring, fname: cstring,
 
 
 proc c4mSetAttrInt*(state: ConfigState, name: cstring, val: int):
-                                                           int {.exportc.} =
+                                                           int {.exportc, dynlib.} =
   var
     n = $(name)
     b = pack[int](val)
@@ -82,7 +82,7 @@ proc c4mSetAttrInt*(state: ConfigState, name: cstring, val: int):
   return int(r.code)
 
 proc c4mGetAttrInt*(state: ConfigState, name: cstring, ok: ptr int):
-                                                           int {.exportc.} =
+                                                           int {.exportc, dynlib.} =
   var
     n        = $(name)
     (err, o) = attrLookupFull(state, n)
@@ -98,7 +98,7 @@ proc c4mGetAttrInt*(state: ConfigState, name: cstring, ok: ptr int):
   result = unpack[int](box)
 
 proc c4mSetAttrBool*(state: ConfigState, name: cstring, val: int):
-                                                           int {.exportc.} =
+                                                           int {.exportc, dynlib.} =
   var
     n = $(name)
     b = pack[bool](if val != 0: true else: false)
@@ -106,7 +106,7 @@ proc c4mSetAttrBool*(state: ConfigState, name: cstring, val: int):
   return int(r.code)
 
 proc c4mGetAttrBool*(state: ConfigState, name: cstring, ok: ptr int):
-                                                           int {.exportc.} =
+                                                           int {.exportc, dynlib.} =
   var
     n        = $(name)
     (err, o) = attrLookupFull(state, n)
@@ -123,7 +123,7 @@ proc c4mGetAttrBool*(state: ConfigState, name: cstring, ok: ptr int):
 
 
 proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
-                                                           int {.exportc.} =
+                                                           int {.exportc, dynlib.} =
   var
     n = $(name)
     v = $(val)
@@ -133,7 +133,7 @@ proc c4mSetAttrStr*(state: ConfigState, name: cstring, val: cstring):
   result = int(r.code)
 
 proc c4mGetAttrStr*(state: ConfigState, name: cstring, ok: ptr int):
-                                                       cstring {.exportc.} =
+                                                       cstring {.exportc, dynlib.} =
   var
     n        = $(name)
     (err, o) = attrLookupFull(state, n)
@@ -151,7 +151,7 @@ proc c4mGetAttrStr*(state: ConfigState, name: cstring, ok: ptr int):
   result = exportStr(res)
 
 proc c4mSetAttrFloat*(state: ConfigState, name: cstring, val: float):
-                                                          int {.exportc.} =
+                                                          int {.exportc, dynlib.} =
   var
     n = $(name)
     b = pack[float](val)
@@ -160,7 +160,7 @@ proc c4mSetAttrFloat*(state: ConfigState, name: cstring, val: float):
   result = int(r.code)
 
 proc c4mGetAttrFloat*(state: ConfigState, name: cstring, ok: ptr int):
-                                                         float {.exportc.} =
+                                                         float {.exportc, dynlib.} =
   var
     n = $(name)
     (err, o) = attrLookupFull(state, n)
@@ -176,7 +176,7 @@ proc c4mGetAttrFloat*(state: ConfigState, name: cstring, ok: ptr int):
     box  = o.get()
   result = unpack[float](box)
 
-proc c4mSetAttr*(state: ConfigState, name: cstring, b: Box): int {.exportc.} =
+proc c4mSetAttr*(state: ConfigState, name: cstring, b: Box): int {.exportc, dynlib.} =
   var
     n = $(name)
     r = attrSet(state, n, b)
@@ -186,7 +186,7 @@ proc c4mSetAttr*(state: ConfigState, name: cstring, b: Box): int {.exportc.} =
 proc c4mGetAttr*(state:   ConfigState,
                  name:    cstring,
                  boxType: ptr MixedKind,
-                 ok:      ptr int): Box {.exportc.} =
+                 ok:      ptr int): Box {.exportc, dynlib.} =
   var
     n        = $(name)
     (err, o) = attrLookupFull(state, n)
@@ -205,7 +205,7 @@ proc c4mGetAttr*(state:   ConfigState,
 
 proc c4mGetSections*(state: ConfigState,
                      name:  cstring,
-                     arr:   var ptr cstring): int {.exportc.} =
+                     arr:   var ptr cstring): int {.exportc, dynlib.} =
   var res: seq[cstring] = @[]
 
   let
@@ -237,7 +237,7 @@ proc c4mGetSections*(state: ConfigState,
 
 proc c4mGetFields*(state: ConfigState,
                    name:  cstring,
-                   arr:   var ptr cstring): int {.exportc.} =
+                   arr:   var ptr cstring): int {.exportc, dynlib.} =
   var res: seq[cstring] = @[]
 
   let
@@ -270,7 +270,7 @@ proc c4mGetFields*(state: ConfigState,
 
 proc c4mEnumerateScope*(state: ConfigState,
                         name:  cstring,
-                        arr:   var ptr cstring): int {.exportc.} =
+                        arr:   var ptr cstring): int {.exportc, dynlib.} =
 
   var res: seq[cstring] = @[]
 
@@ -303,82 +303,82 @@ proc c4mEnumerateScope*(state: ConfigState,
 
   return len(res)
 
-proc c4mBoxType*(box: Box): MixedKind {.exportc.} =
+proc c4mBoxType*(box: Box): MixedKind {.exportc, dynlib.} =
   return box.kind
 
-proc c4mClose*(state: ConfigState) {.exportc.} =
+proc c4mClose*(state: ConfigState) {.exportc, dynlib.} =
   GC_unref(state)
 
-proc c4mUnpackInt*(box: Box): int {.exportc.} =
+proc c4mUnpackInt*(box: Box): int {.exportc, dynlib.} =
   result = unpack[int](box)
 
-proc c4mPackInt*(i: int): Box {.exportc.} =
+proc c4mPackInt*(i: int): Box {.exportc, dynlib.} =
   result = pack(i)
   GC_ref(result)
 
-proc c4mUnpackBool*(box: Box): int {.exportc.} =
+proc c4mUnpackBool*(box: Box): int {.exportc, dynlib.} =
   result = if unpack[bool](box): 1 else: 0
 
-proc c4mPackBool*(i: int): Box {.exportc.} =
+proc c4mPackBool*(i: int): Box {.exportc, dynlib.} =
   result = if i == 0: pack(false) else: pack(true)
   GC_ref(result)
 
-proc c4mUnpackFloat*(box: Box): float {.exportc.} =
+proc c4mUnpackFloat*(box: Box): float {.exportc, dynlib.} =
   result = unpack[float](box)
 
-proc c4mPackFloat*(f: float): Box {.exportc.} =
+proc c4mPackFloat*(f: float): Box {.exportc, dynlib.} =
   result = pack(f)
   GC_ref(result)
 
-proc c4mUnpackString*(box: Box): cstring {.exportc.} =
+proc c4mUnpackString*(box: Box): cstring {.exportc, dynlib.} =
   result = exportStr(unpack[string](box))
 
-proc c4mPackString*(s: cstring): Box {.exportc.} =
+proc c4mPackString*(s: cstring): Box {.exportc, dynlib.} =
   result = pack($(s))
   GC_ref(result)
 
-proc c4mUnpackArray*(box: Box, arr: var ptr Box): int {.exportc.} =
+proc c4mUnpackArray*(box: Box, arr: var ptr Box): int {.exportc, dynlib.} =
   var items = unpack[seq[Box]](box)
   result    = len(items)
   arr       = addr(items[0])
   GC_ref(items)
 
-proc c4mArrayDelete*(arr: var seq[Box]) {.exportc.} =
+proc c4mArrayDelete*(arr: var seq[Box]) {.exportc, dynlib.} =
   GC_unref(arr)
 
-proc c4mPackArray*(arr: UncheckedArray[Box], sz: int): Box {.exportc.} =
+proc c4mPackArray*(arr: UncheckedArray[Box], sz: int): Box {.exportc, dynlib.} =
   var s: seq[Box] = @[]
   for i in 0 ..< sz:
     s.add(arr[i])
   result = pack(s)
   GC_ref(result)
 
-proc c4mUnpackDict*(box: Box): OrderedTableRef[Box, Box] {.exportc.} =
+proc c4mUnpackDict*(box: Box): OrderedTableRef[Box, Box] {.exportc, dynlib.} =
   result = unpack[OrderedTableRef[Box, Box]](box)
   GC_ref(result)
 
-proc c4mDictNew*(): OrderedTableRef[Box, Box] {.exportc.} =
+proc c4mDictNew*(): OrderedTableRef[Box, Box] {.exportc, dynlib.} =
   result = newOrderedTable[Box, Box]()
   GC_ref(result)
 
-proc c4mDictDelete*(dict: OrderedTableRef[Box, Box]) {.exportc.} =
+proc c4mDictDelete*(dict: OrderedTableRef[Box, Box]) {.exportc, dynlib.} =
   GC_unref(dict)
 
-proc c4mDictLookup*(tbl: OrderedTableRef[Box, Box], b: Box): Box {.exportc.} =
+proc c4mDictLookup*(tbl: OrderedTableRef[Box, Box], b: Box): Box {.exportc, dynlib.} =
   if b in tbl:
     result = tbl[b]
     GC_ref(result)
   else:
     return nil
 
-proc c4mDictSet*(tbl: OrderedTableRef[Box, Box], b: Box, v: Box) {.exportc.} =
+proc c4mDictSet*(tbl: OrderedTableRef[Box, Box], b: Box, v: Box) {.exportc, dynlib.} =
   tbl[b] = v
 
-proc c4mDictKeyDel*(tbl: OrderedTableRef[Box, Box], b: Box) {.exportc.} =
+proc c4mDictKeyDel*(tbl: OrderedTableRef[Box, Box], b: Box) {.exportc, dynlib.} =
   if b in tbl:
     tbl.del(b)
 
-proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
+proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc, dynlib.} =
   result = new(C4CSpecObj)
 
   try:
@@ -405,15 +405,15 @@ proc c4mLoadSpec*(spec, fname: cstring, ok: ptr int): C4CSpecObj {.exportc.} =
   GC_ref(result)
 
 
-proc c4mGetSpecErr*(spec: var C4CSpecObj): cstring {.exportc.} =
+proc c4mGetSpecErr*(spec: var C4CSpecObj): cstring {.exportc, dynlib.} =
   result = exportStr(spec.err)
   GC_unref(spec)
 
-proc c4mSpecDelete*(spec: var C4CSpecObj) {.exportc.}  =
+proc c4mSpecDelete*(spec: var C4CSpecObj) {.exportc, dynlib.}  =
   GC_unref(spec)
 
-proc c4mStateDelete*(state: var ConfigState) {.exportc.} =
+proc c4mStateDelete*(state: var ConfigState) {.exportc, dynlib.} =
   GC_unref(state)
 
-proc c4mBoxDelete*(box: var Box) {.exportc.} =
+proc c4mBoxDelete*(box: var Box) {.exportc, dynlib.} =
   GC_unref(box)
