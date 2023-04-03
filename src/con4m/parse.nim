@@ -90,7 +90,7 @@ proc curTok*(ctx: ParseCtx): Con4mToken {.inline.} =
 proc consume(ctx: ParseCtx): Con4mToken {.inline.} =
   result = ctx.curTok()
   ctx.curTokIx.inc()
-
+  
 proc lookAhead(ctx: ParseCtx, numToks: int = 1): Con4mToken =
   let cur = ctx.curTokIx
   var n = numToks
@@ -910,7 +910,8 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
   result.children.add(child)
   result.children.add(ctx.expression())
 
-  case ctx.consume().kind
+  let tmp = ctx.consume()
+  case tmp.kind
   of TtSemi, TtNewLine, TtEOF:
     while ctx.curTok().kind == TtSemi: discard ctx.consume()
   else:

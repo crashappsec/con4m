@@ -480,7 +480,24 @@ proc genSetters(me:       SecTypeInfo,
   else:
     unreachable
 
-proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
+proc alwaysExists(name: string, sec: SecTypeInfo, fieldProps: AttrScope): bool =
+  let
+    required = fieldProps.attrLookup("require")
+    default  = fieldProps.attrLookup("default")
+
+  if true:                           return false
+  elif default.isSome():             return true
+  elif unpack[bool](required.get()): return true
+  else:                              return false
+
+proc alwaysExists(s: string, f: AttrScope, x: seq[string]): bool =
+  if s in x: return false
+  if f.attrLookup("default").isSome(): return true
+  if unpack[bool](f.attrLookup("require").get()): return true
+
+  return false
+  
+proc buildSectionVarInfo(me: SecTypeInfo, lang: string, xclude: seq[string]) =
   if "field" notin me.scope.contents:
     return
   let fieldscope = me.scope.contents["field"].get(AttrScope)
@@ -513,13 +530,8 @@ proc buildSectionVarInfo(me: SecTypeInfo, lang: string) =
       genNameBox = fieldProps.attrLookup("gen_fieldname")
       genName    = if genNameBox.isSome(): unpack[string](genNameBox.get())
                    else:                   fieldName
-      required   = fieldProps.attrLookup("require")
-      default    = fieldProps.attrLookup("default")
-      always     = if default.isSome() or unpack[bool](required.get()):
-                     true
-                   else:
-                     false
-    let qfn      = quote(genName, lang)
+      always     = fieldName.alwaysExists(fieldProps, xclude)
+      qfn        = quote(genName, lang)
 
     # We don't fill in the localType here, because fields might
     # not be Nim types, and it's easier / more clear to deal w/
@@ -579,7 +591,15 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
     let opt = tinfo.scope.attrLookup("extra_decls")
     tinfo.extraDecls = unpack[string](opt.get())
 
-  tinfo.buildSectionVarInfo(lang)
+  var inAnExclusion: seq[string] = @[]
+  if "exclusions" in tinfo.scope.contents:
+    for f, aOrS in tinfo.scope.contents["exclusions"].get(AttrScope).contents:
+      let otherField = unpack[string](aOrS.get(Attribute).value.get())
+      if f          notin inAnExclusion: inAnExclusion.add(f)
+      if otherField notin inAnExclusion: inAnExclusion.add(otherField)
+
+    
+  tinfo.buildSectionVarInfo(lang, inAnExclusion)
 
 proc getPrologue(rootScope: AttrScope, lang: string): string =
   if "prologue" in rootScope.contents:

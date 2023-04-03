@@ -152,7 +152,7 @@ type
     firstDef*:    Option[Con4mNode]
     defs*:        seq[Con4mNode]
     uses*:        seq[Con4mNode]
-
+    
   VarSym*    = ref object
     name*:     string
     tInfo*:    Con4mType
@@ -209,6 +209,8 @@ type
     onStack*:     bool
     cannotCycle*: bool
     locked*:      bool
+    doc*:         Option[string]  # Not yet implemented.
+    hidden*:      string          # Not yet implemented.
     case kind*:   FnType
     of FnBuiltIn:
       builtin*:   BuiltInFn
@@ -248,13 +250,19 @@ type
     lock*:         bool
     stackLimit*:   int
     default*:      Option[Box]
-    exclusions*:   seq[string] # Fields that obviate us.
+    exclusions*:   seq[string]    # Fields that obviate us.
+    shortdoc*:     Option[string] # Short doc about this section.
+    doc*:          Option[string] # Long-form documentation about this section.
+    hidden*:       bool           # Hide this field from documentation APIs.
 
   Con4mSectionType* = ref object
     typeName*:      string
     singleton*:     bool
     fields*:        Table[string, FieldSpec]
     backref*:       ConfigSpec
+    shortdoc*:      Option[string]
+    doc*:           Option[string] # Any doc to provide about this section.
+    hidden*:        bool           # Hide this section from documentation APIs
 
   ConfigSpec* = ref object
     secSpecs*:      Table[string, Con4mSectionType]
@@ -279,7 +287,10 @@ type
     secondPass*:         bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
-  Con4mPhase* = enum phTokenize, phParse, phCheck, phEval, phValidate
+
+  Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
+  FieldColType* = enum
+    fcName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
 
 let
   # These are just shared instances for types that aren't

@@ -282,15 +282,20 @@ proc nativeDurationToStr*(d: Con4mDuration): string =
 
   result = result.strip()
 
-proc oneArgToString*(t: Con4mType, b: Box, lit = false): string =
+type ValToStrType* = enum vTDefault, vTNoLits
+  
+proc oneArgToString*(t: Con4mType,
+                     b: Box,
+                     outType = vTDefault,
+                     lit     = false): string =
   case t.kind
   of TypeString:
-    if lit:
+    if outType != vtNoLits and lit:
       return "\"" & unpack[string](b) & "\""
     else:
       return unpack[string](b)
   of TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
-    if lit:
+    if outType != vtNoLits and lit:
       return "<<" & unpack[string](b) & ">>"
     else:
       return unpack[string](b)
@@ -312,31 +317,38 @@ proc oneArgToString*(t: Con4mType, b: Box, lit = false): string =
   of TypeList:
     var
       strs: seq[string] = @[]
-      l:    seq[Box] = unpack[seq[Box]](b)
+      l:    seq[Box]    = unpack[seq[Box]](b)
     for item in l:
-      strs.add(oneArgToString(t.itemType.resolveTypeVars(), item, true))
-    return "[" & strs.join(", ") & "]"
+      let itemType = t.itemType.resolveTypeVars()
+      strs.add(oneArgToString(itemType, item, outType, true))
+    result = strs.join(", ")
+    if outType == vTDefault:
+      result = "[" & result & "]"
   of TypeTuple:
     var
       strs: seq[string] = @[]
-      l:    seq[Box] = unpack[seq[Box]](b)
+      l:    seq[Box]    = unpack[seq[Box]](b)
     for i, item in l:
-      strs.add(oneArgToString(t.itemTypes[i].resolveTypeVars(), item, true))
-    return "(" & strs.join(", ") & ")"
+      let itemType = t.itemTypes[i].resolveTypeVars()
+      strs.add(oneArgToString(itemType, item, outType, true))
+    result = strs.join(", ")
+    if outType == vTDefault:
+      result = "(" & result & ")"
   of TypeDict:
     var
-      strs: seq[string] = @[]
+      strs: seq[string]               = @[]
       tbl:  OrderedTableRef[Box, Box] = unpack[OrderedTableRef[Box, Box]](b)
 
     for k, v in tbl:
       let
         t1 = t.keyType.resolveTypeVars()
         t2 = t.valType.resolveTypeVars()
-        ks = oneArgToString(t1, k, true)
-        vs = oneArgToString(t2, v, true)
+        ks = oneArgToString(t1, k, outType, true)
+        vs = oneArgToString(t2, v, outType, true)
       strs.add(ks & " : " & vs)
 
-    return "{" & strs.join(", ") & "}"
+    result = strs.join(", ")
+    return "{" & result  & "}"
   else:
     return "<??>"
 

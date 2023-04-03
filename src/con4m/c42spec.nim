@@ -42,6 +42,7 @@ proc buildC42Spec*(): ConfigSpec =
   rootSec.addAttr("extra_decls",     stringType, false)
   rootSec.addAttr("prologue",        stringType, false)
 
+
   singleton.addSection("field")
   singleton.addSection("require")
   singleton.addSection("allow")
@@ -54,6 +55,10 @@ proc buildC42Spec*(): ConfigSpec =
   singleton.addAttr("gen_setters",     boolType,   false)
   singleton.addAttr("gen_getters",     boolType,   false)
   singleton.addAttr("extra_decls",     stringType, false)
+  singleton.addAttr("doc",             stringType, false)
+  singleton.addAttr("shortdoc",        stringType, false)  
+  singleton.addAttr("internal",        boolType,   false)
+
 
   obj.addSection("field")
   obj.addSection("require")
@@ -67,6 +72,9 @@ proc buildC42Spec*(): ConfigSpec =
   obj.addAttr("gen_setters",     boolType,   false)
   obj.addAttr("gen_getters",     boolType,   false)
   obj.addAttr("extra_decls",     stringType, false)
+  obj.addAttr("doc",             stringType, false)
+  obj.addAttr("shortdoc",        stringType, false)  
+  obj.addAttr("hidden",          boolType,   false)
 
   rootScope.addSection("root", min = 1, max = 1)
   rootScope.addSection("singleton")
@@ -87,6 +95,9 @@ proc buildC42Spec*(): ConfigSpec =
   field.addAttr("gen_setter",     boolType,     false)
   field.addAttr("gen_getter",     boolType,     false)
   field.addAttr("gen_fieldname",  stringType,   false)
+  field.addAttr("doc",            stringType,   false)
+  field.addAttr("shortdoc",       stringType,   false)  
+  field.addAttr("hidden",         boolType,     false)
   field.addExclusion("default", "require")
   require.addAttr("write_lock",   boolType,   false)
   allow.addAttr("write_lock",     boolType,   false)
@@ -192,6 +203,9 @@ proc populateFields(spec:       ConfigSpec,
       `max?`     = optValIfPresent(fields, "max_items", "int", int)
       choiceOpt  = if "choice" in fields: some(getField(fields, "choice"))
                    else:                  none(Attribute)
+      `doc?`     = optValIfPresent(fields, "doc", "string", string)
+      `sdoc?`    = optValIfPresent(fields, "shortdoc", "string", string)      
+      hidden     = valIfPresent(fields, "hidden", "bool", bool, false)
 
     if "default" in fields:
       if "require" in fields:
@@ -226,7 +240,8 @@ proc populateFields(spec:       ConfigSpec,
 
     if not typeTSpec.unify(stringType).isBottom():
       let refField = unpack[string](typeField.value.get())
-      tInfo.addC4TypePtr(k, refField, require, lock, stackLimit, validator)
+      tInfo.addC4TypePtr(k, refField, require, lock, stackLimit, validator,
+                         `doc?`, `sdoc?`, hidden)
     else:
       let usrType = unpack[Con4mType](typeField.value.get())
 
@@ -236,27 +251,29 @@ proc populateFields(spec:       ConfigSpec,
           let v = unpackValue[seq[string]](scope, choiceOpt.get(),
                                            "list[string]")
           addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
-                         validator)
+                         validator, `doc?`, `sdoc?`, hidden)
         of TypeInt:
           let v = unpackValue[seq[int]](scope, choiceOpt.get(), "list[int]")
           addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
-                         validator)
+                         validator, `doc?`, `sdoc?`, hidden)
         else:
           specErr(scope, "Choice field must have type 'int' or 'string'")
       elif `range?`.isSome():
         let (l, h) = `range?`.get()
         tInfo.addRangeField(k, l, h, require, lock, stackLimit, default,
-                            validator)
+                            validator, `doc?`, `sdoc?`, hidden)
       elif `min?`.isSome() or `max?`.isSome():
         var
           min_val = `min?`.getOrElse(-1)
           max_val = `max?`.getOrElse(-1)
-        tInfo.addBoundedContainer(k, min_val, max_val, usrType, require,
-                                  lock, stackLimit, default, validator)
+        tInfo.addBoundedContainer(k, min_val, max_val, usrType, require, lock,
+                      stackLimit, default, validator, `doc?`, `sdoc?`, hidden)
       elif usrType.kind == TypeTypeSpec:
-        tInfo.addC4TypeField(k, require, lock, stackLimit, default, validator)
+        tInfo.addC4TypeField(k, require, lock, stackLimit, default, validator,
+                             `doc?`, `sdoc?`, hidden)
       else:
-        tInfo.addAttr(k, usrType, require, lock, stackLimit, default, validator)
+        tInfo.addAttr(k, usrType, require, lock, stackLimit, default,
+                      validator, `doc?`, `sdoc?`, hidden)
 
   # Once we've processed all fields, check exclusion constraints.
   for (k, v) in exclusions:
@@ -295,13 +312,36 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
   if unpack[bool](attr.value.get()):
     addAttr(tInfo, "*", newTypeVar(), false)
 
+template setDocInfo() {.dirty.} =
+  var
+    shortdoc = none(string)
+    doc      = none(string)
+    hidden   = false
+      
+  if "doc" in objInfo.contents:
+    let boxopt = objInfo.contents["doc"].get(Attribute).value
+    if boxopt.isSome():
+      doc = some(unpack[string](boxopt.get()))
+  if "shortdoc" in objInfo.contents:
+    let boxopt = objInfo.contents["shortdoc"].get(Attribute).value
+    if boxopt.isSome():
+      shortdoc = some(unpack[string](boxopt.get()))
+  if "hidden" in objInfo.contents:
+    let boxopt = objInfo.contents["hidden"].get(Attribute).value
+    if boxOpt.isSome():
+      hidden = unpack[bool](boxopt.get())
+  
 proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
-  spec.sectionType(objInfo.name, singleton = true)
-
+  setDocInfo()
+  spec.sectionType(objInfo.name, singleton = true, doc = doc,
+                   shortdoc = shortdoc, hidden = hidden)
+  
 proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
-  spec.sectionType(objInfo.name, singleton = false)
+  setDocInfo()
+  spec.sectionType(objInfo.name, singleton = false, doc = doc,
+                   shortdoc = shortdoc, hidden = hidden)
 
 proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
   ## Create a ConfigSpec object from a con4m file. The schema is
