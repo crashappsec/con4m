@@ -1142,7 +1142,7 @@ const defaultBuiltins* = [
   (307, "rm_file(string) -> bool",                BuiltInFn(c4mRm)),
   (308, "join_path(string, string) -> string",    BuiltInFn(c4mJoinPath)),
   (309, "resolve_path(string) -> string",         BuiltInFn(c4mResolvePath)),
-  (310, "split_path(string) -> (string, string)", BuiltInFn(c4mSplitPath)),
+  (310, "split_path(string) -> tuple[string, string]", BuiltInFn(c4mSplitPath)),
   (311, "cwd()->string",                          BuiltInFn(c4mCwd)),
   (312, "chdir(string) -> bool",                  BuiltInFn(c4mChdir)),
   (313, "mkdir(string) -> bool",                  BuiltInFn(c4mMkdir)),
@@ -1191,11 +1191,11 @@ const defaultBuiltins* = [
 
 when defined(posix):
   const posixBuiltins = [
-    (901, "run(string) -> string",           BuiltInFn(c4mCmd)),
-    (902, "system(string) -> (string, int)", BuiltInFn(c4mSystem)),
-    (903, "getuid() -> int",                 BuiltInFn(c4mGetUid)),
-    (904, "geteuid() -> int",                BuiltInFn(c4mGetEuid)),
-    (905, "uname() -> list[string]",         BuiltInFn(c4mUname))
+    (901, "run(string) -> string",                BuiltInFn(c4mCmd)),
+    (902, "system(string) -> tuple[string, int]", BuiltInFn(c4mSystem)),
+    (903, "getuid() -> int",                      BuiltInFn(c4mGetUid)),
+    (904, "geteuid() -> int",                     BuiltInFn(c4mGetEuid)),
+    (905, "uname() -> list[string]",              BuiltInFn(c4mUname))
    ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
