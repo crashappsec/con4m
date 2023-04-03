@@ -56,7 +56,7 @@ proc buildC42Spec*(): ConfigSpec =
   singleton.addAttr("gen_getters",     boolType,   false)
   singleton.addAttr("extra_decls",     stringType, false)
   singleton.addAttr("doc",             stringType, false)
-  singleton.addAttr("shortdoc",        stringType, false)  
+  singleton.addAttr("shortdoc",        stringType, false)
   singleton.addAttr("internal",        boolType,   false)
 
 
@@ -73,7 +73,7 @@ proc buildC42Spec*(): ConfigSpec =
   obj.addAttr("gen_getters",     boolType,   false)
   obj.addAttr("extra_decls",     stringType, false)
   obj.addAttr("doc",             stringType, false)
-  obj.addAttr("shortdoc",        stringType, false)  
+  obj.addAttr("shortdoc",        stringType, false)
   obj.addAttr("hidden",          boolType,   false)
 
   rootScope.addSection("root", min = 1, max = 1)
@@ -96,7 +96,7 @@ proc buildC42Spec*(): ConfigSpec =
   field.addAttr("gen_getter",     boolType,     false)
   field.addAttr("gen_fieldname",  stringType,   false)
   field.addAttr("doc",            stringType,   false)
-  field.addAttr("shortdoc",       stringType,   false)  
+  field.addAttr("shortdoc",       stringType,   false)
   field.addAttr("hidden",         boolType,     false)
   field.addExclusion("default", "require")
   require.addAttr("write_lock",   boolType,   false)
@@ -204,7 +204,7 @@ proc populateFields(spec:       ConfigSpec,
       choiceOpt  = if "choice" in fields: some(getField(fields, "choice"))
                    else:                  none(Attribute)
       `doc?`     = optValIfPresent(fields, "doc", "string", string)
-      `sdoc?`    = optValIfPresent(fields, "shortdoc", "string", string)      
+      `sdoc?`    = optValIfPresent(fields, "shortdoc", "string", string)
       hidden     = valIfPresent(fields, "hidden", "bool", bool, false)
 
     if "default" in fields:
@@ -317,7 +317,7 @@ template setDocInfo() {.dirty.} =
     shortdoc = none(string)
     doc      = none(string)
     hidden   = false
-      
+
   if "doc" in objInfo.contents:
     let boxopt = objInfo.contents["doc"].get(Attribute).value
     if boxopt.isSome():
@@ -330,13 +330,13 @@ template setDocInfo() {.dirty.} =
     let boxopt = objInfo.contents["hidden"].get(Attribute).value
     if boxOpt.isSome():
       hidden = unpack[bool](boxopt.get())
-  
+
 proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
   setDocInfo()
   spec.sectionType(objInfo.name, singleton = true, doc = doc,
                    shortdoc = shortdoc, hidden = hidden)
-  
+
 proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
   setDocInfo()

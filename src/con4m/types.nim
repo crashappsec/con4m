@@ -152,7 +152,7 @@ type
     firstDef*:    Option[Con4mNode]
     defs*:        seq[Con4mNode]
     uses*:        seq[Con4mNode]
-    
+
   VarSym*    = ref object
     name*:     string
     tInfo*:    Con4mType
@@ -201,7 +201,7 @@ type
   ## VarStack is defined below, but is basically just a seq of tables.
 
   FnType* = enum
-    FnBuiltIn, FnUserDefined, FnCallback
+    FnBuiltIn, FnUserDefined
 
   FuncTableEntry* = ref object
     tinfo*:       Con4mType
@@ -214,7 +214,7 @@ type
     case kind*:   FnType
     of FnBuiltIn:
       builtin*:   BuiltInFn
-    of FnUserDefined, FnCallback:
+    of FnUserDefined:
       impl*:      Option[Con4mNode]
 
   CallbackObj* = ref object of RootRef

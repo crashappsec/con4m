@@ -672,7 +672,7 @@ proc c4mRandom*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mNow*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unixTimeInMS()))
-  
+
 proc c4mBitOr*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     o1 = unpack[int](args[0])
@@ -1019,7 +1019,7 @@ proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn) =
                           "is not a function signature.")
 
   let b = if fn == nil:
-            FuncTableEntry(kind:        FnCallback,
+            FuncTableEntry(kind:        FnUserDefined,
                            tinfo:       tinfo,
                            impl:        none(Con4mNode),
                            name:        name,

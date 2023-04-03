@@ -496,7 +496,7 @@ proc alwaysExists(s: string, f: AttrScope, x: seq[string]): bool =
   if unpack[bool](f.attrLookup("require").get()): return true
 
   return false
-  
+
 proc buildSectionVarInfo(me: SecTypeInfo, lang: string, xclude: seq[string]) =
   if "field" notin me.scope.contents:
     return
@@ -598,7 +598,7 @@ proc prepareForGeneration(tinfo: SecTypeInfo, lang: string) =
       if f          notin inAnExclusion: inAnExclusion.add(f)
       if otherField notin inAnExclusion: inAnExclusion.add(otherField)
 
-    
+
   tinfo.buildSectionVarInfo(lang, inAnExclusion)
 
 proc getPrologue(rootScope: AttrScope, lang: string): string =

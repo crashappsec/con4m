@@ -90,7 +90,7 @@ proc curTok*(ctx: ParseCtx): Con4mToken {.inline.} =
 proc consume(ctx: ParseCtx): Con4mToken {.inline.} =
   result = ctx.curTok()
   ctx.curTokIx.inc()
-  
+
 proc lookAhead(ctx: ParseCtx, numToks: int = 1): Con4mToken =
   let cur = ctx.curTokIx
   var n = numToks
@@ -277,6 +277,11 @@ proc toCon4mType*(s: string): Con4mType =
 
   if ctx.curTok().kind != TtEof:
     parseError("Unexpected token after type spec", true)
+
+proc toCallbackObj*(s: string): CallbackObj =
+  # Crashes if the signature is invalid.
+  let ix = s.find('(')
+  result = CallbackObj(name: s[0 ..< ix], tInfo: s[ix .. ^1].toCon4mType())
 
 template exprProds(exprName: untyped,
                    rhsName: untyped,

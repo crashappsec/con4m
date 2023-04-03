@@ -69,17 +69,14 @@ proc runValidator(v:      CallbackObj,
 
   let
     args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
-    ret  = c42Env.runCallback(v, args)
+    ret  = c42Env.sCall(v.name, args, v.tinfo)
 
   if ret.isNone():
-    # Actually, this error doesn't display right now, since we are
-    # not try-catching the runCallback.  Instead, we should get:
-    # "Function '...' not found"
     specErr(attr, "A validator was specified, but no function of the " &
             fmt"correct type exists in spec file: {$v}")
-  let errMsg = unpack[string](ret.get())
-
-  if errMsg != "": specErr(attr, errMsg)
+  else:
+    let errMsg = unpack[string](ret.get())
+    if errMsg != "": specErr(attr, errMsg)
 
 proc addAttr*(sect:       Con4mSectionType,
               name:       string,
@@ -175,7 +172,7 @@ proc addC4TypePtr*(sect:        Con4mSectionType,
                       doc:         doc,
                       shortdoc:    shortdoc,
                       hidden:      hidden)
-        
+
   sect.fields[name] = info
   return sect
 
@@ -582,7 +579,7 @@ proc validateOneSection(attrs:  AttrScope,
 
 proc runCallbacks(spec: ConfigState, env: ConfigState) =
   for (validator, attr, args) in validatorsToRun:
-      let ret = env.runCallback(validator, args)
+      let ret = env.sCall(validator.name, args, validator.tInfo)
       if ret.isNone():
         # Actually, this error doesn't display right now, since we are
         # not try-catching the runCallback.  Instead, we should get:
@@ -598,8 +595,8 @@ proc runCallbacks(spec: ConfigState, env: ConfigState) =
   validatorsToRun = @[]
 
   let
-    sig   = some(newProcType(@[], stringType))
-    cbres = env.runCallback("final_check", seq[Box](@[]), sig)
+    tInfo = newProcType(@[], stringType)
+    cbres = env.scall("final_check", seq[Box](@[]), tInfo)
 
   if cbres.isSome():
     let msg = unpack[string](cbres.get())
@@ -651,10 +648,10 @@ proc getDocableSecs*(state: ConfigState): seq[Con4mSectionType] =
   result = @[]
 
   if not state.spec.isSome(): return
-  
+
   for _, sec in state.spec.get().secSpecs:
     if not sec.hidden: result.add(sec)
-  
+
 proc getSection*(state: ConfigState, name: string): Option[Con4mSectionType] =
   if not state.spec.isSome(): return none(Con4mSectionType)
   if name == "": return some(state.spec.get().rootSpec)
@@ -663,7 +660,7 @@ proc getSection*(state: ConfigState, name: string): Option[Con4mSectionType] =
 
 proc getDocableFields*(sec: Con4mSectionType): seq[(string, FieldSpec)] =
   result = @[]
-  
+
   for name, fieldspec in sec.fields:
     if not fieldspec.hidden: result.add((name, fieldspec))
 
@@ -678,7 +675,7 @@ proc getSectionShortDocStr*(state: ConfigState, name: string): Option[string] =
   let section = state.getSection(name).getOrElse(nil)
   if section == nil: return none(string)
   return section.shortdoc
-  
+
 proc getFieldSpec*(state: ConfigState,
                    scope: string,
                    name:  string): Option[FieldSpec] =
@@ -769,7 +766,7 @@ template applyFiltersAndAdd(row:         untyped,
                             searchTerms: seq[string]) =
   if filter != nil:
     if not filter(row): continue
-      
+
   if len(searchTerms) != 0:
     var inResults = false
     block outer:
@@ -800,7 +797,7 @@ proc sectionsToTextTable*(obj:         AttrScope,
   rows.sort(cmp)
 
   rows = @[@[heading]] & rows
-  
+
   return some(tableC4mStyle(1, rows))
 
 proc listSections*(obj:         AttrScope,
@@ -810,7 +807,7 @@ proc listSections*(obj:         AttrScope,
                    cmp = defaultCmp): string =
   var t = obj.sectionsToTextTable(heading, filter, searchTerms, cmp)
   return if t.isSome(): t.get().render() else: ""
-  
+
 proc arrayToTextTable*(obj:         AttrScope,
                        fnames:      seq[string],
                        hdrs:        seq[string],
@@ -824,7 +821,7 @@ proc arrayToTextTable*(obj:         AttrScope,
 
   if len(hdrs) != len(fnames) + 1:
     raise newException(ValueError, "Bad header info")
-  
+
   for k, v in obj.contents:
     if v.isA(Attribute): continue
     var row = @[k]
@@ -837,7 +834,7 @@ proc arrayToTextTable*(obj:         AttrScope,
   rows.sort(cmp)
 
   rows = @[hdrs] & rows
-  
+
   return some(tableC4mStyle(len(hdrs), rows))
 
 proc arrayToTable*(obj:         AttrScope,
@@ -846,9 +843,9 @@ proc arrayToTable*(obj:         AttrScope,
                    filter:      Con4mRowFilter = nil,
                    searchTerms: seq[string]    = @[],
                    cmp                         = defaultCmp): string =
-  var t = obj.arrayToTextTable(fnames, hdrs, filter, searchTerms, cmp) 
+  var t = obj.arrayToTextTable(fnames, hdrs, filter, searchTerms, cmp)
   return if t.isSome(): t.get().render() else: ""
-  
+
 proc oneObjTypeToTextTable*(spec:            ConfigSpec,
                             tname:           string,
                             cols:            seq[FieldColType] = defaultObjDoc,
@@ -882,7 +879,7 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
         of fcProps:   firstRow.add("Properties")
         of fcShort:   firstRow.add("Description")
         of fcLong:    firstRow.add("Details")
-        
+
     elif len(cols) != len(hdrs):
       raise newException(ValueError,
                "# of col headers, if provided, must match # of provided cols")
@@ -891,7 +888,7 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
   for name, fieldSpec in secInfo.fields:
 
     if fieldSpec.hidden and not overrideHidden: continue
-    
+
     var row: seq[string] = @[]
     for colType in cols:
       var s: string
@@ -919,11 +916,11 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
       row.add(s)
     applyFiltersAndAdd(row, filter, searchTerms)
 
-  if addedRows == 0: return none(TextTable)    
+  if addedRows == 0: return none(TextTable)
   rows.sort(cmp)
 
   rows = @[firstRow] & rows
-  
+
   return some(tableC4mStyle(len(cols), rows))
 
 proc oneObjTypeToTable*(spec:            ConfigSpec,
@@ -967,7 +964,7 @@ proc oneObjToTextTable*(obj:             AttrScope,
     let spec = specOpt.get()
     secInfo  = if objType != "": spec.secSpecs[objType]
                else: spec.rootSpec
-     
+
   if len(cols) != 0:
     if len(hdrs) == 0:
       for item in cols:
@@ -992,11 +989,11 @@ proc oneObjToTextTable*(obj:             AttrScope,
     var
       attr      = v.get(Attribute)
       fieldSpec: FieldSpec
-      
+
     if secInfo != nil:
       fieldSpec = secInfo.fields[attr.name]
       if fieldSpec.hidden and not overrideHidden: continue
-    
+
     for colType in cols:
       case colType
       of fcName:    row.add(attr.name)
@@ -1014,11 +1011,11 @@ proc oneObjToTextTable*(obj:             AttrScope,
       of fcProps:   row.add(fieldSpec.reprFieldProps())
     applyFiltersAndAdd(row, filter, searchTerms)
 
-  if addedRows == 0: return none(TextTable)    
+  if addedRows == 0: return none(TextTable)
   rows.sort(cmp)
 
   rows = @[firstRow] & rows
-  
+
   return some(tableC4mStyle(len(cols), rows))
 
 proc oneObjToTable*(obj:             AttrScope,
@@ -1033,14 +1030,14 @@ proc oneObjToTable*(obj:             AttrScope,
   var t = obj.oneObjToTextTable(cols, hdrs, objType, xforms, filter,
                                 searchTerms, cmp, overrideHidden)
   return if t.isSome(): t.get().render() else: ""
-  
+
 proc objectsToTextTable*(scope:       AttrScope,
                          fields:      seq[string]    = @[],
                          hdrs:        seq[string]    = @[],
                          xforms:      XFormTable     = nil,
-                         filter:      Con4mRowFilter = nil, 
+                         filter:      Con4mRowFilter = nil,
                          searchTerms: seq[string]    = @[],
-                         cmp                         = defaultCmp, 
+                         cmp                         = defaultCmp,
                          overrideHidden              = false):
                            Option[TextTable] =
   # Search terms currently are logically OR'd, not AND'd.
@@ -1069,7 +1066,7 @@ proc objectsToTextTable*(scope:       AttrScope,
 
   if len(hdrs) != 0 and len(hdrs) != len(colnames) + 1:
     raise newException(ValueError, "Bad header info")
-      
+
   for k, v in scope.contents:
     if v.isA(Attribute): continue
     let obj = v.get(AttrScope)
@@ -1101,7 +1098,7 @@ proc objectsToTextTable*(scope:       AttrScope,
           row.add(oneArgToString(attr.tInfo, attr.value.get(), vtNoLits))
 
     applyFiltersAndAdd(row, filter, searchTerms)
-    
+
   if addedRows == 0: return none(TextTable)
 
   rows.sort(cmp)
@@ -1115,9 +1112,9 @@ proc objectsToTextTable*(scope:       AttrScope,
 
 proc objectsToTable*(scope:       AttrScope,
                      fields:      seq[string]    = @[],
-                     hdrs:        seq[string]    = @[], 
+                     hdrs:        seq[string]    = @[],
                      xforms:      XFormTable     = nil,
-                     filter:      Con4mRowFilter = nil, 
+                     filter:      Con4mRowFilter = nil,
                      searchTerms: seq[string]    = @[],
                      cmp                         = defaultCmp,
                      overrideHidden = false): string =

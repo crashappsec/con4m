@@ -663,7 +663,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       case item.kind
       of FnBuiltIn:
         fatal(fmt"Function name conflicts with a builtin function", node)
-      of FnCallback, FnUserDefined:
+      of FnUserDefined:
         if not isBottom(tinfo, item.tinfo):
           if item.locked:
             fatal("An implementation is already installed, and is locked " &

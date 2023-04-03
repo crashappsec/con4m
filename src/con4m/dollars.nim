@@ -281,7 +281,7 @@ proc nativeDurationToStr*(d: Con4mDuration): string =
   result = result.strip()
 
 type ValToStrType* = enum vTDefault, vTNoLits
-  
+
 proc oneArgToString*(t: Con4mType,
                      b: Box,
                      outType = vTDefault,
@@ -422,6 +422,8 @@ proc `<`(x, y: seq[string]): bool =
     return x[1] < y[1]
   else:
     return x[0] < y[0]
+
+proc `$`*(f: FuncTableEntry): string = f.name & $(f.tInfo)
 
 proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
   # Not technically a dollar, but hey.
