@@ -22,27 +22,26 @@ when false:
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
-    of TtStringLit: return "\"" & tok.unescaped & "\""
+    of TtStringLit: result = "\"" & tok.unescaped & "\""
     of TtOtherLit:
       let pos = tok.stream.getPosition()
       tok.stream.setPosition(tok.startPos)
       result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
       tok.stream.setPosition(pos)
-    of TtWhiteSpace: return "~ws~"
-    of TtNewLine: return "~nl~"
-    of TtSof: return "~sof~"
-    of TtEof: return "~eof~"
-    of ErrorTok: return "~err~"
-    of ErrorLongComment: return "~unterm comment~"
-    of ErrorStringLit: return "~unterm string~"
-    of ErrorOtherLit: return "~unterm other lit~"
+    of TtWhiteSpace:     result = "~ws~"
+    of TtNewLine:        result = "~nl~"
+    of TtSof:            result = "~sof~"
+    of TtEof:            result = "~eof~"
+    of ErrorTok:         result = "~err~"
+    of ErrorLongComment: result = "~unterm comment~"
+    of ErrorStringLit:   result = "~unterm string~"
+    of ErrorOtherLit:    result =  "~unterm other lit~"
     else:
       let pos = tok.stream.getPosition()
 
       tok.stream.setPosition(tok.startPos)
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
-
 template colorType(s: string): string =
   toAnsiCode(acGreen) & s & toAnsiCode(acReset)
 
@@ -106,7 +105,6 @@ proc `$`*(t: Con4mType): string =
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
       return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
-
 
 proc `$`*(c: CallbackObj): string =
   result = "func " & c.name
