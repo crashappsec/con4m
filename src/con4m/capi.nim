@@ -224,14 +224,16 @@ proc c4mGetSections*(state: ConfigState,
 
   let scope = aOrS.scope
 
-  GC_ref(res)
-
   for k, v in scope.contents:
     if v.kind == false:
       res.add(cstring(k))
 
-  arr = addr(res[0])
-
+  if len(res) == 0:
+    arr = nil
+  else:
+    arr = addr(res[0])
+    GC_ref(res)
+    
   return len(res)
 
 
@@ -256,14 +258,16 @@ proc c4mGetFields*(state: ConfigState,
 
   let scope = aOrS.scope
 
-  GC_ref(res)
-
   for k, v in scope.contents:
     if v.isA(Attribute):
       res.add(cstring(k))
       res.add(cstring($(v.get(Attribute).tInfo)))
 
-  arr = addr(res[0])
+  if len(res) == 0:
+    arr = nil
+  else:
+    arr = addr(res[0])
+    GC_ref(res)
 
   return len(res)
 
@@ -290,8 +294,6 @@ proc c4mEnumerateScope*(state: ConfigState,
 
   let scope = aOrS.scope
 
-  GC_ref(res)
-
   for k, v in scope.contents:
     res.add(cstring(k))
     if v.isA(Attribute):
@@ -299,7 +301,12 @@ proc c4mEnumerateScope*(state: ConfigState,
     else:
       res.add(cstring("section"))
 
-  arr = addr(res[0])
+  result = len(res)
+  if result == 0:
+    arr = nil
+  else:
+    arr = addr(res[0])
+    GC_ref(res)
 
   return len(res)
 
@@ -340,8 +347,12 @@ proc c4mPackString*(s: cstring): Box {.exportc, dynlib.} =
 proc c4mUnpackArray*(box: Box, arr: var ptr Box): int {.exportc, dynlib.} =
   var items = unpack[seq[Box]](box)
   result    = len(items)
-  arr       = addr(items[0])
-  GC_ref(items)
+
+  if result == 0:
+    arr = nil
+  else:
+    arr = addr(items[0])
+    GC_ref(items)
 
 proc c4mArrayDelete*(arr: var seq[Box]) {.exportc, dynlib.} =
   GC_unref(arr)
