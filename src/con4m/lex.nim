@@ -454,8 +454,6 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
           tristring = false
           break
         of '\x00':
-          if tristring:
-            continue
           tok(ErrorStringLit)
           s.setPosition(startPos)
           return (false, toks)
