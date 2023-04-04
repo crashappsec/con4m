@@ -555,7 +555,8 @@ proc callback(ctx: ParseCtx): Con4mNode =
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
   of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
-     TtTuple, TtBackTick:
+     TtTuple, TtBackTick, TtDuration, TtIPAddr, TtCidr, TtSize, TtDate,
+     TtTime, TtDateTime:
        return ctx.typeSpec()
   of TtFunc:
     return ctx.callback()
@@ -599,7 +600,8 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
-     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick:
+     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick,
+     TtDuration, TtIPAddr, TtCidr, TtSize, TtDate, TtTime, TtDateTime:
     return ctx.literal()
   of TtIdentifier: return ctx.accessExpr()
   else:

@@ -888,6 +888,7 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
   for name, fieldSpec in secInfo.fields:
 
     if fieldSpec.hidden and not overrideHidden: continue
+    if name == "*": continue # Skip the * field.
 
     var row: seq[string] = @[]
     for colType in cols:
@@ -990,7 +991,7 @@ proc oneObjToTextTable*(obj:             AttrScope,
       attr      = v.get(Attribute)
       fieldSpec: FieldSpec
 
-    if secInfo != nil:
+    if secInfo != nil and attr.name in secInfo.fields:
       fieldSpec = secInfo.fields[attr.name]
       if fieldSpec.hidden and not overrideHidden: continue
 

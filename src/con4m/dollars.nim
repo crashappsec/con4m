@@ -199,7 +199,9 @@ proc nativeSizeToStrBase2*(input: Con4mSize): string =
   if m != 0:
     result = $(m) & "TB "
     n = input mod 1099511627776'u64
-
+  else:
+    n = input
+    
   m = n div 1073741824
   if m != 0:
     result &= $(m) & "GB "

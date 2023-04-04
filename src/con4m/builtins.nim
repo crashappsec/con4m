@@ -726,7 +726,7 @@ proc setReplacementState*(state: ConfigState) =
 proc clearReplacementState*() =
   replacementState = none(ConfigState)
 
-proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
+template scopeWalk(lookingfor: untyped) {.dirty.} =
   let
     name  = unpack[string](args[0])
     state = replacementState.getOrElse(localState)
@@ -745,9 +745,16 @@ proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
     res: seq[string] = @[]
 
   for key, aOrS in sec.contents:
-    if aOrS.isA(AttrScope):
+    if aOrS.isA(lookingfor):
       res.add(key)
 
+  
+proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
+  scopeWalk(AttrScope)
+  return some(pack(res))
+
+proc c4mFields*(args:  seq[Box], localState: ConfigState): Option[Box] =
+  scopeWalk(Attribute)
   return some(pack(res))
 
 proc c4mTypeOf*(args: seq[Box], localstate: ConfigState): Option[Box] =
@@ -1182,11 +1189,12 @@ const defaultBuiltins* = [
 
   # Con4m-specific stuff
   (601, "sections(string) -> list[string]",     BuiltInFn(c4mSections)),
-  (602, "typeof(`a) -> typespec",               BuiltInFn(c4mTypeOf)),
-  (603, "typecmp(typespec, typespec) -> bool",  BuiltInFn(c4mCmpTypes)),
-  (604, "attr_type(string) -> typespec",        BuiltInFn(c4mAttrGetType)),
-  (605, "attr_typecmp(string, string) -> bool", BuiltInFn(c4mRefTypeCmp)),
-  (606, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr))
+  (602, "fields(string) -> list[string]",       BuiltInFn(c4mFields)),
+  (603, "typeof(`a) -> typespec",               BuiltInFn(c4mTypeOf)),
+  (604, "typecmp(typespec, typespec) -> bool",  BuiltInFn(c4mCmpTypes)),
+  (605, "attr_type(string) -> typespec",        BuiltInFn(c4mAttrGetType)),
+  (606, "attr_typecmp(string, string) -> bool", BuiltInFn(c4mRefTypeCmp)),
+  (607, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr))
 ]
 
 when defined(posix):
