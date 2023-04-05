@@ -1,15 +1,5 @@
 # Con4m: Configuration for Mortals
 
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-
-- [Basic Example](#basic-example)
-- [Getting Started](#getting-started)
-- [More Information](#more-information)
-- [About](#about)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 I got tired of building mini-DSLs on top of YAML, especially since YAML has many syntactic quirks that make it bad for such things.
 
 To the typical user, Con4m looks like a normal config file, somewhere in the NginX family. But! power users get a statically typed go-like language that seamlessly integrates, for any power user needs, but is tailored for configuration use cases (for instance, having built-in data types for things like dates, times, durations and sizes). But, Con4m can be invisible when people don't need the extra power.

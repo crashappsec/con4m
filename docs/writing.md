@@ -1,18 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Writing config files with Con4m](#writing-config-files-with-con4m)
-- [Builtin function calls](#builtin-function-calls)
-- [If statement](#if-statement)
-- [Attributes vs. Variables](#attributes-vs-variables)
-- [For loops](#for-loops)
-- [Data types and typing](#data-types-and-typing)
-- [Functions and callbacks](#functions-and-callbacks)
-- [Learn more!](#learn-more)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Writing config files with Con4m
 
 Con4m is meant to be familiar to anyone who has ever messed with a configuration file. But, it also makes it easy to make configuration decisions at the time the program runs (and at some point, dynamically if desired).

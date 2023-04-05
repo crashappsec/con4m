@@ -1,11 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Con4m builtin calls as of v0.3.4](#con4m-builtin-calls-as-of-v034)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Con4m builtin calls as of v0.3.4
 
 [Go back to the home page.](https://github.com/crashappsec/con4m)
