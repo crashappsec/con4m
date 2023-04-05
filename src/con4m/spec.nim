@@ -729,7 +729,7 @@ proc reprType*(field: FieldSpec): string =
 
 
 
-type Con4mDocXform*  = (Box) -> string
+type Con4mDocXform*  = (string) -> string
 type
   Con4mRowFilter*    = (seq[string]) -> bool
   XFormTable         = TableRef[string, Con4mDocXform]
@@ -827,7 +827,7 @@ proc arrayToTextTable*(obj:         AttrScope,
     var row = @[k]
     for fname in fnames:
       let attr = v.get(AttrScope).contents[fname].get(Attribute)
-      row.add(oneArgToString(attr.tInfo, attr.value.get(), vTNoLits))
+      row.add(oneArgToString(attr.tInfo, attr.attrToVal.get(), vTNoLits))
     applyFiltersAndAdd(row, filter, searchTerms)
 
   if addedRows == 0: return none(TextTable)
@@ -913,7 +913,7 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
       else:         unreachable
 
       if xforms != nil and $(colType) in xforms:
-        s = xforms[$(colType)](pack[string](s))
+        s = xforms[$(colType)](s)
       row.add(s)
     applyFiltersAndAdd(row, filter, searchTerms)
 
@@ -1000,12 +1000,13 @@ proc oneObjToTextTable*(obj:             AttrScope,
       of fcName:    row.add(attr.name)
       of fcType:    row.add($(attr.tInfo))
       of fcValue:
-        if attr.value.isNone(): row.add("<none>")
+        let valOpt = attr.attrToVal()
+        let val    = if    valOpt.isNone(): "<none>"
+                     else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
+        if xforms != nil and attr.name in xforms:
+          row.add(xforms[attr.name](val))
         else:
-          if xforms != nil and attr.name in xforms:
-            row.add(xforms[attr.name](attr.value.get()))
-          else:
-            row.add(oneArgToString(attr.tInfo, attr.value.get(), vtNoLits))
+          row.add(val)
       of fcDefault: row.add(fieldSpec.reprDefaultValue())
       of fcShort:   row.add(fieldSpec.shortdoc.getOrElse("<none>"))
       of fcLong:    row.add(fieldSpec.doc.getOrElse("<none>"))
@@ -1078,25 +1079,28 @@ proc objectsToTextTable*(scope:       AttrScope,
         if col notin obj.contents or obj.contents[col].isA(AttrScope):
           row.add("<none>")
           continue
-        let attr = obj.contents[col].get(Attribute)
-        if attr.value.isNone():
-          row.add("<none>")
-          continue
+        let
+          attr   = obj.contents[col].get(Attribute)
+          valOpt = attr.attrToVal()
+          val    = if    valOpt.isNone(): "<none>"
+                   else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
+          
         if xforms != nil and col in xforms:
-          row.add(xforms[col](attr.value.get()))
+          row.add(xforms[col](val))
         else:
-          row.add(oneArgToString(attr.tInfo, attr.value.get(), vtNoLits))
+          row.add(val)
     else:
       for fieldname, aOrS in obj.contents:
         if aOrS.isA(AttrScope): continue
-        let attr = aOrS.get(Attribute)
-        if attr.value.isNone():
-          row.add("<none>")
-          continue
+        let
+          attr   = aOrS.get(Attribute)
+          valOpt = attr.attrToVal()
+          val    = if    valOpt.isNone(): "<none>"
+                   else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
         if xforms != nil and fieldName in xforms:
-          row.add(xforms[fieldName](attr.value.get()))
+          row.add(xforms[fieldName](val))
         else:
-          row.add(oneArgToString(attr.tInfo, attr.value.get(), vtNoLits))
+          row.add(val)
 
     applyFiltersAndAdd(row, filter, searchTerms)
 
