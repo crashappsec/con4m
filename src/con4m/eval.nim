@@ -97,28 +97,6 @@ proc evalFunc(s: ConfigState, args: seq[Box], node: Con4mNode): Option[Box] =
 
   s.frames = savedFrames
 
-proc sCallUserDef(s:        ConfigState,
-                  name:     string,
-                  args:     seq[Box],
-                  callback: bool,
-                  nodeOpt:  Option[Con4mNode]): Option[Box] =
-
-  try:
-    if nodeOpt.isNone():
-      if callback:
-        return # Indicates the callback wasn't provided by the user.
-        # user function, no implementation, wouldn't pass the checker.
-      unreachable
-    return s.evalFunc(args, nodeOpt.get())
-  except ValueError:
-    var
-      msg   = getCurrentExceptionMsg()
-      trace = getCurrentException().getStackTrace()
-    if getCon4mVerbosity() == c4vMax:
-      msg = msg & "\n" & trace
-    fatal(fmt"Unhandled error when running builtin call '{name}': {msg}",
-          nodeOpt.get())
-
 proc sCallBuiltin(s:     ConfigState,
                   name:  string,
                   args:  seq[Box],
@@ -138,11 +116,17 @@ proc sCall(s:       ConfigState,
            fInfo:   FuncTableEntry,
            args:    seq[Box],
            node:    Con4mNode): Option[Box] {.inline.} =
-  ## This just dispatches to one of the above two functions, depending
-  ## on whether the call is a builtin or user-defined.
   case fInfo.kind
-  of FnBuiltIn: return s.sCallBuiltin(fInfo.name, args, fInfo, node)
-  else:         return s.sCallUserDef(fInfo.name, args, true, fInfo.impl)
+  of FnBuiltIn:
+    result = s.sCallBuiltin(fInfo.name, args, fInfo, node)
+  else:
+    if fInfo.impl.isNone(): unreachable
+    else:
+      result = s.evalFunc(args, fInfo.impl.get())
+      if result.isNone():
+        fatal("Function " & fInfo.name & "did not return a result. " &
+          "Our static analysis isn't yet detecting all these instances, " &
+          "but you should fix it instead of us adding default values.")
 
 proc sCall*(s:       ConfigState,
             name:    string,
