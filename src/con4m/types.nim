@@ -263,6 +263,7 @@ type
     shortdoc*:      Option[string]
     doc*:           Option[string] # Any doc to provide about this section.
     hidden*:        bool           # Hide this section from documentation APIs
+    validator*:     CallbackObj
 
   ConfigSpec* = ref object
     secSpecs*:      Table[string, Con4mSectionType]

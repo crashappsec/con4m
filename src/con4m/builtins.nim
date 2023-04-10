@@ -6,7 +6,7 @@
 ## :Copyright: 2022 - 2023
 
 import os, tables, osproc, strformat, strutils, options, streams, base64, macros
-import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits,
+import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits, treecheck,
        dollars
 from unicode import toLower, toUpper
 
@@ -626,6 +626,20 @@ proc c4mUpper*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mLower*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unicode.toLower(unpack[string](args[0]))))
 
+proc c4mJoin*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    arr    = unpack[seq[string]](args[0])
+    joiner = unpack[string](args[1])
+  return some(pack(arr.join(joiner)))
+
+proc c4mReplace*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    baseString  = unpack[string](args[0])
+    toReplace   = unpack[string](args[1])
+    replaceWith = unpack[string](args[2])
+
+  return some(pack(baseString.replace(toReplace, replaceWith)))
+
 proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
@@ -822,6 +836,16 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
 
   return some(pack(not tsValType.unify(symToCheck.tInfo).isBottom()))
 
+proc c4mAttrExists*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  let
+    attrName     = unpack[string](args[0])
+    state        = replacementState.getOrElse(localState)
+    aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
+
+  if aOrE.isA(AttrErr):
+    return some(pack(false))
+  return some(pack(true))
+  
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
     attrName     = unpack[string](args[0])
@@ -842,6 +866,23 @@ proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
         $(sym.tInfo) & "; passed type: " & $(expectedType) & ")")
 
   return sym.value
+
+proc c4mFnExists*(args: seq[Box], localstate: ConfigState): Option[Box] =
+  let
+    fn         = unpack[CallbackObj](args[0])
+    state      = getReplacementState().getOrElse(localstate)
+    candidates = state.findMatchingProcs(fn.name, fn.tInfo)
+
+  return some(pack(candidates.len() > 0))
+
+proc c4mSplitAttr*(args: seq[Box], unused: ConfigState): Option[Box] =
+  let
+    str = unpack[string](args[0])
+    ix  = str.rfind('.')
+
+  if ix == -1: return some(pack(@["", str]))
+  return some(pack(@[ str[0 ..< ix], str[ix + 1 .. ^1]]))
+  
 
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
@@ -914,6 +955,12 @@ proc c4mLRemoveIx*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(n))
 
+proc c4mArrAdd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    a1 = unpack[seq[Box]](args[0])
+    a2 = unpack[seq[Box]](args[1])
+
+  return some(pack(a1 & a2))
 
 proc c4mSplitPath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   var s: seq[string]
@@ -1124,7 +1171,8 @@ const defaultBuiltins* = [
   (117, "sha512(string) -> string",             BuiltInFn(c4mSha512)),
   (118, "upper(string) -> string",              BuiltInFn(c4mUpper)),
   (119, "lower(string) -> string",              BuiltInFn(c4mLower)),
-
+  (120, "join(list[string], string) -> string",    BuiltInFn(c4mJoin)),
+  (121, "replace(string, string, string)->string", BuiltInFn(c4mReplace)),
   # Container (list and dict) basics.
   (201, "len(list[`x]) -> int",                   BuiltInFn(c4mListLen)),
   (202, "len(dict[`x,`y]) -> int",                BuiltInFn(c4mDictLen)),
@@ -1138,6 +1186,7 @@ const defaultBuiltins* = [
   (210, "delete(list[`x], `x) -> list[`x]",       BuiltInFn(c4mLDeleteItem)),
   (211, "delete(dict[`k,`v], `k) -> dict[`k,`v]", BuiltInFn(c4mDDeleteItem)),
   (212, "remove(list[`x], int) -> list[`x]",      BuiltInFn(c4mLRemoveIx)),
+  (213, "array_add(list[`x],list[`x])->list[`x]", BuiltInFn(c4mArrAdd)),
 
   # File system routines
   (301, "list_dir() -> list[string]",             BuiltInFn(c4mListDir)),
@@ -1188,13 +1237,16 @@ const defaultBuiltins* = [
   (506, "bitnot(int) -> int",              BuiltInFn(c4mBitNot)),
 
   # Con4m-specific stuff
-  (601, "sections(string) -> list[string]",     BuiltInFn(c4mSections)),
-  (602, "fields(string) -> list[string]",       BuiltInFn(c4mFields)),
-  (603, "typeof(`a) -> typespec",               BuiltInFn(c4mTypeOf)),
-  (604, "typecmp(typespec, typespec) -> bool",  BuiltInFn(c4mCmpTypes)),
-  (605, "attr_type(string) -> typespec",        BuiltInFn(c4mAttrGetType)),
-  (606, "attr_typecmp(string, string) -> bool", BuiltInFn(c4mRefTypeCmp)),
-  (607, "get_attr(string, typespec[`t]) -> `t", BuiltInFn(c4mGetAttr))
+  (601, "sections(string) -> list[string]",          BuiltInFn(c4mSections)),
+  (602, "fields(string) -> list[string]",            BuiltInFn(c4mFields)),
+  (603, "typeof(`a) -> typespec",                    BuiltInFn(c4mTypeOf)),
+  (604, "typecmp(typespec, typespec) -> bool",       BuiltInFn(c4mCmpTypes)),
+  (605, "attr_type(string) -> typespec",             BuiltInFn(c4mAttrGetType)),
+  (606, "attr_typecmp(string, string) -> bool",      BuiltInFn(c4mRefTypeCmp)),
+  (607, "get_attr(string, typespec[`t]) -> `t",      BuiltInFn(c4mGetAttr)),
+  (608, "function_exists(func) -> bool",             BuiltInFn(c4mFnExists)),
+  (609, "attr_split(string)->tuple[string, string]", BuiltInFn(c4mSplitAttr)),
+  (610, "attr_exists(string) -> bool",               BuiltInFn(c4mAttrExists))
 ]
 
 when defined(posix):

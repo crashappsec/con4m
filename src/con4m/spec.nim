@@ -42,7 +42,8 @@ proc sectionType*(spec:       ConfigSpec,
                   singleton:  bool = false,
                   doc:        Option[string] = none(string),
                   shortdoc:   Option[string] = none(string),
-                  hidden:     bool = false
+                  hidden:     bool = false,
+                  validator:  CallbackObj = CallbackObj(nil)
                  ): Con4mSectionType {.discardable.} =
   if name in spec.secSpecs:
     defErr(fmt"Duplicate section type name: {name}")
@@ -51,32 +52,10 @@ proc sectionType*(spec:       ConfigSpec,
                             backref:       spec,
                             doc:           doc,
                             shortdoc:      shortdoc,
-                            hidden:        hidden)
+                            hidden:        hidden,
+                            validator:     validator)
   if name != "":
     spec.secSpecs[name] = result
-
-proc runValidator(v:      CallbackObj,
-                  ft:     Con4mType,
-                  attr:   Attribute,
-                  c42Env: ConfigState,
-                  sect:   Con4mSectionType) =
-  if v == nil: return
-  let expected = newProcType(@[stringType, ft], stringType)
-
-  if v.tInfo.unify(expected.copyType()).isBottom():
-    defErr(sect, "Specified validation routine is not of the right type " &
-      "(needed: '" & $(expected) & "', but got: '" & $(v.tInfo) & "'")
-
-  let
-    args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
-    ret  = c42Env.sCall(v.name, args, v.tinfo)
-
-  if ret.isNone():
-    specErr(attr, "A validator was specified, but no function of the " &
-            fmt"correct type exists in spec file: {$v}")
-  else:
-    let errMsg = unpack[string](ret.get())
-    if errMsg != "": specErr(attr, errMsg)
 
 proc addAttr*(sect:       Con4mSectionType,
               name:       string,
@@ -445,7 +424,7 @@ proc validateOneAttrField(attrs:  AttrScope,
 
   case spec.extType.kind
   of TypePrimitive:
-    if pass1 and attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
+    if not pass1 and attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
       let
         specType = $(spec.extType.tinfo)
         attrType = $(attr.tInfo)
@@ -570,6 +549,18 @@ proc validateOneSection(attrs:  AttrScope,
       validateOneSectField(attrs, name, fieldspec, c42env, pass1)
     else:
       validateOneAttrField(attrs, name, fieldspec, c42env, pass1)
+
+  if not pass1 and spec.validator != nil:
+    let ret = c42env.sCall(spec.validator.name, @[pack(attrs.fullNameAsStr())],
+                          spec.validator.tInfo)
+    if ret.isNone():
+        specErr(attrs, "A validator was specified, but no function of the " &
+                fmt"correct type is in spec file: {$(spec.validator)}")
+    let errMsg = unpack[string](ret.get())
+
+    if errMsg != "": specErr(attrs, errMsg)
+      
+      
   if pass1 and "*" notin spec.fields:
     # You can't dynamically add field sets right now, so this can
     # 100% be checked statically.
@@ -581,9 +572,6 @@ proc runCallbacks(spec: ConfigState, env: ConfigState) =
   for (validator, attr, args) in validatorsToRun:
       let ret = env.sCall(validator.name, args, validator.tInfo)
       if ret.isNone():
-        # Actually, this error doesn't display right now, since we are
-        # not try-catching the runCallback.  Instead, we should get:
-        # "Function '...' not found"
         specErr(attr, "A validator was specified, but no function of the " &
                 fmt"correct type is in spec file: {$validator}")
       let

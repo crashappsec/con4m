@@ -208,8 +208,13 @@ proc oneTypeSpec(ctx:    ParseCtx,
     # "func".  It's only necessary for distinguishing generic
     # parenthesized expressions in an expression context.  We could
     # deal with that problem unambiguously, but requires more logic.
-    if t.kind != TtLParen and ctx.consume().kind != TtLParen:
-      parseError("Func type expects '('")
+    if t.kind != TtLParen:
+      if ctx.curTok().kind == TtLParen:
+        discard ctx.consume()
+      else:
+        result.nospec = true
+        return
+        
     if ctx.curTok().kind == TtRParen:
       discard ctx.consume()
     else:

@@ -52,7 +52,8 @@ proc formatCompilerError(msg: string,
   result &= msg
 
   if verbosity in [c4vShowLoc, c4vMax]:
-    let f = newFileStream(curFileName, fmRead)
+    let f = if t != nil: t.stream else: newFileStream(curFileName, fmRead)
+    f.setPosition(0)
 
     if t != nil and f != nil:
       let

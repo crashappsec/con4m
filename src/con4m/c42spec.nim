@@ -11,7 +11,9 @@
 import tables, strformat, options, streams, nimutils
 import types, parse, run, spec, errmsg, typecheck, dollars
 
-const validatorSig = "func(string, `t)->string"
+const
+  validatorSig    = "func(string, `t) -> string"
+  objValidatorSig = "func(string) -> string"
 
 proc buildC42Spec*(): ConfigSpec =
   # We're going to read a con4m file in from users with their specification
@@ -41,7 +43,9 @@ proc buildC42Spec*(): ConfigSpec =
   rootSec.addAttr("gen_getters",     boolType,   false)
   rootSec.addAttr("extra_decls",     stringType, false)
   rootSec.addAttr("prologue",        stringType, false)
-
+  rootsec.addAttr("doc",             stringType, false)
+  rootsec.addAttr("shortdoc",        stringType, false)
+  rootSec.addAttr("validator",       toCon4mType(objValidatorSig), false)  
 
   singleton.addSection("field")
   singleton.addSection("require")
@@ -57,8 +61,7 @@ proc buildC42Spec*(): ConfigSpec =
   singleton.addAttr("extra_decls",     stringType, false)
   singleton.addAttr("doc",             stringType, false)
   singleton.addAttr("shortdoc",        stringType, false)
-  singleton.addAttr("internal",        boolType,   false)
-
+  singleton.addAttr("validator",       toCon4mType(objValidatorSig), false)
 
   obj.addSection("field")
   obj.addSection("require")
@@ -75,6 +78,7 @@ proc buildC42Spec*(): ConfigSpec =
   obj.addAttr("doc",             stringType, false)
   obj.addAttr("shortdoc",        stringType, false)
   obj.addAttr("hidden",          boolType,   false)
+  obj.addAttr("validator",       toCon4mType(objValidatorSig), false)  
 
   rootScope.addSection("root", min = 1, max = 1)
   rootScope.addSection("singleton")
@@ -314,9 +318,11 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
 
 template setDocInfo() {.dirty.} =
   var
-    shortdoc = none(string)
-    doc      = none(string)
-    hidden   = false
+    shortdoc  = none(string)
+    doc       = none(string)
+    hidden    = false
+    validator = CallbackObj(nil)
+    
 
   if "doc" in objInfo.contents:
     let boxopt = objInfo.contents["doc"].get(Attribute).value
@@ -330,18 +336,24 @@ template setDocInfo() {.dirty.} =
     let boxopt = objInfo.contents["hidden"].get(Attribute).value
     if boxOpt.isSome():
       hidden = unpack[bool](boxopt.get())
+  if "validator" in objInfo.contents:
+    let boxopt = objInfo.contents["validator"].get(Attribute).value
+    if boxOpt.isSome():
+      validator = unpack[CallbackObj](boxopt.get())
 
 proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
   setDocInfo()
   spec.sectionType(objInfo.name, singleton = true, doc = doc,
-                   shortdoc = shortdoc, hidden = hidden)
+                   shortdoc = shortdoc, hidden = hidden,
+                   validator = validator) 
 
 proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
   setDocInfo()
   spec.sectionType(objInfo.name, singleton = false, doc = doc,
-                   shortdoc = shortdoc, hidden = hidden)
+                   shortdoc = shortdoc, hidden = hidden,
+                   validator = validator)
 
 proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
   ## Create a ConfigSpec object from a con4m file. The schema is

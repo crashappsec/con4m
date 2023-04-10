@@ -124,7 +124,7 @@ proc sCall(s:       ConfigState,
     else:
       result = s.evalFunc(args, fInfo.impl.get())
       if result.isNone():
-        fatal("Function " & fInfo.name & "did not return a result. " &
+        fatal("Function: '" & fInfo.name & "' did not return a result. " &
           "Our static analysis isn't yet detecting all these instances, " &
           "but you should fix it instead of us adding default values.")
 
