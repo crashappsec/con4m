@@ -550,7 +550,7 @@ proc parseOne(ctx: var ParseCtx, spec: CommandSpec) =
 
 proc ambiguousParse*(spec:          CommandSpec,
                      inargs:        openarray[string] = [],
-                     defaultCmd:    Option[string]    = none(string)):
+                     defaultCmd:    Option[string]    = some("")):
                        seq[ArgResult] =
   ## This parse function accepts multiple parses, if a parse is
   ## ambiguous.
@@ -1116,15 +1116,21 @@ proc finalizeManagedGetopt*(runtime: ConfigState, options: seq[ArgResult]):
     cmdAttrBox = spectop.attrLookup("command_attribute")
 
   if cmdAttrBox.isSome():
-    let cmd = unpack[string](cmdAttrBox.get())
-    for item in options:
-      let thisCmd = item.command.split(".")[0]
-      if cmd == thisCmd:
-        item.managedCommit(runtime)
-        return item
-      else:
-        matchingCmds.add(thisCmd)
+    let
+      cmdLoc = unpack[string](cmdAttrBox.get())
+      cmdBox = runtime.attrLookup(cmdLoc)
 
+    if cmdBox.isSome():
+      let cmd = unpack[string](cmdBox.get())
+      
+      for item in options:
+        let thisCmd = item.command.split(".")[0]
+        if cmd == thisCmd:
+          item.managedCommit(runtime)
+          return item
+        else:
+          matchingCmds.add(thisCmd)
+  
   raise newException(ValueError,
                      "No explicit command provided in arguments, " &
                        "and multiple commands match: " &
@@ -1175,7 +1181,7 @@ proc runManagedGetopt*(runtime:      ConfigState,
     argName     = unpack[string](sec.attrLookup("arg_name").get())
     
     
-  if defaultOpt.isNone(): li.defaultCmd = none(string)
+  if defaultOpt.isNone(): li.defaultCmd = some("")
   else:                   li.defaultCmd = some(unpack[string](defaultOpt.get()))
 
   li.defaultYesPref = unpack[seq[string]](yesBox)
