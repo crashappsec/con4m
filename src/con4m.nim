@@ -10,10 +10,10 @@
 ## :Copyright: 2022
 
 import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
-import con4m/[eval, dollars, spec, run, c42spec]
+import con4m/[eval, dollars, spec, run, c42spec, getopts, stack]
 export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
-export eval, dollars, spec, run, c42spec
-
+export eval, dollars, spec, run, c42spec, getopts, stack
+import nimutils/argp
 
 when defined(CAPI):
   import con4m/capi

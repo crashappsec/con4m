@@ -161,7 +161,6 @@ proc c4mEcho*(args: seq[Box], state: ConfigState): Option[Box] =
   ## stdout, followed by a newline at the end.
 
   var
-    outStr: string
     actNode = state.nodeStash.children[1]
     toPrint: seq[string] = @[]
 
@@ -601,7 +600,6 @@ proc c4mToHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(toHex(unpack[string](args[0]))))
 
 proc c4mInttoHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let i = unpack[int](args[0])
   return some(pack(toHex(unpack[int](args[0]))))
 
 proc c4mFromHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
@@ -749,8 +747,7 @@ template scopeWalk(lookingfor: untyped) {.dirty.} =
   if aOrE.isA(AttrErr):
     return some(pack[seq[string]](@[]))
 
-  let
-    aOrS             = aOrE.get(AttrOrSub)
+  let aOrS = aOrE.get(AttrOrSub)
 
   if aOrS.isA(Attribute):
     return some(pack[seq[string]](@[]))
@@ -762,7 +759,6 @@ template scopeWalk(lookingfor: untyped) {.dirty.} =
     if aOrS.isA(lookingfor):
       res.add(key)
 
-  
 proc c4mSections*(args: seq[Box], localState: ConfigState): Option[Box] =
   scopeWalk(AttrScope)
   return some(pack(res))
@@ -832,9 +828,14 @@ proc c4mRefTypeCmp*(args: seq[Box], localstate: ConfigState): Option[Box] =
   if tsValOpt.isNone():
     raise c4mException("Field '" & tsField & "' has no value provided.")
 
-  var tsValType = unpack[Con4mType](tsValOpt.get())
+  var
+    tsValType = unpack[Con4mType](tsValOpt.get())
+    res       = not tsValType.unify(symToCheck.tInfo).isBottom()
 
-  return some(pack(not tsValType.unify(symToCheck.tInfo).isBottom()))
+  if not res and tsValType.resolveTypeVars().kind == symToCheck.getType().kind:
+    return some(pack(true))
+
+  return some(pack(res))
 
 proc c4mAttrExists*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
@@ -845,6 +846,27 @@ proc c4mAttrExists*(args: seq[Box], localstate: ConfigState): Option[Box] =
   if aOrE.isA(AttrErr):
     return some(pack(false))
   return some(pack(true))
+
+proc c4mOverride*(args: seq[Box], localState: ConfigState): Option[Box] =
+  let
+    attrName     = unpack[string](args[0])
+    state        = replacementState.getOrElse(localState)
+    actNode      = localstate.nodeStash.children[1]
+    itemType     = actNode.children[1].getType()
+    aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
+
+  if aOrE.isA(AttrErr): return falseRet
+  let aOrS = aOrE.get(AttrOrSub)
+
+  if not aOrS.isA(Attribute): return falseRet
+  let sym = aOrS.get(Attribute)
+
+  if sym.tInfo.copyType().unify(itemType.copyType()).isBottom(): return falseRet
+  if sym.locked or sym.override.isSome(): return falseRet
+  
+  sym.override = some(args[1])
+
+  return trueRet
   
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
@@ -1110,161 +1132,156 @@ proc newBuiltIn*(s: ConfigState, sig: string, fn: BuiltInFn) =
 
 const defaultBuiltins* = [
   # Type conversion operations
-  (1,   "bool(int) -> bool",               BuiltInFn(c4mIToB)),
-  (2,   "bool(float) -> bool",             BuiltInFn(c4mFToB)),
-  (3,   "bool(string) -> bool",            BuiltInFn(c4mSToB)),
-  (4,   "bool(list[`x]) -> bool",          BuiltInFn(c4mLToB)),
-  (5,   "bool(dict[`x,`y]) -> bool",       BuiltInFn(c4mDToB)),
-  (6,   "float(int) -> float",             BuiltInFn(c4mItoF)),
-  (7,   "int(float) -> int",               BuiltInFn(c4mFtoI)),
-  (8,   "$(`t) -> string",                 BuiltInFn(c4mToString)),
-  (9,   "Duration(string) -> Duration",    BuiltInFn(c4mSToDur)),
-  (10,  "IPAddr(string) -> IPAddr",        BuiltInFn(c4mStoIP)),
-  (11,  "CIDR(string) -> CIDR",            BuiltInFn(c4mSToCIDR)),
-  (12,  "Size(string) -> Size",            BuiltInFn(c4mSToSize)),
-  (13,  "Date(string) -> Date",            BuiltInFn(c4mSToDate)),
-  (14,  "Time(string) -> Time",            BuiltInFn(c4mSToTime)),
-  (15,  "DateTime(string) -> DateTime",    BuiltInFn(c4mSToDateTime)),
-  (16,  "to_usec(Duration) -> int",        BuiltInFn(c4mSelfRet)),
-  (17,  "to_msec(Duration) -> int",        BuiltInFn(c4mDurAsMSec)),
-  (18,  "to_sec(Duration) -> int",         BuiltInFn(c4mDurAsSec)),
-  (19,  "to_type(string) -> typespec",     BuiltInFn(c4mStrToType)),
+  ("bool(int) -> bool",               BuiltInFn(c4mIToB)),
+  ("bool(float) -> bool",             BuiltInFn(c4mFToB)),
+  ("bool(string) -> bool",            BuiltInFn(c4mSToB)),
+  ("bool(list[`x]) -> bool",          BuiltInFn(c4mLToB)),
+  ("bool(dict[`x,`y]) -> bool",       BuiltInFn(c4mDToB)),
+  ("float(int) -> float",             BuiltInFn(c4mItoF)),
+  ("int(float) -> int",               BuiltInFn(c4mFtoI)),
+  ("$(`t) -> string",                 BuiltInFn(c4mToString)),
+  ("Duration(string) -> Duration",    BuiltInFn(c4mSToDur)),
+  ("IPAddr(string) -> IPAddr",        BuiltInFn(c4mStoIP)),
+  ("CIDR(string) -> CIDR",            BuiltInFn(c4mSToCIDR)),
+  ("Size(string) -> Size",            BuiltInFn(c4mSToSize)),
+  ("Date(string) -> Date",            BuiltInFn(c4mSToDate)),
+  ("Time(string) -> Time",            BuiltInFn(c4mSToTime)),
+  ("DateTime(string) -> DateTime",    BuiltInFn(c4mSToDateTime)),
+  ("to_usec(Duration) -> int",        BuiltInFn(c4mSelfRet)),
+  ("to_msec(Duration) -> int",        BuiltInFn(c4mDurAsMSec)),
+  ("to_sec(Duration) -> int",         BuiltInFn(c4mDurAsSec)),
+  ("to_type(string) -> typespec",     BuiltInFn(c4mStrToType)),
   #[ Not done yet:
-  (28,  "get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
-  (29,  "get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),
-  (30,  "get_year(Date) -> int",         BuiltInFn(c4mGetYearFromDate)),
-  (31,  "get_day(DateTime) -> int",      BuiltInFn(c4mGetDayFromDate)),
-  (32,  "get_month(DateTime) -> int",    BuiltInFn(c4mGetMonFromDate)),
-  (33,  "get_year(DateTime) -> int",     BuiltInFn(c4mGetYearFromDate)),
-  (34,  "get_hour(Time) -> int",         BuiltInFn(c4mGetHourFromTime)),
-  (35,  "get_min(Time) -> int",          BuiltInFn(c4mGetMinFromTime)),
-  (36,  "get_sec(Time) -> int",          BuiltInFn(c4mGetSecFromTime)),
-  (37,  "fractsec(Time) -> int",         BuiltInFn(c4mGetFracFromTime)),
-  (38,  "tz_offset(Time) -> string",     BuiltInFn(c4mGetTZOffset)),
-  (40,  "get_hour(DateTime) -> int",     BuiltInFn(c4mGetHourFromTime)),
-  (41,  "get_min(DateTime) -> int",      BuiltInFn(c4mGetMinFromTime)),
-  (42,  "get_sec(DateTime) -> int",      BuiltInFn(c4mGetSecFromTime)),
-  (43,  "fractsec(DateTime) -> int",     BuiltInFn(c4mGetFracFromTime)),
-  (44,  "tz_offset(DateTime) -> string", BuiltInFn(c4mGetTZOffset)),
-  (45,  "ip_part(CIDR) -> IPAddr",       BuiltInFn(c4mCIDRToIP)),
-  (46,  "net_size(CIDR) -> int",         BuiltInFn(c4mCIDRToInt)),
-  (47,  "to_CIDR(IPAddr, int) -> CIDR",  BuiltInFn(c4mToCIDR)),
+  ("get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
+  ("get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),
+  ("get_year(Date) -> int",         BuiltInFn(c4mGetYearFromDate)),
+  ("get_day(DateTime) -> int",      BuiltInFn(c4mGetDayFromDate)),
+  ("get_month(DateTime) -> int",    BuiltInFn(c4mGetMonFromDate)),
+  ("get_year(DateTime) -> int",     BuiltInFn(c4mGetYearFromDate)),
+  ("get_hour(Time) -> int",         BuiltInFn(c4mGetHourFromTime)),
+  ("get_min(Time) -> int",          BuiltInFn(c4mGetMinFromTime)),
+  ("get_sec(Time) -> int",          BuiltInFn(c4mGetSecFromTime)),
+  ("fractsec(Time) -> int",         BuiltInFn(c4mGetFracFromTime)),
+  ("tz_offset(Time) -> string",     BuiltInFn(c4mGetTZOffset)),
+  ("get_hour(DateTime) -> int",     BuiltInFn(c4mGetHourFromTime)),
+  ("get_min(DateTime) -> int",      BuiltInFn(c4mGetMinFromTime)),
+  ("get_sec(DateTime) -> int",      BuiltInFn(c4mGetSecFromTime)),
+  ("fractsec(DateTime) -> int",     BuiltInFn(c4mGetFracFromTime)),
+  ("tz_offset(DateTime) -> string", BuiltInFn(c4mGetTZOffset)),
+  ("ip_part(CIDR) -> IPAddr",       BuiltInFn(c4mCIDRToIP)),
+  ("net_size(CIDR) -> int",         BuiltInFn(c4mCIDRToInt)),
+  ("to_CIDR(IPAddr, int) -> CIDR",  BuiltInFn(c4mToCIDR)),
   # Also, format() and echo() need to change for this project.
   ]#
   # String manipulation functions.
-  (101, "contains(string, string) -> bool",     BuiltInFn(c4mContainsStrStr)),
-  (102, "find(string, string) -> int",          BuiltInFn(c4mFindFromStart)),
-  (103, "len(string) -> int",                   BuiltInFn(c4mStrLen)),
-  (104, "slice(string, int) -> string",         BuiltInFn(c4mSliceToEnd)),
-  (105, "slice(string, int, int) -> string",    BuiltInFn(c4mSlice)),
-  (106, "split(string,string) -> list[string]", BuiltInFn(c4mSplit)),
-  (107, "strip(string) -> string",              BuiltInFn(c4mStrip)),
-  (108, "pad(string, int) -> string",           BuiltInFn(c4mPad)),
-  (109, "format(string) -> string",             BuiltInFn(c4mFormat)),
-  (110, "base64(string) -> string",             BuiltInFn(c4mBase64)),
-  (111, "base64_web(string) -> string",         BuiltInFn(c4mBase64Web)),
-  (112, "debase64(string) -> string",           BuiltInFn(c4mDecode64)),
-  (113, "hex(string) -> string",                BuiltInFn(c4mToHex)),
-  (114, "hex(int) -> string",                   BuiltInFn(c4mIntToHex)),
-  (115, "dehex(string) -> string",              BuiltInFn(c4mFromHex)),
-  (116, "sha256(string) -> string",             BuiltInFn(c4mSha256)),
-  (117, "sha512(string) -> string",             BuiltInFn(c4mSha512)),
-  (118, "upper(string) -> string",              BuiltInFn(c4mUpper)),
-  (119, "lower(string) -> string",              BuiltInFn(c4mLower)),
-  (120, "join(list[string], string) -> string",    BuiltInFn(c4mJoin)),
-  (121, "replace(string, string, string)->string", BuiltInFn(c4mReplace)),
+  ("contains(string, string) -> bool",     BuiltInFn(c4mContainsStrStr)),
+  ("find(string, string) -> int",          BuiltInFn(c4mFindFromStart)),
+  ("len(string) -> int",                   BuiltInFn(c4mStrLen)),
+  ("slice(string, int) -> string",         BuiltInFn(c4mSliceToEnd)),
+  ("slice(string, int, int) -> string",    BuiltInFn(c4mSlice)),
+  ("split(string,string) -> list[string]", BuiltInFn(c4mSplit)),
+  ("strip(string) -> string",              BuiltInFn(c4mStrip)),
+  ("pad(string, int) -> string",           BuiltInFn(c4mPad)),
+  ("format(string) -> string",             BuiltInFn(c4mFormat)),
+  ("base64(string) -> string",             BuiltInFn(c4mBase64)),
+  ("base64_web(string) -> string",         BuiltInFn(c4mBase64Web)),
+  ("debase64(string) -> string",           BuiltInFn(c4mDecode64)),
+  ("hex(string) -> string",                BuiltInFn(c4mToHex)),
+  ("hex(int) -> string",                   BuiltInFn(c4mIntToHex)),
+  ("dehex(string) -> string",              BuiltInFn(c4mFromHex)),
+  ("sha256(string) -> string",             BuiltInFn(c4mSha256)),
+  ("sha512(string) -> string",             BuiltInFn(c4mSha512)),
+  ("upper(string) -> string",              BuiltInFn(c4mUpper)),
+  ("lower(string) -> string",              BuiltInFn(c4mLower)),
+  ("join(list[string], string) -> string",    BuiltInFn(c4mJoin)),
+  ("replace(string, string, string)->string", BuiltInFn(c4mReplace)),
   # Container (list and dict) basics.
-  (201, "len(list[`x]) -> int",                   BuiltInFn(c4mListLen)),
-  (202, "len(dict[`x,`y]) -> int",                BuiltInFn(c4mDictLen)),
-  (203, "keys(dict[`x,`y]) -> list[`x]",          BuiltInFn(c4mDictKeys)),
-  (204, "values(dict[`x,`y]) -> list[`y]",        BuiltInFn(c4mDictValues)),
-  (205, "items(dict[`x,`y]) -> list[(`x,`y)]",    BuiltInFn(c4mDictItems)),
-  (206, "contains(list[`x],`x) -> bool",          BuiltInFn(c4mListContains)),
-  (207, "contains(dict[`x ,`y],`x) -> bool",      BuiltInFn(c4mDictContains)),
-  (208, "set(list[`x], int, `x) -> list[`x]",     BuiltInFn(c4mLSetItem)),
-  (209, "set(dict[`k,`v],`k,`v) -> dict[`k,`v]",  BuiltInFn(c4mDSetItem)),
-  (210, "delete(list[`x], `x) -> list[`x]",       BuiltInFn(c4mLDeleteItem)),
-  (211, "delete(dict[`k,`v], `k) -> dict[`k,`v]", BuiltInFn(c4mDDeleteItem)),
-  (212, "remove(list[`x], int) -> list[`x]",      BuiltInFn(c4mLRemoveIx)),
-  (213, "array_add(list[`x],list[`x])->list[`x]", BuiltInFn(c4mArrAdd)),
+  ("len(list[`x]) -> int",                   BuiltInFn(c4mListLen)),
+  ("len(dict[`x,`y]) -> int",                BuiltInFn(c4mDictLen)),
+  ("keys(dict[`x,`y]) -> list[`x]",          BuiltInFn(c4mDictKeys)),
+  ("values(dict[`x,`y]) -> list[`y]",        BuiltInFn(c4mDictValues)),
+  ("items(dict[`x,`y]) -> list[(`x,`y)]",    BuiltInFn(c4mDictItems)),
+  ("contains(list[`x],`x) -> bool",          BuiltInFn(c4mListContains)),
+  ("contains(dict[`x ,`y],`x) -> bool",      BuiltInFn(c4mDictContains)),
+  ("set(list[`x], int, `x) -> list[`x]",     BuiltInFn(c4mLSetItem)),
+  ("set(dict[`k,`v],`k,`v) -> dict[`k,`v]",  BuiltInFn(c4mDSetItem)),
+  ("delete(list[`x], `x) -> list[`x]",       BuiltInFn(c4mLDeleteItem)),
+  ("delete(dict[`k,`v], `k) -> dict[`k,`v]", BuiltInFn(c4mDDeleteItem)),
+  ("remove(list[`x], int) -> list[`x]",      BuiltInFn(c4mLRemoveIx)),
+  ("array_add(list[`x],list[`x])->list[`x]", BuiltInFn(c4mArrAdd)),
 
   # File system routines
-  (301, "list_dir() -> list[string]",             BuiltInFn(c4mListDir)),
-  (302, "list_dir(string) -> list[string]",       BuiltInFn(c4mListDir)),
-  (303, "read_file(string) -> string",            BuiltInFn(c4mReadFile)),
-  (304, "write_file(string, string) -> bool",     BuiltInFn(c4mWriteFile)),
-  (305, "copy_file(string, string) -> bool",      BuiltInFn(c4mCopyFile)),
-  (306, "move_file(string, string) -> bool",      BuiltInFn(c4mMove)),
-  (307, "rm_file(string) -> bool",                BuiltInFn(c4mRm)),
-  (308, "join_path(string, string) -> string",    BuiltInFn(c4mJoinPath)),
-  (309, "resolve_path(string) -> string",         BuiltInFn(c4mResolvePath)),
-  (310, "split_path(string) -> tuple[string, string]", BuiltInFn(c4mSplitPath)),
-  (311, "cwd()->string",                          BuiltInFn(c4mCwd)),
-  (312, "chdir(string) -> bool",                  BuiltInFn(c4mChdir)),
-  (313, "mkdir(string) -> bool",                  BuiltInFn(c4mMkdir)),
-  (314, "is_dir(string) -> bool",                 BuiltInFn(c4mIsDir)),
-  (315, "is_file(string) -> bool",                BuiltInFn(c4mIsFile)),
-  (316, "is_link(string) -> bool",                BuiltInFn(c4mIsFile)),
-  (317, "chmod(string, int) -> bool",             BuiltInFn(c4mChmod)),
-  (318, "file_len(string) -> int",                BuiltInFn(c4mFileLen)),
-  (319, "to_tmp_file(string, string) -> string",  BuiltInFn(c4mTmpWrite)),
+  ("list_dir() -> list[string]",             BuiltInFn(c4mListDir)),
+  ("list_dir(string) -> list[string]",       BuiltInFn(c4mListDir)),
+  ("read_file(string) -> string",            BuiltInFn(c4mReadFile)),
+  ("write_file(string, string) -> bool",     BuiltInFn(c4mWriteFile)),
+  ("copy_file(string, string) -> bool",      BuiltInFn(c4mCopyFile)),
+  ("move_file(string, string) -> bool",      BuiltInFn(c4mMove)),
+  ("rm_file(string) -> bool",                BuiltInFn(c4mRm)),
+  ("join_path(string, string) -> string",    BuiltInFn(c4mJoinPath)),
+  ("resolve_path(string) -> string",         BuiltInFn(c4mResolvePath)),
+  ("path_split(string) -> tuple[string, string]", BuiltInFn(c4mSplitPath)),
+  ("cwd()->string",                          BuiltInFn(c4mCwd)),
+  ("chdir(string) -> bool",                  BuiltInFn(c4mChdir)),
+  ("mkdir(string) -> bool",                  BuiltInFn(c4mMkdir)),
+  ("is_dir(string) -> bool",                 BuiltInFn(c4mIsDir)),
+  ("is_file(string) -> bool",                BuiltInFn(c4mIsFile)),
+  ("is_link(string) -> bool",                BuiltInFn(c4mIsFile)),
+  ("chmod(string, int) -> bool",             BuiltInFn(c4mChmod)),
+  ("file_len(string) -> int",                BuiltInFn(c4mFileLen)),
+  ("to_tmp_file(string, string) -> string",  BuiltInFn(c4mTmpWrite)),
 
   # System routines
-  (401, "echo(*`a)",                       BuiltInFn(c4mEcho)),
-  (402, "abort(string)",                   BuiltInFn(c4mAbort)),
-  (403, "env() -> dict[string, string]",   BuiltInFn(c4mEnvAll)),
-  (404, "env(string) -> string",           BuiltInFn(c4mEnv)),
-  (405, "env_exists(string) -> bool",      BuiltInFn(c4mEnvExists)),
-  (406, "set_env(string, string) -> bool", BuiltInFn(c4mSetEnv)),
-  (407, "getpid() -> int",                 BuiltInFn(c4mGetPid)),
-  (408, "quote(string)->string",           BuiltInFn(c4mQuote)),
-  (409, "osname() -> string",              BuiltInFn(c4mGetOsName)),
-  (410, "arch() -> string",                BuiltInFn(c4mGetArch)),
-  (411, "program_args() -> list[string]",  BuiltInFn(c4mGetArgv)),
-  (412, "program_path() -> string",        BuiltInFn(c4mGetExePath)),
-  (413, "program_name() -> string",        BuiltInFn(c4mGetExeName)),
-  (414, "high() -> int",                   BuiltInFn(c4mIntHigh)),
-  (415, "low() -> int",                    BuiltInFn(c4mIntLow)),
-  (416, "rand() -> int",                   BuiltInFn(c4mRandom)),
-  (417, "now() -> int",                    BuiltInFn(c4mNow)),
+  ("echo(*`a)",                       BuiltInFn(c4mEcho)),
+  ("abort(string)",                   BuiltInFn(c4mAbort)),
+  ("env() -> dict[string, string]",   BuiltInFn(c4mEnvAll)),
+  ("env(string) -> string",           BuiltInFn(c4mEnv)),
+  ("env_exists(string) -> bool",      BuiltInFn(c4mEnvExists)),
+  ("set_env(string, string) -> bool", BuiltInFn(c4mSetEnv)),
+  ("getpid() -> int",                 BuiltInFn(c4mGetPid)),
+  ("quote(string)->string",           BuiltInFn(c4mQuote)),
+  ("osname() -> string",              BuiltInFn(c4mGetOsName)),
+  ("arch() -> string",                BuiltInFn(c4mGetArch)),
+  ("program_args() -> list[string]",  BuiltInFn(c4mGetArgv)),
+  ("program_path() -> string",        BuiltInFn(c4mGetExePath)),
+  ("program_name() -> string",        BuiltInFn(c4mGetExeName)),
+  ("high() -> int",                   BuiltInFn(c4mIntHigh)),
+  ("low() -> int",                    BuiltInFn(c4mIntLow)),
+  ("rand() -> int",                   BuiltInFn(c4mRandom)),
+  ("now() -> int",                    BuiltInFn(c4mNow)),
 
   # Binary ops
-  (501, "bitor(int, int) -> int",          BuiltInFn(c4mBitOr)),
-  (502, "bitand(int, int) -> int",         BuiltInFn(c4mBitAnd)),
-  (503, "xor(int, int) -> int",            BuiltInFn(c4mBitXor)),
-  (504, "shl(int, int) -> int",            BuiltInFn(c4mBitShl)),
-  (505, "shr(int, int) -> int",            BuiltInFn(c4mBitShr)),
-  (506, "bitnot(int) -> int",              BuiltInFn(c4mBitNot)),
+  ("bitor(int, int) -> int",          BuiltInFn(c4mBitOr)),
+  ("bitand(int, int) -> int",         BuiltInFn(c4mBitAnd)),
+  ("xor(int, int) -> int",            BuiltInFn(c4mBitXor)),
+  ("shl(int, int) -> int",            BuiltInFn(c4mBitShl)),
+  ("shr(int, int) -> int",            BuiltInFn(c4mBitShr)),
+  ("bitnot(int) -> int",              BuiltInFn(c4mBitNot)),
 
   # Con4m-specific stuff
-  (601, "sections(string) -> list[string]",          BuiltInFn(c4mSections)),
-  (602, "fields(string) -> list[string]",            BuiltInFn(c4mFields)),
-  (603, "typeof(`a) -> typespec",                    BuiltInFn(c4mTypeOf)),
-  (604, "typecmp(typespec, typespec) -> bool",       BuiltInFn(c4mCmpTypes)),
-  (605, "attr_type(string) -> typespec",             BuiltInFn(c4mAttrGetType)),
-  (606, "attr_typecmp(string, string) -> bool",      BuiltInFn(c4mRefTypeCmp)),
-  (607, "get_attr(string, typespec[`t]) -> `t",      BuiltInFn(c4mGetAttr)),
-  (608, "function_exists(func) -> bool",             BuiltInFn(c4mFnExists)),
-  (609, "attr_split(string)->tuple[string, string]", BuiltInFn(c4mSplitAttr)),
-  (610, "attr_exists(string) -> bool",               BuiltInFn(c4mAttrExists))
+  ("sections(string) -> list[string]",          BuiltInFn(c4mSections)),
+  ("fields(string) -> list[string]",            BuiltInFn(c4mFields)),
+  ("typeof(`a) -> typespec",                    BuiltInFn(c4mTypeOf)),
+  ("typecmp(typespec, typespec) -> bool",       BuiltInFn(c4mCmpTypes)),
+  ("attr_type(string) -> typespec",             BuiltInFn(c4mAttrGetType)),
+  ("attr_typecmp(string, string) -> bool",      BuiltInFn(c4mRefTypeCmp)),
+  ("attr_get(string, typespec[`t]) -> `t",      BuiltInFn(c4mGetAttr)),
+  ("function_exists(func) -> bool",             BuiltInFn(c4mFnExists)),
+  ("attr_split(string)->tuple[string, string]", BuiltInFn(c4mSplitAttr)),
+  ("attr_exists(string) -> bool",               BuiltInFn(c4mAttrExists)),
+  ("add_override(string, `t) -> bool",          BuiltInFn(c4mOverride)),
+  when defined(posix):
+    ("run(string) -> string",                BuiltInFn(c4mCmd)),
+    ("system(string) -> tuple[string, int]", BuiltInFn(c4mSystem)),
+    ("getuid() -> int",                      BuiltInFn(c4mGetUid)),
+    ("geteuid() -> int",                     BuiltInFn(c4mGetEuid)),
+    ("uname() -> list[string]",              BuiltInFn(c4mUname))
+    
 ]
-
-when defined(posix):
-  const posixBuiltins = [
-    (901, "run(string) -> string",                BuiltInFn(c4mCmd)),
-    (902, "system(string) -> tuple[string, int]", BuiltInFn(c4mSystem)),
-    (903, "getuid() -> int",                      BuiltInFn(c4mGetUid)),
-    (904, "geteuid() -> int",                     BuiltInFn(c4mGetEuid)),
-    (905, "uname() -> list[string]",              BuiltInFn(c4mUname))
-   ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
   for item in bi:
-    let (id, name, impl) = item
-
-    if id in exclusions:
-      continue
-
+    let (name, impl) = item
     s.newBuiltIn(name, impl)
 
 proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
@@ -1287,5 +1304,4 @@ proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
 
   s.addBuiltinSet(defaultBuiltins, exclusions)
 
-  when defined(posix):
-    s.addBuiltinSet(posixBuiltins, exclusions)
+

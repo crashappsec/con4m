@@ -77,21 +77,6 @@ type
       linksin*:     seq[Con4mType]
       cycle*:       bool
       components*:  seq[Con4mType]
-      # Constraints are different than unions; with a tvar, we assume
-      # we are looking to instantiate a concrete type.
-      #
-      # But, if we can't infer just a single concrete type, yet we
-      # have ruled out some things, we could then convert seamlessly
-      # to union types.
-      #
-      # However, we don't currently need to do that explicitly,
-      # because the implementation currently keeps all values in a
-      # "box".
-      #
-      # Note also that these constraints could be lifted in order to
-      # be more complicated (in which case they'd be a seq of
-      # Con4mTypes, as with TypeUnion). We'd have to work harder to
-      # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
 

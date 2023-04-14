@@ -130,8 +130,8 @@ template fmtNtNamed(name: string) =
 template fmtT(name: string) =
   return self.formatTerm(colorT(name), i) & "\n"
 
-template fmtTy(name: string) =
-  return self.formatNonTerm(colorType(name), i)
+#template fmtTy(name: string) =
+#  return self.formatNonTerm(colorType(name), i)
 
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind

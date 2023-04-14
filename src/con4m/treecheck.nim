@@ -255,7 +255,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       if len(node.children) == 3:
         let objname = node.children[1].getTokenText()
-        maybeEntry  = scope.attrLookup([secname, objname], 0, vlSecDef)
+        maybeEntry = scope.attrLookup([secname, objname], 0, vlSecDef)
       else:
         maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
 
@@ -729,18 +729,23 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           return
         # Don't bail for missing f()'s if we're not executing, since we may
         # not have them if the runtime environment adds their own functions.
+        var msg = fmt"No function with the name '{fname}' was found."
+
+        if fname in s.funcTable:
+          msg = "Could not find an implementation for the function " &
+          fmt"'{fname}{$(node.children[1].typeInfo)}'" &
+          "\nPerhaps you meant::\n"
+          for item in s.funcTable[fname]:
+             msg &= $(item) & "\n"
         if stopPhase > phCheck:
           node.children[1].typeInfo.retType = node.typeInfo
-          fatal(fmt"No matching signature found for function '{fname}'. " &
-                fmt"Expected type was: {$(node.children[1].typeInfo)}")
+          fatal(msg)
         else:
           let
             y = toAnsiCode(acYellow)
             r = toAnsiCode(acReset)
           node.children[1].typeInfo.retType = node.typeInfo
-          echo(fmt"{y}warning:{r} No matching signature found for function " &
-               fmt"'{fname}'. Expected type was: " &
-               $(node.children[1].typeInfo))
+          echo(fmt"{y}warning:{r} {msg}")
       else:
         s.waitingForTypeInfo = true
         node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)

@@ -355,40 +355,43 @@ proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
                    shortdoc = shortdoc, hidden = hidden,
                    validator = validator)
 
-proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
+proc generateC42Spec*(state: ConfigState): ConfigSpec =
+  result       = newSpec()
+  let contents = state.attrs.contents
+
+  # Register all types before we populate them, so that we can safely
+  # forward-reference; all type names will be registered before we
+  # populate.
+  
+  if "singleton" in contents:
+    for _, singletonSpec in contents["singleton"].get(AttrScope).contents:
+      result.registerSingletonType(singletonSpec)
+
+  if "object" in contents:
+    for _, objectSpec in contents["object"].get(AttrScope).contents:
+      result.registerObjectType(objectSpec)
+
+  if "singleton" in contents:
+    for name, singletonSpec in contents["singleton"].get(AttrScope).contents:
+      result.populateType(result.secSpecs[name], singletonSpec.get(AttrScope))
+
+  if "object" in contents:
+    for name, objectSpec in contents["object"].get(AttrScope).contents:
+      result.populateType(result.secSpecs[name], objectSpec.get(AttrScope))
+
+  result.populateType(result.rootSpec, contents["root"].get(AttrScope))
+              
+proc c42Spec*(s:        Stream,
+              fileName: string): Option[(ConfigSpec, ConfigState)] =
   ## Create a ConfigSpec object from a con4m file. The schema is
-  ## validated against our c4-2-spec format.
+  ## validated against our c42-spec format.
   let (cfgContents, success) = firstRun(s, fileName, buildC42Spec())
 
   if not success:
     return none((ConfigSpec, ConfigState))
 
-  let
-    res      = newSpec()
-    contents = cfgContents.attrs.contents
-  result     = some((res, cfgContents))
+  return some((cfgContents.generateC42Spec(), cfgContents))
 
-  # Register all types before we populate them, so that we can safely
-  # forward-reference; all type names will be registered before we
-  # populate.
-
-  if "singleton" in contents:
-    for _, singletonSpec in contents["singleton"].get(AttrScope).contents:
-      res.registerSingletonType(singletonSpec)
-
-  if "object" in contents:
-    for _, objectSpec in contents["object"].get(AttrScope).contents:
-      res.registerObjectType(objectSpec)
-
-  if "singleton" in contents:
-    for name, singletonSpec in contents["singleton"].get(AttrScope).contents:
-      res.populateType(res.secSpecs[name], singletonSpec.get(AttrScope))
-
-  if "object" in contents:
-    for name, objectSpec in contents["object"].get(AttrScope).contents:
-      res.populateType(res.secSpecs[name], objectSpec.get(AttrScope))
-
-  res.populateType(res.rootSpec, contents["root"].get(AttrScope))
 
 proc c42Spec*(c: string, fname: string): Option[(ConfigSpec, ConfigState)] =
   return c42Spec(newStringStream(c), fname)
