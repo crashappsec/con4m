@@ -44,6 +44,7 @@ type
     flags:             Table[string, FlagSpec]
     callback:          Option[CallbackObj]
     doc:               string
+    extraHelpTopics:   TableRef[string, string]
     argName:           string
     minArgs:           int
     maxArgs:           int
@@ -104,13 +105,13 @@ proc newSpecObj*(reportingName: string       = "",
 
 proc addCommand*(spec:           CommandSpec,
                  name:           string,
-                 aliases:        openarray[string]   = [],
-                 subOptional:    bool                = false,
-                 unknownFlagsOk: bool                = false,
-                 noFlags:        bool                = false,
-                 doc:            string              = "",
-                 argName:        string              = "",
-                 callback:       Option[CallbackObj] = none(CallbackObj)):
+                 aliases:        openarray[string]         = [],
+                 subOptional:    bool                      = false,
+                 unknownFlagsOk: bool                      = false,
+                 noFlags:        bool                      = false,
+                 doc:            string                    = "",
+                 argName:        string                    = "",
+                 callback:       Option[CallbackObj]       = none(CallbackObj)):
                    CommandSpec {.discardable.} =
   ## Creates a command under the top-level argument parsing spec,
   ## or a sub-command under some other command.
@@ -769,11 +770,16 @@ proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
       fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
                    else:               ""
       
-
     var allNames = aliases & @[realName]
       
     cmdObj.addFlagWithArg(realName, allNames, true, false, doc,
                           cb, fieldToSet)
+
+proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
+  if cmdObj.extraHelpTopics == nil:
+    cmdObj.extraHelpTopics = TableRef[string, string]()
+  for k, v in all.contents:
+    cmdObj.extraHelpTopics[k] = unpack[string](v.get(Attribute).value.get())
 
 proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
   # The command object was created by the caller.  We need to:
@@ -787,6 +793,7 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
     flagMChoices = sec.attrLookup(["flag_multi_choice"], 0, vlExists).getSec()
     flagArgs     = sec.attrLookup(["flag_arg"], 0, vlExists).getSec()
     flagMArgs    = sec.attrLookup(["flag_multi_arg"], 0, vlExists).getSec()
+    extraHelpSec = sec.attrLookup(["topics"], 0, vlExists).getSec()
 
   if flagYns.isSome():
     cmdObj.loadYn(flagYns.get(), info)
@@ -800,6 +807,8 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
     cmdObj.loadFlagArgs(flagArgs.get(), info)
   if flagMArgs.isSome():
     cmdObj.loadFlagMArgs(flagMArgs.get(), info)
+  if extraHelpSec.isSome():
+    cmdObj.loadExtraTopics(extraHelpSec.get())
   if info.addHelpCmds and (commandOpt.isNone() or
                            "help" notin commandOpt.get().contents):
     if commandOpt.isNone():
@@ -925,6 +934,19 @@ proc showCommandList(cmd: CommandSpec) =
   echo heading("See ... [COMMAND] help for info on each command.",
                            color = acBold)
   echo()
+
+proc showAdditionalTopics(cmd: CommandSpec) =
+  var topics: seq[string]
+
+  if cmd.extraHelpTopics.len() == 0: return
+  for k, _ in cmd.extraHelpTopics:
+    topics.add(k)
+
+  topics.sort()
+  echo heading("Additional Topics: ")
+  stdout.write(instantTable(topics))
+  echo()
+
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
   else:            return "--" & s
@@ -1023,29 +1045,36 @@ proc showOneCmdHelp(cmd: CommandSpec) =
   cmd.showFlagHelp()
  
 proc showCmdHelp*(cmd: CommandSpec, args: seq[string]) =
-
   if len(args) == 0:
     showOneCmdHelp(cmd)
   else:
-    var legitCmds: seq[(string, string)] = @[]
+    var legitCmds: seq[(bool, string, string)] = @[]
     
     for item in args:
       if item in cmd.commands and cmd.commands[item].reportingName == item:
-        legitCmds.add((item, item))
+        legitCmds.add((true, item, item))
       else:
         var found = false
         for sub, spec in cmd.commands:
           if item in spec.allNames:
-            legitCmds.add((item, spec.reportingName))
+            legitCmds.add((true, item, spec.reportingName))
             found = true
             break
-        if not found:
-          echo("No such command: " & item)
-
+        if not found and cmd.parent.isSome():
+          let eht = cmd.parent.get().extraHelpTopics
+          if eht != nil and item in eht:
+            legitCmds.add((false, item, eht[item]))
+          else:
+            echo("No such command: " & item)
+            
     if len(legitCmds) == 0:
       showOneCmdHelp(cmd)
     else:
-      for (given, reporting) in legitCmds:
+      for (c, given, reporting) in legitCmds:
+        if not c:
+          echo heading("Help for " & given, color = acBCyan)
+          echo reporting.perLineWrap()
+          continue
         if given != reporting:
           echo heading("Note: '" & given & "' is an alias for '" &
             reporting & "'", color = acBCyan)

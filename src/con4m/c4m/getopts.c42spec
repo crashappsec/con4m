@@ -349,10 +349,15 @@ The maximum number of choices a user may provide when giving the flag.
   }
 }
 
+singleton topics {
+  user_def_ok: true
+  validator:   func extra_topic_check
+}
+
 object command {
   user_def_ok: false
   validator:   func consistency_check  
-  
+
   allow flag_yn           {}
   allow flag_help         {}
   allow flag_choice       {}
@@ -360,6 +365,7 @@ object command {
   allow flag_arg          {}
   allow flag_multi_arg    {}
   allow command           {}
+  allow topics            {}
 
   field aliases  {
     type:        list[string]
@@ -466,6 +472,7 @@ singleton getopts {
   allow flag_arg          {}
   allow flag_multi_arg    {}
   allow command           {}
+  allow topics            {}  
 
   field args {
     type:       tuple[int, int]
@@ -811,6 +818,22 @@ func field_type_strarr_check(property, value) {
   if not typecmp(actual_type, list[string]) {
     return ("Invalid type for specified field: " + value + 
             ". It should be a list[string] field, but got: " + $(actual_type))
+  }
+}
+
+func extra_topic_check(path) {
+  parent, cmd := attr_split(path)
+  attrs       := fields(path)
+  cmds        := sections(parent + ".command")
+  result      := ""
+
+  for i from 0 to len(attrs) {
+    if not typecmp(attr_type(path + "." + attrs[i]), string) {
+      return "Extra help topics must be strings."
+    }
+    if cmds.contains(attrs[i]) {
+      return "Extra help topics can't have the same name as a valid command."
+    }
   }
 }
 
