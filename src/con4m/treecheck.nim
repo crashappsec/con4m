@@ -199,7 +199,7 @@ proc lhsIdCheck(s, name, node, tinfo, lhsNode, rhsNode: auto) =
     if name == "result" and not s.funcOrigin:
       fatal("Cannot assign to special variable 'result' outside a function " &
               "definition.")
-      
+
       node.nameConflictCheck(name, s, [ucVar, ucNone])
     let
       entry = node.addVariable(name)
@@ -355,7 +355,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
-      
+
   of NodeUnpack:
     node.children[^1].checkNode(s)
     let

@@ -236,7 +236,7 @@ proc get*[T](ctx: ConfigState, fqn: string): T =
 
 proc getOpt*[T](ctx: ConfigState, fqn: string): Option[T] =
   return getOpt[T](ctx.attrs, fqn)
-  
+
 proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
   let possibleAttr = attrLookup(attrs, @[name], 0, vlAttrDef)
 
@@ -457,4 +457,3 @@ proc scopeToJson*(scope: AttrScope): string =
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
   result = "{ " & kvpairs.join(", ") & " }"
-  

@@ -64,7 +64,7 @@ Show tokens after the parsing phase, for the last specified con4m file passed.
       no_aliases:  ["P", "no-parse", "no-show-parse"]
       field_to_set: "show_parse_tree"
       doc: """
-Shows the UNTYPED parse tree after the parsing phase, but before the checking phase. 
+Shows the UNTYPED parse tree after the parsing phase, but before the checking phase.
  Applied based on '--show-when'.
 """
     }
@@ -78,13 +78,13 @@ It's Christmas! Show the typed parse tree after the checking phase.
 Applied based on '--show-when'.
 """
     }
-    
+
     flag_yn show_spec_tokens {
       yes_aliases:  ["show-spec-toks", "show-spec-tok", "spec-toks"]
       no_aliases:   ["no-show-spec-toks", "no-show-spec-tok", "no-spec-toks"]
       field_to_set: "show_spec_tokens"
       doc: """
-Show tokens for c42 spec files after the parsing phase, for the last specified spec file passed. 
+Show tokens for c42 spec files after the parsing phase, for the last specified spec file passed.
  Applied based on the value of '--spec-show-when'.
 """
     }
@@ -106,7 +106,7 @@ Applied based on '--spec-show-when').
       doc: """
 Specs deserve their time in lights. Show their typed parse tree after the checking phase.
 Applied based on '--spec-show-when'.
-"""    
+"""
     }
 
     flag_yn show_funcs {
@@ -159,7 +159,7 @@ For --show-* flags and --no-show-* flags this indicates for which phases the fla
 Note that this does not apply to spec files; see 'spec_when'.
 
 This also doesn't control for which files we'll show the final attribute output.  For that, see 'output_show_when'.
-"""      
+"""
     }
 
     flag_multi_choice spec_when {
@@ -170,7 +170,7 @@ This also doesn't control for which files we'll show the final attribute output.
       max:  high()
       doc: """
 For --show- flags and --no-show- flags this indicates for which spec files passed at the command line where the flags will apply.  Choices are "first", "last", "rest" and "all".  The default will be 'last'.  If there is only one spec file passed, this flag is ignored (same if there are zero).
-"""      
+"""
     }
 
     flag_multi_choice output_when {
@@ -183,7 +183,7 @@ For --show- flags and --no-show- flags this indicates for which spec files passe
 When multiple con4m files are executed in a stack, controls when the final attributes are shown at the end.  By default, this is "last".
 
 Note, to turn off output, use --output-style=none, in which case this flag is ignored.
-"""      
+"""
     }
 
     flag_multi_arg spec {
@@ -193,7 +193,7 @@ Note, to turn off output, use --output-style=none, in which case this flag is ig
 C42 spec file(s) to load (in the given order).  They are loaded before any con4m file passed as arguments to 'run', and then are used to do additional validation those files.
 """
     }
-    
+
     flag_multi_arg stub {
       aliases: ["stubs"]
       field_to_set: "stubs"
@@ -237,10 +237,10 @@ The language for which to generate output. The default is 'none', which simply v
     flag_arg output_file {
       field_to_set: "output_file"
       doc: """
-Instead of writing to stdout, writes the generated code to the specified file.  Ignored if the language is set to 'none'. 
+Instead of writing to stdout, writes the generated code to the specified file.  Ignored if the language is set to 'none'.
 """
     }
   }
-  
+
   flag_help { }
 }

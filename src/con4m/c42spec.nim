@@ -45,7 +45,7 @@ proc buildC42Spec*(): ConfigSpec =
   rootSec.addAttr("prologue",        stringType, false)
   rootsec.addAttr("doc",             stringType, false)
   rootsec.addAttr("shortdoc",        stringType, false)
-  rootSec.addAttr("validator",       toCon4mType(objValidatorSig), false)  
+  rootSec.addAttr("validator",       toCon4mType(objValidatorSig), false)
 
   singleton.addSection("field")
   singleton.addSection("require")
@@ -78,7 +78,7 @@ proc buildC42Spec*(): ConfigSpec =
   obj.addAttr("doc",             stringType, false)
   obj.addAttr("shortdoc",        stringType, false)
   obj.addAttr("hidden",          boolType,   false)
-  obj.addAttr("validator",       toCon4mType(objValidatorSig), false)  
+  obj.addAttr("validator",       toCon4mType(objValidatorSig), false)
 
   rootScope.addSection("root", min = 1, max = 1)
   rootScope.addSection("singleton")
@@ -322,7 +322,7 @@ template setDocInfo() {.dirty.} =
     doc       = none(string)
     hidden    = false
     validator = CallbackObj(nil)
-    
+
 
   if "doc" in objInfo.contents:
     let boxopt = objInfo.contents["doc"].get(Attribute).value
@@ -346,7 +346,7 @@ proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   setDocInfo()
   spec.sectionType(objInfo.name, singleton = true, doc = doc,
                    shortdoc = shortdoc, hidden = hidden,
-                   validator = validator) 
+                   validator = validator)
 
 proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
@@ -362,7 +362,7 @@ proc generateC42Spec*(state: ConfigState): ConfigSpec =
   # Register all types before we populate them, so that we can safely
   # forward-reference; all type names will be registered before we
   # populate.
-  
+
   if "singleton" in contents:
     for _, singletonSpec in contents["singleton"].get(AttrScope).contents:
       result.registerSingletonType(singletonSpec)
@@ -380,7 +380,7 @@ proc generateC42Spec*(state: ConfigState): ConfigSpec =
       result.populateType(result.secSpecs[name], objectSpec.get(AttrScope))
 
   result.populateType(result.rootSpec, contents["root"].get(AttrScope))
-              
+
 proc c42Spec*(s:        Stream,
               fileName: string): Option[(ConfigSpec, ConfigState)] =
   ## Create a ConfigSpec object from a con4m file. The schema is

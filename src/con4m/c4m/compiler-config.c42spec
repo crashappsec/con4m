@@ -16,7 +16,7 @@ root {
   This is set when parsing arguments, to tell us which command to run.
   """
   }
-  
+
   field con4m_args {
     type: list[string]
     default: []
@@ -25,7 +25,7 @@ root {
   This is set  when parsing arguments.
   """
   }
-  
+
   field color {
       type:     bool
       require:  false
@@ -47,20 +47,20 @@ When multiple files are passed, only shows tokens for files based on the value o
 Override on the command line via '--show-tokens' or '--no-show-tokens'
 """
   }
-  
+
   field show_parse_tree {
     type:    bool
     default: false
     shortdoc: "Show Parse Results"
     doc: """
-Shows the UNTYPED parse tree after the parsing phase, but before the checking phase. 
+Shows the UNTYPED parse tree after the parsing phase, but before the checking phase.
 
 Applied based on the value of 'show_when'.
 
 Override on the command line via '--show-parse-tree' (aka '-p' or '--parse'), or '--no-show-parse-tree' (aka '-P' or '--no-parse')
 """
   }
-  
+
   field show_checked_tree {
     type: bool
     default: false
@@ -70,22 +70,22 @@ It's Christmas! Show the typed parse tree after the checking phase.
 Applied based on 'show_when'.
 
 Override on the command line via '--show-checked-tree' (aka '-t' or '--show-tree'), or '--no-show-checked-tree (aka '-T' or '--no-show-tree')
-"""  
+"""
   }
-  
+
   field show_spec_tokens {
     type:    bool
     default: false
     shortdoc: "Show Tokens for Specs"
     doc: """
-When compiling, show tokens for c42 spec files after the parsing phase, for the last specified spec file passed. 
+When compiling, show tokens for c42 spec files after the parsing phase, for the last specified spec file passed.
 
 Applied based on the value of 'spec_show_when'.
 
 Override on the command line via '--show-spec-tokens' or '--no-show-spec-tokens'
 """
   }
-  
+
   field show_spec_parse_tree {
     type:    bool
     default: false
@@ -97,7 +97,7 @@ Applied based on the value of 'show_spec_when'.
 Override on the command line via '--show-spec-parse-tree' (aka '--spec-parse'), or '--no-show-spec-parse-tree' (aka '--no-spec-parse')
 """
   }
-  
+
   field show_spec_checked_tree {
     type: bool
     default: false
@@ -107,7 +107,7 @@ Specs deserve their time in lights. Show their typed parse tree after the checki
  Applied based on the value of 'show_spec_when'.
 
 Override on the command line via '--show-spec-checked-tree' (aka '--spec-show-tree'), or '--no-show-spec-checked-tree (aka '--no-spec-show-tree')
-"""  
+"""
   }
 
   field specs {
@@ -121,7 +121,7 @@ Override on the command line via --specs=...
 This is ignored via API calls; you're expected to explicitly add your own specs.
 """
   }
-  
+
   field show_funcs {
     type: bool
     default: false
@@ -136,7 +136,7 @@ Override on the command line via '--show-funcs' (aka '-f', '--funcs') or '--no-s
 This attribute does not apply to spec files.
 """
   }
-  
+
   field show_untyped_funcs {
     type: bool
     default: false
@@ -148,7 +148,7 @@ Override on the command line via '--show-untyped-funcs' (aka '-u', '--untyped-fu
 This attribute does not apply to spec files.
 """
   }
-  
+
   field output_style {
     type:   string
     choice: ["json", "pretty", "raw", "none"]
@@ -156,7 +156,7 @@ This attribute does not apply to spec files.
     doc: """
 If a file successfully executes, this determines the style for
 outputting the resulting attribute space.  Options are: "json",
-"pretty" (which gives tables), "raw" (which gives unfomatted json) 
+"pretty" (which gives tables), "raw" (which gives unfomatted json)
 or "none".  The default is "json".
 
 When passing in a stack of files files, when this happens is controlled by 'output_show_when', which defaults to 'last'.
@@ -168,7 +168,7 @@ On the command line, this can be overridden with '--output-style=...' (aka '-o')
 This field is never used when programatically invoking a con4m stack; you're expected to print the results you need yourself (the debug outputting of intermediate states *is* however observed).
 """
   }
-  
+
   field show_when {
     type: list[string]
     validator: func show_when_check
@@ -183,7 +183,7 @@ This also doesn't control for which files we'll show the final attribute output.
 On the command line, this can be overridden with '--show-when=...' (aka '-w')
 """
   }
-  
+
   field spec_when {
     type: list[string]
     validator: func show_when_check
@@ -193,7 +193,7 @@ Same as show_when, but applied to spec files in a stack.
 On the command line, this can be overridden with '--spec-when=...'
 """
   }
-  
+
   field output_when {
     type: list[string]
     validator: func show_when_check
@@ -206,7 +206,7 @@ Shutting off all output is handled by setting the output style, which is the att
 This value can be overriden on the command line with '--output-when='.
 """
   }
-  
+
   field stubs {
     type:    list[string]
     default: []
@@ -216,7 +216,7 @@ Automatically generates functions for the named items with the con4m signatures 
 This currently only works from the command line.
 """
   }
-  
+
   field stop_when {
     type:   string
     choice: ["tokenize", "parse", "precheck", "eval", "postcheck"]
@@ -227,7 +227,7 @@ For the last file in a stack of con4m files, stop evaluating after the specified
 You can override this on the command line via '--stop-when' (aka '--stop', '-x')
 """
   }
-  
+
   field debug_con4m {
     type: bool
     default: false
@@ -241,14 +241,14 @@ When true, this will cause con4m to produce *nim* stack traces any time an error
     choice: ["nim", "none"]
     default: "none"
     doc: """
-When running the con4m 'gen' command via the command line, this field determines the language for which to generate output. The default is 'none', which simply validates the spec as a valid c42 specification file.  Valid values are currently "none" (validates only), and "nim".  We expect to do Python, C and Go before 1.0.  
+When running the con4m 'gen' command via the command line, this field determines the language for which to generate output. The default is 'none', which simply validates the spec as a valid c42 specification file.  Valid values are currently "none" (validates only), and "nim".  We expect to do Python, C and Go before 1.0.
 
 This field does nothing when using con4m programatically.
 
 On the command line, you can override this with the '--language=' flag.
 """
   }
-  
+
   field output_file {
     type: string
     require: false
@@ -277,4 +277,3 @@ func show_when_check(path, val: list[string]) {
     }
   }
 }
-

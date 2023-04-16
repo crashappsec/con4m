@@ -214,7 +214,7 @@ proc oneTypeSpec(ctx:    ParseCtx,
       else:
         result.nospec = true
         return
-        
+
     if ctx.curTok().kind == TtRParen:
       discard ctx.consume()
     else:

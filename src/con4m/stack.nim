@@ -64,9 +64,9 @@ type
 proc clearError*(s: ConfigStack) =
   s.errored = false
 proc getRuntime*(s: ConfigStack): ConfigState = s.configState
-  
+
 proc newConfigStack*(): ConfigStack = ConfigStack()
-proc addSystemBuiltins*(stack:      ConfigStack,                        
+proc addSystemBuiltins*(stack:      ConfigStack,
                         exclusions: openarray[string] = @[],
                         which = srsBoth): ConfigStack {.discardable.} =
   result   = stack
@@ -115,7 +115,7 @@ proc addSpecLoad*(stack:        ConfigStack,
   var step = ConfigStep(kind: akSpecLoad, fileName: fileName, run: true,
                         doPreCheck: preValidate, doPostCheck: postValidate,
                         stageName: stageName, stream: stream, genSpec: genSpec)
-  
+
   stack.steps.add(step)
 
 proc addGetoptSpecLoad*(stack:     ConfigStack,
@@ -140,17 +140,17 @@ proc addConfLoad*(stack:        ConfigStack,
                         doPreCheck: preValidate, doPostCheck: postValidate,
                         stageName: stageName, stream: stream)
   stack.steps.add(step)
-  
+
 proc addValiate*(stack:       ConfigStack,
                  doPreCheck:  bool = true,
-                 doPostCheck: bool = true,                    
+                 doPostCheck: bool = true,
                  stageName:   string = ""):
-                   ConfigStack {.discardable.} = 
+                   ConfigStack {.discardable.} =
   result   = stack
   var step = ConfigStep(kind: akValidate, doPreCheck: doPreCheck, run: false,
                         doPostCheck: doPostCheck)
   stack.steps.add(step)
-  
+
 proc addStartGetOpts*(stack:     ConfigStack,
                       resPath:   string = "getopts",
                       stageName: string = "start-getopts",
@@ -176,7 +176,7 @@ proc addFinalizeGetOpts*(stack:     ConfigStack,
   var step = ConfigStep(kind: akFinalizeGetOpts, stageName: stageName,
                         resPath: resPath)
   stack.steps.add(step)
-  
+
 proc createEmptyRuntime(): ConfigState =
    result = ConfigState(attrs:
                 AttrScope(parent: none(AttrScope), name: "<<root>>"))
@@ -184,7 +184,7 @@ proc createEmptyRuntime(): ConfigState =
 
 template initializeSpec(specRuntime: ConfigState) =
   specRuntime.spec = some(buildC42Spec())
-    
+
 proc runOneConf(stack: ConfigStack, conf, spec: ConfigState)
 
 proc oneInit(s: ConfigState, step: ConfigStep) =
@@ -200,9 +200,9 @@ proc oneInit(s: ConfigState, step: ConfigStep) =
         for existing in s.funcTable[name]:
           # Check to see if it's already loaded.
           if not isBottom(copyType(tInfo), copyType(existing.tInfo)): continue
-      
+
       s.newCoreFunc(sig, impl)
-      
+
   for item in step.customFuncs:
     let (sig, impl) = item
     s.newCoreFunc(sig, impl)
@@ -225,7 +225,7 @@ proc oneInit(s: ConfigState, step: ConfigStep) =
         s.funcTable[name] = canRemain
       else:
         s.funcTable.del(name)
-    
+
 proc doInit(stack: ConfigStack) =
   let step = stack.steps[stack.ix]
 
@@ -234,7 +234,7 @@ proc doInit(stack: ConfigStack) =
       stack.validationState = createEmptyRuntime()
     stack.validationState.oneInit(step)
     stack.lastUsed = stack.validationState
-    
+
   if step.which != srsValidation:
     if stack.configState == nil:
       stack.configState = createEmptyRuntime()
@@ -243,7 +243,7 @@ proc doInit(stack: ConfigStack) =
     stack.configState.oneInit(step)
     stack.lastUsed = stack.configState
 
-proc doCallback(stack: ConfigStack) {.inline.} = 
+proc doCallback(stack: ConfigStack) {.inline.} =
   # If it's nil, *shrug*
   stack.steps[stack.ix].callback(stack.lastUsed)
 
@@ -251,19 +251,19 @@ proc doSpecLoad(stack: ConfigStack) =
   let step = stack.steps[stack.ix]
   if stack.validationState == nil:
     stack.validationState = createEmptyRuntime()
-      
+
   if stack.specValidationState == nil and (step.doPreCheck or step.doPostCheck):
     stack.specValidationState  = createEmptyRuntime()
     stack.validationState.spec = some(buildC42Spec())
   # load the file.
-      
+
   stack.runOneConf(stack.validationState, stack.specValidationState)
-  
+
   if step.genSpec:
     stack.c42SpecObj = stack.validationState.generateC42Spec()
     if stack.configState != nil:
       stack.configState.spec = some(stack.c42SpecObj)
-      
+
   stack.lastUsed  = stack.validationState
 
 proc doConfLoad(stack: ConfigStack) =
@@ -289,14 +289,14 @@ proc doValidate(stack: ConfigStack) =
     # need one later, and they're cheap, so just make one already.
     if stack.validationState == nil:
       stack.validationState = createEmptyRuntime()
-      
+
     stack.runOneConf(stack.configState, stack.validationState)
   else:
     stack.runOneConf(stack.validationState, stack.specValidationState)
 
 proc doStartGetOpts(stack: ConfigStack) =
   var res: seq[ArgResult]
-  
+
   if stack.configState == nil:
     stack.configState = createEmptyRuntime()
   if stack.validationState == nil:
@@ -307,7 +307,7 @@ proc doStartGetOpts(stack: ConfigStack) =
     stack.finalOpt = res[0]
   else:
     stack.getOptOptions = res
-    
+
 proc doFinalizeGetOpts(s: ConfigStack) =
   if len(s.getOptOptions) < 2: return
   s.finalOpt      = finalizeManagedGetopt(s.configState, s.getOptOptions)
@@ -323,7 +323,7 @@ proc getArgResult*(stack: ConfigStack): ArgResult =
   return stack.finalOpt
 proc getCommand*(stack: ConfigStack): string = stack.getArgResult().command
 proc getArgs*(stack: ConfigStack, sect = none(string)): seq[string] =
-  let res = stack.getArgResult()  
+  let res = stack.getArgResult()
   if sect.isNone():
     return res.args[res.command]
   else:
@@ -347,7 +347,7 @@ proc loadConfOptions(stack: ConfigStack) =
     last_confload  = -1
 
   if "none" in show_when and "none" in spec_when: return
-    
+
   for i in stack.ix ..< stack.steps.len():
     case stack.steps[i].kind
     of akSpecLoad:
@@ -359,7 +359,7 @@ proc loadConfOptions(stack: ConfigStack) =
     else:
       continue
 
-  
+
   for i in stack.ix ..< stack.steps.len():
     let item = stack.steps[i]
 
@@ -369,11 +369,11 @@ proc loadConfOptions(stack: ConfigStack) =
           item.showFuncs    = true
         if getConf[bool]("show_untyped_funcs").get():
           item.showEarlyFns = true
-          
+
         let stoptime = getConf[string]("stop_when").getOrElse("postcheck")
         if stoptime != "postcheck":
           item.endPhase = stoptime
-          
+
         if "all" in show_when or "last" in show_when: show = true
         elif i == first_confload and "first" in show_when: show = true
         else: show = false
@@ -388,7 +388,7 @@ proc loadConfOptions(stack: ConfigStack) =
       if getConf[bool]("show_tokens").get():        item.showToks     = true
       if getConf[bool]("show_parse_tree").get():    item.showParsed   = true
       if getConf[bool]("show_checked_tree").get():  item.showTyped    = true
-      
+
     elif item.kind == akSpecLoad:
       if i == last_specload:
         if "all" in spec_when or "last" in spec_when: show = true
@@ -412,7 +412,7 @@ proc run*(stack: ConfigStack, backtrace = false):
   stack.bt    = backtrace
 
   stack.loadConfOptions()
-  
+
   while stack.ix < len(stack.steps):
     let step = stack.steps[stack.ix]
     try:
@@ -428,12 +428,12 @@ proc run*(stack: ConfigStack, backtrace = false):
     except:
       if step.kind notin [akSpecLoad, akConfLoad, akValidate]:
         stderr.writeLine("Error when running stack stage: " & step.stageName)
-      
+
       if stack.errorCb != nil:
         stack.errored = stack.errorCb(getCurrentExceptionMsg(),
                                       getCurrentException().getStackTrace())
       else:
-        stack.errored = true      
+        stack.errored = true
         if stack.bt:
           echo getCurrentExceptionMsg()
           echo getCurrentException().getStackTrace()
@@ -444,10 +444,10 @@ proc run*(stack: ConfigStack, backtrace = false):
 
   if stack.configState != nil: return some(stack.configState)
 
-proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =  
+proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
   let step = stack.steps[stack.ix]
   var tree: Con4mNode
-  
+
   try:
     if step.run:
       if step.stream == nil:
@@ -470,7 +470,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
           stderr.writeLine($i & ": " & $token)
 
       if step.endPhase == "tokenize": return
-      
+
       tree          = tokens.parse(step.fileName)
       tree.varScope = VarScope(parent: none(VarScope))
 
@@ -481,7 +481,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         stderr.writeLine($(conf.funcTable))
 
       if step.endPhase == "parse": return
-      
+
       conf.secondPass = false
       tree.checkTree(conf)
 
@@ -507,7 +507,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
       conf.preEvalCheck(spec)
 
     if step.endPhase == "precheck": return
-    
+
     if step.run: # Set up the runtime stack.
       var topFrame = RuntimeFrame()
       for k, sym in tree.varScope.contents:
@@ -515,14 +515,14 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
           topFrame[k] = sym.value
 
       conf.frames = @[topFrame]
-  
+
       ctrace(step.fileName & ": Beginning evaluation.")
       tree.evalNode(conf)
       ctrace(step.fileName & ": Evaluation done.")
   finally:
     if step.run:
       conf.numExecutions += 1
-      
+
       # Clean up the runtime stack and stash exported global state.
       if conf.frames.len() > 0:
         for k, v in conf.frames[0]:
@@ -531,7 +531,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         conf.frames = @[]
 
   if step.endPhase == "eval": return
-  
+
   if step.doPostCheck and spec != nil:
     conf.validateState(spec)
 

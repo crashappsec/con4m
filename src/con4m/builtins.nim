@@ -863,15 +863,15 @@ proc c4mOverride*(args: seq[Box], localState: ConfigState): Option[Box] =
 
   if sym.tInfo.copyType().unify(itemType.copyType()).isBottom(): return falseRet
   if sym.locked or sym.override.isSome(): return falseRet
-  
+
   sym.override = some(args[1])
-  if state.nodeStash == nil: 
+  if state.nodeStash == nil:
     sym.lastUse = none(Con4mNode)
   else:
     sym.lastUse = some(state.nodeStash)
-    
+
   return trueRet
-  
+
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
   let
     attrName     = unpack[string](args[0])
@@ -908,7 +908,7 @@ proc c4mSplitAttr*(args: seq[Box], unused: ConfigState): Option[Box] =
 
   if ix == -1: return some(pack(@["", str]))
   return some(pack(@[ str[0 ..< ix], str[ix + 1 .. ^1]]))
-  
+
 
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
@@ -1099,7 +1099,7 @@ proc callbackStub*(args: seq[Box], unused  = ConfigState(nil)): Option[Box] =
   return some(pack(CallbackObj(tInfo: Con4mType(kind: TypeFunc, noSpec: true))))
 proc typespecStub*(args: seq[Box], unused  = ConfigState(nil)): Option[Box] =
   return some(pack(Con4mType(kind: TypeTypeSpec)))
-    
+
 proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn, stub = false) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
@@ -1136,7 +1136,7 @@ proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn, stub = false) =
       f = typespecStub
     of TypeFunc:
       f = callbackStub
-      
+
   let b = if f == nil:
             FuncTableEntry(kind:        FnUserDefined,
                            tinfo:       tinfo,
@@ -1319,7 +1319,7 @@ const defaultBuiltins* = [
     ("getuid() -> int",                      BuiltInFn(c4mGetUid)),
     ("geteuid() -> int",                     BuiltInFn(c4mGetEuid)),
     ("uname() -> list[string]",              BuiltInFn(c4mUname))
-    
+
 ]
 
 proc addBuiltinSet(s, bi, exclusions: auto) {.inline.} =
@@ -1346,5 +1346,3 @@ proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
   ## invalid values, they're ignored.
 
   s.addBuiltinSet(defaultBuiltins, exclusions)
-
-

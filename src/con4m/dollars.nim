@@ -89,7 +89,7 @@ proc getTVName(t: Con4mType, ti: ReverseTVInfo): string =
 
 proc `$`*(t: Con4mType, tinfo: ReverseTVInfo = nil): string =
   let ti = if tinfo == nil: ReverseTVInfo(nextIx: 1) else: tinfo
-  
+
   ## Prints a type object the way it should be written for input.
   ## Note that, in some contexts, 'func' might be required to
   ## distinguish a leading parenthesis from other expressions,
@@ -237,7 +237,7 @@ proc nativeSizeToStrBase2*(input: Con4mSize): string =
     n = input mod 1099511627776'u64
   else:
     n = input
-    
+
   m = n div 1073741824
   if m != 0:
     result &= $(m) & "GB "
@@ -471,7 +471,7 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
       rows.add(@[key, $(entry.tinfo), $(entry.kind)])
   rows.sort()
   rows = @[@["Name", "Type", "Kind"]] & rows
-  
+
   var tbl = newTextTable(3,
                          rows          = rows,
                          fillWidth     = true,

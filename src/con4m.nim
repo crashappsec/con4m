@@ -34,11 +34,11 @@ elif isMainModule:
                  addGetoptSpecLoad().
                  addSpecLoad(compilerC42FileName, specf).
                  addConfLoad(compilerConfigFName, cfgf).
-                 addStartGetOpts().                                   
+                 addStartGetOpts().
                  addFinalizeGetOpts()
 
   discard subscribe(con4mTopic, defaultCon4mHook)
-                   
+
   if conf.fileExists():
     try:
       let stream = newFileStream(conf)
@@ -49,7 +49,7 @@ elif isMainModule:
       raise
 
   c4mstack.run(backtrace = true)
-  
+
   let
     command   = c4mstack.getCommand()
     config    = c4mstack.getAttrs().get()
@@ -58,7 +58,7 @@ elif isMainModule:
     specs     = get[seq[string]](config, "specs")
 
   if colorOpt.isSome(): setShowColors(colorOpt.get())
-  
+
   setConfigState(config)
   if command == "run":
     con4mRun(args, specs)

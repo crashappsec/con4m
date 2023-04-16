@@ -13,10 +13,10 @@ proc setConfigState*(s: AttrScope) =
 proc getConfigState(): AttrScope =
   if config == nil: config = AttrScope()
   return config
-  
+
 proc getConf*[T](s: string): Option[T] =
   return getOpt[T](getConfigState(), s)
-  
+
 import st, stack
 
 proc tryToOpen*(f: string): Stream =
@@ -41,7 +41,7 @@ proc outputResults*(ctx: ConfigState) =
     echo parseJson(ctx.attrs.scopeToJson()).pretty()
     stderr.writeLine(toAnsiCode([acReset]))
   else: discard
-  
+
 proc con4mRun*(files, specs: seq[string]) =
   let
     scope = if len(specs) > 1: srsBoth else: srsConfig
@@ -78,4 +78,3 @@ proc con4mRun*(files, specs: seq[string]) =
                                 firstHangingIndent = len("error: con4m: "),
                                 remainingIndents = 0)
     stderr.write(formatted)
-  
