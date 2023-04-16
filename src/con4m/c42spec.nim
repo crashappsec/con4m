@@ -9,7 +9,7 @@
 ## :Copyright: 2023
 
 import tables, strformat, options, streams, nimutils
-import types, parse, run, spec, errmsg, typecheck, dollars
+import types, parse, run, spec, errmsg, typecheck, dollars, legacy
 
 const
   validatorSig    = "func(string, `t) -> string"
@@ -125,7 +125,7 @@ proc populateSec(spec:    ConfigSpec,
                  false
     tinfo.addSection(k, min = minSz, lock = lock)
 
-template getField(fields: Table[string, AttrOrSub], name: string): untyped =
+template getField(fields: OrderedTable[string, AttrOrSub], name: string): untyped =
   if name notin fields:
     specErr(scope, "Expected a field '" & name & "'")
   let aOrS = fields[name]
@@ -160,13 +160,13 @@ proc unpackValue[T](scope: AttrScope, attr: Attribute, typeStr: string): T =
             "Wrong type for '" & attr.name & "', expected a '" & typeStr &
               "', but got a '" & $(attr.getType()) & "'")
 
-template getValOfType(fields:  Table[string, AttrOrSub],
+template getValOfType(fields:  OrderedTable[string, AttrOrSub],
                       name:    string,
                       typeStr: string,
                       nimType: typedesc): untyped =
   unpackValue[nimType](scope, getField(fields, name), typeStr)
 
-template valIfPresent(fields:  Table[string, AttrOrSub],
+template valIfPresent(fields:  OrderedTable[string, AttrOrSub],
                       name:    string,
                       c4mType: string,
                       nimType: typedesc,
@@ -174,7 +174,7 @@ template valIfPresent(fields:  Table[string, AttrOrSub],
   if name in fields: getValOfType(fields, name, c4mType, nimType)
   else:              default
 
-template optValIfPresent(fields:  Table[string, AttrOrSub],
+template optValIfPresent(fields:  OrderedTable[string, AttrOrSub],
                          name:    string,
                          c4mType: string,
                          nimType: typedesc): untyped =

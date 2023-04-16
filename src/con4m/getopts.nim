@@ -24,27 +24,27 @@ type
     case kind:        ArgFlagKind
     of afPair:
       helpFlag:       bool
-      boolValue:      Table[int, bool]
+      boolValue:      OrderedTable[int, bool]
       positiveNames:  seq[string]
       negativeNames:  seq[string]
       linkedChoice:   Option[FlagSpec]  
     of afChoice, afMultiChoice:
       choices:        seq[string]
-      selected:       Table[int, seq[string]]
+      selected:       OrderedTable[int, seq[string]]
       linkedYN:       Option[FlagSpec]
       min, max:       int
     of afStrArg:
-      strVal:         Table[int, string]
+      strVal:         OrderedTable[int, string]
     of afMultiArg:
-      strArrVal:      Table[int, seq[string]]
+      strArrVal:      OrderedTable[int, seq[string]]
   CommandSpec* = ref object
-    commands:          Table[string, CommandSpec]
+    commands:          OrderedTable[string, CommandSpec]
     reportingName:     string
     allNames:          seq[string]
-    flags:             Table[string, FlagSpec]
+    flags:             OrderedTable[string, FlagSpec]
     callback:          Option[CallbackObj]
     doc:               string
-    extraHelpTopics:   TableRef[string, string]
+    extraHelpTopics:   OrderedTableRef[string, string]
     argName:           string
     minArgs:           int
     maxArgs:           int
@@ -54,13 +54,13 @@ type
     autoHelp:          bool
     finishedComputing: bool
     parent:            Option[CommandSpec]
-    allPossibleFlags:  Table[string, FlagSpec]
+    allPossibleFlags:  OrderedTable[string, FlagSpec]
     
   ArgResult* = ref object
     stashedTop*: AttrScope
     command*:    string
-    args*:       Table[string, seq[string]]
-    flags*:      Table[string, FlagSpec]
+    args*:       OrderedTableRef[string, seq[string]]
+    flags*:      OrderedTable[string, FlagSpec]
     parseCtx*:   ParseCtx
   ParseCtx = ref object
     curArgs:  seq[string]
@@ -424,7 +424,7 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
         argpError(cur, "Couldn't process all characters as flags")
     if spec.unknownFlagsOk: ctx.curArgs.add(orig)
 
-proc buildValidFlags(inSpec: Table[string, FlagSpec]): Table[string, FlagSpec] =
+proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]): OrderedTable[string, FlagSpec] =
   for reportingName, f in inSpec:
     for name in f.recognizedNames:
       result[name] = f
@@ -526,7 +526,7 @@ proc computePossibleFlags(spec: CommandSpec) =
       )
     spec.allPossibleFlags[k] = v
 
-  var flagsToAdd: Table[string, FlagSpec]
+  var flagsToAdd: OrderedTable[string, FlagSpec]
   for _, kid in spec.commands:
     kid.computePossibleFlags()
     for k, v in kid.allPossibleFlags:
@@ -544,7 +544,7 @@ proc computePossibleFlags(spec: CommandSpec) =
 var parseId = 0
 proc parseOne(ctx: var ParseCtx, spec: CommandSpec) =
   ctx.i       = 0
-  ctx.res     = ArgResult(parseCtx: ctx)
+  ctx.res     = ArgResult(parseCtx: ctx, args: OrderedTableRef[string, seq[string]]())
   ctx.parseId = parseId
   parseId     = parseId + 1
   ctx.parseCmd(spec)
@@ -594,7 +594,7 @@ proc ambiguousParse*(spec:          CommandSpec,
 
   let default = defaultCmd.get()
   if default != "":
-    try:    return spec.ambiguousParse(@[default] & args)
+    try:    return spec.ambiguousParse(@[default] & args, none(string))
     except: firstError = getCurrentExceptionMsg()
 
   for cmd, ss in spec.commands:
@@ -777,7 +777,7 @@ proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
 
 proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
   if cmdObj.extraHelpTopics == nil:
-    cmdObj.extraHelpTopics = TableRef[string, string]()
+    cmdObj.extraHelpTopics = OrderedTableRef[string, string]()
   for k, v in all.contents:
     cmdObj.extraHelpTopics[k] = unpack[string](v.get(Attribute).value.get())
 
@@ -840,8 +840,9 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
                                    doc, argName, cb)
     sub.addArgs(minArg, maxArg).loadSection(one, info)
 
-proc stringizeFlags(inflags: Table[string, FlagSpec], id: int):
-                     Table[string, string] =
+proc stringizeFlags(inflags: OrderedTable[string, FlagSpec], id: int):
+                     OrderedTableRef[string, string] =
+  result = OrderedTableRef[string, string]()
   for f, spec in inflags:
     case spec.kind
     of afPair:        result[f] = $(spec.boolValue[id])
@@ -850,7 +851,8 @@ proc stringizeFlags(inflags: Table[string, FlagSpec], id: int):
     of afStrArg:      result[f] = spec.strVal[id]
     of afMultiArg:    result[f] = spec.strArrVal[id].join(",")
 
-proc stringizeFlags*(winner: ArgResult): Table[string, string] =
+proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
+  
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
 template heading(s: string, color = acMagenta): string =
@@ -960,15 +962,12 @@ proc showFlagHelp(cmd: CommandSpec) =
     numFlags: int
     fstr:     string
                                      
-  
   for k, spec in cmd.flags:
     if not k.startswith("->"):
       flagList.add(k)
 
   if len(flaglist) == 0: return
 
-  flagList.sort()
-  
   for k in flagList:
     let spec = cmd.flags[k]
     numFlags = len(spec.recognizedNames)
@@ -1132,7 +1131,8 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState) =
     discard runtime.attrSet(unpack[string](cmdAttrBox.get()),
                             pack(winner.command))
   if argAttrBox.isSome():
-    discard runtime.attrSet(unpack[string](argAttrBox.get()), pack(winner.args))
+    discard runtime.attrSet(unpack[string](argAttrBox.get()),
+                            pack(winner.args[winner.command]))
   if flagAttrBox.isSome():
     let flags = winner.flags.stringizeFlags(parseId)
     discard runtime.attrSet(unpack[string](flagAttrBox.get()), pack(flags))

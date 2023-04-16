@@ -251,7 +251,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     #
     # So we just have to update the RHS and then assign.
     node.children[1].evalNode(s)
-    let err = attrSet(node.attrRef, node.children[1].value)
+    let err = attrSet(node.attrRef, node.children[1].value, node)
 
     case err.code
     of errCantSet:

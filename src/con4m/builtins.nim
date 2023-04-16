@@ -865,7 +865,11 @@ proc c4mOverride*(args: seq[Box], localState: ConfigState): Option[Box] =
   if sym.locked or sym.override.isSome(): return falseRet
   
   sym.override = some(args[1])
-
+  if state.nodeStash == nil: 
+    sym.lastUse = none(Con4mNode)
+  else:
+    sym.lastUse = some(state.nodeStash)
+    
   return trueRet
   
 proc c4mGetAttr*(args: seq[Box], localstate: ConfigState): Option[Box] =
@@ -1078,7 +1082,25 @@ else:
 
     return some(pack(output))
 
-proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn) =
+proc boolStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(false))
+proc intStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(0))
+proc floatStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(0.0))
+proc stringStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(""))
+proc listStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack[seq[Box]](@[]))
+proc dictStub*(args: seq[Box], unused  = ConfigState(nil)): Option[Box] =
+  let r = newCon4mDict[Box, Box]()
+  return some(pack(r))
+proc callbackStub*(args: seq[Box], unused  = ConfigState(nil)): Option[Box] =
+  return some(pack(CallbackObj(tInfo: Con4mType(kind: TypeFunc, noSpec: true))))
+proc typespecStub*(args: seq[Box], unused  = ConfigState(nil)): Option[Box] =
+  return some(pack(Con4mType(kind: TypeTypeSpec)))
+    
+proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn, stub = false) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
   ## the parameter used to specify the name exposed to con4m.  `tinfo`
@@ -1089,12 +1111,33 @@ proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn) =
     name     = sig[0 ..< ix]
     coreName = if fn == nil: "callback" else: "builtin"
     tinfo    = sig[ix .. ^1].toCon4mType()
+  var
+    f        = fn
 
   if tinfo.kind != TypeFunc:
     raise c4mException(fmt"Signature provided for {coreName} " &
                           "is not a function signature.")
 
-  let b = if fn == nil:
+  if stub:
+    case tInfo.retType.kind
+    of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+      f = stringStub
+    of TypeBool:
+      f = boolStub
+    of TypeInt, TypeDuration, TypeSize, TypeTVar, TypeBottom:
+      f = intStub
+    of TypeFloat:
+      f = floatStub
+    of TypeTuple, TypeList:
+      f = listStub
+    of TypeDict:
+      f = dictStub
+    of TypeTypeSpec:
+      f = typespecStub
+    of TypeFunc:
+      f = callbackStub
+      
+  let b = if f == nil:
             FuncTableEntry(kind:        FnUserDefined,
                            tinfo:       tinfo,
                            impl:        none(Con4mNode),
@@ -1106,10 +1149,10 @@ proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn) =
             # or locked because they shouldn't be used for builtins.
             FuncTableEntry(kind:    FnBuiltIn,
                            tinfo:   tinfo,
-                           builtin: fn,
+                           builtin: f,
                            name:    name)
 
-  if fn == nil:
+  if f == nil:
     if tinfo.retType.isBottom():
       raise c4mException(fmt"{coreName}: callbacks must have a return type")
 

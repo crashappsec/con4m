@@ -46,6 +46,7 @@ Then you will be able to do both:
 mycmd --loglevel= warn
 mycmd --warn
 """
+
 ##### End of default doc strings.
 object flag_yn {
   user_def_ok: false
@@ -569,6 +570,7 @@ resulting value wiil be:
     require:    false
     write_lock: true
     hidden:     true
+    # TODO: write a validator.
     doc: """
 If provided, we try to guess which command is being run based on the
 arguments.
@@ -977,8 +979,8 @@ func consistency_check(path) {
         return "Must offer at least two choices."
       }
       if k == 1 {
-        min := attr_get(choice_path + ".min", int)
-	max := attr_get(choice_path + ".max", int)
+        min := attr_get(flag_path + ".min", int)
+	max := attr_get(flag_path + ".max", int)
 
         if max > len(choices) and max != high() {
 	  return ("max value is larger than the number of choices provided " +

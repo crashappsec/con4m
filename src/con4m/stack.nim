@@ -1,6 +1,6 @@
 import tables, options, streams, strutils, sequtils, sugar, os, json
 import lex, types, errmsg, parse, treecheck, eval, spec, builtins, dollars,
-       getopts, c42spec, st, typecheck
+       getopts, c42spec, st, typecheck, run
 
 import nimutils/ansi
 
@@ -8,7 +8,7 @@ const getOptsSpec = staticRead("c4m/getopts.c42spec")
 
 type
   ActionKind* = enum
-    akInitState, akCallback, akC42SpecLoad, akConfLoad, akValidate,
+    akInitState, akCallback, akSpecLoad, akConfLoad, akValidate,
     akStartGetOpts, akFinalizeGetOpts, akSetErrHandler
 
   StackCallback*     = (ConfigState) -> void
@@ -21,21 +21,25 @@ type
       addBuiltins*: bool
       customFuncs*: seq[(string, BuiltinFn)]
       exclusions*:  seq[string]
+      stubs*:       seq[string]
       which*:       StackRuntimeScope
     of akCallback:
       callback*:    StackCallback
-    of akC42SpecLoad, akConfLoad, akValidate:
-      fileName*:      string
-      stream*:        Stream
-      genSpec*:       bool
-      run*:           bool
-      doPreCheck*:    bool
-      doPostCheck*:   bool
-      showToks*:      bool
-      showParsed*:    bool
-      showTyped*:     bool
-      showPretty*:    bool
-      showJson*:      bool
+    of akSpecLoad, akConfLoad, akValidate:
+      fileName*:       string
+      stream*:         Stream
+      genSpec*:        bool
+      run*:            bool
+      doPreCheck*:     bool
+      doPostCheck*:    bool
+      showToks*:       bool
+      showParsed*:     bool
+      showTyped*:      bool
+      showFuncs*:      bool
+      showEarlyFns*:   bool
+      showPretty*:     bool
+      showJSon*:       bool
+      endPhase*:       string
     of akStartGetOpts, akFinalizeGetOpts:
       args*:          seq[string]
       resPath*:       string
@@ -56,7 +60,6 @@ type
     finalOpt*:            ArgResult
     bt*:                  bool
     getoptStarted*:       bool
-    debug*:               bool
 
 proc clearError*(s: ConfigStack) =
   s.errored = false
@@ -79,6 +82,11 @@ proc addCustomBuiltins*(stack: ConfigStack,
                         which: which)
 
   stack.steps.add(step)
+
+proc addStubs*(stack: ConfigStack, stubs: seq[string], which = srsBoth):
+               ConfigStack {.discardable.} =
+  result = stack
+  var step = ConfigStep(kind: akInitState, stubs: stubs, which: which)
 
 proc addCallback*(stack:     ConfigStack,
                   callback:  StackCallback,
@@ -104,7 +112,7 @@ proc addSpecLoad*(stack:        ConfigStack,
                   stageName:    string = fileName):
                     ConfigStack {.discardable.} =
   result   = stack
-  var step = ConfigStep(kind: akC42SpecLoad, fileName: fileName, run: true,
+  var step = ConfigStep(kind: akSpecLoad, fileName: fileName, run: true,
                         doPreCheck: preValidate, doPostCheck: postValidate,
                         stageName: stageName, stream: stream, genSpec: genSpec)
   
@@ -114,7 +122,7 @@ proc addGetoptSpecLoad*(stack:     ConfigStack,
                         stageName: string = "getopts-specload"):
                           ConfigStack {.discardable.} =
   result = stack
-  var step = ConfigStep(kind: akC42SpecLoad, filename: "getopts-spec",
+  var step = ConfigStep(kind: akSpecLoad, filename: "getopts-spec",
                         run: true, doPreCheck: false, doPostCheck: false,
                         stageName: stageName, genSpec: true,
                         stream: newStringStream(getOptsSpec))
@@ -177,91 +185,7 @@ proc createEmptyRuntime(): ConfigState =
 template initializeSpec(specRuntime: ConfigState) =
   specRuntime.spec = some(buildC42Spec())
     
-proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
-  let step = stack.steps[stack.ix]
-  var tree: Con4mNode
-  
-  try:
-    if step.run:
-      if step.stream == nil:
-        fatal("Unable to open '" & step.fileName & "' for reading")
-        step.stream.setPosition(0)
-      let
-        (valid, tokens) = step.stream.lex()
-
-      if not valid:
-        let msg = case tokens[^1].kind
-        of ErrorTok:         "Invalid character found"
-        of ErrorLongComment: "Unterminated comment"
-        of ErrorStringLit:   "Unterminated string"
-        of ErrorOtherLit:    "Unterminated literal"
-        else:                "Unknown error" # Not be possible w/o a lex bug
-        fatal(msg)
-
-      if step.showToks:
-        for i, token in tokens:
-          stderr.writeLine($i & ": " & $token)
-        
-      tree          = tokens.parse(step.fileName)
-      tree.varScope = VarScope(parent: none(VarScope))
-
-      if step.showParsed:
-        stderr.writeLine($tree)
-        
-      conf.secondPass = false
-      tree.checkTree(conf)
-
-      if step.showTyped:
-        stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" &
-                     toAnsiCode(acReset))
-        stderr.writeLine($tree)
-        for item in conf.moduleFuncDefs:
-          let typeStr = `$`(item.tInfo)
-          stderr.write(toAnsiCode(acBCyan))
-          stderr.writeLine("Function: " & item.name & typeStr)
-          stderr.write(toAnsiCode(acReset))
-          stderr.writeLine($item.impl.get())
-
-    if step.doPreCheck and spec != nil:
-      if conf.spec.isNone():
-        if stack.c42SpecObj == nil:
-          fatal("Spec runtime exists, but no spec object generated from it.")
-        conf.spec = some(stack.c42SpecObj)
-      conf.preEvalCheck(spec)
-
-    if step.run: # Set up the runtime stack.
-      var topFrame = RuntimeFrame()
-      for k, sym in tree.varScope.contents:
-        if k notin topFrame:
-          topFrame[k] = sym.value
-
-      conf.frames = @[topFrame]
-  
-      ctrace(step.fileName & ": Beginning evaluation.")
-      tree.evalNode(conf)
-      ctrace(step.fileName & ": Evaluation done.")
-  finally:
-    if step.run:
-      conf.numExecutions += 1
-      
-      # Clean up the runtime stack and stash exported global state.
-      if conf.frames.len() > 0:
-        for k, v in conf.frames[0]:
-          if k in conf.keptGlobals:
-            conf.keptGlobals[k].value = v
-        conf.frames = @[]
-        
-  if step.doPostCheck and spec != nil:
-    conf.validateState(spec)
-
-  if step.showPretty:
-    echo conf.attrs
-
-  if step.showJson:
-    stderr.writeLine(toAnsiCode([acBRed]))
-    stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
-    echo parseJson(conf.attrs.scopeToJson()).pretty()
-    stderr.writeLine(toAnsiCode([acReset]))
+proc runOneConf(stack: ConfigStack, conf, spec: ConfigState)
 
 proc oneInit(s: ConfigState, step: ConfigStep) =
   if step.addBuiltins:
@@ -279,10 +203,12 @@ proc oneInit(s: ConfigState, step: ConfigStep) =
       
       s.newCoreFunc(sig, impl)
       
-    
   for item in step.customFuncs:
     let (sig, impl) = item
     s.newCoreFunc(sig, impl)
+
+  for item in step.stubs:
+    s.newCoreFunc(item, nil, true)
 
   for sig in step.exclusions:
     let
@@ -391,34 +317,117 @@ proc doSetErrorHandler(stack: ConfigStack) =
   let step = stack.steps[stack.ix]
   stack.errorCb = step.handler
 
-proc getArgResult*(stack: ConfigStack): ArgResult = stack.finalOpt
+proc getArgResult*(stack: ConfigStack): ArgResult =
+  if stack.finalOpt == nil:
+    raise newException(ValueError, "No accepted parse for command line.")
+  return stack.finalOpt
+proc getCommand*(stack: ConfigStack): string = stack.getArgResult().command
+proc getArgs*(stack: ConfigStack, sect = none(string)): seq[string] =
+  let res = stack.getArgResult()  
+  if sect.isNone():
+    return res.args[res.command]
+  else:
+    let s = sect.get()
+    if res.args.contains(s):
+      return res.args[s]
+proc getFlags*(stack: ConfigStack, sect = none(string)):
+             OrderedTable[string, FlagSpec] = stack.getArgResult().flags
+proc getAttrs*(stack: ConfigStack): Option[AttrScope] =
+  if stack.configState == nil: return none(AttrScope)
+  return some(stack.configState.attrs)
+
+proc loadConfOptions(stack: ConfigStack) =
+  var
+    show_when = getConf[seq[string]]("show_when").getOrElse(@["none"])
+    spec_when = getConf[seq[string]]("spec_when").getOrElse(@["none"])
+    show      = false
+    first_specload = -1
+    last_specload  = -1
+    first_confload = -1
+    last_confload  = -1
+
+  if "none" in show_when and "none" in spec_when: return
+    
+  for i in stack.ix ..< stack.steps.len():
+    case stack.steps[i].kind
+    of akSpecLoad:
+      last_specload = i
+      if first_specload == -1: first_specload = i
+    of akConfLoad:
+      last_confload = i
+      if first_confload == -1: first_confload = i
+    else:
+      continue
+
   
-proc run*(stack: ConfigStack, backtrace = false, debug = false):
+  for i in stack.ix ..< stack.steps.len():
+    let item = stack.steps[i]
+
+    if item.kind == akConfLoad:
+      if i == last_confload:
+        if getConf[bool]("show_funcs").get():
+          item.showFuncs    = true
+        if getConf[bool]("show_untyped_funcs").get():
+          item.showEarlyFns = true
+          
+        let stoptime = getConf[string]("stop_when").getOrElse("postcheck")
+        if stoptime != "postcheck":
+          item.endPhase = stoptime
+          
+        if "all" in show_when or "last" in show_when: show = true
+        elif i == first_confload and "first" in show_when: show = true
+        else: show = false
+      elif i == first_confload:
+        if "all" in show_when or "first" in show_when: show = true
+        else: show = false
+      else:
+        if "all" in show_when or "rest" in show_when: show = true
+        else: show = false
+      if not show: continue
+
+      if getConf[bool]("show_tokens").get():        item.showToks     = true
+      if getConf[bool]("show_parse_tree").get():    item.showParsed   = true
+      if getConf[bool]("show_checked_tree").get():  item.showTyped    = true
+      
+    elif item.kind == akSpecLoad:
+      if i == last_specload:
+        if "all" in spec_when or "last" in spec_when: show = true
+        elif i == first_specload and "first" in spec_when: show = true
+        else: show = false
+      elif i == first_specload:
+        if "all" in spec_when or "first" in spec_when: show = true
+        else: show = false
+      else:
+        if "all" in spec_when or "rest" in spec_when: show = true
+        else: show = false
+      if not show: continue
+      if getConf[bool]("show_spec_tokens").get():       item.showToks   = true
+      if getConf[bool]("show_spec_parse_tree").get():   item.showParsed = true
+      if getConf[bool]("show_spec_checked_tree").get(): item.showTyped  = true
+
+proc run*(stack: ConfigStack, backtrace = false):
         Option[ConfigState] {.discardable.} =
   result = none(ConfigState)
   if stack.errored: return
   stack.bt    = backtrace
-  stack.debug = debug
+
+  stack.loadConfOptions()
   
   while stack.ix < len(stack.steps):
     let step = stack.steps[stack.ix]
-    if stack.debug:
-      stderr.writeLine("Begin step " & $(stack.ix) & "; kind = " & $step.kind)
     try:
       case step.kind
       of akInitState:       stack.doInit()
       of akCallback:        stack.doCallback()
-      of akC42SpecLoad:     stack.doSpecLoad()
+      of akSpecLoad:        stack.doSpecLoad()
       of akConfLoad:        stack.doConfLoad()
       of akValidate:        stack.doValidate()
       of akStartGetOpts:    stack.doStartGetOpts()
       of akFinalizeGetOpts: stack.doFinalizeGetOpts()
       of akSetErrHandler:   stack.doSetErrorHandler()
-      if stack.debug:
-        stderr.writeLine("End step " & $(stack.ix))      
     except:
-      if stack.debug:
-        stderr.writeLine("Error in step " & $(stack.ix))      
+      if step.kind notin [akSpecLoad, akConfLoad, akValidate]:
+        stderr.writeLine("Error when running stack stage: " & step.stageName)
       
       if stack.errorCb != nil:
         stack.errored = stack.errorCb(getCurrentExceptionMsg(),
@@ -432,3 +441,105 @@ proc run*(stack: ConfigStack, backtrace = false, debug = false):
         raise
     finally:
       stack.ix = stack.ix + 1
+
+  if stack.configState != nil: return some(stack.configState)
+
+proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =  
+  let step = stack.steps[stack.ix]
+  var tree: Con4mNode
+  
+  try:
+    if step.run:
+      if step.stream == nil:
+        fatal("Unable to open '" & step.fileName & "' for reading")
+        step.stream.setPosition(0)
+      let
+        (valid, tokens) = step.stream.lex()
+
+      if not valid:
+        let msg = case tokens[^1].kind
+        of ErrorTok:         "Invalid character found"
+        of ErrorLongComment: "Unterminated comment"
+        of ErrorStringLit:   "Unterminated string"
+        of ErrorOtherLit:    "Unterminated literal"
+        else:                "Unknown error" # Not be possible w/o a lex bug
+        fatal(msg)
+
+      if step.showToks:
+        for i, token in tokens:
+          stderr.writeLine($i & ": " & $token)
+
+      if step.endPhase == "tokenize": return
+      
+      tree          = tokens.parse(step.fileName)
+      tree.varScope = VarScope(parent: none(VarScope))
+
+      if step.showParsed:
+        stderr.writeLine($tree)
+
+      if step.showEarlyFns:
+        stderr.writeLine($(conf.funcTable))
+
+      if step.endPhase == "parse": return
+      
+      conf.secondPass = false
+      tree.checkTree(conf)
+
+      if step.showTyped:
+        stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" &
+                     toAnsiCode(acReset))
+        stderr.writeLine($tree)
+        for item in conf.moduleFuncDefs:
+          let typeStr = `$`(item.tInfo)
+          stderr.write(toAnsiCode(acBCyan))
+          stderr.writeLine("Function: " & item.name & typeStr)
+          stderr.write(toAnsiCode(acReset))
+          stderr.writeLine($item.impl.get())
+
+      if step.showFuncs:
+        stderr.writeLine($(conf.funcTable))
+
+    if step.doPreCheck and spec != nil:
+      if conf.spec.isNone():
+        if stack.c42SpecObj == nil:
+          fatal("Spec runtime exists, but no spec object generated from it.")
+        conf.spec = some(stack.c42SpecObj)
+      conf.preEvalCheck(spec)
+
+    if step.endPhase == "precheck": return
+    
+    if step.run: # Set up the runtime stack.
+      var topFrame = RuntimeFrame()
+      for k, sym in tree.varScope.contents:
+        if k notin topFrame:
+          topFrame[k] = sym.value
+
+      conf.frames = @[topFrame]
+  
+      ctrace(step.fileName & ": Beginning evaluation.")
+      tree.evalNode(conf)
+      ctrace(step.fileName & ": Evaluation done.")
+  finally:
+    if step.run:
+      conf.numExecutions += 1
+      
+      # Clean up the runtime stack and stash exported global state.
+      if conf.frames.len() > 0:
+        for k, v in conf.frames[0]:
+          if k in conf.keptGlobals:
+            conf.keptGlobals[k].value = v
+        conf.frames = @[]
+
+  if step.endPhase == "eval": return
+  
+  if step.doPostCheck and spec != nil:
+    conf.validateState(spec)
+
+  if step.showPretty:
+    echo conf.attrs
+
+  if step.showJson:
+    stderr.writeLine(toAnsiCode([acBRed]))
+    stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
+    echo parseJson(conf.attrs.scopeToJson()).pretty()
+    stderr.writeLine(toAnsiCode([acReset]))

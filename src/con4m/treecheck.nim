@@ -739,7 +739,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         if fname in s.funcTable:
           msg = "Could not find an implementation for the function " &
           fmt"'{fname}{$(node.children[1].typeInfo)}'" &
-          "\nPerhaps you meant::\n"
+          "\nPerhaps you meant:\n"
           for item in s.funcTable[fname]:
              msg &= $(item) & "\n"
         if stopPhase > phCheck:

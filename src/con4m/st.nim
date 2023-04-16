@@ -153,10 +153,11 @@ proc attrLookup*(scope: AttrScope,
       else:
         case op
         of vlSecDef:
-          let sub     = AttrScope(name:     name,
-                                  parent:   some(scope),
-                                  config:   scope.config,
-                                  contents: default(Table[string, AttrOrSub]))
+          let sub = AttrScope(name:     name,
+                              parent:   some(scope),
+                              config:   scope.config,
+                              contents: default(OrderedTable[string,
+                                                             AttrOrSub]))
           scope.contents[name] = either(sub)
 
           return scope.contents[name]
@@ -182,7 +183,7 @@ proc attrLookup*(scope: AttrScope,
       newScope = AttrScope(name:     name,
                            parent:   some(scope),
                            config:   scope.config,
-                           contents: default(Table[string, AttrOrSub]))
+                           contents: default(OrderedTable[string, AttrOrSub]))
 
       scope.contents[name] = either(newScope)
 
@@ -218,8 +219,26 @@ proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
 proc attrLookup*(ctx: ConfigState, fqn: string): Option[Box] =
   return attrLookup(ctx.attrs, fqn)
 
+proc get*[T](attrs: AttrScope, fqn: string): T =
+  let optBox = attrLookup(attrs, fqn)
+  if optBox.isNone():
+   raise newException(ValueError, "get() of an attribute that isn't set.")
+  return unpack[T](optBox.get())
+
+proc getOpt*[T](attrs: AttrScope, fqn: string): Option[T] =
+  let optBox = attrLookup(attrs, fqn)
+  if optBox.isNone():
+   return none(T)
+  return some(unpack[T](optBox.get()))
+
+proc get*[T](ctx: ConfigState, fqn: string): T =
+  return get[T](ctx.attrs, fqn)
+
+proc getOpt*[T](ctx: ConfigState, fqn: string): Option[T] =
+  return getOpt[T](ctx.attrs, fqn)
+  
 proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
-  let possibleAttr = attrLookup(attrs, @[name], 0, vlAttrUse)
+  let possibleAttr = attrLookup(attrs, @[name], 0, vlAttrDef)
 
   if possibleAttr.isA(AttrErr):
     return false
@@ -232,7 +251,7 @@ proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
 proc setOverride*(ctx: ConfigState, fqn: string, val: Option[Box]): bool =
   let
     parts        = fqn.split(".")
-    possibleAttr = attrLookup(ctx.attrs, parts, 0, vlAttrUse)
+    possibleAttr = attrLookup(ctx.attrs, parts, 0, vlAttrDef)
 
   if possibleAttr.isA(AttrErr):
     return false
@@ -279,7 +298,10 @@ proc fullNameAsStr*(scope: AttrScope): string =
 proc fullNameAsStr*(attr: Attribute): string =
   return attr.fullNameAsSeq().join(".")
 
-proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
+proc attrSet*(attr:  Attribute,
+              value: Box,
+              node:  Con4mNode = nil,
+              hook: AttrSetHook = nil): AttrErr =
   ## This version of attrSet is the lowest level, and actually does
   ## the setting. This applies our logic for overrides, attribute
   ## locks and user-defined hooking, so don't set Attribute object
@@ -301,6 +323,10 @@ proc attrSet*(attr: Attribute, value: Box, hook: AttrSetHook = nil): AttrErr =
       return AttrErr(code: errCantSet,
                      msg:  fmt"{n}: The application prevented this " &
                               "attribute from being set")
+  if node == nil:
+    attr.lastUse = none(Con4mNode)
+  else:
+    attr.lastUse = some(node)
   attr.value = some(value)
 
   if attr.lockOnWrite:
@@ -321,7 +347,7 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
     aOrS              = possibleAttr.get(AttrOrSub)
     attr              = aOrS.get(Attribute)
 
-  return attr.attrSet(value, attrs.config.setHook)
+  return attr.attrSet(value, nil, attrs.config.setHook)
 
 proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
   return attrSet(ctx.attrs, fqn, val)
@@ -410,7 +436,7 @@ proc oneValToJson(box: Box, tInfo: Con4mType): string =
       l.add(kstr & ":" & vstr)
     result = "{" & l.join(", ") & "}"
   else:
-    result = "\"" & tInfo.oneArgToString(box) & "\""
+    result = escapeJson(tInfo.oneArgToString(box))
 
 proc scopeToJson*(scope: AttrScope): string =
   var kvpairs: seq[string] = @[]
@@ -422,13 +448,13 @@ proc scopeToJson*(scope: AttrScope): string =
         boxOpt = attr.attrToVal()
       if boxOpt.isSome():
         let
-          val     = boxOpt.get().oneValToJson(attr.tInfo)
-          typeStr = fmt("\"type\": \"{$(attr.tInfo)}\"")
-          valStr  = fmt("\"value\": {val}")
+          valStr  = "\"value\": " & boxOpt.get().oneValToJson(attr.tInfo)
+          typeStr = "\"type\": "  & escapeJson($(attr.tInfo))
 
         kvpairs.add(fmt(""""{k}" : {{{typeStr}, {valStr}}}"""))
       else:
         kvpairs.add(fmt""""{k}" : {nullstr}""")
     else:
       kvpairs.add(fmt""""{k}" : {scopeToJson(v.get(AttrScope))}""")
-  result = "{ " & kvpairs.join(", ") & "}"
+  result = "{ " & kvpairs.join(", ") & " }"
+  

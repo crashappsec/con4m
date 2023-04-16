@@ -20,7 +20,7 @@ let
 
 var
   publishParams = { "loglevel" : $(llError) }.newOrderedTable()
-  verbosity     = c4vMax
+  verbosity     = c4vShowLoc
   curFileName: string
 
 
