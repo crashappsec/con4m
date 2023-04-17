@@ -923,7 +923,7 @@ proc getUsage(cmd: CommandSpec): string =
 
   let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
   return heading(use, color = acBRed)
-  
+
 proc getCommandList(cmd: CommandSpec): string =
   var cmds: seq[string]
 
@@ -1026,7 +1026,7 @@ proc getFlagHelp(cmd: CommandSpec): string =
   var outTbl = tableC4mStyle(2, rows, wrapStyle = WrapLinesHang)
 
   result = heading("Flags: ") & "\n" & outTbl.render()
-  
+
 proc getOneCmdHelp(cmd: CommandSpec): string =
   result = getUsage(cmd) &
     formatHelp(cmd.doc, Corpus(cmd.extraHelpTopics)) & "\n"
@@ -1078,7 +1078,7 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
 
 proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
   result = ""
-  
+
   let
     parseId = winner.parseCtx.parseId
     endCmd  = winner.parseCtx.finalCmd

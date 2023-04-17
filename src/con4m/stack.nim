@@ -343,7 +343,7 @@ proc getAttrs*(stack: ConfigStack): Option[AttrScope] =
   if stack.configState == nil: return none(AttrScope)
   return some(stack.configState.attrs)
 proc getHelpStr*(a: ArgResult): string = a.helpToPrint
-  
+
 proc loadConfOptions(stack: ConfigStack) =
   var
     show_when = getConf[seq[string]]("show_when").getOrElse(@["none"])
