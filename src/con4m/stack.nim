@@ -43,6 +43,7 @@ type
     of akStartGetOpts, akFinalizeGetOpts:
       args*:          seq[string]
       resPath*:       string
+      printAutoHelp*: bool
     of akSetErrHandler:
       handler*:       ErrorCallback
 
@@ -151,22 +152,24 @@ proc addValiate*(stack:       ConfigStack,
                         doPostCheck: doPostCheck)
   stack.steps.add(step)
 
-proc addStartGetOpts*(stack:     ConfigStack,
-                      resPath:   string = "getopts",
-                      stageName: string = "start-getopts",
-                      args:      seq[string] = @[]):
+proc addStartGetOpts*(stack:         ConfigStack,
+                      resPath:       string = "getopts",
+                      stageName:     string = "start-getopts",
+                      printAutoHelp: bool = true,  # vs returning it.
+                      args:          seq[string] = @[]):
                         ConfigStack {.discardable.} =
   result   = stack
 
   var argv = if len(args) > 0: args else: commandLineParams()
   var step = ConfigStep(kind: akStartGetOpts, args: argv, stageName: stageName,
-                        resPath: resPath)
+                        resPath: resPath, printAutoHelp: printAutoHelp)
   stack.getoptStarted = true
   stack.steps.add(step)
 
-proc addFinalizeGetOpts*(stack:     ConfigStack,
-                         resPath:   string = "getopts",
-                         stageName: string = "finalize-getopts"):
+proc addFinalizeGetOpts*(stack:         ConfigStack,
+                         resPath:       string = "getopts",
+                         stageName:     string = "finalize-getopts",
+                         printAutoHelp: bool   = true):
                            ConfigStack {.discardable.} =
   if not stack.getOptStarted:
     raise newException(ValueError, "startGetOpt must have been done before " &
@@ -174,7 +177,7 @@ proc addFinalizeGetOpts*(stack:     ConfigStack,
   result   = stack
 
   var step = ConfigStep(kind: akFinalizeGetOpts, stageName: stageName,
-                        resPath: resPath)
+                        resPath: resPath, printAutoHelp: printAutoHelp)
   stack.steps.add(step)
 
 proc createEmptyRuntime(): ConfigState =
@@ -305,6 +308,8 @@ proc doStartGetOpts(stack: ConfigStack) =
   res = runManagedGetopt(stack.configState, step.args, step.resPath)
   if len(res) == 1:
     stack.finalOpt = res[0]
+    if step.printAutoHelp and stack.finalOpt.helpToPrint != "":
+      echo stack.finalOpt.helpToPrint
   else:
     stack.getOptOptions = res
 
@@ -312,6 +317,8 @@ proc doFinalizeGetOpts(s: ConfigStack) =
   if len(s.getOptOptions) < 2: return
   s.finalOpt      = finalizeManagedGetopt(s.configState, s.getOptOptions)
   s.getOptOptions = @[]
+  if s.steps[s.ix].printAutoHelp and s.finalOpt.helpToPrint != "":
+    echo s.finalOpt.helpToPrint
 
 proc doSetErrorHandler(stack: ConfigStack) =
   let step = stack.steps[stack.ix]
@@ -335,7 +342,8 @@ proc getFlags*(stack: ConfigStack, sect = none(string)):
 proc getAttrs*(stack: ConfigStack): Option[AttrScope] =
   if stack.configState == nil: return none(AttrScope)
   return some(stack.configState.attrs)
-
+proc getHelpStr*(a: ArgResult): string = a.helpToPrint
+  
 proc loadConfOptions(stack: ConfigStack) =
   var
     show_when = getConf[seq[string]]("show_when").getOrElse(@["none"])
@@ -426,7 +434,7 @@ proc run*(stack: ConfigStack, backtrace = false):
       of akFinalizeGetOpts: stack.doFinalizeGetOpts()
       of akSetErrHandler:   stack.doSetErrorHandler()
     except:
-      if step.kind notin [akSpecLoad, akConfLoad, akValidate]:
+      if step.kind notin [akSpecLoad, akConfLoad, akValidate] and stack.bt:
         stderr.writeLine("Error when running stack stage: " & step.stageName)
 
       if stack.errorCb != nil:

@@ -6,7 +6,7 @@
 ## results are undefined :)
 
 import unicode, options, tables, os, sequtils, types, nimutils, st, eval,
-       std/terminal, algorithm, spec
+       std/terminal, algorithm, spec, nimutils/help
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"
@@ -44,7 +44,7 @@ type
     flags:             OrderedTable[string, FlagSpec]
     callback:          Option[CallbackObj]
     doc:               string
-    extraHelpTopics:   OrderedTableRef[string, string]
+    extraHelpTopics:   OrderedTable[string, string]
     argName:           string
     minArgs:           int
     maxArgs:           int
@@ -57,11 +57,12 @@ type
     allPossibleFlags:  OrderedTable[string, FlagSpec]
 
   ArgResult* = ref object
-    stashedTop*: AttrScope
-    command*:    string
-    args*:       OrderedTableRef[string, seq[string]]
-    flags*:      OrderedTable[string, FlagSpec]
-    parseCtx*:   ParseCtx
+    stashedTop*:  AttrScope
+    command*:     string
+    args*:        OrderedTableRef[string, seq[string]]
+    flags*:       OrderedTable[string, FlagSpec]
+    helpToPrint*: string
+    parseCtx*:    ParseCtx
   ParseCtx = ref object
     curArgs:  seq[string]
     args:     seq[string]
@@ -223,13 +224,13 @@ proc addChoiceFlag*(cmd:             CommandSpec,
 
   let kind            = if multi: afMultiChoice else: afChoice
   var flag            = newFlag(cmd, kind, reportingName, clobberOk,
-                                recognizedNames, doc, callback)
+                                recognizedNames, doc, callback, toSet)
   flag.choices        = choices.toSeq()
   if flagPerChoice:
     for item in choices:
       let itemName = "->" & item # -> for forwards...
       var oneFlag = newFlag(cmd, afPair, itemName, clobberOk, @[item],
-                            doc, callback, toSet)
+                            doc, callback)
       oneFlag.positiveNames = @[item]
       oneFlag.linkedChoice  = some(flag)
 
@@ -776,8 +777,6 @@ proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
                           cb, fieldToSet)
 
 proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
-  if cmdObj.extraHelpTopics == nil:
-    cmdObj.extraHelpTopics = OrderedTableRef[string, string]()
   for k, v in all.contents:
     cmdObj.extraHelpTopics[k] = unpack[string](v.get(Attribute).value.get())
 
@@ -858,36 +857,6 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
 template heading(s: string, color = acMagenta): string =
   toAnsiCode(color) & s & toAnsiCode(acReset)
 
-proc showUsage(cmd: CommandSpec) =
-  var cmdName, flags, argName, subs: string
-
-  if cmd.reportingName == "":
-    cmdName = getAppFilename().splitPath().tail
-  else:
-    cmdname = cmd.reportingName.replace(".", " ")
-
-  if cmd.maxArgs == 0:
-    argName = ""
-  else:
-    for i in 0 ..< cmd.minArgs:
-      argName &= cmd.argName & " "
-    if cmd.minArgs != cmd.maxArgs:
-      argName &= "[" & cmd.argName & "] "
-      if cmd.maxArgs == high(int):
-        argName &= "..."
-      else:
-        argName &= "(0, " & $(cmd.maxArgs - cmd.minArgs) & ") "
-
-  if len(cmd.flags) != 0: flags = "[FLAGS]"
-
-  if len(cmd.commands) != 0:
-    if cmd.subOptional: subs = "[COMMANDS]"
-    else:               subs = "COMMAND"
-
-  let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
-  echo heading(use, color = acBRed)
-
-
 proc instantTable*(cells: seq[string]): string =
   #  TODO: push this into texttable.
   var
@@ -922,7 +891,40 @@ proc instantTable*(cells: seq[string]): string =
 
   return outTbl.render()
 
-proc showCommandList(cmd: CommandSpec) =
+proc addDash(s: string): string =
+  if len(s) == 1: return "-" & s
+  else:            return "--" & s
+
+proc getUsage(cmd: CommandSpec): string =
+  var cmdName, flags, argName, subs: string
+
+  if cmd.reportingName == "":
+    cmdName = getAppFilename().splitPath().tail
+  else:
+    cmdname = cmd.reportingName.replace(".", " ")
+
+  if cmd.maxArgs == 0:
+    argName = ""
+  else:
+    for i in 0 ..< cmd.minArgs:
+      argName &= cmd.argName & " "
+    if cmd.minArgs != cmd.maxArgs:
+      argName &= "[" & cmd.argName & "] "
+      if cmd.maxArgs == high(int):
+        argName &= "..."
+      else:
+        argName &= "(0, " & $(cmd.maxArgs - cmd.minArgs) & ") "
+
+  if len(cmd.flags) != 0: flags = "[FLAGS]"
+
+  if len(cmd.commands) != 0:
+    if cmd.subOptional: subs = "[COMMANDS]"
+    else:               subs = "COMMAND"
+
+  let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
+  return heading(use, color = acBRed)
+  
+proc getCommandList(cmd: CommandSpec): string =
   var cmds: seq[string]
 
   for k, sub in cmd.commands:
@@ -931,13 +933,11 @@ proc showCommandList(cmd: CommandSpec) =
 
   cmds.sort()
 
-  echo heading("Available Commands: ")
-  stdout.write(instantTable(cmds))
-  echo heading("See ... [COMMAND] help for info on each command.",
-                           color = acBold)
-  echo()
+  return heading("Available Commands: ") & "\n" & instantTable(cmds) & "\n" &
+         heading("See ... [COMMAND] help for info on each command.",
+                   color = acBold) & "\n"
 
-proc showAdditionalTopics(cmd: CommandSpec) =
+proc getAdditionalTopics(cmd: CommandSpec): string =
   var topics: seq[string]
 
   if cmd.extraHelpTopics.len() == 0: return
@@ -945,15 +945,9 @@ proc showAdditionalTopics(cmd: CommandSpec) =
     topics.add(k)
 
   topics.sort()
-  echo heading("Additional Topics: ")
-  stdout.write(instantTable(topics))
-  echo()
+  result = heading("Additional Topics: ") & "\n" & instantTable(topics) & "\n"
 
-proc addDash(s: string): string =
-  if len(s) == 1: return "-" & s
-  else:            return "--" & s
-
-proc showFlagHelp(cmd: CommandSpec) =
+proc getFlagHelp(cmd: CommandSpec): string =
   var
     flagList: seq[string]
     rows:     seq[seq[string]] = @[@["Flag", "Description"]]
@@ -1031,21 +1025,23 @@ proc showFlagHelp(cmd: CommandSpec) =
 
   var outTbl = tableC4mStyle(2, rows, wrapStyle = WrapLinesHang)
 
-  echo heading("Flags: ")
-  echo outTbl.render()
-
-proc showOneCmdHelp(cmd: CommandSpec) =
-  showUsage(cmd)
-  echo cmd.doc.perLineWrap()
+  result = heading("Flags: ") & "\n" & outTbl.render()
+  
+proc getOneCmdHelp(cmd: CommandSpec): string =
+  result = getUsage(cmd) &
+    formatHelp(cmd.doc, Corpus(cmd.extraHelpTopics)) & "\n"
 
   if len(cmd.commands) != 0:
-     cmd.showCommandList()
+     result &= cmd.getCommandList()
 
-  cmd.showFlagHelp()
+  result &= cmd.getFlagHelp()
 
-proc showCmdHelp*(cmd: CommandSpec, args: seq[string]) =
+  if len(cmd.extraHelpTopics) != 0:
+    result &= cmd.getAdditionalTopics()
+
+proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
   if len(args) == 0:
-    showOneCmdHelp(cmd)
+    result = getOneCmdHelp(cmd.parent.getOrElse(cmd))
   else:
     var legitCmds: seq[(bool, string, string)] = @[]
 
@@ -1061,13 +1057,13 @@ proc showCmdHelp*(cmd: CommandSpec, args: seq[string]) =
             break
         if not found and cmd.parent.isSome():
           let eht = cmd.parent.get().extraHelpTopics
-          if eht != nil and item in eht:
-            legitCmds.add((false, item, eht[item]))
+          if item in eht:
+            legitCmds.add((false, item, getHelp(Corpus(eht), @[item])))
           else:
             echo("No such command: " & item)
 
     if len(legitCmds) == 0:
-      showOneCmdHelp(cmd)
+      result &= getOneCmdHelp(cmd)
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
@@ -1078,11 +1074,11 @@ proc showCmdHelp*(cmd: CommandSpec, args: seq[string]) =
           echo heading("Note: '" & given & "' is an alias for '" &
             reporting & "'", color = acBCyan)
 
-        showOneCmdHelp(cmd.commands[reporting])
+        result &= getOneCmdHelp(cmd.commands[reporting])
 
-  quit(0)
-
-proc managedCommit(winner: ArgResult, runtime: ConfigState) =
+proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
+  result = ""
+  
   let
     parseId = winner.parseCtx.parseId
     endCmd  = winner.parseCtx.finalCmd
@@ -1115,7 +1111,7 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState) =
       let args = @[pack(winner.args[cmdName])]
       discard runtime.sCall(cmdObj.callback.get(), args)
     if cmdObj.autoHelp:
-      showCmdHelp(cmdObj.parent.get(), winner.args[cmdName])
+      result = getCmdHelp(cmdObj.parent.get(), winner.args[cmdName])
     let parts = cmdName.split(".")
     cmdName = parts[0 ..< ^1].join(".")
     if cmdObj.parent.isNone(): break
@@ -1137,7 +1133,9 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState) =
     let flags = winner.flags.stringizeFlags(parseId)
     discard runtime.attrSet(unpack[string](flagAttrBox.get()), pack(flags))
 
-proc finalizeManagedGetopt*(runtime: ConfigState, options: seq[ArgResult]):
+proc finalizeManagedGetopt*(runtime: ConfigState,
+                            options: seq[ArgResult],
+                            outputHelp = true):
                           ArgResult =
   var matchingCmds: seq[string] = @[]
   let
@@ -1155,7 +1153,8 @@ proc finalizeManagedGetopt*(runtime: ConfigState, options: seq[ArgResult]):
       for item in options:
         let thisCmd = item.command.split(".")[0]
         if cmd == thisCmd:
-          item.managedCommit(runtime)
+          item.helpToPrint = item.managedCommit(runtime)
+          if outputHelp: stderr.writeLine(item.helpToPrint)
           return item
         else:
           matchingCmds.add(thisCmd)
@@ -1167,7 +1166,8 @@ proc finalizeManagedGetopt*(runtime: ConfigState, options: seq[ArgResult]):
 
 proc runManagedGetopt*(runtime:      ConfigState,
                        args:         seq[string],
-                       getoptsPath = "getopts"): seq[ArgResult] =
+                       getoptsPath = "getopts",
+                       outputHelp  = true): seq[ArgResult] =
   # By this point, the spec should be validated, making the
   # checks for getopts() correctness unneeded.
   let aOrE = runtime.attrs.attrLookup(getoptsPath.split("."), 0, vlExists)
@@ -1230,4 +1230,5 @@ proc runManagedGetopt*(runtime:      ConfigState,
     item.stashedTop = sec
 
   if len(result) == 1:
-    result[0].managedCommit(runtime)
+    result[0].helpToPrint = result[0].managedCommit(runtime)
+    if outputHelp: stderr.writeLine(result[0].helpToPrint)
