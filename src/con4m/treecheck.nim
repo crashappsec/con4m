@@ -194,6 +194,26 @@ proc nameConflictCheck(node:    Con4mNode,
     else:
       discard
 
+proc lhsIdCheck(s, name, node, tinfo, lhsNode, rhsNode: auto) =
+  if not s.secondPass:
+    if name == "result" and not s.funcOrigin:
+      fatal("Cannot assign to special variable 'result' outside a function " &
+              "definition.")
+
+      node.nameConflictCheck(name, s, [ucVar, ucNone])
+    let
+      entry = node.addVariable(name)
+      t     = unify(tinfo, entry.tinfo)
+
+    if entry.locked:
+      # Could be a loop index or enum.
+        fatal(fmt"Cannot assign to the (locked) value {name}", lhsNode)
+
+    if t.isBottom():
+      fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
+                 rhsNode, tinfo, entry.tinfo)
+    entry.tinfo = t
+
 proc checkNode(node: Con4mNode, s: ConfigState) =
   # We take our scope from the parent by default.  If we're going to
   # have different scopes, the parent will tell us what our scope is.
@@ -255,7 +275,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       if len(node.children) == 3:
         let objname = node.children[1].getTokenText()
-        maybeEntry  = scope.attrLookup([secname, objname], 0, vlSecDef)
+        maybeEntry = scope.attrLookup([secname, objname], 0, vlSecDef)
       else:
         maybeEntry = scope.attrLookup([secname], 0, vlSecDef)
 
@@ -335,6 +355,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
+
   of NodeUnpack:
     node.children[^1].checkNode(s)
     let
@@ -343,7 +364,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     if ti.kind == TypeTVar and not s.secondPass:
       for i in 0 ..< node.children.len() - 1:
-        node.children[i].checkNode(s)
+        s.lhsIdCheck(node.children[i].getTokenText(), node, newTypeVar(),
+                     node.children[i], node.children[^1])
       return # Figure it out in the second pass.
 
     if ti.kind != TypeTuple:
@@ -351,26 +373,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if ti.itemTypes.len() != node.children.len() - 1:
       fatal("Trying to unpack a tuple of the wrong size.", tup)
 
-    for i, tv in ti.itemTypes:
-      let name = node.children[i].getTokenText()
-
-      node.nameConflictCheck(name, s, [ucVar, ucNone])
-
-      if name == "result" and not s.funcOrigin:
-        fatal("Cannot assign to special variable 'result' outside a function " &
-              "definition.")
-
-      let
-        entry = node.addVariable(name)
-        t = unify(tv, entry.tinfo)
-
-      if entry.locked:
-        fatal(fmt"Cannot unpack to (locked) variable {name}.", node.children[i])
-      if t.isBottom():
-        fatal2Type(fmt"Assignment of {name} conflicts with its existing type",
-          node.children[1], tv, entry.tInfo)
-      else:
-        entry.tInfo = t
+    for i, tInfo in ti.itemTypes:
+      s.lhsIdCheck(node.children[i].getTokenText(), node, tInfo,
+                   node.children[i], node.children[^1])
   of NodeElse:
     pushVarScope()
     node.checkKids(s)
@@ -729,18 +734,23 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           return
         # Don't bail for missing f()'s if we're not executing, since we may
         # not have them if the runtime environment adds their own functions.
+        var msg = fmt"No function with the name '{fname}' was found."
+
+        if fname in s.funcTable:
+          msg = "Could not find an implementation for the function " &
+          fmt"'{fname}{$(node.children[1].typeInfo)}'" &
+          "\nPerhaps you meant:\n"
+          for item in s.funcTable[fname]:
+             msg &= $(item) & "\n"
         if stopPhase > phCheck:
           node.children[1].typeInfo.retType = node.typeInfo
-          fatal(fmt"No matching signature found for function '{fname}'. " &
-                fmt"Expected type was: {$(node.children[1].typeInfo)}")
+          fatal(msg)
         else:
           let
             y = toAnsiCode(acYellow)
             r = toAnsiCode(acReset)
           node.children[1].typeInfo.retType = node.typeInfo
-          echo(fmt"{y}warning:{r} No matching signature found for function " &
-               fmt"'{fname}'. Expected type was: " &
-               $(node.children[1].typeInfo))
+          echo(fmt"{y}warning:{r} {msg}")
       else:
         s.waitingForTypeInfo = true
         node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)

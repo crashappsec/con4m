@@ -11,10 +11,20 @@ Documentation that will be printed for this flag, when requested.
 default_callback_doc := """
 The supplied con4m function will be called to do any work you wish to
 do, such as additional error checking, setting con4m fields with the
-value etc.  
+value etc.
 
 If you return anything other than the empty string, we assume it's an
 error message to be given to the user due to validation failing.
+"""
+
+default_field_to_set_doc := """
+If supplied, once the command line is successfully parsed and any
+callbacks are run, the field named here will be set as an override.
+Note that we assume you will have not previously locked or overridden
+the field, or else the setting will not happen.
+
+The destination field must exist in your c42 spec, and be of the right
+type.
 """
 
 default_choices_doc := """
@@ -22,7 +32,7 @@ A list of valid choices for when this flag is provided.
 """
 
 default_choice_flags_doc := """
-When true, for each possible choice in the 'choices' field, 
+When true, for each possible choice in the 'choices' field,
 we will generate a flag that can be independently provided.
 For instance, if you do:
 
@@ -36,10 +46,11 @@ Then you will be able to do both:
 mycmd --loglevel= warn
 mycmd --warn
 """
+
 ##### End of default doc strings.
 object flag_yn {
   user_def_ok: false
-  
+
   field yes_aliases  {
     type:       list[string]
     default:    []
@@ -62,7 +73,7 @@ These flags are *not* given yes/no prefixes.  This is primarily
 intended to be used for single-character flags.
 """
   }
-  
+
   field yes_prefixes {
     type:       list[string]
     require:    false    # inherits the global property if not provided.
@@ -73,7 +84,7 @@ What prefixes to use for the 'yes' value.  See the global version of
 this field for more detail (that field provides the default).
 """
   }
-  
+
   field no_prefixes  {
     type:       list[string]
     require:    false    # inherits the global property if not provided.
@@ -91,7 +102,7 @@ this field for more detail (that field provides the default).
     hidden:     true
     doc:        default_doc_doc
   }
-  
+
   field callback  {
     type:       func (bool) -> string
     require:    false
@@ -100,14 +111,23 @@ this field for more detail (that field provides the default).
     validator:  func callback_exists_check
     doc:        default_callback_doc
   }
+
+  field field_to_set {
+    type:       string
+    require:    false
+    write_lock: true
+    hidden:     true
+    validator:  func field_type_bool_check
+    doc:        default_field_to_set_doc
+  }
 }
 
 singleton flag_help {
   user_def_ok: false
-  
+
   field names  {
     type:        list[string]
-    default:     []
+    default:     ["help", "h"]
     write_lock:  true
     hidden:      true
     doc:         """
@@ -115,7 +135,7 @@ Flags that should produce a help message.
 """
   }
 
-  field doc  {
+  field doc {
     type:       string
     default:    "Shows a help message for this command."
     write_lock: true
@@ -126,7 +146,7 @@ Flags that should produce a help message.
 
 object flag_choice {
   user_def_ok: false
-  
+
   field aliases  {
     type:        list[string]
     default:     []
@@ -142,7 +162,7 @@ object flag_choice {
     hidden:      true
     doc:         default_choices_doc
   }
-  
+
   field add_choice_flags {
     type:        bool
     default:     false
@@ -158,7 +178,7 @@ object flag_choice {
     hidden:     true
     doc:        default_doc_doc
   }
-  
+
   field callback  {
     type:       func (string) -> string
     require:    false
@@ -166,12 +186,21 @@ object flag_choice {
     hidden:     true
     validator:  func callback_exists_check
     doc:        default_callback_doc
+  }
+
+  field field_to_set {
+    type:       string
+    require:    false
+    write_lock: true
+    hidden:     true
+    validator:  func field_type_string_check
+    doc:        default_field_to_set_doc
   }
 }
 
 object flag_arg {
   user_def_ok: false
-  
+
   field aliases  {
     type:        list[string]
     default:     []
@@ -187,7 +216,7 @@ object flag_arg {
     hidden:     true
     doc:        default_doc_doc
   }
-  
+
   field callback  {
     type:       func (string) -> string
     require:    false
@@ -196,11 +225,20 @@ object flag_arg {
     validator:  func callback_exists_check
     doc:        default_callback_doc
   }
+
+  field field_to_set {
+    type:       string
+    require:    false
+    write_lock: true
+    hidden:     true
+    validator:  func field_type_string_check
+    doc:        default_field_to_set_doc
+  }
 }
 
 object flag_multi_arg {
   user_def_ok: false
-  
+
   field aliases  {
     type:        list[string]
     default:     []
@@ -216,7 +254,7 @@ object flag_multi_arg {
     hidden:     true
     doc:        default_doc_doc
   }
-  
+
   field callback  {
     type:       func (list[string]) -> string
     require:    false
@@ -224,12 +262,21 @@ object flag_multi_arg {
     hidden:     true
     validator:  func callback_exists_check
     doc:        default_callback_doc
+  }
+
+  field field_to_set {
+    type:       string
+    require:    false
+    write_lock: true
+    hidden:     true
+    validator:  func field_type_strarr_check
+    doc:        default_field_to_set_doc
   }
 }
 
 object flag_multi_choice {
   user_def_ok: false
-  
+
   field aliases  {
     type:        list[string]
     default:     []
@@ -245,7 +292,7 @@ object flag_multi_choice {
     hidden:     true
     doc:        default_doc_doc
   }
-  
+
   field callback  {
     type:       func (list[string]) -> string
     require:    false
@@ -253,6 +300,15 @@ object flag_multi_choice {
     hidden:     true
     validator:  func callback_exists_check
     doc:        default_callback_doc
+  }
+
+  field field_to_set {
+    type:       string
+    require:    false
+    write_lock: true
+    hidden:     true
+    validator:  func field_type_strarr_check
+    doc:        default_field_to_set_doc
   }
 
   field choices {
@@ -294,16 +350,23 @@ The maximum number of choices a user may provide when giving the flag.
   }
 }
 
+singleton topics {
+  user_def_ok: true
+  validator:   func extra_topic_check
+}
+
 object command {
   user_def_ok: false
-  validator:   func consistency_check  
-  
-  allow flag_yn        {}
-  allow flag_help      {}
-  allow flag_choice    {}
-  allow flag_arg       {}
-  allow flag_multi_arg {}
-  allow command        {}
+  validator:   func consistency_check
+
+  allow flag_yn           {}
+  allow flag_help         {}
+  allow flag_choice       {}
+  allow flag_multi_choice {}
+  allow flag_arg          {}
+  allow flag_multi_arg    {}
+  allow command           {}
+  allow topics            {}
 
   field aliases  {
     type:        list[string]
@@ -319,7 +382,7 @@ object command {
     write_lock: true
     hidden:     true
     validator:  func arg_range_check
-    doc: """ 
+    doc: """
 The range for the number of allowed arguments for this command.
 Defaults to (0, 0).
 """
@@ -335,11 +398,17 @@ Documentation for this command that will be printed when the
 autogenerated 'help' command runs.  A summary of arguments will also
 be output.
 """
-
   }
-  
+
+  field arg_name {
+    type:    string
+    default: "ARG"
+    hidden:  true
+    doc:     "Used only when printing USAGE in help."
+  }
+
   field callback  {
-    type:       func (list[string], dict[string, string]) -> void
+    type:       func (list[string]) -> void
     require:    false
     write_lock: true
     hidden:     true
@@ -347,9 +416,7 @@ be output.
     doc:        """
 
 This callback will run after all other validation callbacks, passing
-in the arguments specifically for this command, and the flags
-specifically for this command.  It will not provide global argument
-for flag values, nor will it do so for parent or child commands.
+in the arguments specifically for this command.
 """
   }
 
@@ -378,7 +445,7 @@ just return everything else as args.
 
 This means:
 
-1) ignore_bad_flags cannot be true / set.
+1) ignore_bad_flags cannot be true.
 2) There cannot be defined sub-commands.
 3) You probably want to set args to (0, high())
 """
@@ -393,22 +460,20 @@ When this is true, unrecognized flags will be passed through as
 arguments.
 """
   }
-
-  exclusions {
-    ignore_all_flags: "ignore_bad_flags"
-  }    
 }
 
 singleton getopts {
   user_def_ok: false
   validator:   func consistency_check
 
-  allow flag_yn        {}
-  allow flag_help      {}
-  allow flag_choice    {}
-  allow flag_arg       {}
-  allow flag_multi_arg {}
-  allow command        {}
+  allow flag_yn           {}
+  allow flag_help         {}
+  allow flag_choice       {}
+  allow flag_multi_choice {}
+  allow flag_arg          {}
+  allow flag_multi_arg    {}
+  allow command           {}
+  allow topics            {}
 
   field args {
     type:       tuple[int, int]
@@ -416,15 +481,31 @@ singleton getopts {
     write_lock: true
     hidden:     true
     validator:  func arg_range_check
-    doc: """ 
+    doc: """
 The range for the number of allowed arguments for your parse before any
 specified command appears (if any does).
 
 This does not need to be provided. If it isn't, then the value will be
-set based on whether the user provided any commands.  If so, then it's
-set to (0, 0) to indicate no arguments allowed.  Otherwise, it's set
-to (0, high()) to indicate any number of arguments.
+set based on whether the user provided any commands.  If commands are
+provided, then it's set to (0, 0) to indicate no arguments allowed.
+Otherwise, it's set to (0, high()) to indicate any number of
+arguments.
 """
+  }
+
+  field doc {
+    type:       string
+    default:    "There is no help for this command."
+    write_lock: true
+    hidden:     true
+    doc:        default_doc_doc
+  }
+
+  field arg_name {
+    type:    string
+    default: "ARG"
+    hidden:  true
+    doc:     "Used only when printing USAGE in help."
   }
 
   field command_attribute {
@@ -454,7 +535,7 @@ will be stored in the con4m attribute named, as an override.
 
 The attribute provided must be of type: dict[string, string]
 
-All flag values are strings. 
+All flag values are stored as strings if put into this dict.
 """
   }
 
@@ -489,6 +570,7 @@ resulting value wiil be:
     require:    false
     write_lock: true
     hidden:     true
+    # TODO: write a validator.
     doc: """
 If provided, we try to guess which command is being run based on the
 arguments.
@@ -523,7 +605,7 @@ first matching parse.  You will not have access to other flag sets
 until the command is finalized.
 """
   }
-  
+
   field default_yes_prefixes {
     type:       list[string]
     default:    []
@@ -533,7 +615,7 @@ until the command is finalized.
     doc: """
 Gives a list of prefixes to automatically add to yn flags, that will
 be assigned the boolean value 'true' when the flag is provided on the
-command line. 
+command line.
 
 If the value given for this property is [], then it assumes the name
 itself *is* the yes version, instead of it being a flag that takes an
@@ -554,7 +636,7 @@ will get the following flags:
     default:    ["no"]
     write_lock: true
     hidden:     true
-    validator:  func global_no_prefixes_check    
+    validator:  func global_no_prefixes_check
     doc: """
 Gives a list of prefixes to automatically add to yn flags, that will
 be assigned the boolean value 'true' when the flag is provided on the
@@ -573,6 +655,7 @@ If this is true, any error will cause the current parsed command's
 """
   }
 
+  # TODO
   field error_command {
     type:       string
     default:    "error"
@@ -597,7 +680,6 @@ provided, or a reasonable error message if not.
   }
 }
 
-
 func be_at_least_1(property, value) {
   if value >= 1 {
     return ""
@@ -607,7 +689,7 @@ func be_at_least_1(property, value) {
 
 func be_greater_than_or_eq_to_min(property, value) {
   base, me := attr_split(property)
-  max := get_attr(base + ".max", int)
+  max := attr_get(base + ".max", int)
   if max >= value {
     return ""
   }
@@ -633,8 +715,8 @@ func no_flag_check(property, value) {
     return
   }
   base, me := attr_split(property)
-  if attr_exists(base + ".ignore_bad_flags") == true {
-    return "cannot have 'no_flag' and 'ignore_bad_flags' at the same time"
+  if attr_get(base + ".ignore_bad_flags", bool) {
+    return "cannot have 'no_flag' and 'ignore_bad_flags' true at the same time"
   }
   if sections(base).contains("command") {
     return "cannot have subcommands when 'no_flag' is true"
@@ -662,7 +744,7 @@ func arg_attribute_check(property, value: string) {
 
 func global_yes_prefixes_check(property, yes_prefixes: list[string]) {
   base, me := attr_split(property)
-  no_prefixes := get_attr(base + ".default_no_prefixes", list[string])
+  no_prefixes := attr_get(base + ".default_no_prefixes", list[string])
   for i from 0 to len(yes_prefixes) {
     if no_prefixes.contains(yes_prefixes[i]) {
       return "no- prefixes cannot be identical to yes- prefixes."
@@ -673,7 +755,7 @@ func global_yes_prefixes_check(property, yes_prefixes: list[string]) {
 
 func global_no_prefixes_check(property, no_prefixes: list[string]) {
   base, me := attr_split(property)
-  yes_prefixes := get_attr(base + ".default_yes_prefixes", list[string])
+  yes_prefixes := attr_get(base + ".default_yes_prefixes", list[string])
   for i from 0 to len(yes_prefixes) {
     if no_prefixes.contains(yes_prefixes[i]) {
       return "no- prefixes cannot be identical to yes- prefixes."
@@ -697,6 +779,64 @@ func callback_exists_check(property, value) {
     return ""
   }
   return "Callback " + $(value) + " was specified but can't be found"
+}
+
+func field_type_bool_check(property, value) {
+  result := ""
+
+  if not attr_exists(value) { return; }
+
+  actual_type := attr_type(value)
+
+
+  if not typecmp(actual_type, bool) {
+    return ("Invalid type for specified field: " + value +
+            ". It should be a bool field, but got: " + $(actual_type))
+  }
+}
+
+func field_type_string_check(property, value) {
+  result := ""
+
+  if not attr_exists(value) { return; }
+
+  actual_type := attr_type(value)
+
+
+  if not typecmp(actual_type, string) {
+    return ("Invalid type for specified field: " + value +
+            ". It should be a string field, but got: " + $(actual_type))
+  }
+}
+
+func field_type_strarr_check(property, value) {
+  result := ""
+
+  if not attr_exists(value) { return; }
+
+  actual_type := attr_type(value)
+
+
+  if not typecmp(actual_type, list[string]) {
+    return ("Invalid type for specified field: " + value +
+            ". It should be a list[string] field, but got: " + $(actual_type))
+  }
+}
+
+func extra_topic_check(path) {
+  parent, cmd := attr_split(path)
+  attrs       := fields(path)
+  cmds        := sections(parent + ".command")
+  result      := ""
+
+  for i from 0 to len(attrs) {
+    if not typecmp(attr_type(path + "." + attrs[i]), string) {
+      return "Extra help topics must be strings."
+    }
+    if cmds.contains(attrs[i]) {
+      return "Extra help topics can't have the same name as a valid command."
+    }
+  }
 }
 
 func under_to_dash(str) {
@@ -737,12 +877,12 @@ func consistency_check(path) {
   all_flags     := []
   yes_field     := getopts_root(path) + ".default_yes_prefixes"
   no_field      := getopts_root(path) + ".default_no_prefixes"
-  default_yeses := get_attr(yes_field, list[string])
-  default_nos   := get_attr(no_field, list[string])
+  default_yeses := attr_get(yes_field, list[string])
+  default_nos   := attr_get(no_field, list[string])
 
   # Deal with the 'flag_help' singleton if present,
   if attr_exists(path + ".flag_help") {
-    names := get_attr(path + ".flag_help.names", list[string])
+    names := attr_get(path + ".flag_help.names", list[string])
     for i from 0 to len(names) {
         flag := under_to_dash(names[i])
         if all_flags.contains(flag) {
@@ -759,33 +899,33 @@ func consistency_check(path) {
     for i from 0 to len(yn_flags) {
       flag      := under_to_dash(yn_flags[i])
       flag_path := yn_path + "." + yn_flags[i]
-      
+
       if all_flags.contains(flag) {
         return dupe_flag(flag_path + "." + yn_flags[i], flag)
       }
       all_flags := array_add(all_flags, [flag])
 
-      yes_aliases  := get_attr(flag_path + ".yes_aliases", list[string])
-      no_aliases   := get_attr(flag_path + ".no_aliases",  list[string])
+      yes_aliases  := attr_get(flag_path + ".yes_aliases", list[string])
+      no_aliases   := attr_get(flag_path + ".no_aliases",  list[string])
       yes_prefixes := default_yeses
       no_prefixes  := default_nos
       if attr_exists(flag_path + ".yes_prefixes") {
-        yes_prefixes := get_attr(flag_path + ".yes_prefixes", list[string])
+        yes_prefixes := attr_get(flag_path + ".yes_prefixes", list[string])
       }
       if attr_exists(flag_path + ".no_prefixes") {
-        no_prefixes := get_attr(flag_path + ".no_prefixes", list[string])
+        no_prefixes := attr_get(flag_path + ".no_prefixes", list[string])
       }
       for j from 0 to len(yes_aliases) {
         yes_flag := under_to_dash(yes_aliases[j])
 	if all_flags.contains(yes_flag) {
-	  return dupe_flag(flag_path, yes_flag)	
+	  return dupe_flag(flag_path, yes_flag)
 	}
         all_flags := array_add(all_flags, [yes_flag])
       }
       for j from 0 to len(no_aliases) {
         no_flag := under_to_dash(no_aliases[j])
 	if all_flags.contains(no_flag) {
-	  return dupe_flag(flag_path, no_flag)	
+	  return dupe_flag(flag_path, no_flag)
 	}
         all_flags := array_add(all_flags, [no_flag])
       }
@@ -823,9 +963,9 @@ func consistency_check(path) {
         return dupe_flag(choice_path + "." + choice_flags[i], flag)
       }
       all_flags := array_add(all_flags, [flag])
-    
-      aliases := get_attr(flag_path + ".aliases", list[string])
-    
+
+      aliases := attr_get(flag_path + ".aliases", list[string])
+
       for j from 0 to len(aliases) {
         flag := under_to_dash(aliases[j])
         if all_flags.contains(flag) {
@@ -833,14 +973,14 @@ func consistency_check(path) {
         }
         all_flags := array_add(all_flags, [flag])
       }
-      choices := get_attr(flag_path + ".choices", list[string])
+      choices := attr_get(flag_path + ".choices", list[string])
 
       if len(choices) < 2 {
         return "Must offer at least two choices."
       }
       if k == 1 {
-        min := get_attr(choice_path + ".min", int)
-	max := get_attr(choice_path + ".max", int)
+        min := attr_get(flag_path + ".min", int)
+	max := attr_get(flag_path + ".max", int)
 
         if max > len(choices) and max != high() {
 	  return ("max value is larger than the number of choices provided " +
@@ -850,8 +990,8 @@ func consistency_check(path) {
 	  return "min value must be larger than the number of choices provided"
 	}
       }
-      
-      if get_attr(flag_path + ".add_choice_flags", bool) {
+
+      if attr_get(flag_path + ".add_choice_flags", bool) {
         for j from 0 to len(choices) {
           flag := under_to_dash(choices[j])
   	if all_flags.contains(flag) {
@@ -872,7 +1012,7 @@ func consistency_check(path) {
     if attr_exists(farg_path) {
       farg_flags := sections(farg_path)
     }
-    
+
     for i from 0 to len(farg_flags) {
       flag      := under_to_dash(farg_flags[i])
       flag_path := farg_path + "." + farg_flags[i]
@@ -881,7 +1021,7 @@ func consistency_check(path) {
       }
       all_flags := array_add(all_flags, [flag])
 
-      aliases := get_attr(flag_path + ".aliases", list[string])
+      aliases := attr_get(flag_path + ".aliases", list[string])
       for j from 0 to len(aliases) {
         flag := under_to_dash(aliases[j])
         if all_flags.contains(flag) {
@@ -894,7 +1034,7 @@ func consistency_check(path) {
 
   if len(all_flags) != 0 {
     if attr_exists(path + ".no_flag") {
-      if get_attr(path + ".no_flag", bool) {
+      if attr_get(path + ".no_flag", bool) {
         return ("'no_flag' was provided, but flags were specified for this " +
 	        "command.")
       }
@@ -905,13 +1045,13 @@ func consistency_check(path) {
   cmd_path := path + ".command"
 
   cmds := []  # Necessary because of current block-scoping rule.
-  
+
   if attr_exists(cmd_path) {
     cmds := sections(cmd_path)
   }
   all_cmds := cmds
   for i from 0 to len(cmds) {
-    aliases := get_attr(cmd_path + "." + cmds[i] + ".aliases", list[string])
+    aliases := attr_get(cmd_path + "." + cmds[i] + ".aliases", list[string])
     for j from 0 to len(aliases) {
       if all_cmds.contains(aliases[j]) {
         return "Duplicate command: " + aliases[j]
@@ -919,12 +1059,12 @@ func consistency_check(path) {
       all_cmds := array_add(all_cmds, [aliases[j]])
     }
   }
-  
+
   return ""
 }
 
 root {
-  # Allow us to ignore non-getopts parts when spec checking. 
-  user_def_ok: true 
+  # Allow us to ignore non-getopts parts when spec checking.
+  user_def_ok: true
   allow getopts {}
 }

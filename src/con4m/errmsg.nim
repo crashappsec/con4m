@@ -4,7 +4,7 @@
 
 import tables, streams, strutils, strformat, os
 import nimutils, nimutils/logging, types
-
+export getOrElse
 
 type
   InstInfo*    = tuple[filename: string, line: int, column: int]
@@ -20,7 +20,7 @@ let
 
 var
   publishParams = { "loglevel" : $(llError) }.newOrderedTable()
-  verbosity     = c4vMax
+  verbosity     = c4vShowLoc
   curFileName: string
 
 
@@ -53,7 +53,8 @@ proc formatCompilerError(msg: string,
 
   if verbosity in [c4vShowLoc, c4vMax]:
     let f = if t != nil: t.stream else: newFileStream(curFileName, fmRead)
-    f.setPosition(0)
+    if f != nil:
+      f.setPosition(0)
 
     if t != nil and f != nil:
       let

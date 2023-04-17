@@ -1,143 +1,80 @@
-## Highest-level API for executing con4m. The macros provide more
-## abstraction for stuff written in Nim.
 ##
 ## :Author: John Viega (john@crashoverride.com)
-## :Copyright: 2022, 2023, Crash Override, Inc.
+## :Copyright: 2023, Crash Override, Inc.
 
-import tables, options, streams, nimutils, strformat
-import errmsg, types, parse, treecheck, eval, spec, builtins, dollars
+import types, options, st, streams, os, nimutils, json
 
-proc newConfigState*(node:        Con4mNode,
-                     spec:        ConfigSpec     = nil,
-                     addBuiltins: bool           = true,
-                     exclude:     openarray[int] = []): ConfigState =
-  let attrRoot   = AttrScope(parent: none(AttrScope), name: "<<root>>")
-  node.attrScope = attrRoot
-  node.varScope  = VarScope(parent: none(VarScope))
+# This stuff comes before some imports because Nim sucks at forward referencing.
+var config: AttrScope = nil
 
-  let specOpt = if spec == nil: none(ConfigSpec) else: some(spec)
-  result      = ConfigState(attrs:         attrRoot,
-                            spec:          specOpt,
-                            numExecutions: 0)
+proc setConfigState*(s: AttrScope) =
+  config = s
 
-  node.attrScope.config = result
+proc getConfigState(): AttrScope =
+  if config == nil: config = AttrScope()
+  return config
 
-  if addBuiltins:
-    result.addDefaultBuiltins(exclude)
+proc getConf*[T](s: string): Option[T] =
+  return getOpt[T](getConfigState(), s)
 
-proc initRun*(n: Con4mNode, s: ConfigState) {.inline.} =
-  var topFrame = RuntimeFrame()
+import st, stack
 
-  for k, sym in n.varScope.contents:
-    if k notin topFrame:
-      topFrame[k] = sym.value
+proc tryToOpen*(f: string): Stream =
+  if f.fileExists():
+    try:
+      return newFileStream(f)
+    except:
+      stderr.write("Error: could not open external config file " &
+                   "(permissions issue?)")
+      raise
+  else:
+    raise newException(ValueError, f & ": file not found.")
 
-  s.frames = @[topFrame]
+proc outputResults*(ctx: ConfigState) =
+  case (getConf[string]("output_style")).get()
+  of "pretty": echo $(ctx.attrs)
+  of "raw": echo ctx.attrs.scopeToJson()
+  of "json":
+    let raw = ctx.attrs.scopeToJson()
+    stderr.write(toAnsiCode([acBRed]))
+    stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
+    echo parseJson(ctx.attrs.scopeToJson()).pretty()
+    stderr.writeLine(toAnsiCode([acReset]))
+  else: discard
 
-proc postRun(state: ConfigState) =
-  if len(state.frames) > 0:
-    for k, v in state.frames[0]:
-      if k in state.keptGlobals:
-        state.keptGlobals[k].value = v
-  state.frames  = @[]
+proc con4mRun*(files, specs: seq[string]) =
+  let
+    scope = if len(specs) > 1: srsBoth else: srsConfig
+    stubs = (getConf[seq[string]]("stubs")).getOrElse(@[])
+    stack = newConfigStack().addSystemBuiltins(which=scope).addStubs(stubs)
+    ctx   = stack.run().get()
+    whens = getConf[seq[string]]("output_when").get()
 
-var showChecked = false
-proc setShowChecked*() = showChecked = true
+  for specfile in specs:
+    let
+      fname  = specfile.resolvePath()
+      stream = tryToOpen(fname)
+    stack.addSpecLoad(fname, stream)
 
-proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
-  if tree == nil: return false
-  state.secondPass = false
-  tree.checkTree(state)
-  if showChecked or stopPhase == phCheck:
-    stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" & toAnsiCode(acReset))
-    stderr.writeLine($tree)
-    for item in state.moduleFuncDefs:
-      if item.kind == FnBuiltIn: unreachable
-      elif item.impl.isNone(): unreachable
-      else:
-        let typeStr = `$`(item.tInfo)
-        stderr.write(toAnsiCode(acBCyan))
-        stderr.writeLine(fmt"Function: {item.name}{typeStr}")
-        stderr.write(toAnsiCode(acReset))
-        stderr.writeLine($item.impl.get())
-
-  if state.spec.isSome():
-    state.preEvalCheck(evalCtx)
-
-  phaseEnded(phCheck)
-  tree.initRun(state)
-  try:
-    ctrace(fmt"{getCurrentFileName()}: Beginning evaluation.")
-    tree.evalNode(state)
-    ctrace(fmt"{getCurrentFileName()}: Evaluation done.")
-  finally:
-    state.postRun()
-
-  phaseEnded(phEval)
-
-  if state.spec.isSome():
-    state.validateState(evalCtx)
-
-  state.numExecutions += 1
-
-  return true
-
-proc firstRun*(stream:      Stream,
-               fileName:    string,
-               spec:        ConfigSpec                     = nil,
-               addBuiltins: bool                           = true,
-               customFuncs: openarray[(string, BuiltinFn)] = [],
-               exclude:     openarray[int]                 = [],
-               evalCtx:     ConfigState = nil): (ConfigState, bool) =
-    setCurrentFileName(fileName)
-    # Parse throws an error if it doesn't succeed.
-    var
-      tree  = parse(stream, filename)
-      state = newConfigState(tree, spec, addBuiltins, exclude)
-
-    for (sig, fn) in customFuncs:
-      state.newBuiltIn(sig, fn)
-
-    if state.runBase(tree, evalCtx):
-      return (state, true)
+  for i, filename in files:
+    var addOut = false
+    let
+      fname  = filename.resolvePath()
+      stream = tryToOpen(fname)
+    stack.addConfLoad(fname, stream)
+    if "all" in whens: addOut = true
     else:
-      return (state, false)
+      if i == 0 and "first" in whens: addOut = true
+      if i == len(files) - 1 and "last" in whens: addOut = true
+      if "rest" in whens and i != 0 and i != len(files) - 1: addOut = true
 
-proc firstRun*(contents:    string,
-               fileName:    string,
-               spec:        ConfigSpec = nil,
-               addBuiltins: bool = true,
-               customFuncs: openarray[(string, BuiltinFn)] = [],
-               exclude:     openarray[int] = [],
-               evalCtx:     ConfigState = nil): (ConfigState, bool) =
-  return firstRun(newStringStream(contents), fileName, spec, addBuiltins,
-                  customFuncs, exclude, evalCtx)
-
-proc firstRun*(fileName:    string,
-               spec:        ConfigSpec = nil,
-               addBuiltins: bool = true,
-               customFuncs: openarray[(string, BuiltinFn)] = [],
-               exclude:     openarray[int] = [],
-               evalCtx:     ConfigState = nil): (ConfigState, bool) =
-  return firstRun(newFileStream(fileName, fmRead), fileName, spec,
-                  addBuiltins, customFuncs, exclude, evalCtx)
-
-proc stackConfig*(s:        ConfigState,
-                  stream:   Stream,
-                  fileName: string,
-                  evalCtx:  ConfigState = nil): bool =
-  setCurrentFileName(fileName)
-  return s.runBase(parse(stream, fileName), evalCtx)
-
-proc stackConfig*(s:        ConfigState,
-                  contents: string,
-                  filename: string,
-                  evalCtx:  ConfigState = nil): bool =
-  setCurrentFileName(filename)
-  return s.runBase(parse(newStringStream(contents), filename), evalCtx)
-
-proc stackConfig*(s:        ConfigState,
-                  filename: string,
-                  evalCtx:  ConfigState = nil): bool =
-  setCurrentFileName(filename)
-  return s.runBase(parse(newFileStream(filename), filename), evalCtx)
+    if addOut:
+      stack.addCallback(outputResults)
+  try:
+    stack.run()
+  except:
+    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
+                                toAnsiCode(acReset) & getCurrentExceptionMsg(),
+                                firstHangingIndent = len("error: con4m: "),
+                                remainingIndents = 0)
+    stderr.write(formatted)

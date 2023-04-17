@@ -214,7 +214,7 @@ proc oneTypeSpec(ctx:    ParseCtx,
       else:
         result.nospec = true
         return
-        
+
     if ctx.curTok().kind == TtRParen:
       discard ctx.consume()
     else:
@@ -549,7 +549,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       return lhs
 
 proc callback(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
+  discard ctx.consume()
   if ctx.curTok().kind != TtIdentifier:
     if ctx.curTok().kind == TtLParen: return ctx.typeSpec()
     parseError("An identifier or params required after the 'func' keyword")

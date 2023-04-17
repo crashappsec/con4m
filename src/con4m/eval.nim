@@ -123,10 +123,10 @@ proc sCall(s:       ConfigState,
     if fInfo.impl.isNone(): unreachable
     else:
       result = s.evalFunc(args, fInfo.impl.get())
-      if result.isNone():
-        fatal("Function: '" & fInfo.name & "' did not return a result. " &
-          "Our static analysis isn't yet detecting all these instances, " &
-          "but you should fix it instead of us adding default values.")
+      if result.isNone and not fInfo.tInfo.retType.resolveTypeVars().isBottom:
+          fatal("Function: '" & fInfo.name & "' did not return a result. " &
+            "Our static analysis isn't yet detecting all these instances, " &
+            "but you should fix it instead of us adding default values.")
 
 proc sCall*(s:       ConfigState,
             name:    string,
@@ -169,7 +169,6 @@ proc sCall*(s:       ConfigState,
             sig:     string,
             args:    seq[Box],
             nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
-  let n = sig.toCallbackObj()
   return s.sCall(sig.toCallbackObj(), args, nodeOpt)
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
@@ -252,7 +251,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     #
     # So we just have to update the RHS and then assign.
     node.children[1].evalNode(s)
-    let err = attrSet(node.attrRef, node.children[1].value)
+    let err = attrSet(node.attrRef, node.children[1].value, node)
 
     case err.code
     of errCantSet:
@@ -391,7 +390,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       containerBox = node.children[0].value
       indexBox     = node.children[1].value
       containerTy  = node.children[0].getType()
-      ixTy         = node.children[1].getType()
 
     case containerTy.kind
     of TypeTuple:
@@ -445,14 +443,12 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    assert node.procRef != nil
     var ret = s.sCall(node.procRef, args, node)
     if ret.isSome():
       node.value = ret.get()
 
   of NodeDictLit:
     node.evalKids(s)
-    let nodeType = node.getType()
     var dict     = newCon4mDict[Box, Box]()
 
     for kvpair in node.children:

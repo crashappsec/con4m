@@ -9,7 +9,7 @@
 ## :Copyright: 2023
 
 import tables, strformat, options, streams, nimutils
-import types, parse, run, spec, errmsg, typecheck, dollars
+import types, parse, run, spec, errmsg, typecheck, dollars, legacy
 
 const
   validatorSig    = "func(string, `t) -> string"
@@ -45,7 +45,7 @@ proc buildC42Spec*(): ConfigSpec =
   rootSec.addAttr("prologue",        stringType, false)
   rootsec.addAttr("doc",             stringType, false)
   rootsec.addAttr("shortdoc",        stringType, false)
-  rootSec.addAttr("validator",       toCon4mType(objValidatorSig), false)  
+  rootSec.addAttr("validator",       toCon4mType(objValidatorSig), false)
 
   singleton.addSection("field")
   singleton.addSection("require")
@@ -78,7 +78,7 @@ proc buildC42Spec*(): ConfigSpec =
   obj.addAttr("doc",             stringType, false)
   obj.addAttr("shortdoc",        stringType, false)
   obj.addAttr("hidden",          boolType,   false)
-  obj.addAttr("validator",       toCon4mType(objValidatorSig), false)  
+  obj.addAttr("validator",       toCon4mType(objValidatorSig), false)
 
   rootScope.addSection("root", min = 1, max = 1)
   rootScope.addSection("singleton")
@@ -125,7 +125,7 @@ proc populateSec(spec:    ConfigSpec,
                  false
     tinfo.addSection(k, min = minSz, lock = lock)
 
-template getField(fields: Table[string, AttrOrSub], name: string): untyped =
+template getField(fields: OrderedTable[string, AttrOrSub], name: string): untyped =
   if name notin fields:
     specErr(scope, "Expected a field '" & name & "'")
   let aOrS = fields[name]
@@ -160,13 +160,13 @@ proc unpackValue[T](scope: AttrScope, attr: Attribute, typeStr: string): T =
             "Wrong type for '" & attr.name & "', expected a '" & typeStr &
               "', but got a '" & $(attr.getType()) & "'")
 
-template getValOfType(fields:  Table[string, AttrOrSub],
+template getValOfType(fields:  OrderedTable[string, AttrOrSub],
                       name:    string,
                       typeStr: string,
                       nimType: typedesc): untyped =
   unpackValue[nimType](scope, getField(fields, name), typeStr)
 
-template valIfPresent(fields:  Table[string, AttrOrSub],
+template valIfPresent(fields:  OrderedTable[string, AttrOrSub],
                       name:    string,
                       c4mType: string,
                       nimType: typedesc,
@@ -174,7 +174,7 @@ template valIfPresent(fields:  Table[string, AttrOrSub],
   if name in fields: getValOfType(fields, name, c4mType, nimType)
   else:              default
 
-template optValIfPresent(fields:  Table[string, AttrOrSub],
+template optValIfPresent(fields:  OrderedTable[string, AttrOrSub],
                          name:    string,
                          c4mType: string,
                          nimType: typedesc): untyped =
@@ -322,7 +322,7 @@ template setDocInfo() {.dirty.} =
     doc       = none(string)
     hidden    = false
     validator = CallbackObj(nil)
-    
+
 
   if "doc" in objInfo.contents:
     let boxopt = objInfo.contents["doc"].get(Attribute).value
@@ -346,7 +346,7 @@ proc registerSingletonType(spec: ConfigSpec, item: AttrOrSub) =
   setDocInfo()
   spec.sectionType(objInfo.name, singleton = true, doc = doc,
                    shortdoc = shortdoc, hidden = hidden,
-                   validator = validator) 
+                   validator = validator)
 
 proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
   let objInfo  = item.get(AttrScope)
@@ -355,18 +355,9 @@ proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
                    shortdoc = shortdoc, hidden = hidden,
                    validator = validator)
 
-proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
-  ## Create a ConfigSpec object from a con4m file. The schema is
-  ## validated against our c4-2-spec format.
-  let (cfgContents, success) = firstRun(s, fileName, buildC42Spec())
-
-  if not success:
-    return none((ConfigSpec, ConfigState))
-
-  let
-    res      = newSpec()
-    contents = cfgContents.attrs.contents
-  result     = some((res, cfgContents))
+proc generateC42Spec*(state: ConfigState): ConfigSpec =
+  result       = newSpec()
+  let contents = state.attrs.contents
 
   # Register all types before we populate them, so that we can safely
   # forward-reference; all type names will be registered before we
@@ -374,21 +365,33 @@ proc c42Spec*(s: Stream, fileName: string): Option[(ConfigSpec, ConfigState)] =
 
   if "singleton" in contents:
     for _, singletonSpec in contents["singleton"].get(AttrScope).contents:
-      res.registerSingletonType(singletonSpec)
+      result.registerSingletonType(singletonSpec)
 
   if "object" in contents:
     for _, objectSpec in contents["object"].get(AttrScope).contents:
-      res.registerObjectType(objectSpec)
+      result.registerObjectType(objectSpec)
 
   if "singleton" in contents:
     for name, singletonSpec in contents["singleton"].get(AttrScope).contents:
-      res.populateType(res.secSpecs[name], singletonSpec.get(AttrScope))
+      result.populateType(result.secSpecs[name], singletonSpec.get(AttrScope))
 
   if "object" in contents:
     for name, objectSpec in contents["object"].get(AttrScope).contents:
-      res.populateType(res.secSpecs[name], objectSpec.get(AttrScope))
+      result.populateType(result.secSpecs[name], objectSpec.get(AttrScope))
 
-  res.populateType(res.rootSpec, contents["root"].get(AttrScope))
+  result.populateType(result.rootSpec, contents["root"].get(AttrScope))
+
+proc c42Spec*(s:        Stream,
+              fileName: string): Option[(ConfigSpec, ConfigState)] =
+  ## Create a ConfigSpec object from a con4m file. The schema is
+  ## validated against our c42-spec format.
+  let (cfgContents, success) = firstRun(s, fileName, buildC42Spec())
+
+  if not success:
+    return none((ConfigSpec, ConfigState))
+
+  return some((cfgContents.generateC42Spec(), cfgContents))
+
 
 proc c42Spec*(c: string, fname: string): Option[(ConfigSpec, ConfigState)] =
   return c42Spec(newStringStream(c), fname)

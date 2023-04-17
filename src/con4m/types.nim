@@ -77,21 +77,6 @@ type
       linksin*:     seq[Con4mType]
       cycle*:       bool
       components*:  seq[Con4mType]
-      # Constraints are different than unions; with a tvar, we assume
-      # we are looking to instantiate a concrete type.
-      #
-      # But, if we can't infer just a single concrete type, yet we
-      # have ruled out some things, we could then convert seamlessly
-      # to union types.
-      #
-      # However, we don't currently need to do that explicitly,
-      # because the implementation currently keeps all values in a
-      # "box".
-      #
-      # Note also that these constraints could be lifted in order to
-      # be more complicated (in which case they'd be a seq of
-      # Con4mTypes, as with TypeUnion). We'd have to work harder to
-      # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
 
@@ -104,7 +89,7 @@ type
   Con4mDateTime* = string # Stored as an ISO 8601 date/time
 
   # So I can switch between ordered and not without hardship.
-  Con4mDict*[K, V] = TableRef[K, V]
+  Con4mDict*[K, V] = OrderedTableRef[K, V]
 
   ## At any point in a Con4m program, there are two different scopes,
   ## variable scopes (which change whenever we enter a new block
@@ -123,7 +108,7 @@ type
     name*:     string
     parent*:   Option[AttrScope]
     config*:   ConfigState
-    contents*: Table[string, AttrOrSub]
+    contents*: OrderedTable[string, AttrOrSub]
 
   AttrOrSub* = object
     case kind*: bool
@@ -152,6 +137,7 @@ type
     firstDef*:    Option[Con4mNode]
     defs*:        seq[Con4mNode]
     uses*:        seq[Con4mNode]
+    lastUse*:     Option[Con4mNode]
 
   VarSym*    = ref object
     name*:     string
@@ -174,11 +160,11 @@ type
 
   VarScope*  = ref object
     parent*:    Option[VarScope]
-    contents*:  Table[string, VarSym]
+    contents*:  OrderedTable[string, VarSym]
 
   ## Frame for holding local variables.  In a call, the caller
   ## does the pushing and popping.
-  RuntimeFrame*  = TableRef[string, Option[Box]]
+  RuntimeFrame*  = OrderedTableRef[string, Option[Box]]
   VarStack*      = seq[RuntimeFrame]
   Con4mSectInfo* = seq[(string, AttrScope)]
 
@@ -258,7 +244,7 @@ type
   Con4mSectionType* = ref object
     typeName*:      string
     singleton*:     bool
-    fields*:        Table[string, FieldSpec]
+    fields*:        OrderedTable[string, FieldSpec]
     backref*:       ConfigSpec
     shortdoc*:      Option[string]
     doc*:           Option[string] # Any doc to provide about this section.
@@ -266,7 +252,7 @@ type
     validator*:     CallbackObj
 
   ConfigSpec* = ref object
-    secSpecs*:      Table[string, Con4mSectionType]
+    secSpecs*:      OrderedTable[string, Con4mSectionType]
     rootSpec*:      Con4mSectionType
 
   ConfigState* = ref object
@@ -277,10 +263,10 @@ type
     numExecutions*:      int
     setHook*:            AttrSetHook
     attrs*:              AttrScope
-    keptGlobals*:        Table[string, VarSym]
+    keptGlobals*:        OrderedTable[string, VarSym]
     frames*:             VarStack
     spec*:               Option[ConfigSpec]
-    funcTable*:          Table[string, seq[FuncTableEntry]]
+    funcTable*:          OrderedTable[string, seq[FuncTableEntry]]
     funcOrigin*:         bool
     waitingForTypeInfo*: bool
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
@@ -324,7 +310,8 @@ proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
 proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
 proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()
 
-proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
+proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
+  return Con4mDict[K, V]()
 proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)
 proc customUnpack*(b: Box, res: var Con4mType) =
   res = Con4mType(b.o)

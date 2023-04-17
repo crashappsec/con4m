@@ -559,8 +559,8 @@ proc validateOneSection(attrs:  AttrScope,
     let errMsg = unpack[string](ret.get())
 
     if errMsg != "": specErr(attrs, errMsg)
-      
-      
+
+
   if pass1 and "*" notin spec.fields:
     # You can't dynamically add field sets right now, so this can
     # 100% be checked statically.
@@ -736,8 +736,8 @@ proc tableC4mStyle*(numColumns:  int,
                       colSep          = some(Rune('|')),
                       rowHeaderSep    = some(Rune('-')),
                       intersectionSep = some(Rune('+')),
-                      rHdrFmt         = @[acFont2, acBCyan],
-                      eRowFmt         = @[acFont0, acBGCyan, acBBlack],
+                      rHdrFmt         = @[acFont1, acBMagenta],
+                      eRowFmt         = @[acFont0, acBGMagenta, acBBlack],
                       oRowFmt         = @[acFont0, acBGWhite, acBBlack],
                       addLeftBorder   = true,
                       addRightBorder  = true,
@@ -1072,7 +1072,7 @@ proc objectsToTextTable*(scope:       AttrScope,
           valOpt = attr.attrToVal()
           val    = if    valOpt.isNone(): "<none>"
                    else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
-          
+
         if xforms != nil and col in xforms:
           row.add(xforms[col](val))
         else:
