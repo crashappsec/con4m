@@ -5,7 +5,7 @@ description   = "A generic configuration file format that allows for flexible, l
 license       = "Apache-2.0"
 srcDir        = "src"
 bin           = @["con4m"]
-installExt    = @["nim"]
+installExt    = @["nim", "c4m", "c42spec"]
 
 # Dependencies
 requires "nim >= 1.6.10"
