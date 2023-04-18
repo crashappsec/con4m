@@ -62,3 +62,7 @@ elif isMainModule:
   setConfigState(config)
   if command == "run":
     con4mRun(args, specs)
+  elif command == "gen":
+    specgenRun(args)
+  else:
+    echo "Unknown command: ", command

@@ -1,6 +1,6 @@
 import tables, options, streams, strutils, sequtils, sugar, os, json
 import lex, types, errmsg, parse, treecheck, eval, spec, builtins, dollars,
-       getopts, c42spec, st, typecheck, run
+       getopts, c42spec, st, typecheck, run, codegen, nimutils
 
 import nimutils/ansi
 
@@ -9,7 +9,7 @@ const getOptsSpec = staticRead("c4m/getopts.c42spec")
 type
   ActionKind* = enum
     akInitState, akCallback, akSpecLoad, akConfLoad, akValidate,
-    akStartGetOpts, akFinalizeGetOpts, akSetErrHandler
+    akStartGetOpts, akFinalizeGetOpts, akCodeGen, akSetErrHandler
 
   StackCallback*     = (ConfigState) -> void
   ErrorCallback*     = (string, string) -> bool
@@ -41,9 +41,12 @@ type
       showJSon*:       bool
       endPhase*:       string
     of akStartGetOpts, akFinalizeGetOpts:
-      args*:          seq[string]
-      resPath*:       string
-      printAutoHelp*: bool
+      args*:           seq[string]
+      resPath*:        string
+      printAutoHelp*:  bool
+    of akCodeGen:
+      language*:       string
+      outFile*:        string
     of akSetErrHandler:
       handler*:       ErrorCallback
 
@@ -179,6 +182,16 @@ proc addFinalizeGetOpts*(stack:         ConfigStack,
   var step = ConfigStep(kind: akFinalizeGetOpts, stageName: stageName,
                         resPath: resPath, printAutoHelp: printAutoHelp)
   stack.steps.add(step)
+
+proc addCodeGen*(stack:      ConfigStack,
+                 language:   string,
+                 outputFile: string,
+                 stageName:  string = "codegen"): ConfigStack {.discardable.} =
+    result = stack
+    var step = ConfigStep(kind: akCodeGen, stageName: stageName,
+                          language: language, outFile: outputFile)
+
+    stack.steps.add(step)
 
 proc createEmptyRuntime(): ConfigState =
    result = ConfigState(attrs:
@@ -320,6 +333,21 @@ proc doFinalizeGetOpts(s: ConfigStack) =
   if s.steps[s.ix].printAutoHelp and s.finalOpt.helpToPrint != "":
     echo s.finalOpt.helpToPrint
 
+proc doCodeGen(s: ConfigStack) =
+  if s.c42SpecObj == nil:
+    raise newException(ValueError, "No c42 spec object has been created yet.")
+
+  let
+    step  = s.steps[s.ix]
+    toOut = s.validationState.generateCode(step.language)
+
+  if step.outFile == "":
+    echo toOut
+  else:
+    let f = newFileStream(resolvePath(step.outFile), fmWrite)
+    f.write(toOut)
+    f.close()
+
 proc doSetErrorHandler(stack: ConfigStack) =
   let step = stack.steps[stack.ix]
   stack.errorCb = step.handler
@@ -432,6 +460,7 @@ proc run*(stack: ConfigStack, backtrace = false):
       of akValidate:        stack.doValidate()
       of akStartGetOpts:    stack.doStartGetOpts()
       of akFinalizeGetOpts: stack.doFinalizeGetOpts()
+      of akCodeGen:         stack.doCodeGen()
       of akSetErrHandler:   stack.doSetErrorHandler()
     except:
       if step.kind notin [akSpecLoad, akConfLoad, akValidate] and stack.bt:

@@ -1007,6 +1007,12 @@ proc c4mPad*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(topad & repeat(' ', width - len(topad))))
 
+proc c4mPosix*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  when defined(posix):
+    return trueRet
+  else:
+    return falseRet
+
 when defined(posix):
   proc c4mCmd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     ## Generally exposed as `run(s)`
@@ -1313,6 +1319,7 @@ const defaultBuiltins* = [
   ("attr_split(string)->tuple[string, string]", BuiltInFn(c4mSplitAttr)),
   ("attr_exists(string) -> bool",               BuiltInFn(c4mAttrExists)),
   ("add_override(string, `t) -> bool",          BuiltInFn(c4mOverride)),
+  ("posix() -> bool",                           BuiltInFn(c4mPosix)),
   when defined(posix):
     ("run(string) -> string",                BuiltInFn(c4mCmd)),
     ("system(string) -> tuple[string, int]", BuiltInFn(c4mSystem)),

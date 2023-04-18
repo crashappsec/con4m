@@ -42,6 +42,16 @@ proc outputResults*(ctx: ConfigState) =
     stderr.writeLine(toAnsiCode([acReset]))
   else: discard
 
+template safeRun(stack: ConfigStack) =
+  try:
+    discard stack.run()
+  except:
+    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
+                                toAnsiCode(acReset) & getCurrentExceptionMsg(),
+                                firstHangingIndent = len("error: con4m: "),
+                                remainingIndents = 0)
+    stderr.write(formatted)
+
 proc con4mRun*(files, specs: seq[string]) =
   let
     scope = if len(specs) > 1: srsBoth else: srsConfig
@@ -54,6 +64,7 @@ proc con4mRun*(files, specs: seq[string]) =
     let
       fname  = specfile.resolvePath()
       stream = tryToOpen(fname)
+    # TODO: add spec_whens
     stack.addSpecLoad(fname, stream)
 
   for i, filename in files:
@@ -70,11 +81,22 @@ proc con4mRun*(files, specs: seq[string]) =
 
     if addOut:
       stack.addCallback(outputResults)
-  try:
-    stack.run()
-  except:
-    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
-                                toAnsiCode(acReset) & getCurrentExceptionMsg(),
-                                firstHangingIndent = len("error: con4m: "),
-                                remainingIndents = 0)
-    stderr.write(formatted)
+
+  stack.safeRun()
+
+proc specGenRun*(files: seq[string]) =
+  let
+    stubs = (getConf[seq[string]]("stubs")).getOrElse(@[])
+    stack = newConfigStack().addSystemBuiltins(which=srsValidation)
+
+  for item in files:
+    let
+      fname  = item.resolvePath()
+      stream = tryToOpen(fname)
+
+    stack.addSpecLoad(fname, stream, true, true)
+
+  stack.addCodeGen(getConf[string]("language").get(),
+                   getConf[string]("output_file").getOrElse(""))
+
+  stack.safeRun()
