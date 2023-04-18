@@ -153,6 +153,7 @@ This attribute does not apply to spec files.
     type:   string
     choice: ["json", "pretty", "raw", "none"]
     default: "json"
+    
     doc: """
 If a file successfully executes, this determines the style for
 outputting the resulting attribute space.  Options are: "json",

@@ -192,7 +192,9 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
       result.add(t)
     i += 1
 
-proc lex*(s: Stream): (bool, seq[Con4mToken]) =
+proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
+  if filename != "": setCurrentFileName(filename)
+
   ## Lexical analysis. Doesn't need to be exported.
   var
     lineNo: int = 1
@@ -530,25 +532,3 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       else:                tok(TtIdentifier)
 
   unreachable
-
-when isMainModule:
-  let s = """
-io_mode = "async"
-
-service "http" "web_proxy" {
-  listen_addr = "127.0.0.1:8080"
-
-  process "main" {
-    command = ["/usr/local/bin/awesome-app", "server"]
-  }
-
-  process "mgmt" {
-    command = ["/usr/local/bin/awesome-app", "mgmt"]
-  }
-}
-"""
-
-  let (_, toks) = s.newStringStream().lex()
-
-  for t in toks:
-    stdout.write($t)
