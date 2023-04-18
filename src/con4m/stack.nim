@@ -491,7 +491,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         fatal("Unable to open '" & step.fileName & "' for reading")
         step.stream.setPosition(0)
       let
-        (valid, tokens) = step.stream.lex()
+        (valid, tokens) = step.stream.lex(step.fileName)
 
       if not valid:
         let msg = case tokens[^1].kind
@@ -500,7 +500,8 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         of ErrorStringLit:   "Unterminated string"
         of ErrorOtherLit:    "Unterminated literal"
         else:                "Unknown error" # Not be possible w/o a lex bug
-        fatal(msg)
+        
+        fatal(msg, tokens[^1])
 
       if step.showToks:
         for i, token in tokens:

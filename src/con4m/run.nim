@@ -19,16 +19,23 @@ proc getConf*[T](s: string): Option[T] =
 
 import st, stack
 
+template cmdLineErrorOutput(msg: string) =
+    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
+                                toAnsiCode(acReset) & msg,
+                                firstHangingIndent = len("error: con4m: "),
+                                remainingIndents = 0)
+    stderr.writeLine(formatted)
+    quit(1)
+  
 proc tryToOpen*(f: string): Stream =
   if f.fileExists():
     try:
       return newFileStream(f)
     except:
-      stderr.write("Error: could not open external config file " &
-                   "(permissions issue?)")
-      raise
+      cmdLineErrorOutput("Error: could not open external config file " &
+                         "(permissions issue?)")
   else:
-    raise newException(ValueError, f & ": file not found.")
+    cmdLineErrorOutput(f & ": file not found.")
 
 proc outputResults*(ctx: ConfigState) =
   case (getConf[string]("output_style")).get()
@@ -46,11 +53,7 @@ template safeRun(stack: ConfigStack) =
   try:
     discard stack.run()
   except:
-    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
-                                toAnsiCode(acReset) & getCurrentExceptionMsg(),
-                                firstHangingIndent = len("error: con4m: "),
-                                remainingIndents = 0)
-    stderr.write(formatted)
+    getCurrentExceptionMsg().cmdLineErrorOutput()
 
 proc con4mRun*(files, specs: seq[string]) =
   let
