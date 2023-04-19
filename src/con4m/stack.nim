@@ -127,7 +127,7 @@ proc addGetoptSpecLoad*(stack:     ConfigStack,
                           ConfigStack {.discardable.} =
   result = stack
   var step = ConfigStep(kind: akSpecLoad, filename: "getopts-spec",
-                        run: true, doPreCheck: false, doPostCheck: false,
+                        run: true, doPreCheck: true, doPostCheck: true,
                         stageName: stageName, genSpec: true,
                         stream: newStringStream(getOptsSpec))
   stack.steps.add(step)
@@ -268,6 +268,7 @@ proc doSpecLoad(stack: ConfigStack) =
   if stack.validationState == nil:
     stack.validationState = createEmptyRuntime()
 
+  echo "Running: ", step.filename
   if stack.specValidationState == nil and (step.doPreCheck or step.doPostCheck):
     stack.specValidationState  = createEmptyRuntime()
     stack.validationState.spec = some(buildC42Spec())
@@ -276,6 +277,11 @@ proc doSpecLoad(stack: ConfigStack) =
   stack.runOneConf(stack.validationState, stack.specValidationState)
 
   if step.genSpec:
+    let specOpt = stack.validationState.spec
+    let new     = stack.validationState.generateC42Spec(specOpt)
+
+    stack.validationState.spec = some(new)
+
     stack.c42SpecObj = stack.validationState.generateC42Spec()
     if stack.configState != nil:
       stack.configState.spec = some(stack.c42SpecObj)

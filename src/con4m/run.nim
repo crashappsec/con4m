@@ -26,7 +26,7 @@ template cmdLineErrorOutput(msg: string) =
                                 remainingIndents = 0)
     stderr.writeLine(formatted)
     quit(1)
-  
+
 proc tryToOpen*(f: string): Stream =
   if f.fileExists():
     try:
@@ -90,7 +90,9 @@ proc con4mRun*(files, specs: seq[string]) =
 proc specGenRun*(files: seq[string]) =
   let
     stubs = (getConf[seq[string]]("stubs")).getOrElse(@[])
-    stack = newConfigStack().addSystemBuiltins(which=srsValidation)
+    stack = newConfigStack().addSystemBuiltins(which=srsValidation).
+            addGetoptSpecLoad()
+
 
   for item in files:
     let

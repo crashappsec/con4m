@@ -355,7 +355,9 @@ proc registerObjectType(spec: ConfigSpec, item: AttrOrSub) =
                    shortdoc = shortdoc, hidden = hidden,
                    validator = validator)
 
-proc generateC42Spec*(state: ConfigState): ConfigSpec =
+proc generateC42Spec*(state: ConfigState,
+                      oldSpec: Option[ConfigSpec] = none(ConfigSpec)):
+                        ConfigSpec =
   result       = newSpec()
   let contents = state.attrs.contents
 
@@ -371,6 +373,13 @@ proc generateC42Spec*(state: ConfigState): ConfigSpec =
     for _, objectSpec in contents["object"].get(AttrScope).contents:
       result.registerObjectType(objectSpec)
 
+  if oldSpec.isSome():
+    let actually = oldSpec.get()
+
+    for k, v in actually.secSpecs:
+      if k notin result.secSpecs:
+        result.secSpecs[k] = v
+
   if "singleton" in contents:
     for name, singletonSpec in contents["singleton"].get(AttrScope).contents:
       result.populateType(result.secSpecs[name], singletonSpec.get(AttrScope))
@@ -379,7 +388,9 @@ proc generateC42Spec*(state: ConfigState): ConfigSpec =
     for name, objectSpec in contents["object"].get(AttrScope).contents:
       result.populateType(result.secSpecs[name], objectSpec.get(AttrScope))
 
+
   result.populateType(result.rootSpec, contents["root"].get(AttrScope))
+
 
 proc c42Spec*(s:        Stream,
               fileName: string): Option[(ConfigSpec, ConfigState)] =
