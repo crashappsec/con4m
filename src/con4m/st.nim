@@ -235,6 +235,19 @@ proc getObject*(attrs: AttrScope, fqn: string): AttrScope =
   if o.isNone(): raise newException(ValueError, "Section not found")
   return o.get()
 
+proc getContents*(attrs: AttrScope): seq[string] =
+  for k, _ in attrs.contents:
+    result.add(k)
+
+proc getInstantiations*(attrs: AttrScope): Table[string, AttrScope] =
+  for k, v in attrs.contents:
+    if v.isA(AttrScope):
+      result[k] = v.get(AttrScope)
+
+proc getInstantiations*(attrs: AttrScope, class: string):
+                      Table[string, AttrScope] =
+  attrs.getObject(class).getInstantiations()
+
 proc get*[T](attrs: AttrScope, fqn: string): T =
   let optBox = attrLookup(attrs, fqn)
   if optBox.isNone():
