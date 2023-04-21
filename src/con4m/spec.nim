@@ -594,7 +594,7 @@ proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
   ## This is the post-evaluation validation routine.  There used to
   ## only be one evaluation point-- after the execution. However, we
   ## have moved anything that can be checked prior to execution to
-  ## happen then.  Specificially, we now type checking of attributes
+  ## happen then.  Specificially, we do type checking of attributes
   ## there, as well as setting default values. Constraints are all
   ## checked in the second pass.
   ##

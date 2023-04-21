@@ -48,7 +48,7 @@ type
       language*:       string
       outFile*:        string
     of akSetErrHandler:
-      handler*:       ErrorCallback
+      handler*:        ErrorCallback
 
   ConfigStack* = ref object
     steps*:               seq[ConfigStep]
@@ -268,7 +268,6 @@ proc doSpecLoad(stack: ConfigStack) =
   if stack.validationState == nil:
     stack.validationState = createEmptyRuntime()
 
-  echo "Running: ", step.filename
   if stack.specValidationState == nil and (step.doPreCheck or step.doPostCheck):
     stack.specValidationState  = createEmptyRuntime()
     stack.validationState.spec = some(buildC42Spec())
@@ -331,7 +330,7 @@ proc doStartGetOpts(stack: ConfigStack) =
       echo stack.finalOpt.helpToPrint
   else:
     stack.getOptOptions = res
-
+    
 proc doFinalizeGetOpts(s: ConfigStack) =
   if len(s.getOptOptions) < 2: return
   s.finalOpt      = finalizeManagedGetopt(s.configState, s.getOptOptions)

@@ -742,15 +742,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           "\nPerhaps you meant:\n"
           for item in s.funcTable[fname]:
              msg &= $(item) & "\n"
-        if stopPhase > phCheck:
-          node.children[1].typeInfo.retType = node.typeInfo
-          fatal(msg)
-        else:
-          let
-            y = toAnsiCode(acYellow)
-            r = toAnsiCode(acReset)
-          node.children[1].typeInfo.retType = node.typeInfo
-          echo(fmt"{y}warning:{r} {msg}")
+        node.children[1].typeInfo.retType = node.typeInfo
+        fatal(msg)
       else:
         s.waitingForTypeInfo = true
         node.typeInfo = newTypeVar().unify(node.children[1].getType().retType)

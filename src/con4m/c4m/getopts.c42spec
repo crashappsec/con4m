@@ -234,6 +234,23 @@ object flag_arg {
     validator:  func field_type_string_check
     doc:        default_field_to_set_doc
   }
+
+  field optional_arg {
+    type:        bool
+    default:     false
+    hidden:      true
+    doc:         """
+When this is true, if no argument is provided, we assume the empty string.  Specifically, this means:
+
+{bold}--foo bar{reset}
+
+Will assume the argument to --foo is the empty string, and that bar is an actual command argument.
+
+Note that, even if this is not set, --foo= --boz will *not* treat --boz as an argument to foo, it will set the value to the empty string.
+
+Plenty of people do accidentally leave off the '=', or are used to commands that allow the space, so we recommend leaving this off when possible.
+"""
+  }
 }
 
 object flag_multi_arg {
@@ -271,6 +288,23 @@ object flag_multi_arg {
     hidden:     true
     validator:  func field_type_strarr_check
     doc:        default_field_to_set_doc
+  }
+
+  field optional_arg {
+    type:        bool
+    default:     false
+    hidden:      true
+    doc:         """
+When this is true, if no argument is provided, we assume the empty string.  Specifically, this means:
+
+{bold}--foo bar{reset}
+
+Will assume the argument to --foo is the empty string, and that bar is an actual command argument.
+
+Note that, even if this is not set, --foo= --boz will *not* treat --boz as an argument to foo, it will set the value to the empty string.
+
+Plenty of people do accidentally leave off the '=', or are used to commands that allow the space, so we recommend leaving this off when possible.
+"""
   }
 }
 
@@ -430,8 +464,17 @@ When true, the value specified for the 'args' field will be assumed to
 only apply in the case that no sub-command is given.  If a sub-command
 is given, but it shows up after some stray args that would belong to
 this command, then the user will get an error.
+
+If this is set to 'false', you will need to explicitly check each
+parent command for arguments.
+
+Setting this to 'false' can be useful in situations when you want to
+be more tolerant of errors, particularly for 'help' commands.  There,
+it may be worth doing the extra effort to check and give them some
+more detailed guidance than what con4m would automate.
 """
   }
+  
   field ignore_all_flags {
     type:       bool
     default:    false
@@ -452,12 +495,43 @@ This means:
   }
   field ignore_bad_flags {
     type:       bool
-    default:    false
+    require:    false
     write_lock: true
     hidden:     true
     doc:        """
 When this is true, unrecognized flags will be passed through as
 arguments.
+"""
+  }
+
+  field colon_ok {
+    type:     bool
+    require:  false
+    hidden:   true
+    doc: """
+Most people are used to = separating a flag name from its arguments; eg, {bold} mycommand --myflag=true{reset}. However, there are some corners of the world where a space separates, and some where they use colons.
+
+Our view is, "why not all of the above?" We aim to make the command line "do what the user means" whenever possible, even if they add in spaces, or use :, because they're used to it.
+
+With the colon, there's very little downside to leaving that on, since neither is commonly used in the actual name of a flag.  So that's the default, but if you want to turn off colon support, you can.
+
+When you turn this on or off for a command, the value is automatically picked up by subcommands, unless you explicitly set it for them.
+
+"""
+  }
+  
+  field space_ok {
+    type:     bool
+    require:  false
+    hidden:   true
+    doc: """
+If this is on, for non-optional arguments, we accept: {bold}--foo=bar, --foo= bar, --foo =bar and --foo bar{reset}.
+
+If it is off, we *only* accept --foo=bar.  We call this 'docker' style.  Personally, we prefer to be more forgiving, so 'true' is the default.
+
+Even when this is on, if a particular flag has an optional argument, we need a way to resolve that ambiguity, and the way we resolve it is by making the space NOT okay.  So if --foo had an optional argument, the last one above would not be allowed, even if space_ok is on.
+
+When you turn this on or off for a command, the value is automatically picked up by subcommands, unless you explicitly set it for them.
 """
   }
 }
@@ -655,6 +729,49 @@ If this is true, any error will cause the current parsed command's
 """
   }
 
+  field ignore_bad_flags {
+    type:       bool
+    default:    false
+    write_lock: true
+    hidden:     true
+    doc:        """
+When this is true, unrecognized flags will be passed through as
+arguments.
+"""
+  }
+
+  field colon_ok {
+    type:     bool
+    default:  true
+    hidden:   true
+    doc: """
+Most people are used to = separating a flag name from its arguments; eg, {bold} mycommand --myflag=true{reset}. However, there are some corners of the world where a space separates, and some where they use colons.
+
+Our view is, "why not all of the above?" We aim to make the command line "do what the user means" whenever possible, even if they add in spaces, or use :, because they're used to it.
+
+With the colon, there's very little downside to leaving that on, since neither is commonly used in the actual name of a flag.  So that's the default, but if you want to turn off colon support, you can.
+
+When you turn this on or off for a command, the value is automatically picked up by subcommands, unless you explicitly set it for them.
+
+"""
+  }
+  
+  field space_ok {
+    type:     bool
+    default:  true
+    hidden:   true
+    doc: """
+If this is on, for non-optional arguments, we accept: {bold}--foo=bar, --foo= bar, --foo =bar and --foo bar{reset}.
+
+If it is off, we *only* accept --foo=bar.  We call this 'docker' style.  Personally, we prefer to be more forgiving, so 'true' is the default.
+
+Even when this is on, if a particular flag has an optional argument, we need a way to resolve that ambiguity, and the way we resolve it is by making the space NOT okay.  So if --foo had an optional argument, the last one above would not be allowed, even if space_ok is on.
+
+When you turn this on or off for a command, the value is automatically picked up by subcommands, unless you explicitly set it for them.
+"""
+  }
+
+
   # TODO
   field error_command {
     type:       string
@@ -715,7 +832,8 @@ func no_flag_check(property, value) {
     return
   }
   base, me := attr_split(property)
-  if attr_get(base + ".ignore_bad_flags", bool) {
+  ignore_name := base + ".ignore_bad_flags"
+  if attr_exists(ignore_name) and attr_get(ignore_name, bool) {
     return "cannot have 'no_flag' and 'ignore_bad_flags' true at the same time"
   }
   if sections(base).contains("command") {
@@ -843,29 +961,18 @@ func under_to_dash(str) {
   return str.replace("_", "-")
 }
 
-gopt_root := ""
-export gopt_root
-
 func getopts_root(path) {
-  if gopt_root == "" {
-    parts := path.split(".")
-    ix := -1
-    for i from 0 to len(parts) {
-      if parts[i] == "getopts" {
-        ix := i
-      }
-    }
-    for i from 0 to ix {
-      gopt_root := gopt_root + parts[i] + "."
-    }
-    if ix > 0 {
-      gopt_root := gopt_root + ".getopts"
-    } else {
-      gopt_root := "getopts"
+  parts := path.split(".")
+  ix    := 0
+  
+  for i from 0 to len(parts) {
+    if parts[i] == "getopts" {
+      ix := i
     }
   }
 
-  return gopt_root
+  s := parts.slice(0, ix)
+  return s.join(".")
 }
 
 func dupe_flag(path, flagname) {

@@ -5,34 +5,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import tables, options, streams, types, nimutils, nimutils/logging
+import tables, options, streams, types, nimutils
 import errmsg, lex, typecheck, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
-
-## This stuff probably belongs in 'run.nim' or con4m.nim (since it's
-## meant only for the command-line compiler).
-##
-## But since cyclical imports are a problem, we'll just stick it here.
-
-var stopPhase* = phValidate
-
-proc setStopPhase*(s: string) =
-  ## This is really only meant to be used when running the compiler
-  ## on the command line, not via API.
-  case s
-  of "tokenize": stopPhase = phTokenize
-  of "parse":    stopPhase = phParse
-  of "check":    stopPhase = phCheck
-  else:          stopPhase = phEval
-
-proc phaseEnded*(phase: Con4mPhase) =
-  if phase >= stopPhase:
-    var publishParams = { "loglevel" : $(llInfo) }.newOrderedTable()
-    discard publish(con4mTopic,
-                    "Compilation exiting early due to command-line flag.\n",
-                    publishParams)
-    quit()
 
 proc getTokenText*(token: Con4mToken): string {.inline.} =
   if token.kind == TtStringLit: return token.unescaped
@@ -1025,16 +1001,6 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
-var
-  dumpToks  = false
-  showParse = false
-
-proc setDumpToks*() =
-  dumpToks = true
-
-proc setShowParse*() =
-  showParse = true
-
 proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
@@ -1047,21 +1013,11 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   setCurrentFileName(filename)
   ctrace(fmt"{filename}: {len(tokens)} tokens")
 
-  if dumpToks or stopPhase == phTokenize:
-    for i, token in tokens:
-      stderr.writeLine($i & ": " & $token)
-
-  phaseEnded(phTokenize)
-
   result = ctx.body(toplevel = true)
   if ctx.curTok().kind != TtEof:
     parseError("EOF, assignment or block expected.", true)
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
-
-  if showParse or stopPhase == phParse:
-    stderr.write($result)
-  phaseEnded(phParse)
 
 proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse

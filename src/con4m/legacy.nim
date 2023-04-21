@@ -48,7 +48,7 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   if tree == nil: return false
   state.secondPass = false
   tree.checkTree(state)
-  if showChecked or stopPhase == phCheck:
+  if showChecked:
     stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" & toAnsiCode(acReset))
     stderr.writeLine($tree)
     for item in state.moduleFuncDefs:
@@ -64,7 +64,6 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   if state.spec.isSome():
     state.preEvalCheck(evalCtx)
 
-  phaseEnded(phCheck)
   tree.initRun(state)
   try:
     ctrace(fmt"{getCurrentFileName()}: Beginning evaluation.")
@@ -72,8 +71,6 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
     ctrace(fmt"{getCurrentFileName()}: Evaluation done.")
   finally:
     state.postRun()
-
-  phaseEnded(phEval)
 
   if state.spec.isSome():
     state.validateState(evalCtx)

@@ -285,6 +285,31 @@ proc c4mSliceToEnd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   except:
     return some(pack(""))
 
+proc c4mListSlice*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  ## Returns the sub-array of `s` starting at index `start`, not
+  ## including index `end`.  The semantics of this are Pythonic, where
+  ## -1 works as expected.
+  ##
+  ## Note that an index out of bounds will not error. If both
+  ## indicies are out of bounds, you'll get the empty list.
+  ## usually exposed as `slice(s, start, end)`
+
+  let
+    s       = unpack[seq[Box]](args[0])
+  var
+    startix = unpack[int](args[1])
+    endix   = unpack[int](args[2])
+
+  if startix < 0:
+    startix += s.len()
+  if endix < 0:
+    endix += s.len()
+
+  try:
+    return some(pack(s[startix .. endix]))
+  except:
+    return some(pack[seq[Box]](@[]))
+    
 proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
   ## We don't error check on string bounds; when an exception gets
   ## raised, SCall will call fatal().
@@ -1217,25 +1242,26 @@ const defaultBuiltins* = [
   # Also, format() and echo() need to change for this project.
   ]#
   # String manipulation functions.
-  ("contains(string, string) -> bool",     BuiltInFn(c4mContainsStrStr)),
-  ("find(string, string) -> int",          BuiltInFn(c4mFindFromStart)),
-  ("len(string) -> int",                   BuiltInFn(c4mStrLen)),
-  ("slice(string, int) -> string",         BuiltInFn(c4mSliceToEnd)),
-  ("slice(string, int, int) -> string",    BuiltInFn(c4mSlice)),
-  ("split(string,string) -> list[string]", BuiltInFn(c4mSplit)),
-  ("strip(string) -> string",              BuiltInFn(c4mStrip)),
-  ("pad(string, int) -> string",           BuiltInFn(c4mPad)),
-  ("format(string) -> string",             BuiltInFn(c4mFormat)),
-  ("base64(string) -> string",             BuiltInFn(c4mBase64)),
-  ("base64_web(string) -> string",         BuiltInFn(c4mBase64Web)),
-  ("debase64(string) -> string",           BuiltInFn(c4mDecode64)),
-  ("hex(string) -> string",                BuiltInFn(c4mToHex)),
-  ("hex(int) -> string",                   BuiltInFn(c4mIntToHex)),
-  ("dehex(string) -> string",              BuiltInFn(c4mFromHex)),
-  ("sha256(string) -> string",             BuiltInFn(c4mSha256)),
-  ("sha512(string) -> string",             BuiltInFn(c4mSha512)),
-  ("upper(string) -> string",              BuiltInFn(c4mUpper)),
-  ("lower(string) -> string",              BuiltInFn(c4mLower)),
+  ("contains(string, string) -> bool",        BuiltInFn(c4mContainsStrStr)),
+  ("find(string, string) -> int",             BuiltInFn(c4mFindFromStart)),
+  ("len(string) -> int",                      BuiltInFn(c4mStrLen)),
+  ("slice(string, int) -> string",            BuiltInFn(c4mSliceToEnd)),
+  ("slice(string, int, int) -> string",       BuiltInFn(c4mSlice)),
+  ("slice(list[`x], int, int) -> list[`x]",   BuiltInFn(c4mListSlice)),
+  ("split(string,string) -> list[string]",    BuiltInFn(c4mSplit)),
+  ("strip(string) -> string",                 BuiltInFn(c4mStrip)),
+  ("pad(string, int) -> string",              BuiltInFn(c4mPad)),
+  ("format(string) -> string",                BuiltInFn(c4mFormat)),
+  ("base64(string) -> string",                BuiltInFn(c4mBase64)),
+  ("base64_web(string) -> string",            BuiltInFn(c4mBase64Web)),
+  ("debase64(string) -> string",              BuiltInFn(c4mDecode64)),
+  ("hex(string) -> string",                   BuiltInFn(c4mToHex)),
+  ("hex(int) -> string",                      BuiltInFn(c4mIntToHex)),
+  ("dehex(string) -> string",                 BuiltInFn(c4mFromHex)),
+  ("sha256(string) -> string",                BuiltInFn(c4mSha256)),
+  ("sha512(string) -> string",                BuiltInFn(c4mSha512)),
+  ("upper(string) -> string",                 BuiltInFn(c4mUpper)),
+  ("lower(string) -> string",                 BuiltInFn(c4mLower)),
   ("join(list[string], string) -> string",    BuiltInFn(c4mJoin)),
   ("replace(string, string, string)->string", BuiltInFn(c4mReplace)),
   # Container (list and dict) basics.

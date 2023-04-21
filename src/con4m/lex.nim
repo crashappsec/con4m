@@ -33,7 +33,6 @@ proc unescape(token: Con4mToken) =
       else:
         var   st: string
         const ii = instantiationInfo()
-        echo "??!"
         when not defined(release):
           st = getStackTrace()
         else:

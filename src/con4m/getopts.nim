@@ -21,6 +21,10 @@ type
     doc:              string
     callback:         Option[CallbackObj]
     fieldToSet:       string
+    finalFlagIx:      int
+    noColon:          bool   # Inherited from the command object.
+    noSpace:          bool   # Also inherited.
+    argIsOptional:    bool   # When true, --foo bar is essentially --foo="" bar
     case kind:        ArgFlagKind
     of afPair:
       helpFlag:       bool
@@ -44,6 +48,8 @@ type
     flags:             OrderedTable[string, FlagSpec]
     callback:          Option[CallbackObj]
     doc:               string
+    noColon:           bool # accept --flag= f but not --flag: f.
+    noSpace:           bool # Docker-style if true :/
     extraHelpTopics:   OrderedTable[string, string]
     argName:           string
     minArgs:           int
@@ -71,6 +77,14 @@ type
     parseId*: int # globally unique parse ID.
     finalCmd*: CommandSpec
 
+proc getValue*(f: FlagSpec): Box =
+  case f.kind
+  of afPair:        return pack(f.boolValue[f.finalFlagIx])
+  of afChoice:      return pack(f.selected[f.finalFlagIx][0])
+  of afMultiChoice: return pack(f.selected[f.finalFlagIx])
+  of afStrArg:      return pack(f.strVal[f.finalFlagIx])
+  of afMultiArg:    return pack(f.strArrVal[f.finalFlagIx])
+    
 proc flagSpecEq(f1, f2: FlagSpec): bool =
   if f1 == f2:           return true   # They're literally the same ref
   if f1.kind != f2.kind: return false
@@ -87,7 +101,9 @@ proc newSpecObj*(reportingName: string       = "",
                  doc                         = "",
                  argName                     = "",
                  callback                    = none(CallbackObj),
-                 parent                      = none(CommandSpec)): CommandSpec =
+                 parent                      = none(CommandSpec),
+                 noColon                     = false,
+                 noSpace                     = false): CommandSpec =
   if noFlags and unknownFlagsOk:
     raise newException(ValueError, "Can't have noFlags and unknownFlagsOk")
   return CommandSpec(reportingName:     reportingName,
@@ -101,6 +117,8 @@ proc newSpecObj*(reportingName: string       = "",
                      argName:           argName,
                      callback:          callback,
                      parent:            parent,
+                     noColon:           noColon,
+                     noSpace:           noSpace,
                      autoHelp:          false,
                      finishedComputing: false)
 
@@ -112,7 +130,9 @@ proc addCommand*(spec:           CommandSpec,
                  noFlags:        bool                      = false,
                  doc:            string                    = "",
                  argName:        string                    = "",
-                 callback:       Option[CallbackObj]       = none(CallbackObj)):
+                 callback:       Option[CallbackObj]       = none(CallbackObj),
+                 noColon:        bool                      = false,
+                 noSpace:        bool                      = false):
                    CommandSpec {.discardable.} =
   ## Creates a command under the top-level argument parsing spec,
   ## or a sub-command under some other command.
@@ -146,6 +166,7 @@ proc addCommand*(spec:           CommandSpec,
                       subOptional     = subOptional,
                       unknownFlagsOk  = unknownFlagsOk,
                       noFlags         = noFlags,
+                      noSpace         = noSpace,
                       doc             = doc,
                       argName         = argName,
                       callback        = callback,
@@ -180,13 +201,16 @@ proc newFlag(cmd:             CommandSpec,
              recognizedNames: openarray[string],
              doc:             string = "",
              callback:        Option[CallbackObj] = none(CallbackObj),
-             toSet:           string = ""): FlagSpec =
+             toSet:           string = "",
+             optArg:          bool = false,                              
+            ): FlagSpec =
   if cmd.noFlags:
     raise newException(ValueError,
                        "Cannot add a flag for a spec where noFlags is true")
   result = FlagSpec(reportingName: reportingName, kind: kind, clobberOk: clOk,
                     recognizedNames: recognizedNames.toSeq(), doc: doc,
-                    callback: callback, fieldToSet: toSet)
+                    callback: callback, fieldToSet: toSet, noColon: cmd.noColon,
+                    noSpace: cmd.noSpace, argIsOptional: optArg)
   cmd.flags[reportingName] = result
 
 proc addChoiceFlag*(cmd:             CommandSpec,
@@ -269,7 +293,8 @@ proc addFlagWithArg*(cmd:             CommandSpec,
                      clobberOk:       bool                = false,
                      doc:             string              = "",
                      callback:        Option[CallbackObj] = none(CallbackObj),
-                     toSet:           string              = ""):
+                     toSet:           string              = "",
+                     optArg:          bool                = false):
                        FlagSpec {.discardable.} =
   ## This simply adds a flag that takes a required string argument, or,
   ## in the case of multi-args, an array of string arguments.  The arguments
@@ -277,7 +302,7 @@ proc addFlagWithArg*(cmd:             CommandSpec,
 
   let kind  = if multi: afMultiArg else: afStrArg
   result = newFlag(cmd, kind, reportingName, clobberOk, recognizedNames,
-                   doc, callback, toSet)
+                   doc, callback, toSet, optArg)
 
 template argpError(msg: string) =
   var fullError = msg
@@ -297,9 +322,10 @@ proc validateOneFlag(ctx:     var ParseCtx,
   var
     argCrap = foundArg
     spec    = inspec
+    flagSep = if not spec.noColon: [':', '='] else: ['=', char(0)]
 
-  if ctx.i < len(ctx.args) and ctx.args[ctx.i][0] in [':', '=']:
-    if argCrap.isNone():
+  if ctx.i < len(ctx.args) and ctx.args[ctx.i][0] in flagSep:
+    if argCrap.isNone() and not spec.noSpace:
       argCrap = some(ctx.args[ctx.i][1 .. ^1].strip())
       ctx.i = ctx.i + 1
       if argCrap.get() == "":
@@ -316,12 +342,19 @@ proc validateOneFlag(ctx:     var ParseCtx,
       spec    = spec.linkedChoice.get()
       argCrap = some(name)
   elif argCrap.isNone():
-    # Here we require an argument, and we didn't find a ':' or '=',
-    # so we just assume it's the next word, unless we see a dash.
-    if ctx.i == len(ctx.args) or ctx.args[ctx.i][0] == '-':
-      argpError(name, "requires an argument.")
-    argCrap = some(ctx.args[ctx.i].strip())
-    ctx.i  = ctx.i + 1
+    if not spec.argIsOptional:
+      # Here we require an argument, and we didn't find a ':' or '=',
+      # so we just assume it's the next word, unless we see a dash.
+      if ctx.i == len(ctx.args) or ctx.args[ctx.i][0] == '-':
+        argpError(name, "requires an argument.")
+      if spec.noSpace:
+        argpError(name, "requires an argument")
+      argCrap = some(ctx.args[ctx.i].strip())
+      ctx.i  = ctx.i + 1
+    else:
+      # When arguments are optional and we don't see them (or at least a
+      # = or :), we set them to ""
+      argCrap = some("")
 
   if spec.kind notin [afMultiChoice, afMultiArg] and
      not spec.clobberOk and spec.reportingName in ctx.res.flags:
@@ -357,11 +390,11 @@ proc validateOneFlag(ctx:     var ParseCtx,
     spec.strVal[ctx.parseId] = argCrap.get()
   of afMultiArg:
     var parts = argCrap.get()
-    if parts[^1] == ',':
+    if len(parts) != 0 and parts[^1] == ',':
       while ctx.i != len(ctx.args) and ctx.args[ctx.i][0] != '-':
         parts = parts & ctx.args[ctx.i].strip()
         ctx.i = ctx.i + 1
-    if parts[^1] == ',': parts = parts[0 ..< ^1]
+    if len(parts) != 0 and parts[^1] == ',': parts = parts[0 ..< ^1]
     if ctx.parseId notin spec.strArrVal:
       spec.strArrVal[ctx.parseId] = parts.split(",")
     else:
@@ -383,7 +416,7 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
     singleDash = false
 
   var
-    colonix = cur.find(':')
+    colonix = if spec.noColon: -1 else: cur.find(':')
     eqix    = cur.find('=')
     theIx   = colonix
 
@@ -407,13 +440,12 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
   elif not singleDash:
     if spec.unknownFlagsOk:
       ctx.curArgs.add(orig)
-      if ':' in orig or '=' in orig:
-        ctx.i = ctx.i - 1
     else:
       argpError(cur, "Invalid flag")
   else:
-    # Single-dash flags bunched together cannot have arguments.
-    if definiteArg.isSome():
+    # Single-dash flags bunched together cannot have arguments, unless
+    # unknownFlagsOk is on.
+    if definiteArg.isSome() and not spec.unknownFlagsOk:
       argpError(cur, "Invalid flag")
     for i, c in cur:
       let oneCharFlag = $(c)
@@ -425,7 +457,8 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
         argpError(cur, "Couldn't process all characters as flags")
     if spec.unknownFlagsOk: ctx.curArgs.add(orig)
 
-proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]): OrderedTable[string, FlagSpec] =
+proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]):
+                    OrderedTable[string, FlagSpec] =
   for reportingName, f in inSpec:
     for name in f.recognizedNames:
       result[name] = f
@@ -520,7 +553,9 @@ proc computePossibleFlags(spec: CommandSpec) =
     for k, v in parentFlags: spec.allPossibleFlags[k] = v
   for k, v in spec.flags:
     if k in spec.allPossibleFlags:
-      raise newException(ValueError, "command flag names cannot " &
+      raise newException(ValueError, "When checking flag '" & k &
+        "', In section '" & spec.reportingName &
+        "' -- command flag names cannot " &
         "conflict with parent flag names or top-level flag names." &
         "This is because we want to make sure users don't have to worry " &
         "about getting flag position right whenever possible."
@@ -751,11 +786,12 @@ proc loadFlagArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
       ftsOpt     = one.attrLookup("field_to_set")
       fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
                    else:               ""
+      optArg     = unpack[bool](one.attrLookup("optional_arg").get())
 
     var allNames = aliases & @[realName]
 
     cmdObj.addFlagWithArg(realName, allNames, false, false, doc,
-                          cb, fieldToSet)
+                          cb, fieldToSet, optArg)
 
 proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
   for k, v in all.contents:
@@ -770,11 +806,12 @@ proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
       ftsOpt     = one.attrLookup("field_to_set")
       fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
                    else:               ""
+      optArg     = unpack[bool](one.attrLookup("optional_arg").get())
 
     var allNames = aliases & @[realName]
 
     cmdObj.addFlagWithArg(realName, allNames, true, false, doc,
-                          cb, fieldToSet)
+                          cb, fieldToSet, optArg)
 
 proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
   for k, v in all.contents:
@@ -834,9 +871,23 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
                  else:              none(CallbackObj)
       asubmut  = unpack[bool](one.attrLookup("arg_sub_mutex").get())
       ignoreF  = unpack[bool](one.attrLookup("ignore_all_flags").get())
-      ignoreB  = unpack[bool](one.attrLookup("ignore_bad_flags").get())
+      igBOpt   = one.attrLookup("ignore_bad_flags")
+      ignoreB  = if igBOpt.isSome():
+                   unpack[bool](igBOpt.get())
+                 else:
+                   cmdObj.unknownFlagsOk
+      colOkOpt = one.attrLookup("colon_ok")
+      noCol    = if colOkOpt.isSome():
+                   not unpack[bool](colOkOpt.get())
+                 else:
+                   cmdObj.noColon
+      spOkOpt  = one.attrLookup("space_ok")
+      noSpc    = if spOkOpt.isSome():
+                   not unpack[bool](spOkOpt.get())
+                 else:
+                   cmdObj.noSpace
       sub      = cmdObj.addCommand(k, aliases, not asubmut, ignoreB, ignoreF,
-                                   doc, argName, cb)
+                                   doc, argName, cb, noCol, noSpc)
     sub.addArgs(minArg, maxArg).loadSection(one, info)
 
 proc stringizeFlags(inflags: OrderedTable[string, FlagSpec], id: int):
@@ -1060,19 +1111,19 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
           if item in eht:
             legitCmds.add((false, item, getHelp(Corpus(eht), @[item])))
           else:
-            echo("No such command: " & item)
+            stderr.writeLine("No such command: " & item)
 
     if len(legitCmds) == 0:
       result &= getOneCmdHelp(cmd)
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
-          echo heading("Help for " & given, color = acBCyan)
-          echo reporting.perLineWrap()
+          stderr.writeLine(heading("Help for " & given, color = acBCyan))
+          stderr.writeLine(reporting.perLineWrap())
           continue
         if given != reporting:
-          echo heading("Note: '" & given & "' is an alias for '" &
-            reporting & "'", color = acBCyan)
+          stderr.writeLine(heading("Note: '" & given & "' is an alias for '" &
+            reporting & "'", color = acBCyan))
 
         result &= getOneCmdHelp(cmd.commands[reporting])
 
@@ -1084,6 +1135,8 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
     endCmd  = winner.parseCtx.finalCmd
 
   for flag, spec in winner.flags:
+    spec.finalFlagIx = parseId
+    
     let
       val = case spec.kind
             of afPair:        pack(spec.boolValue[parseId])
@@ -1154,7 +1207,8 @@ proc finalizeManagedGetopt*(runtime: ConfigState,
         let thisCmd = item.command.split(".")[0]
         if cmd == thisCmd:
           item.helpToPrint = item.managedCommit(runtime)
-          if outputHelp: stderr.writeLine(item.helpToPrint)
+          if outputHelp and item.helpToPrint != "":
+            stderr.writeLine(item.helpToPrint)
           return item
         else:
           matchingCmds.add(thisCmd)
@@ -1200,27 +1254,30 @@ proc runManagedGetopt*(runtime:      ConfigState,
     maxArg = unpack[int](boxSeq[1])
 
   let
-    defaultOpt  = sec.attrLookup("default_command")
-    yesBox      = sec.attrLookup("default_yes_prefixes").get()
-    noBox       = sec.attrLookup("default_no_prefixes").get()
-    docOnErrBox = sec.attrLookup("show_doc_on_err").get()
-    errorCmdBox = sec.attrLookup("error_command").get()
-    addHelpBox  = sec.attrLookup("add_help_commands").get()
-    doc         = unpack[string](sec.attrLookup("doc").get())
-    argName     = unpack[string](sec.attrLookup("arg_name").get())
-
+    defaultOpt = sec.attrLookup("default_command")
+    yesBox     = sec.attrLookup("default_yes_prefixes").get()
+    noBox      = sec.attrLookup("default_no_prefixes").get()
+    docOnErr   = unpack[bool](sec.attrLookup("show_doc_on_err").get())
+    errorCmd   = unpack[string](sec.attrLookup("error_command").get())
+    colonOk    = unpack[bool](sec.attrLookup("colon_ok").get())
+    spaceOk    = unpack[bool](sec.attrLookup("space_ok").get())
+    ignoreBad  = unpack[bool](sec.attrLookup("ignore_bad_flags").get())
+    addHelp    = unpack[bool](sec.attrLookup("add_help_commands").get())
+    doc        = unpack[string](sec.attrLookup("doc").get())
+    argName    = unpack[string](sec.attrLookup("arg_name").get())
 
   if defaultOpt.isNone(): li.defaultCmd = some("")
   else:                   li.defaultCmd = some(unpack[string](defaultOpt.get()))
 
   li.defaultYesPref = unpack[seq[string]](yesBox)
   li.defaultNoPref  = unpack[seq[string]](noBox)
-  li.showDocOnErr   = unpack[bool](docOnErrBox)
-  li.errCmd         = unpack[string](errorCmdBox)
-  li.addHelpCmds    = unpack[bool](addHelpBox)
+  li.showDocOnErr   = docOnErr
+  li.errCmd         = errorCmd
+  li.addHelpCmds    = addHelp
 
   let topLevelCmd = newSpecObj(minArgs = minArg, maxArgs = maxArg, doc = doc,
-                                                           argName = argName)
+                               argName = argName, unknownFlagsOk = ignoreBad,
+                               noColon = not colonOk, noSpace = not spaceOk)
   topLevelCmd.loadSection(sec, li)
 
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)
@@ -1230,5 +1287,9 @@ proc runManagedGetopt*(runtime:      ConfigState,
     item.stashedTop = sec
 
   if len(result) == 1:
-    result[0].helpToPrint = result[0].managedCommit(runtime)
-    if outputHelp: stderr.writeLine(result[0].helpToPrint)
+    let helpToPrint = result[0].managedCommit(runtime)
+    if outputHelp:
+      if helpToPrint != "":
+        stderr.writeLine(helpToPrint)
+    else:
+      result[0].helpToPrint = helpToPrint
