@@ -193,7 +193,6 @@ proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
 
 proc attrToVal*(attr: Attribute): Option[Box] =
-  result = none(Box)
   let
     `val?`  = attr.value
     `over?` = attr.override
@@ -202,35 +201,8 @@ proc attrToVal*(attr: Attribute): Option[Box] =
     return `over?`
   elif `val?`.isSome():
     return `val?`
-  elif attr.scope.config.spec.isSome():
-    let
-      parent          = attr.scope
-      parentName      = parent.name
-      specOpt         = parent.config.spec
-      grandParentName = if parent.parent.isSome():
-                          parent.get(AttrScope).name
-                        else: ""
-
-    var
-      typeSpec: Con4mSectionType = nil
-
-    if not specOpt.isSome():
-      return
-    let spec = specOpt.get()
-    if parentName in spec.secSpecs:
-      typeSpec = spec.secSpecs[parentName]
-      if not typeSpec.singleton:
-        if grandParentName notin spec.secSpecs:
-          return
-        typeSpec = spec.secSpecs[grandParentName]
-    else:
-      if grandParentName notin spec.secSpecs:
-        return
-      typeSpec = spec.secSpecs[grandParentName]
-    if attr.name notin typeSpec.fields:
-      return
-    return typeSpec.fields[attr.name].default
-
+  return none(Box)
+  
 proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   ## This is the interface for actually lookup up values at runtime.
   let

@@ -14,6 +14,9 @@ type
   StackCallback*     = (ConfigState) -> void
   ErrorCallback*     = (string, string) -> bool
   StackRunTimeScope* = enum srsConfig, srsValidation, srsBoth
+  CheckLevel*        = enum
+    # CheckNone adds default values in.
+    checkNone, checkAll, checkPre, checkPost, notEvenDefaults
   ConfigStep*        = ref object
     stageName*: string
     case kind*: ActionKind
@@ -30,8 +33,7 @@ type
       stream*:         Stream
       genSpec*:        bool
       run*:            bool
-      doPreCheck*:     bool
-      doPostCheck*:    bool
+      checkLevel*:     CheckLevel
       showToks*:       bool
       showParsed*:     bool
       showTyped*:      bool
@@ -110,15 +112,14 @@ proc setErrorHandler*(stack: ConfigStack, cb: ErrorCallback):
 proc addSpecLoad*(stack:        ConfigStack,
                   fileName:     string,
                   stream:       Stream,
-                  preValidate:  bool = false,
-                  postValidate: bool = false,
+                  checkLevel:   CheckLevel = checkAll,
                   genSpec:      bool = true,
                   stageName:    string = fileName):
                     ConfigStack {.discardable.} =
   result   = stack
   var step = ConfigStep(kind: akSpecLoad, fileName: fileName, run: true,
-                        doPreCheck: preValidate, doPostCheck: postValidate,
-                        stageName: stageName, stream: stream, genSpec: genSpec)
+                        checkLevel: checkLevel, stageName: stageName,
+                        stream: stream, genSpec: genSpec)
 
   stack.steps.add(step)
 
@@ -127,7 +128,7 @@ proc addGetoptSpecLoad*(stack:     ConfigStack,
                           ConfigStack {.discardable.} =
   result = stack
   var step = ConfigStep(kind: akSpecLoad, filename: "getopts-spec",
-                        run: true, doPreCheck: true, doPostCheck: true,
+                        run: true, checkLevel: checkNone,
                         stageName: stageName, genSpec: true,
                         stream: newStringStream(getOptsSpec))
   stack.steps.add(step)
@@ -135,24 +136,21 @@ proc addGetoptSpecLoad*(stack:     ConfigStack,
 proc addConfLoad*(stack:        ConfigStack,
                   fileName:     string,
                   stream:       Stream,
-                  preValidate:  bool   = true,
-                  postValidate: bool   = true,
+                  checkLevel:   CheckLevel = checkAll,
                   stageName:    string = fileName):
                     ConfigStack {.discardable.} =
   result   = stack
   var step = ConfigStep(kind: akConfLoad, fileName: fileName, run: true,
-                        doPreCheck: preValidate, doPostCheck: postValidate,
-                        stageName: stageName, stream: stream)
+                        checkLevel: checkLevel, stageName: stageName,
+                        stream: stream)
   stack.steps.add(step)
 
 proc addValiate*(stack:       ConfigStack,
-                 doPreCheck:  bool = true,
-                 doPostCheck: bool = true,
                  stageName:   string = ""):
                    ConfigStack {.discardable.} =
   result   = stack
-  var step = ConfigStep(kind: akValidate, doPreCheck: doPreCheck, run: false,
-                        doPostCheck: doPostCheck)
+  var step = ConfigStep(kind: akValidate, checkLevel: checkAll, run: false)
+
   stack.steps.add(step)
 
 proc addStartGetOpts*(stack:         ConfigStack,
@@ -268,7 +266,7 @@ proc doSpecLoad(stack: ConfigStack) =
   if stack.validationState == nil:
     stack.validationState = createEmptyRuntime()
 
-  if stack.specValidationState == nil and (step.doPreCheck or step.doPostCheck):
+  if stack.specValidationState == nil and step.checkLevel != notEvenDefaults:
     stack.specValidationState  = createEmptyRuntime()
     stack.validationState.spec = some(buildC42Spec())
   # load the file.
@@ -294,8 +292,7 @@ proc doConfLoad(stack: ConfigStack) =
       stack.configState.spec = some(stack.c42SpecObj)
   if stack.validationState == nil:
     let step = stack.steps[stack.ix]
-    step.doPreCheck  = false
-    step.doPostcheck = false
+    step.checkLevel = notEvenDefaults
   stack.runOneConf(stack.configState, stack.validationState)
   stack.lastUsed = stack.configState
 
@@ -542,12 +539,13 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
       if step.showFuncs:
         stderr.writeLine($(conf.funcTable))
 
-    if step.doPreCheck and spec != nil:
+    if step.checkLevel != notEvenDefaults and spec != nil:
       if conf.spec.isNone():
         if stack.c42SpecObj == nil:
           fatal("Spec runtime exists, but no spec object generated from it.")
         conf.spec = some(stack.c42SpecObj)
-      conf.preEvalCheck(spec)
+      if step.checkLevel in [checkAll, checkPre]:
+        conf.preEvalCheck(spec)
 
     if step.endPhase == "precheck": return
 
@@ -573,10 +571,17 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
             conf.keptGlobals[k].value = v
         conf.frames = @[]
 
-  if step.endPhase == "eval": return
+  if step.endPhase == "eval":
+    if step.checkLevel != notEvenDefaults and spec != nil:
+      conf.setDefaults(spec)
+    return
+    
 
-  if step.doPostCheck and spec != nil:
-    conf.validateState(spec)
+  if spec != nil:
+    if step.checkLevel in [checkAll, checkPost]:
+      conf.validateState(spec)
+    elif step.checkLevel != notEvenDefaults:
+      conf.setDefaults(spec)
 
   if step.showPretty:
     echo conf.attrs

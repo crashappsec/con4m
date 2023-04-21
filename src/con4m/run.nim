@@ -99,7 +99,7 @@ proc specGenRun*(files: seq[string]) =
       fname  = item.resolvePath()
       stream = tryToOpen(fname)
 
-    stack.addSpecLoad(fname, stream, true, true)
+    stack.addSpecLoad(fname, stream)
 
   stack.addCodeGen(getConf[string]("language").get(),
                    getConf[string]("output_file").getOrElse(""))

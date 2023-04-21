@@ -317,10 +317,15 @@ proc newSpec*(): ConfigSpec =
 proc getRootSpec*(spec: ConfigSpec): Con4mSectionType =
   return spec.rootSpec
 
-proc validateOneSection(attrs:  AttrScope,
-                        spec:   Con4mSectionType,
-                        c42Env: ConfigState,
-                        pass1:  bool)
+proc validateOneSectionPass1(attrs:  AttrScope,
+                             spec:   Con4mSectionType,
+                             c42Env: ConfigState)
+
+proc validateOneSectionPass2(attrs:        AttrScope,
+                             spec:         Con4mSectionType,
+                             c42Env:       ConfigState,
+                             defaultsOnly: bool)
+
 
 proc exclusionPresent(attrs, name, spec: auto): string =
   # Returns any one exclusion from the spec that has a value
@@ -339,18 +344,12 @@ proc exclusionPresent(attrs, name, spec: auto): string =
       return item
   return ""
 
-proc validateOneSectField(attrs:  AttrScope,
-                          name:   string,
-                          spec:   FieldSpec,
-                          c42Env: ConfigState,
-                          pass1:  bool) =
-  let exclusion = exclusionPresent(attrs, name, spec)
+proc validateOneSectFieldPass1(attrs:  AttrScope,
+                               name:   string,
+                               spec:   FieldSpec,
+                               c42Env: ConfigState) =
 
   if name notin attrs.contents:
-    if spec.minRequired > 0 and exclusion == "":
-      specErr(attrs, fmt"Required section '{name}' is missing, and there " &
-        "are no other fields present that would remove this constraint.")
-    else:
       return
   let aOrS = attrs.contents[name]
   if aOrS.isA(Attribute):
@@ -360,14 +359,49 @@ proc validateOneSectField(attrs:  AttrScope,
     sectAttr = aOrS.get(AttrScope)
     secSpec = spec.extType.sinfo
   if secSpec.singleton:
-    validateOneSection(sectAttr, secSpec, c42env, pass1)
+    validateOneSectionPass1(sectAttr, secSpec, c42env)
     return
   for k, v in sectAttr.contents:
     if v.isA(Attribute):
       specErr(attrs, fmt"Cannot have a singleton for section type: '{name}'")
     else:
-      validateOneSection(v.get(AttrScope), secSpec, c42env, pass1)
+      validateOneSectionPass1(v.get(AttrScope), secSpec, c42env)
 
+
+proc validateOneSectFieldPass2(attrs:        AttrScope,
+                               name:         string,
+                               spec:         FieldSpec,
+                               c42Env:       ConfigState,
+                               defaultsOnly: bool) =
+  let exclusion = exclusionPresent(attrs, name, spec)
+
+  if name notin attrs.contents:
+    if not defaultsOnly and spec.minRequired > 0 and exclusion == "":
+      specErr(attrs, fmt"Required section '{name}' is missing, and there " &
+        "are no other fields present that would remove this constraint.")
+    else:
+      return      
+
+  let aOrS = attrs.contents[name]
+  if aOrS.isA(Attribute):
+    if defaultsOnly: return
+    specErr(attrs, fmt"Expected a section '{name}', but got an " &
+                      "attribute instead.")
+  let
+    sectAttr = aOrS.get(AttrScope)
+    secSpec = spec.extType.sinfo
+  if secSpec.singleton:
+    validateOneSectionPass2(sectAttr, secSpec, c42env, defaultsOnly)
+    return
+  for k, v in sectAttr.contents:
+    if v.isA(Attribute):
+      if defaultsOnly: return
+      specErr(attrs, fmt"Cannot have a singleton for section type: '{name}'")
+    else:
+      validateOneSectionPass2(v.get(AttrScope), secSpec, c42env, defaultsOnly)
+
+  if defaultsOnly: return
+  
   if exclusion != "":
     if len(sectAttr.contents) > 0:
       specErr(attrs, fmt"'{name}' cannot appear alongside '{exclusion}'")
@@ -378,19 +412,29 @@ proc validateOneSectField(attrs:  AttrScope,
     if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
       specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
                      fmt"of '{name}', but got {len(sectAttr.contents)}.")
-
+      
 var validatorsToRun: seq[(CallbackObj, Attribute, seq[Box])] = @[]
 
-proc validateOneAttrField(attrs:  AttrScope,
-                          name:   string,
-                          spec:   FieldSpec,
-                          c42Env: ConfigState,
-                          pass1:  bool) =
+proc validateOneAttrFieldPass1(attrs:  AttrScope,
+                               name:   string,
+                               spec:   FieldSpec,
+                               c42Env: ConfigState) {.inline.} =
+  if name notin attrs.contents: return
+  let aOrS = attrs.contents[name]
+  if aOrS.isA(AttrScope):
+    specErr(attrs, fmt"Expected a field '{name}' but got a section instead.")
+
+
+proc validateOneAttrFieldPass2(attrs:        AttrScope,
+                               name:         string,
+                               spec:         FieldSpec,
+                               c42Env:       ConfigState,
+                               defaultsOnly: bool) =
   let exclusion = exclusionPresent(attrs, name, spec)
 
   if name notin attrs.contents:
     if spec.minRequired == 1 and exclusion == "":
-      if not pass1 and spec.default.isSome():
+      if spec.default.isSome():
         let t = spec.extType.tinfo
         # While we set the default here, it does have to drop down
         # below to properly type check.
@@ -399,32 +443,29 @@ proc validateOneAttrField(attrs:  AttrScope,
                                          tInfo: t,
                                          value: spec.default,
                                          override: none(Box))
-      elif not pass1:
+      elif not defaultsOnly:
         specErr(attrs, fmt"Inside field '{attrs.name}': Required attribute " &
                        fmt"'{name}' is missing, and there are no other " &
                           "fields present that would remove this constraint.")
     else:
       return
-  # The spec says the name is def a con4m type. Make sure it's not a section.
-  if name notin attrs.contents and pass1:
-    return
-  let aOrS = attrs.contents[name]
-  if pass1 and aOrS.isA(AttrScope):
-    specErr(attrs, fmt"Expected a field '{name}' but got a section instead.")
+
+  if defaultsOnly: return
   let
+    aOrS = attrs.contents[name]
     attr = aOrS.get(Attribute)
   if not attr.attrToVal().isSome() and spec.minRequired == 1:
     if exclusionPresent(attrs, name, spec) == "":
       if spec.default.isSome():
         attr.value = spec.default
-      elif not pass1:
+      else:
         specErr(attr, fmt"Required attribute '{name}' is missing.")
-  elif pass1 and exclusion != "":
+  elif exclusion != "":
       specErr(attr, fmt"'{name}' can't appear alongside '{exclusion}'")
 
   case spec.extType.kind
   of TypePrimitive:
-    if not pass1 and attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
+    if attr.tInfo.unify(spec.extType.tinfo.copyType()).isBottom():
       let
         specType = $(spec.extType.tinfo)
         attrType = $(attr.tInfo)
@@ -435,7 +476,7 @@ proc validateOneAttrField(attrs:  AttrScope,
         toAnsiCode(acReset) & ")")
 
     var attrVal = attr.attrToVal()
-    if not pass1 and attrVal.isSome():
+    if attrVal.isSome():
       if spec.extType.range.low != spec.extType.range.high:
         assert not attr.tInfo.unify(intType).isBottom()
         let val = unpack[int](attrVal.get())
@@ -480,9 +521,6 @@ proc validateOneAttrField(attrs:  AttrScope,
   of TypeC4TypeSpec:
     discard # Only the referrer needs to validate.
   of TypeC4TypePtr:
-    if pass1:
-      return
-
     let fieldRef = spec.extType.fieldRef
 
     if fieldRef notin attrs.contents:
@@ -514,8 +552,6 @@ proc validateOneAttrField(attrs:  AttrScope,
                      fmt"(to type check the field '{name}'), got a parse " &
                      "error parsing the type: " & getCurrentExceptionMsg())
 
-  if pass1: return
-
   if spec.lock:
     if attr.value.isSome():
       attr.locked = true
@@ -538,19 +574,36 @@ proc validateOneAttrField(attrs:  AttrScope,
     else:
       let args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
       validatorsToRun.add((spec.extType.validator, attr, args))
-
-proc validateOneSection(attrs:  AttrScope,
+      
+proc validateOneSectionPass1(attrs:  AttrScope,
                         spec:   Con4mSectionType,
-                        c42Env: ConfigState,
-                        pass1:  bool) =
+                        c42Env: ConfigState) =
   # Here we are 'in' a section and need to validate each field.
   for name, fieldspec in spec.fields:
     if fieldspec.extType.kind == TypeSection:
-      validateOneSectField(attrs, name, fieldspec, c42env, pass1)
+      validateOneSectFieldPass1(attrs, name, fieldspec, c42env)
     else:
-      validateOneAttrField(attrs, name, fieldspec, c42env, pass1)
+      validateOneAttrFieldPass1(attrs, name, fieldspec, c42env)
 
-  if not pass1 and spec.validator != nil:
+  if "*" notin spec.fields:
+    # You can't dynamically add field sets right now, so this can
+    # 100% be checked statically.  The second you can, we need to move this.
+    for name, _ in attrs.contents:
+      if name notin spec.fields:
+        specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
+
+proc validateOneSectionPass2(attrs:        AttrScope,
+                             spec:         Con4mSectionType,
+                             c42Env:       ConfigState,
+                             defaultsOnly: bool) =
+  # Here we are 'in' a section and need to validate each field.
+  for name, fieldspec in spec.fields:
+    if fieldspec.extType.kind == TypeSection:
+      validateOneSectFieldPass2(attrs, name, fieldspec, c42env, defaultsOnly)
+    else:
+      validateOneAttrFieldPass2(attrs, name, fieldspec, c42env, defaultsOnly)
+
+  if not defaultsOnly and spec.validator != nil:
     let ret = c42env.sCall(spec.validator.name, @[pack(attrs.fullNameAsStr())],
                           spec.validator.tInfo)
     if ret.isNone():
@@ -559,14 +612,6 @@ proc validateOneSection(attrs:  AttrScope,
     let errMsg = unpack[string](ret.get())
 
     if errMsg != "": specErr(attrs, errMsg)
-
-
-  if pass1 and "*" notin spec.fields:
-    # You can't dynamically add field sets right now, so this can
-    # 100% be checked statically.
-    for name, _ in attrs.contents:
-      if name notin spec.fields:
-        specErr(fmt"Unknown field for a {spec.typeName} section: {name}")
 
 proc runCallbacks(spec: ConfigState, env: ConfigState) =
   for (validator, attr, args) in validatorsToRun:
@@ -595,42 +640,36 @@ proc validateState*(state: ConfigState, c42env: ConfigState = nil) =
   ## only be one evaluation point-- after the execution. However, we
   ## have moved anything that can be checked prior to execution to
   ## happen then.  Specificially, we do type checking of attributes
-  ## there, as well as setting default values. Constraints are all
-  ## checked in the second pass.
-  ##
-  ## However, we currently leave the structure of the old
-  ## implementation alone, instead of splitting it out.  It'd be easy
-  ## to split, but might end up tough to put back together, so I want
-  ## to wait until the language is more stable.
-  ##
-  ## For instance, checking that "required" items made it in is
-  ## currently still a post-execution check, but at some point I'm
-  ## going to do proper flow analysis, which will allow us to move
-  ## this to pre-execution.
-  ##
-  ## Similarly, we could check literals against constraints
-  ## statically, which would quite likely lead to the vast majority of
-  ## config files not needing ANY post-execution checking.
+  ## there Constraints are all checked in the second pass.
   ##
   ## Once we are doing proper code generation, as much checking as we
-  ## can do pre-execution, the better!
+  ## can do pre-execution, the better, but right now, most of it is
+  ## happening post-execution.  And, note that, as we add the ability
+  ## to dynamically set fields, we will have a harder time pushing
+  ## things to compile-time.
 
-  # The 'replacement state' is basically to enable the sections()
-  # builtin in a con4m-to-spec scenario-- specifically, the code in
-  # a con4m spec can check the sections of the NEW spec we're creating.
-  # Also, we use this stash above to avoid passing state as an extra
-  # variable all around.
+  # The 'replacement state' is basically to enable things like the
+  # sections() builtin in a con4m-to-spec scenario-- specifically, the
+  # code in a con4m spec can check the sections of the NEW spec we're
+  # creating.  Also, we use this stash above to avoid passing state as
+  # an extra variable all around.
   #
   # This all will need to change a bit if we ever allow real
   # multi-threading (TODO).
 
   setReplacementState(state)
-  validateOneSection(state.attrs, state.spec.get().rootSpec, c42env, false)
+  validateOneSectionPass2(state.attrs, state.spec.get().rootSpec, c42env, false)
   if c42env != nil: state.runCallbacks(c42env)
   clearReplacementState()
 
-proc preEvalCheck*(state: ConfigState, c42env: ConfigState = nil) =
-  validateOneSection(state.attrs, state.spec.get().rootSpec, c42env, true)
+proc setDefaults*(state: ConfigState, c42env: ConfigState) =
+  ## If we are so sure of our code's correctness, but the spec had
+  ## default: ... values, this allows us to then cause defaults to be
+  ## set, so that subsequent queries can work right :)
+  validateOneSectionPass2(state.attrs, state.spec.get().rootSpec, c42env, true)
+
+proc preEvalCheck*(state: ConfigState, c42env: ConfigState = nil) {.inline.} =
+  validateOneSectionPass1(state.attrs, state.spec.get().rootSpec, c42env)
 
 proc getDocableSecs*(state: ConfigState): seq[Con4mSectionType] =
   result = @[]
