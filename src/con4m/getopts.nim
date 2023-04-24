@@ -450,7 +450,7 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
     for i, c in cur:
       let oneCharFlag = $(c)
       if oneCharFlag in validFlags:
-        ctx.validateOneFlag(oneCharFlag, validFlags[cur])
+        ctx.validateOneFlag(oneCharFlag, validFlags[oneCharFlag])
       elif  spec.unknownFlagsOk: continue
       elif i == 0: argpError(cur, "Invalid flag")
       else:

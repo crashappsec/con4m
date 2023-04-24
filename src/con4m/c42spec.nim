@@ -230,7 +230,8 @@ proc populateFields(spec:       ConfigSpec,
 
       default = attr.value # We leave it as a boxed option.
     elif "require" notin fields:
-      specErr(scope, "Fields must specify one of 'require' or 'defaults'")
+      specErr(v.get(AttrScope),
+              "Fields must specify one of 'require' or 'default'")
 
     var count = 0
     if choiceOpt.isSome():                 count = count + 1
@@ -238,9 +239,11 @@ proc populateFields(spec:       ConfigSpec,
     if `min?`.isSome() or `max?`.isSome(): count = count + 1
 
     if count > 1:
-      specErr(scope, "Can't specify multiple constraint types on one field.")
+      specErr(v.get(AttrScope),
+              "Can't specify multiple constraint types on one field.")
     if count != 0 and not typeTSpec.unify(stringType).isBottom():
-      specErr(scope, "Fields typed from another field can't have constraints")
+      specErr(v.get(AttrScope),
+              "Fields typed from another field can't have constraints")
 
     if not typeTSpec.unify(stringType).isBottom():
       let refField = unpack[string](typeField.value.get())
@@ -261,7 +264,8 @@ proc populateFields(spec:       ConfigSpec,
           addChoiceField(tinfo, k, v, require, lock, stackLimit, default,
                          validator, `doc?`, `sdoc?`, hidden)
         else:
-          specErr(scope, "Choice field must have type 'int' or 'string'")
+          specErr(v.get(AttrScope),
+                  "Choice field must have type 'int' or 'string'")
       elif `range?`.isSome():
         let (l, h) = `range?`.get()
         tInfo.addRangeField(k, l, h, require, lock, stackLimit, default,

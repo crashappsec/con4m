@@ -149,7 +149,8 @@ proc sCall*(s:       ConfigState,
     var err = "When supporting callbacks with multiple signatures, you " &
              " must supply the type when calling runCallback(). Matches: \n"
     for item in candidates:
-      err &= err & "  " & $item
+      err &= "  " & $item & "\n"
+    err &= "\n"
     raise newException(ValueError, err)
 
 proc sCall*(s:       ConfigState,

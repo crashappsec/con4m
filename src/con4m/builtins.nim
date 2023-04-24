@@ -193,7 +193,7 @@ proc c4mEnvExists*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(existsEnv(arg)))
 
-proc c4mEnvAll*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+proc c4mEnvAll*(args: seq[Box] = @[], unused = ConfigState(nil)): Option[Box] =
   ## Return a dictionary with all envvars and their values.
   ## Exposed by default as `env()`
   var s = newCon4mDict[string, string]()
