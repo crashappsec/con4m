@@ -344,8 +344,11 @@ proc validateOneFlag(ctx:     var ParseCtx,
   elif argCrap.isNone():
     if not spec.argIsOptional:
       # Here we require an argument, and we didn't find a ':' or '=',
-      # so we just assume it's the next word, unless we see a dash.
-      if ctx.i == len(ctx.args) or ctx.args[ctx.i][0] == '-':
+      # so we just assume it's the next word, unless we see a dash
+      # followed by anything (otherwise, we'll assume the dash itself
+      # is the argument, since this often would mean 'stdin')
+      if ctx.i == len(ctx.args) or (ctx.args[ctx.i][0] == '-' and
+                                    len(ctx.args[ctx.i]) > 1):
         argpError(name, "requires an argument.")
       if spec.noSpace:
         argpError(name, "requires an argument")

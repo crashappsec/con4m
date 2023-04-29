@@ -6,8 +6,8 @@
 ## :Copyright: 2022 - 2023
 
 import os, tables, osproc, strformat, strutils, options, streams, base64, macros
-import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits, treecheck,
-       dollars
+import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits,
+       treecheck, dollars
 from unicode import toLower, toUpper
 
 when defined(posix):
