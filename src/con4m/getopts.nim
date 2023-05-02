@@ -56,6 +56,7 @@ type
     maxArgs:           int
     subOptional:       bool
     unknownFlagsOk:    bool
+    dockerSingleArg:   bool
     noFlags:           bool
     autoHelp:          bool
     finishedComputing: bool
@@ -97,6 +98,7 @@ proc newSpecObj*(reportingName: string       = "",
                  maxArgs                     = 0,
                  subOptional                 = false,
                  unknownFlagsOk              = false,
+                 dockerSingleArg             = true,
                  noFlags                     = false,
                  doc                         = "",
                  argName                     = "",
@@ -112,6 +114,7 @@ proc newSpecObj*(reportingName: string       = "",
                      maxArgs:           maxArgs,
                      subOptional:       subOptional,
                      unknownFlagsOk:    unknownFlagsOk,
+                     dockerSingleArg:   dockerSingleArg,
                      noFlags:           noFlags,
                      doc:               doc,
                      argName:           argName,
@@ -122,17 +125,18 @@ proc newSpecObj*(reportingName: string       = "",
                      autoHelp:          false,
                      finishedComputing: false)
 
-proc addCommand*(spec:           CommandSpec,
-                 name:           string,
-                 aliases:        openarray[string]         = [],
-                 subOptional:    bool                      = false,
-                 unknownFlagsOk: bool                      = false,
-                 noFlags:        bool                      = false,
-                 doc:            string                    = "",
-                 argName:        string                    = "",
-                 callback:       Option[CallbackObj]       = none(CallbackObj),
-                 noColon:        bool                      = false,
-                 noSpace:        bool                      = false):
+proc addCommand*(spec:            CommandSpec,
+                 name:            string,
+                 aliases:         openarray[string]   = [],
+                 subOptional:     bool                = false,
+                 unknownFlagsOk:  bool                = false,
+                 noFlags:         bool                = false,
+                 dockerSingleArg: bool                = false,
+                 doc:             string              = "",
+                 argName:         string              = "",
+                 callback:        Option[CallbackObj] = none(CallbackObj),
+                 noColon:         bool                = false,
+                 noSpace:         bool                = false):
                    CommandSpec {.discardable.} =
   ## Creates a command under the top-level argument parsing spec,
   ## or a sub-command under some other command.
@@ -165,7 +169,9 @@ proc addCommand*(spec:           CommandSpec,
                       allNames        = aliases,
                       subOptional     = subOptional,
                       unknownFlagsOk  = unknownFlagsOk,
+                      dockerSingleArg = dockerSingleArg,
                       noFlags         = noFlags,
+                      noColon         = noColon,
                       noSpace         = noSpace,
                       doc             = doc,
                       argName         = argName,
@@ -446,19 +452,23 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
     else:
       argpError(cur, "Invalid flag")
   else:
-    # Single-dash flags bunched together cannot have arguments, unless
-    # unknownFlagsOk is on.
-    if definiteArg.isSome() and not spec.unknownFlagsOk:
-      argpError(cur, "Invalid flag")
-    for i, c in cur:
-      let oneCharFlag = $(c)
-      if oneCharFlag in validFlags:
-        ctx.validateOneFlag(oneCharFlag, validFlags[oneCharFlag])
-      elif  spec.unknownFlagsOk: continue
-      elif i == 0: argpError(cur, "Invalid flag")
-      else:
-        argpError(cur, "Couldn't process all characters as flags")
-    if spec.unknownFlagsOk: ctx.curArgs.add(orig)
+    if spec.dockerSingleArg and len(cur) > 1 and $(cur[0]) in validFlags:
+      let flag = $cur[0]
+      ctx.validateOneFlag(flag, validFlags[flag], some(cur[1 .. ^1]))
+    else:
+      # Single-dash flags bunched together cannot have arguments, unless
+      # unknownFlagsOk is on.
+      if definiteArg.isSome() and not spec.unknownFlagsOk:
+        argpError(cur, "Invalid flag")
+      for i, c in cur:
+        let oneCharFlag = $(c)
+        if oneCharFlag in validFlags:
+          ctx.validateOneFlag(oneCharFlag, validFlags[oneCharFlag])
+        elif spec.unknownFlagsOk: continue
+        elif i == 0: argpError(cur, "Invalid flag")
+        else:
+          argpError(cur, "Couldn't process all characters as flags")
+      if spec.unknownFlagsOk: ctx.curArgs.add(orig)
 
 proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]):
                     OrderedTable[string, FlagSpec] =
@@ -879,6 +889,7 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
                    unpack[bool](igBOpt.get())
                  else:
                    cmdObj.unknownFlagsOk
+      dashFArg = unpack[bool](one.attrLookup("dash_arg_space_optional").get())
       colOkOpt = one.attrLookup("colon_ok")
       noCol    = if colOkOpt.isSome():
                    not unpack[bool](colOkOpt.get())
@@ -890,7 +901,7 @@ proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
                  else:
                    cmdObj.noSpace
       sub      = cmdObj.addCommand(k, aliases, not asubmut, ignoreB, ignoreF,
-                                   doc, argName, cb, noCol, noSpc)
+                                   dashFArg, doc, argName, cb, noCol, noSpc)
     sub.addArgs(minArg, maxArg).loadSection(one, info)
 
 proc stringizeFlags(inflags: OrderedTable[string, FlagSpec], id: int):
@@ -1268,6 +1279,8 @@ proc runManagedGetopt*(runtime:      ConfigState,
     addHelp    = unpack[bool](sec.attrLookup("add_help_commands").get())
     doc        = unpack[string](sec.attrLookup("doc").get())
     argName    = unpack[string](sec.attrLookup("arg_name").get())
+    dashFArg   = unpack[bool](sec.attrLookup("dash_arg_space_optional").get())
+    
 
   if defaultOpt.isNone(): li.defaultCmd = some("")
   else:                   li.defaultCmd = some(unpack[string](defaultOpt.get()))
@@ -1279,8 +1292,9 @@ proc runManagedGetopt*(runtime:      ConfigState,
   li.addHelpCmds    = addHelp
 
   let topLevelCmd = newSpecObj(minArgs = minArg, maxArgs = maxArg, doc = doc,
-                               argName = argName, unknownFlagsOk = ignoreBad,
-                               noColon = not colonOk, noSpace = not spaceOk)
+                              argName = argName, unknownFlagsOk = ignoreBad,
+                              dockerSingleArg = dashFArg, noColon = not colonOk,
+                              noSpace = not spaceOk)
   topLevelCmd.loadSection(sec, li)
 
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)

@@ -504,6 +504,19 @@ arguments.
 """
   }
 
+  field dash_arg_space_optional {
+    type: bool
+    default: true
+    write_lock: true
+    hidden: true
+    doc: """
+When this is true, -ffoo will be considered the same as: {bold}-f=foo{reset}
+When it's false, we treat it as: {bold}-f -f -o -o{reset}
+
+This is only checked for single-dash arguments where the flag is a single character, even if true.
+"""
+  }
+
   field colon_ok {
     type:     bool
     require:  false
@@ -737,6 +750,19 @@ If this is true, any error will cause the current parsed command's
     doc:        """
 When this is true, unrecognized flags will be passed through as
 arguments.
+"""
+  }
+  
+  field dash_arg_space_optional {
+    type: bool
+    default: true
+    write_lock: true
+    hidden: true
+    doc: """
+When this is true, -ffoo will be considered the same as: {bold}-f=foo{reset}
+When it's false, we treat it as: {bold}-f -f -o -o{reset}
+
+This is only checked for single-dash arguments where the flag is a single character, even if true.
 """
   }
 
