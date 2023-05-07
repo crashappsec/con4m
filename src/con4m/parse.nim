@@ -542,7 +542,7 @@ proc literal(ctx: ParseCtx): Con4mNode =
        return ctx.typeSpec()
   of TtFunc:
     return ctx.callback()
-  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TTOtherLit:
+  of TtIntLit, TTFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTOtherLit:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
     return ctx.dictLiteral()
@@ -580,7 +580,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.unaryExpr()
   of TtNot:
     return ctx.notExpr()
-  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
+  of TtintLit, TTFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
      TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick,
      TtDuration, TtIPAddr, TtCidr, TtSize, TtDate, TtTime, TtDateTime:
@@ -802,7 +802,7 @@ proc section(ctx: ParseCtx): Con4mNode =
   i = i + 1
   let tok = ctx.consume()
   case tok.kind
-  of TtStringLit, TtOtherLit:
+  of TtStringLit, TtCharLit, TtOtherLit:
     result.children.add(newNode(NodeSimpLit, tok))
   of TtIdentifier:
     result.children.add(newNode(NodeIdentifier, tok))
