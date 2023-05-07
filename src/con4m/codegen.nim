@@ -154,6 +154,8 @@ proc declToNimType(v: Con4mType): string =
     return "CallbackObj"
   of TypeInt:
     return "int"
+  of TypeChar:
+    return "char"
   of TypeFloat:
     return "float"
   of TypeTuple, TypeTVar:

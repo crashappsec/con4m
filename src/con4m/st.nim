@@ -202,7 +202,7 @@ proc attrToVal*(attr: Attribute): Option[Box] =
   elif `val?`.isSome():
     return `val?`
   return none(Box)
-  
+
 proc attrLookup*(attrs: AttrScope, fqn: string): Option[Box] =
   ## This is the interface for actually lookup up values at runtime.
   let

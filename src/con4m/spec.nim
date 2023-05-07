@@ -380,7 +380,7 @@ proc validateOneSectFieldPass2(attrs:        AttrScope,
       specErr(attrs, fmt"Required section '{name}' is missing, and there " &
         "are no other fields present that would remove this constraint.")
     else:
-      return      
+      return
 
   let aOrS = attrs.contents[name]
   if aOrS.isA(Attribute):
@@ -401,7 +401,7 @@ proc validateOneSectFieldPass2(attrs:        AttrScope,
       validateOneSectionPass2(v.get(AttrScope), secSpec, c42env, defaultsOnly)
 
   if defaultsOnly: return
-  
+
   if exclusion != "":
     if len(sectAttr.contents) > 0:
       specErr(attrs, fmt"'{name}' cannot appear alongside '{exclusion}'")
@@ -412,7 +412,7 @@ proc validateOneSectFieldPass2(attrs:        AttrScope,
     if spec.maxRequired != 0 and len(sectAttr.contents) > spec.maxRequired:
       specErr(attrs, fmt"Expected no more than {spec.minRequired} sections " &
                      fmt"of '{name}', but got {len(sectAttr.contents)}.")
-      
+
 var validatorsToRun: seq[(CallbackObj, Attribute, seq[Box])] = @[]
 
 proc validateOneAttrFieldPass1(attrs:  AttrScope,
@@ -574,7 +574,7 @@ proc validateOneAttrFieldPass2(attrs:        AttrScope,
     else:
       let args = @[pack(attr.fullNameAsStr()), attr.attrToVal().get()]
       validatorsToRun.add((spec.extType.validator, attr, args))
-      
+
 proc validateOneSectionPass1(attrs:  AttrScope,
                         spec:   Con4mSectionType,
                         c42Env: ConfigState) =

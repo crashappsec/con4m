@@ -121,6 +121,7 @@ proc oneTypeSpec(ctx:    ParseCtx,
   of TtVoid:     result = bottomType
   of TtBool:     result = boolType
   of TtInt:      result = intType
+  of TtChar:     result = charType
   of TtString:   result = stringType
   of TtFloat:    result = floatType
   of TtDuration: result = durationType
@@ -1040,6 +1041,7 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
         of ErrorTok: "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
         of ErrorStringLit: "Unterminated string"
+        of ErrorCharLit: "Invalid char literal"
         of ErrorOtherLit: "Unterminated literal"
         else: "Unknown error" # Shouldn't be possible w/o a lex bug
 

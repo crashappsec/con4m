@@ -35,6 +35,7 @@ else:
     of ErrorTok:         result = "~err~"
     of ErrorLongComment: result = "~unterm comment~"
     of ErrorStringLit:   result = "~unterm string~"
+    of ErrorCharLit:     result = "~bad char lit~"
     of ErrorOtherLit:    result =  "~unterm other lit~"
     else:
       let pos = tok.stream.getPosition()
@@ -99,6 +100,7 @@ proc `$`*(t: Con4mType, tinfo: ReverseTVInfo = nil): string =
   of TypeString:   return "string"
   of TypeBool:     return "bool"
   of TypeInt:      return "int"
+  of TypeChar:     return "char"
   of TypeFloat:    return "float"
   of TypeDuration: return "Duration"
   of TypeIPAddr:   return "IPAddr"
@@ -342,6 +344,12 @@ proc oneArgToString*(t: Con4mType,
     return "func " & cb.name & $(cb.tInfo)
   of TypeInt:
     return $(unpack[int](b))
+  of TypeChar:
+    result = $(Rune(unpack[int](b)))
+    if lit:
+      # TODO: this really needs to do \... for non-printables.
+      result = "'" & result & "'"
+
   of TypeFloat:
     return $(unpack[float](b))
   of TypeBool:

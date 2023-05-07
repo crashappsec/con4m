@@ -5,10 +5,9 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2023
 
-import os, tables, osproc, strformat, strutils, options, streams, base64, macros
-import nimSHA2, types, typecheck, st, parse, nimutils, errmsg, otherlits,
-       treecheck, dollars
-from unicode import toLower, toUpper
+import os, tables, osproc, strformat, strutils, options, streams, base64,
+       macros, nimSHA2, types, typecheck, st, parse, nimutils, errmsg,
+       otherlits, treecheck, dollars, unicode
 
 when defined(posix):
   import posix
@@ -134,6 +133,25 @@ proc c4mStrToType*(args: seq[Box], unused: ConfigState): Option[Box] =
   try:    return some(pack(toCon4mType(unpack[string](args[0]))))
   except: raise c4mException(getCurrentExceptionMsg())
 
+proc c4mStrToChars*(args: seq[Box], unused: ConfigState): Option[Box] =
+  var s: seq[int] = @[]
+  for rune in toRunes(unpack[string](args[0])):
+    s.add(int(rune))
+  result = some(pack(s))
+
+proc c4mStrToBytes*(args: seq[Box], unused: ConfigState): Option[Box] =
+  var s: seq[int] = @[]
+  for ch in unpack[string](args[0]):
+    s.add(int(ch))
+  result = some(pack(s))
+
+proc c4mCharsToString*(args: seq[Box], unused: ConfigState): Option[Box] =
+  var r = ""
+  for num in unpack[seq[Box]](args[0]):
+    r.add($(Rune(unpack[int](num))))
+
+  result = some(pack(r))
+
 proc c4mSplit*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Takes the first argument, and converts it into a list,
   ## spliting it out based on the pattern in the second string.
@@ -209,7 +227,7 @@ proc c4mStrip*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Exposed by default as `strip(s)`
   let
     arg = unpack[string](args[0])
-    stripped = arg.strip()
+    stripped = unicode.strip(arg)
 
   return some(pack(stripped))
 
@@ -309,7 +327,7 @@ proc c4mListSlice*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     return some(pack(s[startix .. endix]))
   except:
     return some(pack[seq[Box]](@[]))
-    
+
 proc c4mFormat*(args: seq[Box], state: ConfigState): Option[Box] =
   ## We don't error check on string bounds; when an exception gets
   ## raised, SCall will call fatal().
@@ -662,6 +680,48 @@ proc c4mReplace*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     replaceWith = unpack[string](args[2])
 
   return some(pack(baseString.replace(toReplace, replaceWith)))
+
+template simpleRuneFunc(arr: seq[Box], f: untyped): Option[Box] =
+  let
+    i = unpack[int](args[0])
+    r = Rune(i)
+
+  some(pack(f(r)))
+
+proc c4mUTF8Len*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, size)
+
+proc c4mIsCombining*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, isCombining)
+
+proc c4mIsLower*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, isLower)
+
+proc c4mIsUpper*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, isUpper)
+
+proc c4mIsSpace*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, isWhiteSpace)
+
+proc c4mIsAlpha*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  simpleRuneFunc(args, isAlpha)
+
+proc c4mIsNum*(args: seq[Box], unused = ConfigStatE(nil)): Option[Box] =
+  let
+    i = unpack[int](args[0])
+    r = Rune(i)
+
+  return if i >= int('0') and i <= int('9'): trueRet else: falseRet
+
+proc c4mIsAlphaNum*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    i = unpack[int](args[0])
+    r = Rune(i)
+
+  if r.isAlpha() or (i >= int('0') and i <= int('9')):
+    return trueRet
+  else:
+    return falseRet
 
 proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
@@ -1149,7 +1209,7 @@ proc newCoreFunc*(s: ConfigState, sig: string, fn: BuiltInFn, stub = false) =
       f = stringStub
     of TypeBool:
       f = boolStub
-    of TypeInt, TypeDuration, TypeSize, TypeTVar, TypeBottom:
+    of TypeInt, TypeChar, TypeDuration, TypeSize, TypeTVar, TypeBottom:
       f = intStub
     of TypeFloat:
       f = floatStub
@@ -1215,10 +1275,17 @@ const defaultBuiltins* = [
   ("Date(string) -> Date",            BuiltInFn(c4mSToDate)),
   ("Time(string) -> Time",            BuiltInFn(c4mSToTime)),
   ("DateTime(string) -> DateTime",    BuiltInFn(c4mSToDateTime)),
+  ("char(int) -> char",               BuiltInFn(c4mSelfRet)),
+  ("int(char) -> int",                BuiltInFn(c4mSelfRet)),
   ("to_usec(Duration) -> int",        BuiltInFn(c4mSelfRet)),
   ("to_msec(Duration) -> int",        BuiltInFn(c4mDurAsMSec)),
   ("to_sec(Duration) -> int",         BuiltInFn(c4mDurAsSec)),
   ("to_type(string) -> typespec",     BuiltInFn(c4mStrToType)),
+  ("to_chars(string) -> list[char]",  BuiltInFn(c4mStrToChars)),
+  ("to_bytes(string) -> list[char]",  BuiltInFn(c4mStrToBytes)),
+  ("to_string(list[char]) -> string", BuiltInFn(c4mCharsToString)),
+
+
   #[ Not done yet:
   ("get_day(Date) -> int",          BuiltInFn(c4mGetDayFromDate)),
   ("get_month(Date) -> int",        BuiltInFn(c4mGetMonFromDate)),
@@ -1239,7 +1306,6 @@ const defaultBuiltins* = [
   ("ip_part(CIDR) -> IPAddr",       BuiltInFn(c4mCIDRToIP)),
   ("net_size(CIDR) -> int",         BuiltInFn(c4mCIDRToInt)),
   ("to_CIDR(IPAddr, int) -> CIDR",  BuiltInFn(c4mToCIDR)),
-  # Also, format() and echo() need to change for this project.
   ]#
   # String manipulation functions.
   ("contains(string, string) -> bool",        BuiltInFn(c4mContainsStrStr)),
@@ -1264,6 +1330,15 @@ const defaultBuiltins* = [
   ("lower(string) -> string",                 BuiltInFn(c4mLower)),
   ("join(list[string], string) -> string",    BuiltInFn(c4mJoin)),
   ("replace(string, string, string)->string", BuiltInFn(c4mReplace)),
+  ("utf8_len(char) -> int",                   BuiltInFn(c4mUTF8Len)),
+  ("is_combining(char) -> bool",              BuiltInFn(c4mIsCombining)),
+  ("is_lower(char) -> bool",                  BuiltInFn(c4mIsLower)),
+  ("is_upper(char) -> bool",                  BuiltInFn(c4mIsUpper)),
+  ("is_space(char) -> bool",                  BuiltInFn(c4mIsSpace)),
+  ("is_alpha(char) -> bool",                  BuiltInFn(c4mIsAlpha)),
+  ("is_num(char) -> bool",                    BuiltInFn(c4mIsNum)),
+  ("is_alphanum(char) -> bool",               BuiltInFn(c4mIsAlphaNum)),
+
   # Container (list and dict) basics.
   ("len(list[`x]) -> int",                   BuiltInFn(c4mListLen)),
   ("len(dict[`x,`y]) -> int",                BuiltInFn(c4mDictLen)),

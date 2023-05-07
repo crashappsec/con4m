@@ -405,11 +405,14 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if s.secondPass:
       return
     case node.getTokenType()
-    of TTStringLit:
+    of TtStringLit:
       node.typeInfo = stringType
       var s = node.getTokenText()
       node.value = pack(s)
-    of TTOtherLit:
+    of TtCharLit:
+      node.typeInfo = charType
+      node.value = pack(node.token.get().codepoint)
+    of TtOtherLit:
       var txt = node.getTokenText()
       if len(txt) >= 4 and txt[0..1] == "<<":
         txt = txt[2..^3]
@@ -419,26 +422,26 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         fatal("Invalid literal: <<" & txt & ">>")
 
       (node.value, node.typeInfo) = opt.get()
-    of TTIntLit:
+    of TtIntLit:
       node.typeInfo = intType
       try:
         node.value = pack(node.getTokenText().parseInt())
       except:
         fatal("Number too large for int type.", node)
-    of TTFloatLit:
+    of TtFloatLit:
       node.typeInfo = floatType
 
       let
         txt = node.getTokenText()
         dotLoc = txt.find('.')
       var
-        value: float
         eLoc = txt.find('e')
-        intPartS: string
-        intPartI: int
-        floatPartS: string
-        expPartS: string
-        expPartI: int = 1
+        value:        float
+        intPartS:     string
+        intPartI:     int
+        floatPartS:   string
+        expPartS:     string
+        expPartI:     int    = 1
         eSignIsMinus: bool
 
       if eLoc == -1:
@@ -505,7 +508,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.checkKids(s)
     let t = node.children[0].getType()
     case t.kind
-    of TypeInt, TypeFloat: node.typeInfo = t
+    of TypeChar, TypeInt, TypeFloat: node.typeInfo = t
     else:
       fatal("Unary operator only works on numeric types", node)
   of NodeNot:
@@ -528,6 +531,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     node.checkKids(s)
     let ti = node.children[0].getType()
     case ti.kind
+    of TypeString:
+      if isBottom(node.children[1], intType):
+        fatal("Invalid string index (ints only)", node.children[1])
+      node.typeInfo = charType
     of TypeTuple:
       if isBottom(node.children[1], intType):
         fatal("Invalid tuple index (numbers only)", node.children[1])
@@ -549,7 +556,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         kt = ti.keyType
         vt = ti.valType
       case kt.kind
-      of TypeString, TypeInt:
+      of TypeString, TypeInt, TypeChar:
         node.typeInfo = vt
       else:
         fatal("Dict indicies can only be strings or ints", node.children[1])
@@ -571,12 +578,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           let ctrType = newDictType(node.typeInfo, newTypeVar())
           if ctrType.unify(node.children[0].getType()).isBottom():
             fatal("Index type doesn't match container key type")
-
     else:
       var n = node
       while n.parent.isSome():
         n = n.parent.get()
-      fatal("Currently only support indexing on dicts and lists", node)
+      fatal("Invalid type to index.", node)
   of NodeFuncDef:
     let
       name      = node.children[0].getTokenText()
@@ -815,33 +821,34 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeGte, NodeLte, NodeGt, NodeLt:
     node.binOpTypeCheck(@[intType, floatType, stringType, durationType,
                           ipAddrType, cidrType, sizeType, dateType, timeType,
-                          dateTimeType],
+                          dateTimeType, charType],
                         s,
                         "Types to comparison operators must match",
                         "Comparison ops only work on numbers and strings")
     node.typeInfo = boolType
   of NodePlus:
-    node.binOpTypeCheck(@[intType, floatType, stringType, durationType],
+    node.binOpTypeCheck(@[intType, floatType, charType, stringType,
+                          durationType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMinus:
-    node.binOpTypeCheck(@[intType, floatType, durationType],
+    node.binOpTypeCheck(@[intType, floatType, charType, durationType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMul:
-    node.binOpTypeCheck(@[intType, floatType],
+    node.binOpTypeCheck(@[intType, floatType, charType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeMod:
-    node.binOpTypeCheck(@[intType],
+    node.binOpTypeCheck(@[intType, charType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")
   of NodeDiv:
-    node.binOpTypeCheck(@[intType, floatType],
+    node.binOpTypeCheck(@[intType, floatType, charType],
                         s,
                         "Types of left and right side of binary ops must match",
                         "Invalid type for bianry operator")

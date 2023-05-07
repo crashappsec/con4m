@@ -5,8 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strformat, dollars
-import types, st, parse, treecheck, typecheck, nimutils, errmsg
+import options, tables, strformat, unicode, nimutils, types, st, parse,
+       treecheck, typecheck, dollars, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -357,7 +357,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       return
 
     case typ.kind
-    of TypeInt:
+    of TypeInt, TypeChar:
       node.value = pack(-unpack[int](bx))
     of TypeFloat:
       node.value = pack(-unpack[float](bx))
@@ -393,6 +393,13 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       containerTy  = node.children[0].getType()
 
     case containerTy.kind
+    of TypeString:
+      let
+        s = unpack[string](containerBox)
+        i = unpack[int](indexBox)
+      if i >= s.len() or i < 0:
+        fatal("Runtime error in config: string index out of bounds", node)
+      node.value = pack(int(s.runeAtPos(i)))
     of TypeTuple:
       let
         l = unpack[seq[Box]](containerBox)
@@ -414,7 +421,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         containerBox = node.children[0].value
         indexBox     = node.children[1].value
       case kt.kind
-      of TypeInt:
+      of TypeInt, TypeChar:
         let
           d = unpack[Con4mDict[int, Box]](containerBox)
           i = unpack[int](indexBox)
@@ -488,7 +495,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeNe:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `!=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `!=`)
     of TypeFloat: cmpWork(float, `!=`)
     of TypeBool: cmpWork(bool, `!=`)
     of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
@@ -497,7 +504,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeCmp:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `==`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `==`)
     of TypeFloat: cmpWork(float, `==`)
     of TypeBool: cmpWork(bool, `==`)
     of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
@@ -507,7 +514,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeGte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `>=`)
     of TypeFloat: cmpWork(float, `>=`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `>=`)
@@ -515,7 +522,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeLte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `<=`)
     of TypeFloat: cmpWork(float, `<=`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `<=`)
@@ -523,7 +530,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeGt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `>`)
     of TypeFloat: cmpWork(float, `>`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `>`)
@@ -531,7 +538,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeLt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `<`)
     of TypeFloat: cmpWork(float, `<`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `<`)
@@ -539,31 +546,31 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodePlus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt, TypeDuration: binaryOpWork(int, int, `+`)
+    of TypeInt, TypeChar, TypeDuration: binaryOpWork(int, int, `+`)
     of TypeFloat: binaryOpWork(float, float, `+`)
     of TypeString: binaryOpWork(string, string, `&`)
     else: unreachable
   of NodeMinus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt, TypeDuration: binaryOpWork(int, int, `-`)
+    of TypeInt, TypeChar, TypeDuration: binaryOpWork(int, int, `-`)
     of TypeFloat: binaryOpWork(float, float, `-`)
     else: unreachable
   of NodeMod:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `mod`)
+    of TypeInt, TypeChar: binaryOpWork(int, int, `mod`)
     else: unreachable
   of NodeMul:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `*`)
+    of TypeInt, TypeChar: binaryOpWork(int, int, `*`)
     of TypeFloat: binaryOpWork(float, float, `*`)
     else: unreachable
   of NodeDiv:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, float, `/`)
+    of TypeInt, TypeChar: binaryOpWork(int, float, `/`)
     of TypeFloat: binaryOpWork(float, float, `/`)
     else: unreachable
   of NodeIdentifier:

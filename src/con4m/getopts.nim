@@ -85,7 +85,7 @@ proc getValue*(f: FlagSpec): Box =
   of afMultiChoice: return pack(f.selected[f.finalFlagIx])
   of afStrArg:      return pack(f.strVal[f.finalFlagIx])
   of afMultiArg:    return pack(f.strArrVal[f.finalFlagIx])
-    
+
 proc flagSpecEq(f1, f2: FlagSpec): bool =
   if f1 == f2:           return true   # They're literally the same ref
   if f1.kind != f2.kind: return false
@@ -208,7 +208,7 @@ proc newFlag(cmd:             CommandSpec,
              doc:             string = "",
              callback:        Option[CallbackObj] = none(CallbackObj),
              toSet:           string = "",
-             optArg:          bool = false,                              
+             optArg:          bool = false,
             ): FlagSpec =
   if cmd.noFlags:
     raise newException(ValueError,
@@ -1150,7 +1150,7 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
 
   for flag, spec in winner.flags:
     spec.finalFlagIx = parseId
-    
+
     let
       val = case spec.kind
             of afPair:        pack(spec.boolValue[parseId])
@@ -1280,7 +1280,7 @@ proc runManagedGetopt*(runtime:      ConfigState,
     doc        = unpack[string](sec.attrLookup("doc").get())
     argName    = unpack[string](sec.attrLookup("arg_name").get())
     dashFArg   = unpack[bool](sec.attrLookup("dash_arg_space_optional").get())
-    
+
 
   if defaultOpt.isNone(): li.defaultCmd = some("")
   else:                   li.defaultCmd = some(unpack[string](defaultOpt.get()))

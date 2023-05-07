@@ -1,5 +1,5 @@
 # Package
-version       = "0.7.8"
+version       = "0.7.9"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
@@ -9,7 +9,7 @@ installExt    = @["nim", "c4m", "c42spec"]
 
 # Dependencies
 requires "nim >= 1.6.10"
-requires "https://github.com/crashappsec/nimutils >= 0.3.2"
+requires "https://github.com/crashappsec/nimutils >= 0.3.4"
 requires "nimSHA2 == 0.1.1"
 
 let s = "nimble doc --project --git.url:https://github.com/crashappsec/con4m.git --git.commit:v" &

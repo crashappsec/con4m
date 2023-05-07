@@ -83,8 +83,8 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
   # Just in case someone manages to clone a singleton, we
   # always check against the .kind field, instead of looking at
   # object equivolence for singletons (e.g., int, bottom)
-  of TypeString, TypeBool, TypeInt, TypeFloat, TypeDuration, TypeIPAddr,
-       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
+  of TypeString, TypeBool, TypeInt, TypeFloat, TypeChar, TypeDuration,
+     TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
     if t2.kind == t1.kind: return t1
     return bottomType
   of TypeBottom: return bottomType

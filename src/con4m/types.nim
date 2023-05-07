@@ -15,18 +15,21 @@ type
     TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
     TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
-    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
-    TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
+    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypespec, TtList, TtDict,
-    TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime, TtDateTime,
-    TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
+    TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec, TtList,
+    TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime,
+    TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit,
+    ErrorCharLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
     case kind*:   Con4mTokenKind
     of TtStringLit:
       unescaped*: string
+    of TtCharLit:
+      codepoint*: int
     else:  nil
     stream*:      Stream
     startPos*:    int
@@ -51,7 +54,7 @@ type
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
-    TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
+    TypeChar, TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
     TypeDateTime, TypeTypeSpec, TypeFunc, TypeTVar, TypeBottom
 
   Con4mType* = ref object of RootRef
@@ -286,6 +289,7 @@ let
   stringType*   = Con4mType(kind: TypeString)
   boolType*     = Con4mType(kind: TypeBool)
   intType*      = Con4mType(kind: TypeInt)
+  charType*     = Con4mType(kind: TypeChar)
   floatType*    = Con4mType(kind: TypeFloat)
   durationType* = Con4mType(kind: TypeDuration)
   ipAddrType*   = Con4mType(kind: TypeIPAddr)

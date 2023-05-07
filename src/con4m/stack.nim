@@ -327,7 +327,7 @@ proc doStartGetOpts(stack: ConfigStack) =
       echo stack.finalOpt.helpToPrint
   else:
     stack.getOptOptions = res
-    
+
 proc doFinalizeGetOpts(s: ConfigStack) =
   if len(s.getOptOptions) < 2: return
   s.finalOpt      = finalizeManagedGetopt(s.configState, s.getOptOptions)
@@ -575,7 +575,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
     if step.checkLevel != notEvenDefaults and spec != nil:
       conf.setDefaults(spec)
     return
-    
+
 
   if spec != nil:
     if step.checkLevel in [checkAll, checkPost]:

@@ -474,7 +474,7 @@ it may be worth doing the extra effort to check and give them some
 more detailed guidance than what con4m would automate.
 """
   }
-  
+
   field ignore_all_flags {
     type:       bool
     default:    false
@@ -532,7 +532,7 @@ When you turn this on or off for a command, the value is automatically picked up
 
 """
   }
-  
+
   field space_ok {
     type:     bool
     require:  false
@@ -752,7 +752,7 @@ When this is true, unrecognized flags will be passed through as
 arguments.
 """
   }
-  
+
   field dash_arg_space_optional {
     type: bool
     default: true
@@ -781,7 +781,7 @@ When you turn this on or off for a command, the value is automatically picked up
 
 """
   }
-  
+
   field space_ok {
     type:     bool
     default:  true
@@ -990,7 +990,7 @@ func under_to_dash(str) {
 func getopts_root(path) {
   parts := path.split(".")
   ix    := 0
-  
+
   for i from 0 to len(parts) {
     if parts[i] == "getopts" {
       ix := i
