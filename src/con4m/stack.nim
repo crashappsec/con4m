@@ -500,6 +500,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         of ErrorTok:         "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
         of ErrorStringLit:   "Unterminated string"
+        of ErrorCharLit:     "Invalid char literal"
         of ErrorOtherLit:    "Unterminated literal"
         else:                "Unknown error" # Not be possible w/o a lex bug
 
