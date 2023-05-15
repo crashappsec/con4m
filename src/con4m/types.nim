@@ -280,7 +280,7 @@ type
 
   Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
   FieldColType* = enum
-    fcName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
+    fcName, fcFullName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
 
 let
   # These are just shared instances for types that aren't

@@ -999,7 +999,7 @@ proc getCommandList(cmd: CommandSpec): string =
   cmds.sort()
 
   return heading("Available Commands: ") & "\n" & instantTable(cmds) & "\n" &
-         heading("See ... [COMMAND] help for info on each command.",
+         heading("See 'help [COMMAND]' for info on each command.",
                    color = acBold) & "\n"
 
 proc getAdditionalTopics(cmd: CommandSpec): string =
@@ -1104,7 +1104,10 @@ proc getOneCmdHelp(cmd: CommandSpec): string =
   if len(cmd.extraHelpTopics) != 0:
     result &= cmd.getAdditionalTopics()
 
-proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
+proc getCmdHelp*(basecmd: CommandSpec, args: seq[string]): string =
+  let cmd = if basecmd.parent.isSome(): basecmd.parent.get()
+            else: basecmd
+
   if len(args) == 0:
     result = getOneCmdHelp(cmd.parent.getOrElse(cmd))
   else:
@@ -1120,8 +1123,8 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
             legitCmds.add((true, item, spec.reportingName))
             found = true
             break
-        if not found and cmd.parent.isSome():
-          let eht = cmd.parent.get().extraHelpTopics
+        if not found:
+          let eht = cmd.extraHelpTopics
           if item in eht:
             legitCmds.add((false, item, getHelp(Corpus(eht), @[item])))
           else:

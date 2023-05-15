@@ -899,13 +899,14 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
     if len(hdrs) == 0:
       for item in cols:
         case item
-        of fcName:   firstRow.add("Name")
-        of fcType:    firstRow.add("Type")
-        of fcDefault: firstRow.add("Default Value")
-        of fcValue:   raise newException(ValueError, "Invalid column for spec")
-        of fcProps:   firstRow.add("Properties")
-        of fcShort:   firstRow.add("Description")
-        of fcLong:    firstRow.add("Details")
+        of fcName:     firstRow.add("Name")
+        of fcFullName: firstRow.add("Attribute")
+        of fcType:     firstRow.add("Type")
+        of fcDefault:  firstRow.add("Default Value")
+        of fcValue:    raise newException(ValueError, "Invalid column for spec")
+        of fcProps:    firstRow.add("Properties")
+        of fcShort:    firstRow.add("Description")
+        of fcLong:     firstRow.add("Details")
 
     elif len(cols) != len(hdrs):
       raise newException(ValueError,
@@ -921,10 +922,11 @@ proc oneObjTypeToTextTable*(spec:            ConfigSpec,
     for colType in cols:
       var s: string
       case colType
-      of fcName:    s = name
-      of fcType:    s = fieldSpec.reprType()
-      of fcDefault: s = fieldSpec.reprDefaultValue()
-      of fcShort:   s = fieldSpec.shortdoc.getOrElse("<none>")
+      of fcName:     s = name
+      of fcFullName: s = name # doesn't work here.
+      of fcType:     s = fieldSpec.reprType()
+      of fcDefault:  s = fieldSpec.reprDefaultValue()
+      of fcShort:    s = fieldSpec.shortdoc.getOrElse("<none>")
       of fcLong:
         if fieldSpec.extType.kind == TypeC4TypeSpec and name in spec.secSpecs:
           let subsec = spec.secSpecs[name]
@@ -998,6 +1000,7 @@ proc oneObjToTextTable*(obj:             AttrScope,
       for item in cols:
         case item
         of fcName:    firstRow.add("Name")
+        of fcFullName: firstRow.add("Attribute")
         of fcType:    firstRow.add("Type")
         of fcDefault: firstRow.add("Default Value")
         of fcValue:   firstRow.add("Current Value")
@@ -1024,8 +1027,9 @@ proc oneObjToTextTable*(obj:             AttrScope,
 
     for colType in cols:
       case colType
-      of fcName:    row.add(attr.name)
-      of fcType:    row.add($(attr.tInfo))
+      of fcName:     row.add(attr.name)
+      of fcFullName: row.add(attr.fullNameAsStr())
+      of fcType:     row.add($(attr.tInfo))
       of fcValue:
         let valOpt = attr.attrToVal()
         let val    = if    valOpt.isNone(): "<none>"
@@ -1034,10 +1038,10 @@ proc oneObjToTextTable*(obj:             AttrScope,
           row.add(xforms[attr.name](val))
         else:
           row.add(val)
-      of fcDefault: row.add(fieldSpec.reprDefaultValue())
-      of fcShort:   row.add(fieldSpec.shortdoc.getOrElse("<none>"))
-      of fcLong:    row.add(fieldSpec.doc.getOrElse("<none>"))
-      of fcProps:   row.add(fieldSpec.reprFieldProps())
+      of fcDefault:  row.add(fieldSpec.reprDefaultValue())
+      of fcShort:    row.add(fieldSpec.shortdoc.getOrElse("<none>"))
+      of fcLong:     row.add(fieldSpec.doc.getOrElse("<none>"))
+      of fcProps:    row.add(fieldSpec.reprFieldProps())
     applyFiltersAndAdd(row, filter, searchTerms)
 
   if addedRows == 0: return none(TextTable)
