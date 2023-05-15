@@ -6,7 +6,7 @@
 ## results are undefined :)
 
 import unicode, options, tables, os, sequtils, types, nimutils, st, eval,
-       std/terminal, algorithm, spec, nimutils/help
+       std/terminal, algorithm, spec, nimutils/help, typecheck
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"
@@ -1169,7 +1169,12 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
           raise newException(ValueError, ret)
 
     if spec.fieldToSet != "":
-      if not runtime.setOverride(spec.fieldToSet, some(val), stringType):
+      let
+        fieldType = case spec.kind
+                    of afPair:             boolType
+                    of afChoice, afStrArg: stringType
+                    else:                  newListType(stringType)
+      if not runtime.setOverride(spec.fieldToSet, some(val), fieldType):
         raise newException(ValueError, "Couldn't apply override to field " &
                            spec.fieldToSet)
   var
