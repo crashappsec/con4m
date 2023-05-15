@@ -277,7 +277,10 @@ proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
 
   return true
 
-proc setOverride*(ctx: ConfigState, fqn: string, val: Option[Box]): bool =
+proc setOverride*(ctx: ConfigState,
+                  fqn: string,
+                  val: Option[Box],
+                  t:   Con4mType): bool =
   let
     parts        = fqn.split(".")
     possibleAttr = attrLookup(ctx.attrs, parts, 0, vlAttrDef)
@@ -287,6 +290,7 @@ proc setOverride*(ctx: ConfigState, fqn: string, val: Option[Box]): bool =
 
   var attr      = possibleAttr.get(AttrOrSub).get(Attribute)
   attr.override = val
+  attr.tInfo    = t
 
   return true
 

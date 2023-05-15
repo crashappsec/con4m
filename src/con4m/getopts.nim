@@ -739,7 +739,7 @@ proc loadHelps(cmdObj: CommandSpec, one: AttrScope, info: LoadInfo) =
     names = unpack[seq[string]](one.attrLookup("names").get())
     doc   = unpack[string](one.attrLookup("doc").get())
 
-  cmdObj.addYesNoFlag("--help", names, [], false, doc)
+  cmdObj.addYesNoFlag("help", names, [], false, doc)
 
 proc loadChoices(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
   for k, v in all.contents:
@@ -1166,10 +1166,9 @@ proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
           raise newException(ValueError, ret)
 
     if spec.fieldToSet != "":
-      if not runtime.setOverride(spec.fieldToSet, some(val)):
+      if not runtime.setOverride(spec.fieldToSet, some(val), stringType):
         raise newException(ValueError, "Couldn't apply override to field " &
                            spec.fieldToSet)
-
   var
     cmdObj  = endCmd
     cmdName = winner.command
