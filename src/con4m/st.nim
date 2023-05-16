@@ -290,6 +290,7 @@ proc setOverride*(ctx: ConfigState,
 
   var attr      = possibleAttr.get(AttrOrSub).get(Attribute)
   attr.override = val
+  attr.value    = val
   attr.tInfo    = t
 
   return true
