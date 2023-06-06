@@ -1167,6 +1167,28 @@ else:
 
     return some(pack(output))
 
+# For our purposes, if any of these is attached, then it's a tty.
+proc c4mIsTty*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  if (isatty(cint(stdout.getFileHandle())) != 0 or
+      isatty(cint(stderr.getFileHandle())) != 0 or
+      isatty(cint(stdin.getFileHandle()))  != 0):
+    return some(pack(true))
+  else:
+    return some(pack(false))
+
+proc c4mTtyName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let fd0: cint = cint(stdin.getFileHandle())
+  if isatty(fd0) != 0:
+    return some(pack(ttyname(fd0)))
+  let fd1: cint = cint(stdout.getFileHandle())
+  if isatty(fd1) != 0:
+    return some(pack(ttyname(fd1)))
+  let fd2: cint = cint(stderr.getFileHandle())
+  if isatty(fd2) != 0:
+    return some(pack(ttyname(fd2)))
+
+  return some(pack(""))
+
 proc boolStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(false))
 proc intStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
@@ -1419,7 +1441,9 @@ const defaultBuiltins* = [
     ("system(string) -> tuple[string, int]", BuiltInFn(c4mSystem)),
     ("getuid() -> int",                      BuiltInFn(c4mGetUid)),
     ("geteuid() -> int",                     BuiltInFn(c4mGetEuid)),
-    ("uname() -> list[string]",              BuiltInFn(c4mUname))
+    ("uname() -> list[string]",              BuiltInFn(c4mUname)),
+    ("using_tty() -> bool",                  BuiltInFn(c4mIsTty)),
+    ("tty_name() -> string",                 BuiltInFn(c4mTtyName))
 
 ]
 
