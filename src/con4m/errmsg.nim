@@ -13,7 +13,8 @@ type
 
 let
   con4mTopic*  = registerTopic("con4m")
-  `hook?`       = configSink(getSink("stderr").get(),
+  `hook?`       = configSink(getSinkImplementation("stderr").get(),
+                             "con4m-default",
                              filters = @[MsgFilter(logLevelFilter),
                                          MsgFilter(logPrefixFilter)])
   defaultCon4mHook* = `hook?`.get()
