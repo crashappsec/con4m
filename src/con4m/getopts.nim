@@ -330,12 +330,9 @@ proc validateOneFlag(ctx:     var ParseCtx,
     spec    = inspec
     flagSep = if not spec.noColon: [':', '='] else: ['=', char(0)]
 
-  if ctx.i < len(ctx.args):
+  if ctx.i < len(ctx.args) and ctx.args[ctx.i][0] in flagSep:
     if argCrap.isNone() and not spec.noSpace:
-      if ctx.args[ctx.i][0] in flagSep:
-        argCrap = some(ctx.args[ctx.i][1 .. ^1].strip())
-      else:
-        argCrap = some(ctx.args[ctx.i])
+      argCrap = some(ctx.args[ctx.i][1 .. ^1].strip())
       ctx.i = ctx.i + 1
       if argCrap.get() == "":
         if ctx.i < len(ctx.args):
@@ -344,14 +341,13 @@ proc validateOneFlag(ctx:     var ParseCtx,
         else:
           argpError(name, "requires an argument.")
 
-
-
   if spec.kind == afPair:
     if argCrap.isSome():
       argpError(name, "takes no argument.")
     if spec.linkedChoice.isSome():
       spec    = spec.linkedChoice.get()
       argCrap = some(name)
+
   elif argCrap.isNone():
     if not spec.argIsOptional:
       # Here we require an argument, and we didn't find a ':' or '=',
