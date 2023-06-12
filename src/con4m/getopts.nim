@@ -15,53 +15,53 @@ type
   ArgFlagKind*    = enum
     afPair, afChoice, afStrArg, afMultiChoice, afMultiArg
   FlagSpec* = ref object
-    reportingName:    string
-    clobberOk:        bool
-    recognizedNames:  seq[string]
-    doc:              string
-    callback:         Option[CallbackObj]
-    fieldToSet:       string
-    finalFlagIx:      int
-    noColon:          bool   # Inherited from the command object.
-    noSpace:          bool   # Also inherited.
-    argIsOptional:    bool   # When true, --foo bar is essentially --foo="" bar
-    case kind:        ArgFlagKind
+    reportingName*:    string
+    clobberOk*:        bool
+    recognizedNames*:  seq[string]
+    doc*:              string
+    callback*:         Option[CallbackObj]
+    fieldToSet*:       string
+    finalFlagIx*:      int
+    noColon*:          bool   # Inherited from the command object.
+    noSpace*:          bool   # Also inherited from the command object.
+    argIsOptional*:    bool   # When true, --foo bar is essentially --foo="" bar
+    case kind*:        ArgFlagKind
     of afPair:
-      helpFlag:       bool
-      boolValue:      OrderedTable[int, bool]
-      positiveNames:  seq[string]
-      negativeNames:  seq[string]
-      linkedChoice:   Option[FlagSpec]
+      helpFlag*:       bool
+      boolValue*:      OrderedTable[int, bool]
+      positiveNames*:  seq[string]
+      negativeNames*:  seq[string]
+      linkedChoice*:   Option[FlagSpec]
     of afChoice, afMultiChoice:
-      choices:        seq[string]
-      selected:       OrderedTable[int, seq[string]]
-      linkedYN:       Option[FlagSpec]
-      min, max:       int
+      choices*:        seq[string]
+      selected*:       OrderedTable[int, seq[string]]
+      linkedYN*:       Option[FlagSpec]
+      min*, max*:      int
     of afStrArg:
-      strVal:         OrderedTable[int, string]
+      strVal*:         OrderedTable[int, string]
     of afMultiArg:
-      strArrVal:      OrderedTable[int, seq[string]]
+      strArrVal*:      OrderedTable[int, seq[string]]
   CommandSpec* = ref object
-    commands:          OrderedTable[string, CommandSpec]
-    reportingName:     string
-    allNames:          seq[string]
-    flags:             OrderedTable[string, FlagSpec]
-    callback:          Option[CallbackObj]
-    doc:               string
-    noColon:           bool # accept --flag= f but not --flag: f.
-    noSpace:           bool # Docker-style if true :/
-    extraHelpTopics:   OrderedTable[string, string]
-    argName:           string
-    minArgs:           int
-    maxArgs:           int
-    subOptional:       bool
-    unknownFlagsOk:    bool
-    dockerSingleArg:   bool
-    noFlags:           bool
-    autoHelp:          bool
-    finishedComputing: bool
-    parent:            Option[CommandSpec]
-    allPossibleFlags:  OrderedTable[string, FlagSpec]
+    commands*:          OrderedTable[string, CommandSpec]
+    reportingName*:     string
+    allNames*:          seq[string]
+    flags*:             OrderedTable[string, FlagSpec]
+    callback*:          Option[CallbackObj]
+    doc*:               string
+    noColon*:           bool # accept --flag= f but not --flag:f.
+    noSpace*:           bool # Docker-style if true *:
+    extraHelpTopics*:   OrderedTable[string, string]
+    argName*:           string
+    minArgs*:           int
+    maxArgs*:           int
+    subOptional*:       bool
+    unknownFlagsOk*:    bool
+    dockerSingleArg*:   bool
+    noFlags*:           bool
+    autoHelp*:          bool
+    finishedComputing*: bool
+    parent*:            Option[CommandSpec]
+    allPossibleFlags*:  OrderedTable[string, FlagSpec]
 
   ArgResult* = ref object
     stashedTop*:  AttrScope
@@ -213,6 +213,7 @@ proc newFlag(cmd:             CommandSpec,
   if cmd.noFlags:
     raise newException(ValueError,
                        "Cannot add a flag for a spec where noFlags is true")
+
   result = FlagSpec(reportingName: reportingName, kind: kind, clobberOk: clOk,
                     recognizedNames: recognizedNames.toSeq(), doc: doc,
                     callback: callback, fieldToSet: toSet, noColon: cmd.noColon,
@@ -358,7 +359,7 @@ proc validateOneFlag(ctx:     var ParseCtx,
                                     len(ctx.args[ctx.i]) > 1):
         argpError(name, "requires an argument.")
       if spec.noSpace:
-        argpError(name, "requires an argument")
+        argpError(name, "requires an argument.")
       argCrap = some(ctx.args[ctx.i].strip())
       ctx.i  = ctx.i + 1
     else:
@@ -421,6 +422,10 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
 
   ctx.i = ctx.i + 1
 
+  # I really want to change this to a while, just because I've
+  # accidentally done three dashes once or twice.  But I'm going to
+  # assume I'm in the minority and there's some common use case
+  # where --- should be treated as an argument not a flag?
   if cur[0] == '-':
     cur        = cur[1 .. ^1]
     singleDash = false
@@ -461,15 +466,18 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
       # unknownFlagsOk is on.
       if definiteArg.isSome() and not spec.unknownFlagsOk:
         argpError(cur, "Invalid flag")
-      for i, c in cur:
-        let oneCharFlag = $(c)
-        if oneCharFlag in validFlags:
-          ctx.validateOneFlag(oneCharFlag, validFlags[oneCharFlag])
-        elif spec.unknownFlagsOk: continue
-        elif i == 0: argpError(cur, "Invalid flag")
-        else:
-          argpError(cur, "Couldn't process all characters as flags")
-      if spec.unknownFlagsOk: ctx.curArgs.add(orig)
+      if spec.unknownFlagsOk:
+        ctx.curArgs.add(orig)
+      else:
+        for i, c in cur:
+          let oneCharFlag = $(c)
+          if oneCharFlag in validFlags:
+            ctx.validateOneFlag(oneCharFlag, validFlags[oneCharFlag])
+          elif spec.unknownFlagsOk: continue
+          elif i == 0: argpError(cur, "Invalid flag")
+          else:
+            argpError(cur, "Couldn't process all characters as flags")
+
 
 proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]):
                     OrderedTable[string, FlagSpec] =
