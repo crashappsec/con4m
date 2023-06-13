@@ -723,6 +723,26 @@ proc c4mIsAlphaNum*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   else:
     return falseRet
 
+proc c4mMimeToDict*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    outDict     = Con4mDict[string, string]()
+    tmp: string
+  let mimeLines = unpack[string](args[0]).split("\n")
+
+  for line in mimeLines:
+    let ix = line.find(':')
+    if ix == -1:
+      continue
+
+    if ix + 1 == len(line):
+      tmp = ""
+    else:
+      tmp = unicode.strip(line[ix + 1 .. ^1])
+
+    outDict[unicode.strip(line[0 ..< ix])] = tmp
+
+  return some(pack(outDict))
+
 proc c4mMove*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
@@ -1423,6 +1443,10 @@ const defaultBuiltins* = [
   ("shl(int, int) -> int",            BuiltInFn(c4mBitShl)),
   ("shr(int, int) -> int",            BuiltInFn(c4mBitShr)),
   ("bitnot(int) -> int",              BuiltInFn(c4mBitNot)),
+
+  # Other parsing stuff
+  ("mime_to_dict(string) -> dict[string, string]", BuiltInFn(c4mMimeToDict)),
+
 
   # Con4m-specific stuff
   ("sections(string) -> list[string]",          BuiltInFn(c4mSections)),
