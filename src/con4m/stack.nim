@@ -22,7 +22,7 @@ type
     case kind*: ActionKind
     of akInitState:
       addBuiltins*: bool
-      customFuncs*: seq[(string, BuiltinFn)]
+      customFuncs*: seq[Con4mCustomBuiltinInfo]
       exclusions*:  seq[string]
       stubs*:       seq[string]
       which*:       StackRuntimeScope
@@ -81,7 +81,7 @@ proc addSystemBuiltins*(stack:      ConfigStack,
   stack.steps.add(step)
 
 proc addCustomBuiltins*(stack: ConfigStack,
-                        fns:   openarray[(string, BuiltinFn)],
+                        fns:   openarray[Con4mCustomBuiltinInfo],
                         which = srsBoth):  ConfigStack {.discardable.} =
   result   = stack
   var step = ConfigStep(kind: akInitState, customFuncs: fns.toSeq(),
@@ -205,7 +205,7 @@ proc oneInit(s: ConfigState, step: ConfigStep) =
   if step.addBuiltins:
     for item in defaultBuiltins:
       let
-        (sig, impl) = item
+        (sig, impl, doc, tags) = item
         ix          = sig.find('(')
         name        = sig[0 ..< ix].strip()
         tInfo       = sig[ix .. ^1].toCon4mType()
@@ -215,14 +215,14 @@ proc oneInit(s: ConfigState, step: ConfigStep) =
           # Check to see if it's already loaded.
           if not isBottom(copyType(tInfo), copyType(existing.tInfo)): continue
 
-      s.newCoreFunc(sig, impl)
+      s.newCoreFunc(sig, impl, doc, tags)
 
   for item in step.customFuncs:
-    let (sig, impl) = item
-    s.newCoreFunc(sig, impl)
+    let (sig, impl, doc, tags) = item
+    s.newCoreFunc(sig, impl, doc, tags)
 
   for item in step.stubs:
-    s.newCoreFunc(item, nil, true)
+    s.newCoreFunc(item, nil, "Stub only.", @[], true)
 
   for sig in step.exclusions:
     let

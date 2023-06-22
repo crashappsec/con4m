@@ -346,7 +346,6 @@ proc attrSet*(attr:  Attribute,
     n         = nameparts.join(".")
 
   if `over?`.isSome():
-
     return AttrErr(code: errCantSet,
                    msg:  fmt"{n} attr can't be set due to user override")
   if attr.locked:
