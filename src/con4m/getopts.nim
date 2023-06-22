@@ -645,9 +645,9 @@ proc ambiguousParse*(spec:          CommandSpec,
     var ctx = ParseCtx(args: args)
     ctx.parseOne(spec)
     return @[ctx.res]
-  except ValueError:
-    if getCurrentExceptionMsg() != errNoArg: raise
-    if defaultCmd.isNone():                  raise
+  except:
+    firstError = getCurrentExceptionMsg()
+    if defaultCmd.isNone(): raise
     # else, ignore.
 
   let default = defaultCmd.get()
@@ -1314,6 +1314,7 @@ proc runManagedGetopt*(runtime:      ConfigState,
   topLevelCmd.loadSection(sec, li)
 
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)
+
   for item in result:
     # We need to look up some items in this scope in managedCommit;
     # it's the top-level getopts() scope in the specification context.
