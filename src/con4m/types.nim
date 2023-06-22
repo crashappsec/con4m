@@ -189,16 +189,20 @@ type
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 
+  Con4mCustomBuiltinInfo* = (string, BuiltinFn, string, seq[string])
+  ## What callers have to pass to make custom builtins available
+
   FnType* = enum
     FnBuiltIn, FnUserDefined
 
   FuncTableEntry* = ref object
     tinfo*:       Con4mType
-    name*:        string # Need for cycle check error message.
+    name*:        string
     onStack*:     bool
     cannotCycle*: bool
     locked*:      bool
-    doc*:         Option[string]  # Not yet implemented.
+    doc*:         Option[string]
+    tags*:        seq[string]
     hidden*:      string          # Not yet implemented.
     case kind*:   FnType
     of FnBuiltIn:
