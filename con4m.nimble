@@ -1,11 +1,11 @@
 # Package
-version       = "0.7.21"
+version       = "0.7.22"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
 srcDir        = "src"
 bin           = @["con4m"]
-installExt    = @["nim", "c4m", "c42spec"]
+installExt    = @["nim", "c4m", "c42spec", "c", "h"]
 
 # Dependencies
 requires "nim >= 1.6.10"

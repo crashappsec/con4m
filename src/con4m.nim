@@ -9,6 +9,9 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
+when hostOs == "macosx":
+  {.emit: staticRead("c/dyld_decls.c") .}
+
 import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
 import con4m/[eval, dollars, spec, run, c42spec, getopts, stack, legacy]
 export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
