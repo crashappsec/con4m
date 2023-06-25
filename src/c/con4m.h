@@ -3,19 +3,33 @@
 
 #include <stdint.h>
 
-typedef void * C4State;
-typedef void * C4Spec;
-typedef void * NimDict;
-typedef void * Box;
-typedef Box  * BoxArray;
+typedef void *C4State;
+typedef void *C4Spec;
+typedef void *NimDict;
+typedef void *Box;
+typedef Box  *BoxArray;
 // BoxUnused forces 64-bit ints.
-typedef enum { BoxInt, BoxStr, BoxFloat, BoxSeq, BoxBool, BoxTable,
-    BoxObj, BoxUnused = 0x7fffffffffffffff} BoxType;
-typedef enum { ErrAttrOk, ErrNoAttr, ErrBadSec, ErrBadAttr, ErrCantSet,
-    ErrAttrUnused = 0x7fffffffffffffff} AttrErr;
+typedef enum {
+    BoxInt,
+    BoxStr,
+    BoxFloat,
+    BoxSeq,
+    BoxBool,
+    BoxTable,
+    BoxObj,
+    BoxUnused = 0x7fffffffffffffff
+} BoxType;
+typedef enum {
+    ErrAttrOk,
+    ErrNoAttr,
+    ErrBadSec,
+    ErrBadAttr,
+    ErrCantSet,
+    ErrAttrUnused = 0x7fffffffffffffff
+} AttrErr;
 
 // Call this to initialize the garbage collector.
-extern void     NimMain();
+extern void NimMain();
 
 /* char *c4mOneShot(char *, char *)
  *
@@ -26,7 +40,7 @@ extern void     NimMain();
  * error message.
  */
 
-extern char    *c4mOneShot(char *, char *);
+extern char *c4mOneShot(char *, char *);
 /* C4State c4mFirstRun(char *, char *, int64_t, C4Spec, char **);
  *
  * When not using the one-shot API, you should call this to run Con4m
@@ -65,7 +79,7 @@ extern C4State c4mFirstRun(char *, char *, int64_t, C4Spec, char **);
  * The return will be NULL if successful. Otherwise, it will be an error
  * message, which needs to be deleted via c4mStrDelete() when done.
  */
-extern char    *c4mStack(C4State, char *, char *, C4Spec); // If err, decref.
+extern char *c4mStack(C4State, char *, char *, C4Spec); // If err, decref.
 
 /* int64_t c4mGetAttrInt(C4State, char *, AttrErr *);
  *
@@ -80,8 +94,7 @@ extern char    *c4mStack(C4State, char *, char *, C4Spec); // If err, decref.
  * - Param 2 is the fully dotted name to query.
  * - Param 3 will receive an error code of type AttrErr, defined above.
  */
-extern int64_t  c4mGetAttrInt(C4State, char *, AttrErr *);
-
+extern int64_t c4mGetAttrInt(C4State, char *, AttrErr *);
 
 /* int64_t c4mGetAttrBool(C4State, char *, AttrErr *);
  *
@@ -98,7 +111,7 @@ extern int64_t  c4mGetAttrInt(C4State, char *, AttrErr *);
  * - Param 2 is the fully dotted name to query.
  * - Param 3 will receive an error code of type AttrErr, defined above.
  */
-extern int64_t  c4mGetAttrBool(C4State, char *, AttrErr *);
+extern int64_t c4mGetAttrBool(C4State, char *, AttrErr *);
 
 /* char *c4mGetAttrStr(C4State, char *, AttrErr *);
  *
@@ -113,7 +126,7 @@ extern int64_t  c4mGetAttrBool(C4State, char *, AttrErr *);
  * - Param 2 is the fully dotted name to query.
  * - Param 3 will receive an error code of type AttrErr, defined above.
  */
-extern char    *c4mGetAttrStr(C4State, char *, AttrErr *);
+extern char *c4mGetAttrStr(C4State, char *, AttrErr *);
 
 /* float c4mGetAttrFloat(C4State, char *, AttrErr *);
  *
@@ -128,7 +141,7 @@ extern char    *c4mGetAttrStr(C4State, char *, AttrErr *);
  * - Param 2 is the fully dotted name to query.
  * - Param 3 will receive an error code of type AttrErr, defined above.
  */
-extern float    c4mGetAttrFloat(C4State, char *, AttrErr *);
+extern float c4mGetAttrFloat(C4State, char *, AttrErr *);
 
 /* Box c4mGetAttr(C4State, char *, BoxType *, AttrErr *);
  *
@@ -157,7 +170,7 @@ extern float    c4mGetAttrFloat(C4State, char *, AttrErr *);
  *           decompose.
  * - Param 4 will receive an error code of type AttrErr, defined above.
  */
-extern Box      c4mGetAttr(C4State, char *, BoxType *, AttrErr *);
+extern Box c4mGetAttr(C4State, char *, BoxType *, AttrErr *);
 
 /* AttrErr c4mSetAttrInt(C4State, char *, int64_t);
  *
@@ -171,7 +184,7 @@ extern Box      c4mGetAttr(C4State, char *, BoxType *, AttrErr *);
  * you do still needs to be type compatible with what is already
  * there, or you will get an error returned.
  */
-extern AttrErr  c4mSetAttrInt(C4State, char *, int64_t);
+extern AttrErr c4mSetAttrInt(C4State, char *, int64_t);
 
 /* AttrErr c4mSetAttrBool(C4State, char *, int64_t);
  *
@@ -185,7 +198,7 @@ extern AttrErr  c4mSetAttrInt(C4State, char *, int64_t);
  * you do still needs to be type compatible with what is already
  * there, or you will get an error returned.
  */
-extern AttrErr  c4mSetAttrBool(C4State, char *, int64_t);
+extern AttrErr c4mSetAttrBool(C4State, char *, int64_t);
 
 /* AttrErr c4mSetAttrInt(C4State, char *, int64_t);
  *
@@ -199,7 +212,7 @@ extern AttrErr  c4mSetAttrBool(C4State, char *, int64_t);
  * you do still needs to be type compatible with what is already
  * there, or you will get an error returned.
  */
-extern AttrErr  c4mSetAttrStr(C4State, char *, char *);
+extern AttrErr c4mSetAttrStr(C4State, char *, char *);
 
 /* AttrErr c4mSetAttrInt(C4State, char *, float);
  *
@@ -213,7 +226,7 @@ extern AttrErr  c4mSetAttrStr(C4State, char *, char *);
  * you do still needs to be type compatible with what is already
  * there, or you will get an error returned.
  */
-extern AttrErr  c4mSetAttrFloat(C4State, char *, float);
+extern AttrErr c4mSetAttrFloat(C4State, char *, float);
 
 /* AttrErr c4mSetAttr(C4State, char *, Box);
  *
@@ -231,7 +244,7 @@ extern AttrErr  c4mSetAttrFloat(C4State, char *, float);
  * From a memory management perspective, this call has no impact
  * (i.e., it neither increfs or decrefs).
  */
-extern AttrErr  c4mSetAttr(C4State, char *, Box);
+extern AttrErr c4mSetAttr(C4State, char *, Box);
 
 /* BoxType c4mBoxType(Box);
  *
@@ -246,7 +259,7 @@ extern BoxType c4mBoxType(Box);
  *
  * If the box doesn't represent an int, you'll end up with a crash.
  */
-extern int64_t  c4mUnpackInt(Box);
+extern int64_t c4mUnpackInt(Box);
 
 /* int64_t c4mUnpackBool(Box)
  *
@@ -256,7 +269,7 @@ extern int64_t  c4mUnpackInt(Box);
  *
  * If the box doesn't represent a bool, you'll end up with a crash.
  */
-extern int64_t  c4mUnpackInt(Box);
+extern int64_t c4mUnpackInt(Box);
 
 /* float c4mUnpackFloat(Box)
  *
@@ -265,7 +278,7 @@ extern int64_t  c4mUnpackInt(Box);
  *
  * If the box doesn't represent a float, you'll end up with a crash.
  */
-extern float    c4mUnpackFloat(Box);
+extern float c4mUnpackFloat(Box);
 
 /* char *c4mUnpackString(Box)
  *
@@ -274,7 +287,7 @@ extern float    c4mUnpackFloat(Box);
  *
  * If the box doesn't represent a string, you'll end up with a crash.
  */
-extern char    *c4mUnpackString(Box);
+extern char *c4mUnpackString(Box);
 
 /* int64_t  c4mUnpackArray(Box, BoxArray *);
  *
@@ -296,7 +309,7 @@ extern BoxArray c4mUnpackArray2(Box, int64_t *);
  *
  * Unpacks a boxed NimDict, and decref's the box.
  */
-extern NimDict  c4mUnpackDict(Box); // Input is decref'd, output incref'd
+extern NimDict c4mUnpackDict(Box); // Input is decref'd, output incref'd
 
 /* Box c4mPackArray(Box *, int64_t);
  *
@@ -304,37 +317,37 @@ extern NimDict  c4mUnpackDict(Box); // Input is decref'd, output incref'd
  * array can be freed when this call returns. The result is incref'd
  * and will need to be decref'd.
  */
-extern Box      c4mPackString(char *);
-extern Box      c4mPackFloat(float);
-extern Box      c4mPackInt(int64_t);
-extern Box      c4mPackBool(int64_t);
-extern Box      c4mPackArray(Box *, int64_t);
+extern Box c4mPackString(char *);
+extern Box c4mPackFloat(float);
+extern Box c4mPackInt(int64_t);
+extern Box c4mPackBool(int64_t);
+extern Box c4mPackArray(Box *, int64_t);
 
 /* NimDict c4mDictNew();
  *
  * Creates a new NimDict object.  It will need deallocation.
  */
-extern NimDict  c4mDictNew();
+extern NimDict c4mDictNew();
 /* Box c4mDictLookup(NimDict, Box);
  *
  * Lookup a dictionary item based on a pre-boxed key. The result is
  * incref'd, and needs to be decref'd (e.g., by unboxing), when done.
  */
-extern Box      c4mDictLookup(NimDict, Box);
+extern Box c4mDictLookup(NimDict, Box);
 
 /* void c4mDictSet(NimDict, Box, Box);
  *
  * Set a value (3rd arg arg) associated w/ a key (2nd arg) in a
  * NimDict (1st arg).  Both the key and the value should be pre-boxed.
  */
-extern void     c4mDictSet(NimDict, Box, Box);
+extern void c4mDictSet(NimDict, Box, Box);
 
 /* void c4mDictKeyDel(NimDict, Box);
  *
  * Deletes a key-value pair specified by a key, if they key is
  * present.
  */
-extern void     c4mDictKeyDel(NimDict, Box);
+extern void c4mDictKeyDel(NimDict, Box);
 
 /* C4Spec c4mLoadSpec(char *, char *, int64_t *);
  *
@@ -348,7 +361,7 @@ extern void     c4mDictKeyDel(NimDict, Box);
  * The spec object is otherwise opaque, to be passed in when
  * evaluating configs.
  */
-extern C4Spec   c4mLoadSpec(char *, char *, int64_t *);
+extern C4Spec c4mLoadSpec(char *, char *, int64_t *);
 
 /* int64_t  c4mGetSections(C4State, char *, char ***);
  *
@@ -364,7 +377,7 @@ extern C4Spec   c4mLoadSpec(char *, char *, int64_t *);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4mGetSections(C4State, char *, char ***);
+extern int64_t c4mGetSections(C4State, char *, char ***);
 
 /* int64_t  c4mGetFields(C4State, char *, char ***);
  *
@@ -383,7 +396,7 @@ extern int64_t  c4mGetSections(C4State, char *, char ***);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4mGetFields(C4State, char *, char ***);
+extern int64_t c4mGetFields(C4State, char *, char ***);
 
 /* int64_t  c4mEnumerateScope(C4State, char *, char ***);
  *
@@ -403,15 +416,15 @@ extern int64_t  c4mGetFields(C4State, char *, char ***);
  *
  * The return value is the number of items in the array that is passed back.
  */
-extern int64_t  c4mEnumerateScope(C4State, char *, char ***);
+extern int64_t c4mEnumerateScope(C4State, char *, char ***);
 // Below are all deallocation functions.
-extern void     c4mClose(C4State);
-extern char *   c4mGetSpecErr(C4Spec);
-extern void     c4mSpecDelete(C4Spec);
-extern void     c4mDictDelete(NimDict);
-extern void     c4mStrDelete(char *);
-extern void     c4mArrayDelete(BoxArray);
-extern void     c4mStateDelete(C4State);
-extern void     c4mBoxDelete(Box);
+extern void  c4mClose(C4State);
+extern char *c4mGetSpecErr(C4Spec);
+extern void  c4mSpecDelete(C4Spec);
+extern void  c4mDictDelete(NimDict);
+extern void  c4mStrDelete(char *);
+extern void  c4mArrayDelete(BoxArray);
+extern void  c4mStateDelete(C4State);
+extern void  c4mBoxDelete(Box);
 
 #endif
