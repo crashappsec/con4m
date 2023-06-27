@@ -1,22 +1,5 @@
 # Con4m: Configuration and Far More
 
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-
-- [Basic Example](#basic-example)
-- [Getting Started](#getting-started)
-- [More Information](#more-information)
-- [About](#about)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-Con4m makes it easy to implement complicated command-line applications:
-- You can easily add structures config files and command-line argument parsers to your app that are heavily validated, without any manual parsing, and have it all work together, in just a couple lines of code.
-- We provide a lots of primitives to automatically check such items, and their relationships.  And it's incredibly easy to do custom checks, so that your program doesn't have to worry about validating complex config input.
-- We automate producing in-command help from the documentation you provide for options, commands, etc.
-- You can easily support complex user needs by offering them programmability for their config files... and you can easily control how and when to leverage that.
-
-Con4m exists because we got tired of building mini-DSLs on top of YAML, especially since YAML has many syntactic quirks that make it bad for such things.
-
 By the 1.0 release, Con4m will be easily available in Go, Python, C and Nim (in which it's written).  Currently, we build both a command-line and libcon4m, so C and Nim are particularly easy.  Once we get closer to 1.0 and the API is stable and well documented, we'll build deeper integrations with those languages.
 
 ## Brief Overview

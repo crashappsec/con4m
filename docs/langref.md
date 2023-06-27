@@ -1,14 +1,3 @@
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
-
-- [Con4m Language syntax reference](#con4m-language-syntax-reference)
-- [EBNF specification](#ebnf-specification)
-- [Major Lexical elements](#major-lexical-elements)
-- [Notes](#notes)
-
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
-
 # Con4m Language syntax reference
 
 This document is a syntax reference for the Con4m language.   It’s a simple syntax that anyone with even minimal programming experience should be able to pick up.
@@ -43,10 +32,10 @@ returnStmt    ::= "return" expression? (";")?
 funcDecl      ::= "func" ID formalSpec fnBody
 formalSpec    ::= "(" (paramSpec? ("," paramSpec)* ")"
 paramSpec     ::= ID (":" typeSpec)
-varDeclItem   ::= ID ("," ID)* ":" typeSpec 
+varDeclItem   ::= ID ("," ID)* ":" typeSpec
 varStmt       ::= "var" varDeclItem ("," varDeclItem)*
 exportStmt    ::= "export" ID ("," ID)*
-typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" | 
+typeSpec      ::= "int" | "string" | "float" | "[" typeSpec "]" |
                    "{" typeSpec "}" | "(" typeSpec, (typeSpec)+ ")"
 fnBody        ::= "{" coreBodyItems* "}"
 # Note that literal matches before accessExpr, so a lparen at an exprStart
