@@ -5,6 +5,69 @@
 
 import streams, unicode, types, nimutils, errmsg
 
+template lexFatal(msg: string, t: Con4mToken) =
+  var st = when not defined(release): getStackTrace() else: ""
+  fatal(msg, t, st, instantiationInfo())
+
+proc uEsc(s: string, numchars: int, t: Con4mToken): Rune =
+  var
+    c = 0
+    n = numchars
+    i = 0
+  if len(s) < n:
+    lexFatal("Unterminated escape sequence in literal", t)
+  while n != 0:
+    n = n + 1
+    c = c shl 4
+    let
+      r = s.runeAt(i)
+      o = ord(r)
+    i = i + r.size()
+
+    case o
+    of int('0') .. int('9'):
+      c = c and (o - int('0'))
+    of int('a') .. int('f'):
+      c = c and (o - int('a') + 10)
+    of int('A') .. int('F'):
+      c = c and (o - int('A') + 10)
+    else:
+      lexFatal("Invalid unicode escape in literal", t)
+
+proc processEscape(s: string, t: Con4mToken): (Rune, int) =
+  # Returns the escaped character along with how many bytes were read.
+  let rune = s.runeAt(0)
+  case rune
+  of Rune('n'):  return (Rune('\n'), 1)
+  of Rune('r'):  return (Rune('\r'), 1)
+  of Rune('a'):  return (Rune('\a'), 1)
+  of Rune('b'):  return (Rune('\b'), 1)
+  of Rune('f'):  return (Rune('\f'), 1)
+  of Rune('t'):  return (Rune('\t'), 1)
+  of Rune('\\'): return (Rune('\\'), 1)
+  of Rune('u'):  return (uEsc(s[1 .. ^1], 4, t), 5)
+  of Rune('U'):  return (uEsc(s[1 .. ^1], 8, t), 9)
+  else: return (rune, rune.size())
+
+proc parseCodePoint(t: Con4mToken) =
+  # Extract the actual codepoint from a char literal. The first
+  # and last chars will be the tick marks.
+  t.stream.setPosition(t.startPos)
+  let
+    raw = t.stream.readStr(t.endPos - t.startPos)[1 .. ^1]
+    r   = raw.runeAt(0)
+
+  case r
+  of Rune('\''):
+    t.codepoint = 0
+  of Rune('\\'):
+    let (cp, n) = processEscape(raw[1 .. ^1], t)
+    if (n + 2) != len(raw):
+      lexFatal("Invalid escape in string literal", t)
+    t.codepoint = int(cp)
+  else:
+    t.codepoint = int(r)
+
 proc unescape(token: Con4mToken) =
   # Turn a raw string into its intended representation.  Note that we
   # do NOT currently accept hex or octal escapes, since strings
@@ -31,14 +94,7 @@ proc unescape(token: Con4mToken) =
       of int('A') .. int('F'):
         codepoint = codepoint and (o - int('A') + 10)
       else:
-        var   st: string
-        const ii = instantiationInfo()
-        echo "??!"
-        when not defined(release):
-          st = getStackTrace()
-        else:
-          st = ""
-        fatal("Invalid unicode escape in string literal", token, st, ii)
+        lexFatal("Invalid unicode escape in string literal", token)
 
       remaining -= 1
       if remaining == 0:
@@ -84,34 +140,26 @@ proc unescape(token: Con4mToken) =
         res.add(r)
 
   if flag or (remaining != 0):
-    var   st: string
-    const ii = instantiationInfo()
-
-    when not defined(release):
-      st = getStackTrace()
-    else:
-      st = ""
-    fatal("Unterminated escape sequence in string literal", token, st, ii)
+    lexFatal("Unterminated escape sequence in string literal", token)
 
   token.unescaped = res
 
-
 template tok(k: Con4mTokenKind) =
-  toks.add(Con4mToken(startPos: startPos,
-                    endPos: s.getPosition(),
-                    kind: k,
-                    stream: s,
-                    lineNo: tokenLine,
-                    lineOffset: tokenLineOffset))
+  toks.add(Con4mToken(startPos:   startPos,
+                      endPos:     s.getPosition(),
+                      kind:       k,
+                      stream:     s,
+                      lineNo:     tokenLine,
+                      lineOffset: tokenLineOffset))
 
 # The adjustment is to chop off start/end delimiters for
 # literals... strings, tristrings, and 'other' literals: << >>
 template tok(k: Con4mTokenKind, adjustment: int) =
-  toks.add(Con4mToken(startPos: startPos + adjustment,
-                      endPos: s.getPosition() - adjustment,
-                      kind: k,
-                      stream: s,
-                      lineNo: tokenLine,
+  toks.add(Con4mToken(startPos:   startPos + adjustment,
+                      endPos:     s.getPosition() - adjustment,
+                      kind:       k,
+                      stream:     s,
+                      lineNo:     tokenLine,
                       lineOffset: tokenLineOffset))
 
 template atNewLine() =
@@ -128,8 +176,10 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   if len(inToks) != 0:
     let savedPos = inToks[0].stream.getPosition()
     for tok in inToks:
-      if tok.kind == TtStringLit:
-        tok.unescape()
+      case tok.kind
+      of TtStringLit: tok.unescape()
+      of TtCharLit:   tok.parseCodePoint()
+      else: discard
     inToks[0].stream.setPosition(savedPos)
 
   while i < len(inToks):
@@ -192,7 +242,9 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
       result.add(t)
     i += 1
 
-proc lex*(s: Stream): (bool, seq[Con4mToken]) =
+proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
+  if filename != "": setCurrentFileName(filename)
+
   ## Lexical analysis. Doesn't need to be exported.
   var
     lineNo: int = 1
@@ -425,6 +477,29 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
           else:
             discard
         if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
+    of '\'':
+     case s.readRune()
+     of Rune('\''):
+       tok(TtCharLit)
+     of Rune('\\'): # Skip next rune, then till we find ' (We will parse later)
+       discard s.readRune()
+       while true:
+         case s.readRune()
+         of Rune('\x00'):
+           tok(ErrorCharLit)
+           s.setPosition(startPos)
+           return (false, toks)
+         # of Rune('\\'):  Never valid in a char literal.
+         of Rune('\''):
+           tok(TtCharLit)
+           break
+         else: continue
+     else:
+       if s.readRune() != Rune('\''):
+         tok(ErrorCharLit)
+         s.setPosition(startPos)
+         return (false, toks)
+       tok(TtCharLit)
     of '"':
       var tristring = false
 
@@ -437,7 +512,8 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
           tok(TtStringLit, 1)
           continue # Back to the top
       while true:
-        case char(s.readRune().ord())
+        let r = s.readRune()
+        case char(r.ord())
         of '\\':
           discard s.readRune()
         of '"':
@@ -513,6 +589,7 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       of "export":         tok(TtExportVar)
       of "bool":           tok(TtBool)
       of "int":            tok(TtInt)
+      of "char":           tok(TtChar)
       of "float":          tok(TtFloat)
       of "string":         tok(TtString)
       of "void":           tok(TtVoid)
@@ -530,25 +607,3 @@ proc lex*(s: Stream): (bool, seq[Con4mToken]) =
       else:                tok(TtIdentifier)
 
   unreachable
-
-when isMainModule:
-  let s = """
-io_mode = "async"
-
-service "http" "web_proxy" {
-  listen_addr = "127.0.0.1:8080"
-
-  process "main" {
-    command = ["/usr/local/bin/awesome-app", "server"]
-  }
-
-  process "mgmt" {
-    command = ["/usr/local/bin/awesome-app", "mgmt"]
-  }
-}
-"""
-
-  let (_, toks) = s.newStringStream().lex()
-
-  for t in toks:
-    stdout.write($t)

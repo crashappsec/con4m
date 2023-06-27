@@ -7,7 +7,7 @@
 
 import options, strformat, streams, tables, json, unicode, algorithm
 import nimutils, types
-from strutils import join, repeat
+from strutils import join, repeat, toHex, toLowerAscii
 
 
 # If you want to be able to reconstruct the original file, swap this
@@ -35,6 +35,7 @@ else:
     of ErrorTok:         result = "~err~"
     of ErrorLongComment: result = "~unterm comment~"
     of ErrorStringLit:   result = "~unterm string~"
+    of ErrorCharLit:     result = "~bad char lit~"
     of ErrorOtherLit:    result =  "~unterm other lit~"
     else:
       let pos = tok.stream.getPosition()
@@ -54,7 +55,42 @@ template colorNT(s: string): string =
 template colorT(s: string): string =
   toAnsiCode(acYellow) & s & toAnsiCode(acReset)
 
-proc `$`*(t: Con4mType): string =
+type ReverseTVInfo = ref object
+    takenNames: seq[string]
+    map:        Table[int, string]
+    nextIx:     int
+
+const tvmap = "gtuvwxyznm"
+
+proc getTVName(t: Con4mType, ti: ReverseTVInfo): string =
+  if t.localName.isSome():
+    result = "`" & t.localName.get()
+    if result notin ti.takenNames:
+      ti.map[t.varNum] = result
+      ti.takenNames.add(result)
+  else:
+    if t.varNum in ti.map:
+      result = ti.map[t.varNum]
+    else:
+      while true:
+        var
+          s = ti.nextIx.toHex().toLowerAscii()
+          first = 0
+        while s[first] == '0':
+          first = first + 1
+        for i in first ..< len(s):
+          let n = int(s[i]) - 48
+          if n < 10:
+            s[i] = tvmap[n]
+        ti.nextIx += 1
+        s = "`" & s[first .. ^1]
+        if s in ti.takenNames: continue
+        ti.map[t.varNum] = s
+        return s
+
+proc `$`*(t: Con4mType, tinfo: ReverseTVInfo = nil): string =
+  let ti = if tinfo == nil: ReverseTVInfo(nextIx: 1) else: tinfo
+
   ## Prints a type object the way it should be written for input.
   ## Note that, in some contexts, 'func' might be required to
   ## distinguish a leading parenthesis from other expressions,
@@ -64,6 +100,7 @@ proc `$`*(t: Con4mType): string =
   of TypeString:   return "string"
   of TypeBool:     return "bool"
   of TypeInt:      return "int"
+  of TypeChar:     return "char"
   of TypeFloat:    return "float"
   of TypeDuration: return "Duration"
   of TypeIPAddr:   return "IPAddr"
@@ -72,39 +109,40 @@ proc `$`*(t: Con4mType): string =
   of TypeDate:     return "Date"
   of TypeTime:     return "Time"
   of TypeDateTime: return "DateTime"
-  of TypeList:     return fmt"list[{t.itemType}]"
-  of TypeDict:     return fmt"dict[{t.keyType}, {t.valType}]"
+  of TypeList:     return "list[" & `$`(t.itemType, ti) & "]"
+  of TypeDict:
+    return "dict[" & `$`(t.keyType, ti) & ", " & `$`(t.valType, ti) & "]"
   of TypeTuple:
     var s: seq[string] = @[]
-    for item in t.itemTypes: s.add($(item))
-    return fmt"""tuple[{join(s, ", ")}]"""
+    for item in t.itemTypes: s.add(`$`(item, ti))
+    return "tuple[" & join(s, ", ") & "]"
   of TypeTypeSpec:
     result = "typespec"
     if t.binding.kind == TypeTVar:
       if t.binding.localName.isSome() or t.binding.link.isSome():
-        result &= "[" & $(t.binding) & "]"
+        result &= "[" & `$`(t.binding, ti) & "]"
   of TypeTVar:
     if t.link.isSome():
-      return $(t.link.get())
+      return `$`(t.link.get(), ti)
     else:
       if len(t.components) != 0:
         var parts: seq[string] = @[]
         for item in t.components:
-          parts.add($(item))
+          parts.add(`$`(item, ti))
         return parts.join(" or ")
       else:
-        return "`" & t.localName.getOrElse($(t.varNum))
+        return t.getTvName(ti)
   of TypeFunc:
     if t.noSpec: return "(...)"
     if t.params.len() == 0:
-      return fmt"() -> {$(t.retType)}"
+      return "() -> " & `$`(t.retType, ti)
     else:
       var paramTypes: seq[string]
       for item in t.params:
-        paramTypes.add($(item))
+        paramTypes.add(`$`(item, ti))
       if t.va:
         paramTypes[^1] = "*" & paramTypes[^1]
-      return "({paramTypes.join(\", \")}) -> {$(t.retType)}".fmt()
+      return "(" & paramTypes.join(", ") & ") -> " & `$`(t.retType, ti)
 
 proc `$`*(c: CallbackObj): string =
   result = "func " & c.name
@@ -130,8 +168,8 @@ template fmtNtNamed(name: string) =
 template fmtT(name: string) =
   return self.formatTerm(colorT(name), i) & "\n"
 
-template fmtTy(name: string) =
-  return self.formatNonTerm(colorType(name), i)
+#template fmtTy(name: string) =
+#  return self.formatNonTerm(colorType(name), i)
 
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
@@ -201,7 +239,7 @@ proc nativeSizeToStrBase2*(input: Con4mSize): string =
     n = input mod 1099511627776'u64
   else:
     n = input
-    
+
   m = n div 1073741824
   if m != 0:
     result &= $(m) & "GB "
@@ -306,6 +344,12 @@ proc oneArgToString*(t: Con4mType,
     return "func " & cb.name & $(cb.tInfo)
   of TypeInt:
     return $(unpack[int](b))
+  of TypeChar:
+    result = $(Rune(unpack[int](b)))
+    if lit:
+      # TODO: this really needs to do \... for non-printables.
+      result = "'" & result & "'"
+
   of TypeFloat:
     return $(unpack[float](b))
   of TypeBool:
@@ -429,11 +473,13 @@ proc `$`*(f: FuncTableEntry): string = f.name & $(f.tInfo)
 
 proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
   # Not technically a dollar, but hey.
-  var rows = @[@["Name", "Type", "Kind"]]
+  var rows: seq[seq[string]] = @[]
   for key, entrySet in funcTable:
     for entry in entrySet:
       rows.add(@[key, $(entry.tinfo), $(entry.kind)])
   rows.sort()
+  rows = @[@["Name", "Type", "Kind"]] & rows
+
   var tbl = newTextTable(3,
                          rows          = rows,
                          fillWidth     = true,

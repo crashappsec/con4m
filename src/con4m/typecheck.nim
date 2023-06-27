@@ -83,15 +83,34 @@ proc unify*(param1: Con4mType, param2: Con4mType): Con4mType {.inline.} =
   # Just in case someone manages to clone a singleton, we
   # always check against the .kind field, instead of looking at
   # object equivolence for singletons (e.g., int, bottom)
-  of TypeString, TypeBool, TypeInt, TypeFloat, TypeDuration, TypeIPAddr,
-       TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
+  of TypeString, TypeBool, TypeInt, TypeFloat, TypeChar, TypeDuration,
+     TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime, TypeDateTime:
     if t2.kind == t1.kind: return t1
     return bottomType
   of TypeBottom: return bottomType
   of TypeTypeSpec:
-    if t2.kind != TypeTypeSpec or t1.binding.unify(t2.binding).isBottom():
+    if t2.kind != TypeTypeSpec:
       return bottomType
-    return t1
+    let
+      bindtype1 = t1.binding.resolveTypeVars()
+      bindtype2 = t2.binding.resolveTypeVars()
+
+    # If both type specs are void, the unify returns bottom, since void
+    # and bottom are generally the same thing.
+    if bindtype1.kind == bindtype2.kind and bindtype1.isBottom():
+      return t1
+
+    # Same thing is true if one side is a type variable that might bind to
+    # a void.
+    if bindtype1.isBottom() and bindtype2.kind == TypeTVar and
+       len(bindtype2.components) == 0:
+      return t1
+
+    if bindtype2.isBottom() and bindtype1.kind == TypeTVar and
+       len(bindtype1.components) == 0:
+      return t2
+
+    return bindtype1.unify(bindtype2)
   of TypeFunc:
     if t2.kind != TypeFunc: return bottomType
     if t2.noSpec: return t1

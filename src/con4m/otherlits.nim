@@ -94,25 +94,25 @@ proc otherLitToNativeSize*(lit: string): Option[Con4mSize] =
       break
   if letterix < 1:
     return none(Con4mSize)
-  case s[letterix .. ^1]
-  of "b", "B":
+  case s[letterix .. ^1].strip()
+  of "b", "B", "Bytes", "bytes":
     multiple = 1
   of "k", "K", "kb", "Kb", "KB":
-    multiple = 1024
-  of "ki", "Ki", "kib", "KiB", "KIB":
     multiple = 1000
+  of "ki", "Ki", "kib", "KiB", "KIB":
+    multiple = 1024
   of "m", "M", "mb", "Mb", "MB":
-    multiple = 1048576
-  of "mi", "Mi", "mib", "MiB", "MIB":
     multiple = 1000000
+  of "mi", "Mi", "mib", "MiB", "MIB":
+    multiple = 1048576
   of "g", "G", "gb", "Gb", "GB":
-    multiple = 1073741824
-  of "gi", "Gi", "gib", "GiB", "GIB":
     multiple = 1000000000
+  of "gi", "Gi", "gib", "GiB", "GIB":
+    multiple = 1073741824
   of "t", "T", "tb", "Tb", "TB":
-    multiple = 1099511627776'u64
-  of "ti", "Ti", "tib", "TiB", "TIB":
     multiple = 1000000000000'u64
+  of "ti", "Ti", "tib", "TiB", "TIB":
+    multiple = 1099511627776'u64
   else:
     return none(Con4mSize)
   try:
@@ -594,9 +594,11 @@ proc otherLitToValue*(lit: string): Option[(Box, Con4mType)] =
     return some((pack(cidr.get()), cidrType))
 
 when isMainModule:
-  echo otherLitToValue("2k")
-  echo otherLitToValue("15Tb")
-  echo otherLitToValue("1Gb")
+  import dollars
+
+  echo otherLitToValue("2 k")
+  echo otherLitToValue("15 Tb")
+  echo otherLitToValue("1 Gb")
   echo nativeSizeToStrBase2(Con4mSize(16492674416640 + 1073741824 + 2048 + 10))
   echo otherLitToValue("10.228.143.7")
   echo otherLitToValue("::")
@@ -606,7 +608,7 @@ when isMainModule:
   echo otherLitToValue("2001:db8:1::ab9:C0A8:102/127")
   echo otherLitToValue("1 hr 6 min 22s")
   echo otherLitToValue("10usec")
-  echo otherLitToValue("4yrs 2 days 4 hours 6 min 7 sec")
+  echo otherLitToValue("4yrs 2 days 4 hours 6 min 7sec")
   echo nativeDurationToStr(Con4mDuration(126331567000010))
   echo otherLitToValue("Jan 7, 2007")
   echo otherLitToValue("Jan 18 2027")

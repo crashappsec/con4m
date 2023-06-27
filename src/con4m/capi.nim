@@ -233,7 +233,7 @@ proc c4mGetSections*(state: ConfigState,
   else:
     arr = addr(res[0])
     GC_ref(res)
-    
+
   return len(res)
 
 

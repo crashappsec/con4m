@@ -4,7 +4,7 @@
 
 import tables, streams, strutils, strformat, os
 import nimutils, nimutils/logging, types
-
+export getOrElse
 
 type
   InstInfo*    = tuple[filename: string, line: int, column: int]
@@ -13,14 +13,15 @@ type
 
 let
   con4mTopic*  = registerTopic("con4m")
-  `hook?`       = configSink(getSink("stderr").get(),
+  `hook?`       = configSink(getSinkImplementation("stderr").get(),
+                             "con4m-default",
                              filters = @[MsgFilter(logLevelFilter),
                                          MsgFilter(logPrefixFilter)])
   defaultCon4mHook* = `hook?`.get()
 
 var
   publishParams = { "loglevel" : $(llError) }.newOrderedTable()
-  verbosity     = c4vMax
+  verbosity     = c4vShowLoc
   curFileName: string
 
 
@@ -52,7 +53,9 @@ proc formatCompilerError(msg: string,
   result &= msg
 
   if verbosity in [c4vShowLoc, c4vMax]:
-    let f = newFileStream(curFileName, fmRead)
+    let f = if t != nil: t.stream else: newFileStream(curFileName, fmRead)
+    if f != nil:
+      f.setPosition(0)
 
     if t != nil and f != nil:
       let

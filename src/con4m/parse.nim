@@ -5,34 +5,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import tables, options, streams, types, nimutils, nimutils/logging
+import tables, options, streams, types, nimutils
 import errmsg, lex, typecheck, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
-
-## This stuff probably belongs in 'run.nim' or con4m.nim (since it's
-## meant only for the command-line compiler).
-##
-## But since cyclical imports are a problem, we'll just stick it here.
-
-var stopPhase* = phValidate
-
-proc setStopPhase*(s: string) =
-  ## This is really only meant to be used when running the compiler
-  ## on the command line, not via API.
-  case s
-  of "tokenize": stopPhase = phTokenize
-  of "parse":    stopPhase = phParse
-  of "check":    stopPhase = phCheck
-  else:          stopPhase = phEval
-
-proc phaseEnded*(phase: Con4mPhase) =
-  if phase >= stopPhase:
-    var publishParams = { "loglevel" : $(llInfo) }.newOrderedTable()
-    discard publish(con4mTopic,
-                    "Compilation exiting early due to command-line flag.\n",
-                    publishParams)
-    quit()
 
 proc getTokenText*(token: Con4mToken): string {.inline.} =
   if token.kind == TtStringLit: return token.unescaped
@@ -145,6 +121,7 @@ proc oneTypeSpec(ctx:    ParseCtx,
   of TtVoid:     result = bottomType
   of TtBool:     result = boolType
   of TtInt:      result = intType
+  of TtChar:     result = charType
   of TtString:   result = stringType
   of TtFloat:    result = floatType
   of TtDuration: result = durationType
@@ -208,8 +185,13 @@ proc oneTypeSpec(ctx:    ParseCtx,
     # "func".  It's only necessary for distinguishing generic
     # parenthesized expressions in an expression context.  We could
     # deal with that problem unambiguously, but requires more logic.
-    if t.kind != TtLParen and ctx.consume().kind != TtLParen:
-      parseError("Func type expects '('")
+    if t.kind != TtLParen:
+      if ctx.curTok().kind == TtLParen:
+        discard ctx.consume()
+      else:
+        result.nospec = true
+        return
+
     if ctx.curTok().kind == TtRParen:
       discard ctx.consume()
     else:
@@ -544,7 +526,7 @@ proc accessExpr(ctx: ParseCtx): Con4mNode =
       return lhs
 
 proc callback(ctx: ParseCtx): Con4mNode =
-  let t = ctx.consume()
+  discard ctx.consume()
   if ctx.curTok().kind != TtIdentifier:
     if ctx.curTok().kind == TtLParen: return ctx.typeSpec()
     parseError("An identifier or params required after the 'func' keyword")
@@ -560,7 +542,7 @@ proc literal(ctx: ParseCtx): Con4mNode =
        return ctx.typeSpec()
   of TtFunc:
     return ctx.callback()
-  of TtIntLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TTOtherLit:
+  of TtIntLit, TTFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTOtherLit:
     return newNode(NodeSimpLit, ctx.consume())
   of TtLBrace:
     return ctx.dictLiteral()
@@ -598,7 +580,7 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
     return ctx.unaryExpr()
   of TtNot:
     return ctx.notExpr()
-  of TtintLit, TTFloatLit, TtStringLit, TtTrue, TtFalse, TtLBrace,
+  of TtintLit, TTFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TtLBrace,
      TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
      TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick,
      TtDuration, TtIPAddr, TtCidr, TtSize, TtDate, TtTime, TtDateTime:
@@ -820,7 +802,7 @@ proc section(ctx: ParseCtx): Con4mNode =
   i = i + 1
   let tok = ctx.consume()
   case tok.kind
-  of TtStringLit, TtOtherLit:
+  of TtStringLit, TtCharLit, TtOtherLit:
     result.children.add(newNode(NodeSimpLit, tok))
   of TtIdentifier:
     result.children.add(newNode(NodeIdentifier, tok))
@@ -1020,16 +1002,6 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
-var
-  dumpToks  = false
-  showParse = false
-
-proc setDumpToks*() =
-  dumpToks = true
-
-proc setShowParse*() =
-  showParse = true
-
 proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
@@ -1042,21 +1014,11 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   setCurrentFileName(filename)
   ctrace(fmt"{filename}: {len(tokens)} tokens")
 
-  if dumpToks or stopPhase == phTokenize:
-    for i, token in tokens:
-      stderr.writeLine($i & ": " & $token)
-
-  phaseEnded(phTokenize)
-
   result = ctx.body(toplevel = true)
   if ctx.curTok().kind != TtEof:
     parseError("EOF, assignment or block expected.", true)
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
-
-  if showParse or stopPhase == phParse:
-    stderr.write($result)
-  phaseEnded(phParse)
 
 proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
@@ -1079,6 +1041,7 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
         of ErrorTok: "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
         of ErrorStringLit: "Unterminated string"
+        of ErrorCharLit: "Invalid char literal"
         of ErrorOtherLit: "Unterminated literal"
         else: "Unknown error" # Shouldn't be possible w/o a lex bug
 

@@ -15,18 +15,21 @@ type
     TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
     TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
-    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtTrue, TtFalse,  TTIf,
-    TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
+    TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypespec, TtList, TtDict,
-    TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime, TtDateTime,
-    TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorOtherLit
+    TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec, TtList,
+    TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime,
+    TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit,
+    ErrorCharLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
     case kind*:   Con4mTokenKind
     of TtStringLit:
       unescaped*: string
+    of TtCharLit:
+      codepoint*: int
     else:  nil
     stream*:      Stream
     startPos*:    int
@@ -51,7 +54,7 @@ type
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
     TypeString, TypeBool, TypeInt, TypeFloat, TypeTuple, TypeList, TypeDict,
-    TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
+    TypeChar, TypeDuration, TypeIPAddr, TypeCIDR, TypeSize, TypeDate, TypeTime,
     TypeDateTime, TypeTypeSpec, TypeFunc, TypeTVar, TypeBottom
 
   Con4mType* = ref object of RootRef
@@ -77,21 +80,6 @@ type
       linksin*:     seq[Con4mType]
       cycle*:       bool
       components*:  seq[Con4mType]
-      # Constraints are different than unions; with a tvar, we assume
-      # we are looking to instantiate a concrete type.
-      #
-      # But, if we can't infer just a single concrete type, yet we
-      # have ruled out some things, we could then convert seamlessly
-      # to union types.
-      #
-      # However, we don't currently need to do that explicitly,
-      # because the implementation currently keeps all values in a
-      # "box".
-      #
-      # Note also that these constraints could be lifted in order to
-      # be more complicated (in which case they'd be a seq of
-      # Con4mTypes, as with TypeUnion). We'd have to work harder to
-      # ensure they're distinct, but we'll do that if/when we need it.
     else: discard
 
 
@@ -104,7 +92,7 @@ type
   Con4mDateTime* = string # Stored as an ISO 8601 date/time
 
   # So I can switch between ordered and not without hardship.
-  Con4mDict*[K, V] = TableRef[K, V]
+  Con4mDict*[K, V] = OrderedTableRef[K, V]
 
   ## At any point in a Con4m program, there are two different scopes,
   ## variable scopes (which change whenever we enter a new block
@@ -123,7 +111,7 @@ type
     name*:     string
     parent*:   Option[AttrScope]
     config*:   ConfigState
-    contents*: Table[string, AttrOrSub]
+    contents*: OrderedTable[string, AttrOrSub]
 
   AttrOrSub* = object
     case kind*: bool
@@ -152,6 +140,7 @@ type
     firstDef*:    Option[Con4mNode]
     defs*:        seq[Con4mNode]
     uses*:        seq[Con4mNode]
+    lastUse*:     Option[Con4mNode]
 
   VarSym*    = ref object
     name*:     string
@@ -174,11 +163,11 @@ type
 
   VarScope*  = ref object
     parent*:    Option[VarScope]
-    contents*:  Table[string, VarSym]
+    contents*:  OrderedTable[string, VarSym]
 
   ## Frame for holding local variables.  In a call, the caller
   ## does the pushing and popping.
-  RuntimeFrame*  = TableRef[string, Option[Box]]
+  RuntimeFrame*  = OrderedTableRef[string, Option[Box]]
   VarStack*      = seq[RuntimeFrame]
   Con4mSectInfo* = seq[(string, AttrScope)]
 
@@ -200,16 +189,20 @@ type
   ## The Nim type signature for builtins that can be called from Con4m.
   ## VarStack is defined below, but is basically just a seq of tables.
 
+  Con4mCustomBuiltinInfo* = (string, BuiltinFn, string, seq[string])
+  ## What callers have to pass to make custom builtins available
+
   FnType* = enum
     FnBuiltIn, FnUserDefined
 
   FuncTableEntry* = ref object
     tinfo*:       Con4mType
-    name*:        string # Need for cycle check error message.
+    name*:        string
     onStack*:     bool
     cannotCycle*: bool
     locked*:      bool
-    doc*:         Option[string]  # Not yet implemented.
+    doc*:         Option[string]
+    tags*:        seq[string]
     hidden*:      string          # Not yet implemented.
     case kind*:   FnType
     of FnBuiltIn:
@@ -258,14 +251,15 @@ type
   Con4mSectionType* = ref object
     typeName*:      string
     singleton*:     bool
-    fields*:        Table[string, FieldSpec]
+    fields*:        OrderedTable[string, FieldSpec]
     backref*:       ConfigSpec
     shortdoc*:      Option[string]
     doc*:           Option[string] # Any doc to provide about this section.
     hidden*:        bool           # Hide this section from documentation APIs
+    validator*:     CallbackObj
 
   ConfigSpec* = ref object
-    secSpecs*:      Table[string, Con4mSectionType]
+    secSpecs*:      OrderedTable[string, Con4mSectionType]
     rootSpec*:      Con4mSectionType
 
   ConfigState* = ref object
@@ -276,10 +270,10 @@ type
     numExecutions*:      int
     setHook*:            AttrSetHook
     attrs*:              AttrScope
-    keptGlobals*:        Table[string, VarSym]
+    keptGlobals*:        OrderedTable[string, VarSym]
     frames*:             VarStack
     spec*:               Option[ConfigSpec]
-    funcTable*:          Table[string, seq[FuncTableEntry]]
+    funcTable*:          OrderedTable[string, seq[FuncTableEntry]]
     funcOrigin*:         bool
     waitingForTypeInfo*: bool
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
@@ -290,7 +284,7 @@ type
 
   Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
   FieldColType* = enum
-    fcName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
+    fcName, fcFullName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
 
 let
   # These are just shared instances for types that aren't
@@ -299,6 +293,7 @@ let
   stringType*   = Con4mType(kind: TypeString)
   boolType*     = Con4mType(kind: TypeBool)
   intType*      = Con4mType(kind: TypeInt)
+  charType*     = Con4mType(kind: TypeChar)
   floatType*    = Con4mType(kind: TypeFloat)
   durationType* = Con4mType(kind: TypeDuration)
   ipAddrType*   = Con4mType(kind: TypeIPAddr)
@@ -323,7 +318,8 @@ proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
 proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
 proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()
 
-proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} = return newTable[K, V]()
+proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
+  return Con4mDict[K, V]()
 proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)
 proc customUnpack*(b: Box, res: var Con4mType) =
   res = Con4mType(b.o)

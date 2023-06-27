@@ -5,8 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, tables, strformat, dollars
-import types, st, parse, treecheck, typecheck, nimutils, errmsg
+import options, tables, strformat, unicode, nimutils, types, st, parse,
+       treecheck, typecheck, dollars, errmsg
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -123,10 +123,10 @@ proc sCall(s:       ConfigState,
     if fInfo.impl.isNone(): unreachable
     else:
       result = s.evalFunc(args, fInfo.impl.get())
-      if result.isNone():
-        fatal("Function " & fInfo.name & "did not return a result. " &
-          "Our static analysis isn't yet detecting all these instances, " &
-          "but you should fix it instead of us adding default values.")
+      if result.isNone and not fInfo.tInfo.retType.resolveTypeVars().isBottom:
+          fatal("Function: '" & fInfo.name & "' did not return a result. " &
+            "Our static analysis isn't yet detecting all these instances, " &
+            "but you should fix it instead of us adding default values.")
 
 proc sCall*(s:       ConfigState,
             name:    string,
@@ -149,7 +149,8 @@ proc sCall*(s:       ConfigState,
     var err = "When supporting callbacks with multiple signatures, you " &
              " must supply the type when calling runCallback(). Matches: \n"
     for item in candidates:
-      err &= err & "  " & $item
+      err &= "  " & $item & "\n"
+    err &= "\n"
     raise newException(ValueError, err)
 
 proc sCall*(s:       ConfigState,
@@ -169,7 +170,6 @@ proc sCall*(s:       ConfigState,
             sig:     string,
             args:    seq[Box],
             nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box] =
-  let n = sig.toCallbackObj()
   return s.sCall(sig.toCallbackObj(), args, nodeOpt)
 
 proc evalKids(node: Con4mNode, s: ConfigState) {.inline.} =
@@ -252,7 +252,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     #
     # So we just have to update the RHS and then assign.
     node.children[1].evalNode(s)
-    let err = attrSet(node.attrRef, node.children[1].value)
+    let err = attrSet(node.attrRef, node.children[1].value, node)
 
     case err.code
     of errCantSet:
@@ -357,7 +357,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       return
 
     case typ.kind
-    of TypeInt:
+    of TypeInt, TypeChar:
       node.value = pack(-unpack[int](bx))
     of TypeFloat:
       node.value = pack(-unpack[float](bx))
@@ -391,9 +391,15 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       containerBox = node.children[0].value
       indexBox     = node.children[1].value
       containerTy  = node.children[0].getType()
-      ixTy         = node.children[1].getType()
 
     case containerTy.kind
+    of TypeString:
+      let
+        s = unpack[string](containerBox)
+        i = unpack[int](indexBox)
+      if i >= s.len() or i < 0:
+        fatal("Runtime error in config: string index out of bounds", node)
+      node.value = pack(int(s.runeAtPos(i)))
     of TypeTuple:
       let
         l = unpack[seq[Box]](containerBox)
@@ -415,7 +421,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         containerBox = node.children[0].value
         indexBox     = node.children[1].value
       case kt.kind
-      of TypeInt:
+      of TypeInt, TypeChar:
         let
           d = unpack[Con4mDict[int, Box]](containerBox)
           i = unpack[int](indexBox)
@@ -445,14 +451,12 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for kid in node.children[1].children:
       args.add(kid.value)
 
-    assert node.procRef != nil
     var ret = s.sCall(node.procRef, args, node)
     if ret.isSome():
       node.value = ret.get()
 
   of NodeDictLit:
     node.evalKids(s)
-    let nodeType = node.getType()
     var dict     = newCon4mDict[Box, Box]()
 
     for kvpair in node.children:
@@ -491,7 +495,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeNe:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `!=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `!=`)
     of TypeFloat: cmpWork(float, `!=`)
     of TypeBool: cmpWork(bool, `!=`)
     of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
@@ -500,7 +504,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeCmp:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `==`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `==`)
     of TypeFloat: cmpWork(float, `==`)
     of TypeBool: cmpWork(bool, `==`)
     of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
@@ -510,7 +514,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeGte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `>=`)
     of TypeFloat: cmpWork(float, `>=`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `>=`)
@@ -518,7 +522,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeLte:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<=`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `<=`)
     of TypeFloat: cmpWork(float, `<=`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `<=`)
@@ -526,7 +530,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeGt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `>`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `>`)
     of TypeFloat: cmpWork(float, `>`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `>`)
@@ -534,7 +538,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeLt:
     node.evalKids(s)
     case node.children[0].getBaseType()
-    of TypeInt, TypeDuration, TypeSize: cmpWork(int, `<`)
+    of TypeInt, TypeChar, TypeDuration, TypeSize: cmpWork(int, `<`)
     of TypeFloat: cmpWork(float, `<`)
     of TypeString, TypeIPAddr, TypeDate, TypeTime, TypeDateTime:
       cmpWork(string, `<`)
@@ -542,31 +546,31 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodePlus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt, TypeDuration: binaryOpWork(int, int, `+`)
+    of TypeInt, TypeChar, TypeDuration: binaryOpWork(int, int, `+`)
     of TypeFloat: binaryOpWork(float, float, `+`)
     of TypeString: binaryOpWork(string, string, `&`)
     else: unreachable
   of NodeMinus:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt, TypeDuration: binaryOpWork(int, int, `-`)
+    of TypeInt, TypeChar, TypeDuration: binaryOpWork(int, int, `-`)
     of TypeFloat: binaryOpWork(float, float, `-`)
     else: unreachable
   of NodeMod:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `mod`)
+    of TypeInt, TypeChar: binaryOpWork(int, int, `mod`)
     else: unreachable
   of NodeMul:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, int, `*`)
+    of TypeInt, TypeChar: binaryOpWork(int, int, `*`)
     of TypeFloat: binaryOpWork(float, float, `*`)
     else: unreachable
   of NodeDiv:
     node.evalKids(s)
     case node.getBaseType()
-    of TypeInt: binaryOpWork(int, float, `/`)
+    of TypeInt, TypeChar: binaryOpWork(int, float, `/`)
     of TypeFloat: binaryOpWork(float, float, `/`)
     else: unreachable
   of NodeIdentifier:
