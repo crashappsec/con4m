@@ -9,7 +9,7 @@ installExt    = @["nim", "c4m", "c42spec", "c", "h"]
 
 # Dependencies
 requires "nim >= 1.6.10"
-requires "https://github.com/crashappsec/nimutils == 0.4.4"
+requires "https://github.com/crashappsec/nimutils == 0.4.5"
 requires "nimSHA2 == 0.1.1"
 
 let s = "nimble doc --project --git.url:https://github.com/crashappsec/con4m.git --git.commit:v" &
