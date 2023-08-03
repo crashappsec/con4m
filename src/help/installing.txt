@@ -5,7 +5,7 @@ Con4m is distributed from {bold}https://github.com/crashappsec/con4m{reset}.
 Currently, it is in pre-release, so needs a Nim compiler to build the con4m compiler and libcon4m.a.
 
 %{h Building from source}%
-Con4m is currently written against Nim 1.6.10, which can easil be installed via 'choosenim'.  On most OSes, this can be installed from the command line with:
+Con4m is currently written against Nim 1.6.10, which can easil be installed via 'choosenim'. On most OSes, this can be installed from the command line with:
 
 %{c
 curl https://nim-lang.org/choosenim/init.sh -sSf | sh
@@ -13,7 +13,7 @@ curl https://nim-lang.org/choosenim/init.sh -sSf | sh
 
 For windows, visit: https://github.com/dom96/choosenim/releases
 
-Once Nim is installed, you will need to update the package manager.  Run:
+Once Nim is installed, you will need to update the package manager. Run:
 %{c
 nimble install nimble
 }%

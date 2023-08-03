@@ -4,7 +4,7 @@
 ## The methods are all meant to be internal; the end user shouldn't
 ## directly deal with the symbol table objects.
 ##
-## The external interface should either be via macros of
+## The external interface should either be via macros or
 ## `getConfigVar()`, which lives in spec.nim just due to
 ## cross-file dependencies.
 ##
@@ -274,6 +274,7 @@ proc setOverride*(attrs: AttrScope, name: string, val: Option[Box]): bool =
 
   var attr      = possibleAttr.get(AttrOrSub).get(Attribute)
   attr.override = val
+  attr.value    = val
 
   return true
 
@@ -369,6 +370,11 @@ proc attrSet*(attr:  Attribute,
 
 proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
   ## This is the interface for setting values at runtime.
+  ## This should only be used when you know the attribute already is
+  ## set. There's a version below that should be used when the
+  ## attribute might not be set, where you have to explicitly provide
+  ## a type.
+
   let
     parts        = fqn.split(".")
     possibleAttr = attrLookup(attrs, parts, 0, vlAttrDef)
@@ -384,6 +390,37 @@ proc attrSet*(attrs: AttrScope, fqn: string, value: Box): AttrErr =
 
 proc attrSet*(ctx: ConfigState, fqn: string, val: Box): AttrErr =
   return attrSet(ctx.attrs, fqn, val)
+
+proc attrSet*(attrs:    AttrScope,
+              fqn:      string,
+              value:    Box,
+              attrType: Con4mType): AttrErr =
+  ## This is the interface for setting values at runtime, when the
+  ## attribute might not already be set.
+
+  let
+    parts        = fqn.split(".")
+    possibleAttr = attrLookup(attrs, parts, 0, vlAttrDef)
+
+  if possibleAttr.isA(AttrErr):
+    return possibleAttr.get(AttrErr)
+
+  let
+    aOrS              = possibleAttr.get(AttrOrSub)
+    attr              = aOrS.get(Attribute)
+
+  result = attr.attrSet(value, nil, attrs.config.setHook)
+
+  if result.code == errOk:
+    let
+      aOrS = attrLookup(attrs, parts, 0, vlAttrUse).get(AttrOrSub)
+      attr = aOrS.get(Attribute)
+
+    if attr.tInfo == nil:
+      attr.tInfo = attrType
+
+    elif attrType.unify(attr.tInfo).isBottom():
+      result = AttrErr(code: errBadType)
 
 proc nameUseContext*(node: Con4mNode, name: string, ctx: ConfigState): UseCtx =
   if name in ctx.funcTable:             return ucFunc

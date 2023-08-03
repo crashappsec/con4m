@@ -1,5 +1,5 @@
 %{H Con4m Language syntax reference }%
-Below is a syntax reference for the Con4m language.   The syntax is meant to be simple enough that anyone with even minimal programming experience should be able to pick up. And, for those people who just want to edit key/value configuration items without writing any code, that should be equally simple and familiar.
+Below is a syntax reference for the Con4m language.  The syntax is meant to be simple enough that anyone with even minimal programming experience should be able to pick up. And, for those people who just want to edit key/value configuration items without writing any code, that should be equally simple and familiar.
 
 The language is designed to be fast, and currently does not have any features that might lead to an infinite loop (or infinite recursion).
 

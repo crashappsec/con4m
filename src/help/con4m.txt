@@ -18,7 +18,7 @@ repository chalk {
 
 In Con4m, attribute names are standard unicode identifiers. The right hand side of an attribute is not free-form. Strings need to be put in quotes (and they do accept unicode escape sequences, etc).
 
-The section name (here, just repository), is followed by an optional tag. But this might depend on the context—- most uses of Con4m will enforce a config file schema.  We think of sections with tags as "objects" where there might be more than one. Whereas, sections without tags are "singletons".  For instance, a c42 spec has a singleton named "root" you provide to specify what can be provided at the top level. For example, here's a minimal c42 spec, itself written in con4m:
+The section name (here, just repository), is followed by an optional tag. But this might depend on the context—- most uses of Con4m will enforce a config file schema. We think of sections with tags as "objects" where there might be more than one. Whereas, sections without tags are "singletons". For instance, a c42 spec has a singleton named "root" you provide to specify what can be provided at the top level. For example, here's a minimal c42 spec, itself written in con4m:
 %{c
 root {
   user_def_ok: false
@@ -123,7 +123,7 @@ echo user_priorities["john@crashoverride.com"]
 
 Note that list items must all have the same type. Similarly, dictionary keys must always have the same type, as must dictionary key and values (though it's fine for keys and values to have different types).
 
-Con4m does significant static type checking. Once an attribute or variable is assigned a type, any inconsistencies will result in a compile-time (config load time) error. All types are currently inferred from the context -- you do not have to declare types.  Additionally, specific config file formats might enforce additional value checking before loading your configuration.
+Con4m does significant static type checking. Once an attribute or variable is assigned a type, any inconsistencies will result in a compile-time (config load time) error. All types are currently inferred from the context -- you do not have to declare types. Additionally, specific config file formats might enforce additional value checking before loading your configuration.
 
 If there's no schema governing the types of values, you can set individual attributes to any type you want. They just cannot change. And, most uses of Con4m {bold}will{reset} specify a schema, meaning that after your config finishes loading, it will be generally checked against the specified types, and any incompatibility will again produce an error (though the application could choose to ignore it).
 
@@ -165,7 +165,7 @@ You do not need to worry about calling a function in a place in the file before 
 Recursive functions are available by default, but they can be turned off at the time the program using con4m is compiled.
 Currently, users can NOT declare varargs functions (though, builtins can). We may choose to add this, but do not right now.
 We do not support default arguments.
-Generally, the type inferencing system can resolve types at compile time for everything based on usage. The only exception is when you're calling an overloaded builtin, where one or more of the parameters is never used in any other context. Con4m requires binding to a single call implementation; it doesn't do any dynamic dispatch. Therefore, you can provide a type hint for local variables. You can, when declaring the function arguments, add a type using a colon.  For instance:
+Generally, the type inferencing system can resolve types at compile time for everything based on usage. The only exception is when you're calling an overloaded builtin, where one or more of the parameters is never used in any other context. Con4m requires binding to a single call implementation; it doesn't do any dynamic dispatch. Therefore, you can provide a type hint for local variables. You can, when declaring the function arguments, add a type using a colon. For instance:
 }%
 %{c
 func (f: string) {
@@ -180,7 +180,7 @@ var n: int
 }%
 
 %{h Attribute locking }%
-You can 'lock' attributes. For instance, your app might use con4m to set some values that the user shouldn't be able to change, once you hit production.  You can apply a ~ in front of the attribute assignment, or programatically lock it via API at any time.  This is also useful from a system configuration file that would like to keep users from shooting themselves in the foot by overriding the wrong things in the inherited configuration.
+You can 'lock' attributes. For instance, your app might use con4m to set some values that the user shouldn't be able to change, once you hit production. You can apply a ~ in front of the attribute assignment, or programatically lock it via API at any time. This is also useful from a system configuration file that would like to keep users from shooting themselves in the foot by overriding the wrong things in the inherited configuration.
 
 %{H More Information}%
 {bold}'{appName} help builtins'{reset} for a list of the default builtin functions.

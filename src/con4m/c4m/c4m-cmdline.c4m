@@ -14,7 +14,7 @@ getopts {
   default_command:      "run"
   doc: """
 
-Con4m makes it EASY to build custom configuration files for your application that are fully validated to your specification. Your users can write in a simple, familiar format, but have access a lot more power, if needed. They can even easily write custom callbacks for you to call from your own environment.  Plus, Con4m makes it easy to 'stack' configurations on top of each other, to customize environment variables, to reload configurations at runtime, etc.
+Con4m makes it EASY to build custom configuration files for your application that are fully validated to your specification. Your users can write in a simple, familiar format, but have access a lot more power, if needed. They can even easily write custom callbacks for you to call from your own environment. Plus, Con4m makes it easy to 'stack' configurations on top of each other, to customize environment variables, to reload configurations at runtime, etc.
 
 Con4m is accessible via command or API (currently from C or Nim, with Python and Go planned for 1.0).
 
@@ -22,11 +22,11 @@ When running con4m the command line, by default, the 'run' command runs, which e
 
 If multiple config files are provided, they are executed 'stacked', run one after another, in the order in which they appear on the command-line.
 
-Configurations can be validated extensively if you provide a 'c42' spec file to validate against. See 'help spec' for an example.  Note that c42 specs are just config files that specify what is or isn't allowed in OTHER config files.
+Configurations can be validated extensively if you provide a 'c42' spec file to validate against. See 'help spec' for an example. Note that c42 specs are just config files that specify what is or isn't allowed in OTHER config files.
 
 urrently, con4m works natively with Nim, and provides a C API (libcon4m), which we intend to wrap for additional programming languages.
 
-The con4m compiler is capable of generating code to load native data structures and provide get/set interfaces for supported languages.  To do this, you provide a schema in the form of a 'c42' spec file, and run the 'specgen' command.
+The con4m compiler is capable of generating code to load native data structures and provide get/set interfaces for supported languages. To do this, you provide a schema in the form of a 'c42' spec file, and run the 'specgen' command.
 
 See:
 'con4m.out help specs' for details on working with Con4m specifications for additional checking.
@@ -128,7 +128,7 @@ This does not apply to spec files.
       no_aliases:  ["U", "no-untyped-funcs"]
       field_to_set: "show_untyped_funcs"
       doc: """
-Shows the function table for the last file passed, before the checking phase begins, before functions are typed.  Note that builtins and functions from previous files in the stack will be typed.
+Shows the function table for the last file passed, before the checking phase begins, before functions are typed. Note that builtins and functions from previous files in the stack will be typed.
 """
     }
 
@@ -138,8 +138,8 @@ Shows the function table for the last file passed, before the checking phase beg
       field_to_set: "output_style"
       doc: """
 If a file successfully executes, this determines the style for
-outputting the resulting attribute space.  Options are: "json",
-"pretty" (which gives tables), or "none".  The default is "json".
+outputting the resulting attribute space. Options are: "json",
+"pretty" (which gives tables), or "none". The default is "json".
 
 When passing in a stack of files files, when this happens is controlled by '--output-show-when', which defaults to 'last'.
 
@@ -154,11 +154,11 @@ Note that this output goes to stdout; all other output goes to stderr.
       min:  1
       max:  high()
       doc: """
-For --show-* flags and --no-show-* flags this indicates for which phases the flags will apply.  Choices are "first", "last", "rest" and "all".  The default will be 'last'.  If there is only one file passed, this flag is ignored.
+For --show-* flags and --no-show-* flags this indicates for which phases the flags will apply. Choices are "first", "last", "rest" and "all". The default will be 'last'. If there is only one file passed, this flag is ignored.
 
 Note that this does not apply to spec files; see 'spec_when'.
 
-This also doesn't control for which files we'll show the final attribute output.  For that, see 'output_show_when'.
+This also doesn't control for which files we'll show the final attribute output. For that, see 'output_show_when'.
 """
     }
 
@@ -169,7 +169,7 @@ This also doesn't control for which files we'll show the final attribute output.
       min:  1
       max:  high()
       doc: """
-For --show- flags and --no-show- flags this indicates for which spec files passed at the command line where the flags will apply.  Choices are "first", "last", "rest" and "all".  The default will be 'last'.  If there is only one spec file passed, this flag is ignored (same if there are zero).
+For --show- flags and --no-show- flags this indicates for which spec files passed at the command line where the flags will apply. Choices are "first", "last", "rest" and "all". The default will be 'last'. If there is only one spec file passed, this flag is ignored (same if there are zero).
 """
     }
 
@@ -180,7 +180,7 @@ For --show- flags and --no-show- flags this indicates for which spec files passe
       min:  1
       max:  high()
       doc: """
-When multiple con4m files are executed in a stack, controls when the final attributes are shown at the end.  By default, this is "last".
+When multiple con4m files are executed in a stack, controls when the final attributes are shown at the end. By default, this is "last".
 
 Note, to turn off output, use --output-style=none, in which case this flag is ignored.
 """
@@ -190,7 +190,7 @@ Note, to turn off output, use --output-style=none, in which case this flag is ig
       aliases: ["specs"]
       field_to_set: "specs"
       doc: """
-C42 spec file(s) to load (in the given order).  They are loaded before any con4m file passed as arguments to 'run', and then are used to do additional validation those files.
+C42 spec file(s) to load (in the given order). They are loaded before any con4m file passed as arguments to 'run', and then are used to do additional validation those files.
 """
     }
 
@@ -230,14 +230,14 @@ Auto-generates language-specific interface code, based on input spec files.
       field_to_set: "language"
       choices: ["nim", "none"]
       doc: """
-The language for which to generate output. The default is 'none', which simply validates the spec as a valid c42 specification file.  Valid values are currently "none" (validates only), and "nim".  We expect to do Python, C and Go before 1.0.
+The language for which to generate output. The default is 'none', which simply validates the spec as a valid c42 specification file. Valid values are currently "none" (validates only), and "nim". We expect to do Python, C and Go before 1.0.
 """
     }
 
     flag_arg output_file {
       field_to_set: "output_file"
       doc: """
-Instead of writing to stdout, writes the generated code to the specified file.  Ignored if the language is set to 'none'.
+Instead of writing to stdout, writes the generated code to the specified file. Ignored if the language is set to 'none'.
 """
     }
   }

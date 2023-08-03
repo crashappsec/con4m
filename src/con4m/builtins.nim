@@ -1,5 +1,5 @@
-## Built in functions.  I will add more of these as I find them
-## useful.  They're all exposed so that you can selectively re-use
+## Built in functions. I will add more of these as I find them
+## useful. They're all exposed so that you can selectively re-use
 ## them.
 ##
 ## :Author: John Viega (john@crashoverride.com)
@@ -23,7 +23,7 @@ let
   falseRet = some(pack(false))
 
 proc c4mItoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast integers to booleans (testing for non-zero).  Exposed as
+  ## Cast integers to booleans (testing for non-zero). Exposed as
   ## `bool(i)` by default.
   let i = unpack[int](args[0])
   if i != 0:
@@ -32,7 +32,7 @@ proc c4mItoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     return falseRet
 
 proc c4mFtoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast floats to booleans (testing for non-zero).  Exposed as
+  ## Cast floats to booleans (testing for non-zero). Exposed as
   ## `bool(f)` by default.
   let f = unpack[float](args[0])
   if f != 0:
@@ -41,7 +41,7 @@ proc c4mFtoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     return falseRet
 
 proc c4mStoB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast strings to booleans (testing for empty strings).  Exposed as
+  ## Cast strings to booleans (testing for empty strings). Exposed as
   ## `bool(s)` by default.
   let s = unpack[string](args[0])
   if s != "":
@@ -63,7 +63,7 @@ proc c4mLToB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mDToB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Cast dicitonaries of any type to booleans (testing for empty
-  ## lists).  Exposed as `bool(s)` by default.
+  ## lists). Exposed as `bool(s)` by default.
 
   # Note that the key type should NOT be boxed when we unpack, but we
   # use Box to denote that we don't care about the parameter type.
@@ -75,7 +75,7 @@ proc c4mDToB*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     return trueRet
 
 proc c4mIToF*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast an integer to a float.  Exposed as `float(i)` by default.
+  ## Cast an integer to a float. Exposed as `float(i)` by default.
   let
     i = unpack[int](args[0])
     f = float(i)
@@ -83,7 +83,7 @@ proc c4mIToF*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(f))
 
 proc c4mFToI*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Cast an float to an int (truncating).  Exposed as `int(f)` by
+  ## Cast an float to an int (truncating). Exposed as `int(f)` by
   ## default.
   let
     f = unpack[float](args[0])
@@ -175,7 +175,7 @@ proc c4mToString*(args: seq[Box], state: ConfigState): Option[Box] =
   return some(pack(oneArgToString(itemType, args[0])))
 
 proc c4mEcho*(args: seq[Box], state: ConfigState): Option[Box] =
-  ## Exposed as `echo(*s)` by default.  Prints the parameters to
+  ## Exposed as `echo(*s)` by default. Prints the parameters to
   ## stdout, followed by a newline at the end.
 
   var
@@ -189,9 +189,9 @@ proc c4mEcho*(args: seq[Box], state: ConfigState): Option[Box] =
   stderr.writeLine(toPrint.join(" "))
 
 proc c4mEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  ## Exposed as `env(s)` by default.  Returns the value of the
-  ## requested environment variable.  If the environment variable is
-  ## NOT set, it will return the empty string.  To distingush between
+  ## Exposed as `env(s)` by default. Returns the value of the
+  ## requested environment variable. If the environment variable is
+  ## NOT set, it will return the empty string. To distingush between
   ## the environment variable not being set, or the variable being set
   ## to the empty string, use `c4mEnvExists`.
 
@@ -201,7 +201,7 @@ proc c4mEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mEnvExists*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns true if the requested variable name is set in the
-  ## environment, false if it's not.  Exposed as `envExists(s)` by
+  ## environment, false if it's not. Exposed as `envExists(s)` by
   ## default.
   ##
   ## Note that this can be used to distinguish between the variable
@@ -244,7 +244,7 @@ proc c4mContainsStrStr*(args: seq[Box],
 
 proc c4mFindFromStart*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
-  ## string `s1`, or -1 if it does not appear.  Exposed by default as
+  ## string `s1`, or -1 if it does not appear. Exposed by default as
   ## `find(s1, s2)`
 
   let
@@ -256,7 +256,7 @@ proc c4mFindFromStart*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mSlice*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the substring of `s` starting at index `start`, not
-  ## including index `end`.  The semantics of this are Pythonic, where
+  ## including index `end`. The semantics of this are Pythonic, where
   ## -1 works as expected.
   ##
   ## Note that an index out of bounds will not error. If both
@@ -305,7 +305,7 @@ proc c4mSliceToEnd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mListSlice*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the sub-array of `s` starting at index `start`, not
-  ## including index `end`.  The semantics of this are Pythonic, where
+  ## including index `end`. The semantics of this are Pythonic, where
   ## -1 works as expected.
   ##
   ## Note that an index out of bounds will not error. If both
@@ -890,7 +890,7 @@ proc c4mCmpTypes*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mAttrGetType*(args: seq[Box], localstate: ConfigState): Option[Box] =
   ## This allows us to, from within a c42 spec, query the type of an
-  ## attr in the actual con4m file we're checking.  Otherwise, we
+  ## attr in the actual con4m file we're checking. Otherwise, we
   ## could simply use the previous function to get the type of an attribute.
   let
     varName = unpack[string](args[0])
@@ -960,6 +960,11 @@ proc c4mOverride*(args: seq[Box], localState: ConfigState): Option[Box] =
     state        = replacementState.getOrElse(localState)
     actNode      = localstate.nodeStash.children[1]
     itemType     = actNode.children[1].getType()
+
+  if attrSet(state.attrs, attrName, args[1], itemType).code != errOk:
+    return falseRet
+
+  let
     aOrE         = attrLookup(state.attrs, attrName.split("."), 0, vlExists)
 
   if aOrE.isA(AttrErr): return falseRet
@@ -972,6 +977,8 @@ proc c4mOverride*(args: seq[Box], localState: ConfigState): Option[Box] =
   if sym.locked or sym.override.isSome(): return falseRet
 
   sym.override = some(args[1])
+  sym.value    = some(args[1])
+
   if state.nodeStash == nil:
     sym.lastUse = none(Con4mNode)
   else:
@@ -1205,7 +1212,7 @@ else:
   ## to that end, when posix is not defined, this command is removed
   ## from the defaults.
   proc c4mCmd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-    ## An unsafe version of this for non-posix OSes.  On such machines,
+    ## An unsafe version of this for non-posix OSes. On such machines,
     ## it is NOT a default builtin.
     var cmd = unpack[string](args[0])
 
@@ -1261,7 +1268,7 @@ proc newCoreFunc*(s:    ConfigState,
                   stub: bool        = false) =
   ## Allows you to associate a NIM function with the correct signature
   ## to a configuration for use as a builtin con4m function. `name` is
-  ## the parameter used to specify the name exposed to con4m.  `tinfo`
+  ## the parameter used to specify the name exposed to con4m. `tinfo`
   ## is the Conform type signature.
 
   let
@@ -1345,67 +1352,62 @@ const defaultBuiltins* = [
   # Type conversion operations
   ("bool(int) -> bool",
    BuiltInFn(c4mIToB),
-   "Converts an int to true/false.  0 is false, everything else is true.",
+   "Converts an `int` to `true`/`false`. 0 is `false`, everything else is `true`.",
    @["type conversion"]
   ),
   ("bool(float) -> bool",
    BuiltInFn(c4mFToB),
-   "Converts a float to true/false.",
+   "Converts a `float` to `true`/`false`.",
    @["type conversion"]
   ),
   ("bool(string) -> bool",
    BuiltInFn(c4mSToB),
-   "If the string is empty, returns false.  Otherwise, returns true",
+   "If the string is empty, returns `false`. Otherwise, returns `true`.",
    @["type conversion"]),
   ("bool(list[`x]) -> bool",
    BuiltInFn(c4mLToB),
-   "Returns false if the list is empty, true otherwise.",
+   "Returns `false` if the list is empty, `true` otherwise.",
    @["type conversion"]),
   ("bool(dict[`x,`y]) -> bool",
    BuiltInFn(c4mDToB),
-   "Returns false if the dict is empty, true otherwise",
+   "Returns `false` if the dict is empty, `true` otherwise",
    @["type conversion"]),
   ("float(int) -> float",
    BuiltInFn(c4mItoF),
-   "Converts the value into a float.",
+   "Converts the value into a `float`.",
    @["type conversion"]),
   ("int(float) -> int",
    BuiltInFn(c4mFtoI),
-   "Converts a float to an integer, with typical truncation semantics",
+   "Converts a `float` to an `int`, with typical truncation semantics.",
    @["type conversion"]),
   ("$(`t) -> string",
    BuiltInFn(c4mToString),
-   "Converts any value into a string",
+   "Converts any value into a `string`.",
    @["type conversion"]),
   ("Duration(string) -> Duration",
    BuiltInFn(c4mSToDur),
    """
-Parses a string into a duration object. The config will error if the
-conversion fails.
+Parses a `string` into a `Duration` object. The config will error if the conversion fails.
 
-Duration literals accept:
-us usec usecs
-ms msec msecs
-s sec secs seconds
-m min mins minutes
-h hr hrs hours
-d day days
-w wk wks week weeks
-y yr yrs year years
+`Duration` literals accept:
+- us usec usecs
+- ms msec msecs
+- s sec secs seconds
+- m min mins minutes
+- h hr hrs hours
+- d day days
+- w wk wks week weeks
+- y yr yrs year years
 
-None of the above categories should be repeated.
-Multiple items can be space separated (though it is optional).
+None of the above categories should be repeated. Multiple items can be space separated (though it is optional).
 
-For instance, "1 week 2 days" is valid, as is:
-"4yrs 2 days 4 hours 6min7sec2years"
+For instance, `1 week 2 days` is valid, as is:
+`4yrs 2 days 4 hours 6min7sec2years`
 
-Note that this is the exact same syntax as if you declare a Duration
-literal directly, except for the quoting mechanism.  Specifically:
-
-myduration := <<1 hr 10 mins>>
-
+This is the exact same syntax as if you declare a `Duration` literal directly, except for the quoting mechanism. Specifically:
+```myduration := <<1 hr 10 mins>>```
 Is effectively the same as:
-myduration := Duration("1 hr 10 mins")
+```myduration := Duration("1 hr 10 mins")```
 
 Except that syntax errors will be found before running the script in
 the first case.
@@ -1414,116 +1416,83 @@ the first case.
   ("IPAddr(string) -> IPAddr",
    BuiltInFn(c4mStoIP),
    """
-Parses a string into an IP address.  Both ipv4 and ipv6 addresses
-are allowed, but blocks of addresses are not; use the CIDR type for
-that.
+Parses a `string` into an IP address. Both ipv4 and ipv6 addresses are allowed, but blocks of addresses are not; use the CIDR type for that.
 
-Generally, using this function to convert from a string is not
-necessary; you can write IPAddr literalls with 'special' literal
-quotes:
-
-x := << 2001:db8:1::ab9:C0A8:102 >>
-
+Generally, using this function to convert from a `string` is not necessary; you can write IPAddr literalls with 'special' literal quotes:
+```x := << 2001:db8:1::ab9:C0A8:102 >>```
 is functionally equal to:
+```x := IPAddr("2001:db8:1::ab9:C0A8:102")```
 
-x := IPAddr("2001:db8:1::ab9:C0A8:102").
-
-In the first case, con4m will catch syntax errors before the
-configuration starts executing.  In the second, the checking won't be
-until runtime, at which point the config execution will abort with an
-error.
+In the first case, con4m will catch syntax errors before the configuration starts executing. In the second, the checking won't be until runtime, at which point the config execution will abort with an error.
 """,
    @["type conversion"]),
   ("CIDR(string) -> CIDR",
    BuiltInFn(c4mSToCIDR),
    """
-Parses a string that specifies a block of IP addresses into a CIDR
-type.  CIDR stands for Classless Inter-Domain Routing; it's the
-standard way to express subnets.
+Parses a `string` that specifies a block of IP addresses into a `CIDR` type. CIDR stands for Classless Inter-Domain Routing; it's the standard way to express subnets.
 
-Generally, using this function to convert from a string is not
-necessary; you can write CIDR literalls with 'special' literal
-quotes:
-
-x := << 192.168.0.0/16 >>
-
+Generally, using this function to convert from a `string` is not necessary; you can write `CIDR` literalls with 'special' literal quotes:
+```x := << 192.168.0.0/16 >>```
 is functionally equal to:
+```x := CIDR("192.168.0.0/16")```
 
-x := CIDR("192.168.0.0/16")
-
-In the first case, con4m will catch syntax errors before the
-configuration starts executing.  In the second, the checking won't be
-until runtime, at which point the config execution will abort with an
-error.
-
-Note that IPv6 addresses are also supported.  Either of the following work:
-
-x := << 2001:db8:1::ab9:C0A8:102/127 >>
-x := CIDR("2001:db8:1::ab9:C0A8:102/127")
+In the first case, con4m will catch syntax errors before the configuration starts executing. In the second, the checking won't be until runtime, at which point the config execution will abort with an error. IPv6 addresses are also supported. Either of the following work:
+```x := << 2001:db8:1::ab9:C0A8:102/127 >>
+x := CIDR("2001:db8:1::ab9:C0A8:102/127")```
 """,
    @["type conversion"]),
   ("Size(string) -> Size",
    BuiltInFn(c4mSToSize),
    """
-Converts a string representing a size in bytes into a Con4m size object.
+Converts a `string` representing a size in bytes into a con4m `Size` object.
+A size object can use any of the following units:
 
-For the moment, size objects can use only a single unit, and can use
-any of the following units:
-
-b, B, bytes, Bytes    -- bytes
-k, K, kb, Kb, KB      -- kilobytes (1000 bytes)
-ki, Ki, kib, KiB, KIB -- kibibytes (1024 bytes)
-m, M, mb, Mb, MB      -- megabytes (1,000,000 bytes)
-mi, Mi, mib, MiB, MIB -- mebibytes (1,048,576 bytes)
-g, G, gb, Gb, GB      -- gigabytes (1,000,000,000 bytes)
-gi, Gi, gib, GiB, GIB -- gibibytes (1,073,741,824 bytes)
-t, T, tb, Tb, TB      -- terabytes (10^12 bytes)
-ti, Ti, tib, TiB, TIB -- tebibytes (2^40 bytes)
+- b, B, bytes, Bytes    -- bytes
+- k, K, kb, Kb, KB      -- kilobytes (1000 bytes)
+- ki, Ki, kib, KiB, KIB -- kibibytes (1024 bytes)
+- m, M, mb, Mb, MB      -- megabytes (1,000,000 bytes)
+- mi, Mi, mib, MiB, MIB -- mebibytes (1,048,576 bytes)
+- g, G, gb, Gb, GB      -- gigabytes (1,000,000,000 bytes)
+- gi, Gi, gib, GiB, GIB -- gibibytes (1,073,741,824 bytes)
+- t, T, tb, Tb, TB      -- terabytes (10^12 bytes)
+- ti, Ti, tib, TiB, TIB -- tebibytes (2^40 bytes)
 
 The following are functionally equal:
+```
 x := << 200ki >>
+```
+and:
+```
 x := Size("200ki")
+```
 
-The main difference is that the former is checked for syntax problems
-before execution, and the later is checked when the call is made.
+The main difference is that the former is checked for syntax problems before execution, and the later is checked when the call is made.
 """,
    @["type conversion"]),
   ("Date(string) -> Date",
    BuiltInFn(c4mSToDate),
    """
+Converts a `string` representing a date into a Con4m date object. We generally accept ISO dates.
 
-Converts a string representing a date into a Con4m date object.  We
-generally accept ISO dates.
+However, we assume that it might make sense for people to only provide one of the three items, and possibly two. Year and day of month without the month probably doesn't make sense often, but whatever.
 
-However, we assume that it might make sense for people to only
-provide one of the three items, and possibly two. Year and day of
-month without the month probably doesn't make sense often, but
-whatever.
+But even the old ISO spec doesn't accept all variations (you can't even do year by itself. When the *year* is omitted, we use the *old* ISO format, in hopes that it will be recognized by most software.
 
-But even the old ISO spec doesn't accept all variations (you can't
-even do year by itself. When the *year* is omitted, we use the *old*
-ISO format, in hopes that it will be recognized by most software.
 Specifically, depending on a second omission, the format will be:
+```
 --MM-DD
 --MM
 ---DD
+```
 
-However, if the year is provided, we will instead turn omitted
-numbers into 0's, because for M and D that makes no semantic sense
-(whereas it does for Y), so should be unambiguous and could give the
-right reuslts depending on the checking native libraries do when
-parsing.
+However, if the year is provided, we will instead turn omitted numbers into 0's, because for M and D that makes no semantic sense (whereas it does for Y), so should be unambiguous and could give the right reuslts depending on the checking native libraries do when parsing.
 
-Note that we also go the ISO route and only accept 4-digit
-dates. And, we don't worry about negative years. They might hate me
-in the year 10,000, but I don't think there are enough cases where
-someone needs to specify "200 AD" in a config file to deal w/ the
-challenges with not fixing the length of the year field.
+We also go the ISO route and only accept 4-digit dates. And, we don't worry about negative years. They might hate me in the year 10,000, but I don't think there are enough cases where someone needs to specify "200 AD" in a config file to deal w/ the challenges with not fixing the length of the year field.
 
-Note that there is a separate DateTime type.
+There is a separate `DateTime` type.
 
-The following are all valid Con4m Date objects:
-
+The following are all valid con4m `Date` objects:
+```
 x := Date("Jan 7, 2007")
 x := Date("Jan 18 2027")
 x := Date("Jan 2027")
@@ -1533,10 +1502,10 @@ x := Date("2 Mar")
 x := Date("2004-01-06")
 x := Date("--03-02")
 x := Date("--03")
+```
 
-The following give the same effective results as above, but syntax
-errors are surfaced at compile time instead of run time:
-
+The following give the same effective results as above, but syntax errors are surfaced at compile time instead of run time:
+```
 x := << Jan 7, 2007 >>
 x := << Jan 18 2027 >>
 x := << Jan 2027 >>
@@ -1546,14 +1515,14 @@ x := << 2 Mar >>
 x := << 2004-01-06 >>
 x := << --03-02 >>
 x := << --03 >>
+```
 """,
    @["type conversion"]),
   ("Time(string) -> Time",
    BuiltInFn(c4mSToTime),
    """
-Conversion of a string to a Con4m Time specification, which follows ISO
-standards, including Z.  The following are valid Con4m Time objects:
-
+Conversion of a `string` to a con4m `Time` specification, which follows ISO standards, including Z. The following are valid `Time` objects:
+```
 x := Time("12:23:01.13131423424214214-12:00")
 x := Time("12:23:01.13131423424214214Z")
 x := Time("12:23:01+23:00")
@@ -1561,10 +1530,10 @@ x := Time("2:03:01+23:00")
 x := Time("02:03+23:00")
 x := Time("2:03+23:00")
 x := Time("2:03")
+```
 
-The following are identical, except that syntax errors are surfaced before
-execution begins:
-
+The following are identical, except that syntax errors are surfaced before execution begins:
+```
 x := << 12:23:01.13131423424214214-12:00 >>
 x := << 12:23:01.13131423424214214Z >>
 x := << 12:23:01+23:00 >>
@@ -1572,27 +1541,27 @@ x := << 2:03:01+23:00 >>
 x := << 02:03+23:00 >>
 x := << 2:03+23:00 >>
 x := << 2:03 >>
+```
 """,
    @["type conversion"]),
   ("DateTime(string) -> DateTime",
    BuiltInFn(c4mSToDateTime),
    """
-Conversion of a string to a Con4m DateTime specification, which
-follows ISO standards, including Z, though see notes on the separate
-Date type.
+Conversion of a `string` to a `DateTime` type, which follows ISO standards, including Z, though see notes on the separate Date type.
 
 The following are valid DateType objects:
-
+```
 x := DateTime("2004-01-06T12:23:01+23:00")
 x := DateTime("--03T2:03")
 x := DateTime("2 Jan, 2004 T 12:23:01+23:00")
+```
 
-The following are identical, except that syntax errors are surfaced before
-execution begins:
-
+The following are identical, except that syntax errors are surfaced before execution begins:
+```
 x := << 2004-01-06T12:23:01+23:00 >>
 x := << --03T2:03 >>
 x := << 2 Jan, 2004 T 12:23:01+23:00 >>
+```
 """,
    @["type conversion"]),
   ("char(int) -> char",
@@ -1614,44 +1583,42 @@ x := << 2 Jan, 2004 T 12:23:01+23:00 >>
   ("to_sec(Duration) -> int",
    BuiltInFn(c4mDurAsSec),
    """
-Convert a Duration object into an int representing seconds, truncating any
-sub-second information.
+Convert a Duration object into an int representing seconds, truncating any sub-second information.
 """,
    @["type conversion"]),
   ("to_type(string) -> typespec",
    BuiltInFn(c4mStrToType),
    """
-Turns a string into a con4m typespec object.  Errors cause execution to terminate with an error.  Generally, this shouldn't be necessary in user configuration files.  Even if the user needs to name a type in a config file, the can directly write type literals.
+Turns a `string` into a `typespec` object. Errors cause execution to terminate with an error. Generally, this shouldn't be necessary in user configuration files. Even if the user needs to name a type in a config file, the can directly write type literals.
 
 For instance:
-
+```
 x := to_type("list[string]")
-
+```
 is equal to:
-
+```
 x := list[string]
+```
 """,
    @["type conversion"]),
   ("to_chars(string) -> list[char]",
    BuiltInFn(c4mStrToChars),
    """
-Turns a string into an array of characters.  Note that these are unicode
- characters, not ASCII characters.  Use to_bytes() to turn into bytes.
+Turns a `string` into an array of characters. These are unicode characters, not ASCII characters. Use `to_bytes()` to turn into bytes.
 
-Note that if the string isn't valid UTF-8, evaluation will stop with an error.
+If the string isn't valid UTF-8, evaluation will stop with an error.
 """,
    @["type conversion"]),
   ("to_bytes(string) -> list[char]",
    BuiltInFn(c4mStrToBytes),
    """
-Turns a string into an array of 8-bit bytes.
+Turns a `string` into an array of 8-bit bytes.
 """,
    @["type conversion"]),
   ("to_string(list[char]) -> string",
    BuiltInFn(c4mCharsToString),
    """
-Turn a list of characters into a string object.  Will work for both arrays
- utf8 codepoints and for raw bytes.
+Turn a list of characters into a `string` object. Will work for both arrays utf8 codepoints and for raw bytes.
 """,
    @["type conversion"]),
 
@@ -1680,54 +1647,42 @@ Turn a list of characters into a string object.  Will work for both arrays
   # String manipulation functions.
   ("contains(string, string) -> bool",
    BuiltInFn(c4mContainsStrStr),
-   "Returns true if the first argument contains the second argument.",
+   "Returns `true` if the first argument contains the second argument.",
    @["string"]),
   ("find(string, string) -> int",
    BuiltInFn(c4mFindFromStart),
    """
-If the first argument contains the first string anywhere in it, this
-returns the index of the first match.  Otherwise, it returns -1 to
- indicate no match.
+If the first argument contains the first `string` anywhere in it, this returns the index of the first match. Otherwise, it returns -1 to indicate no match.
 """,
    @["string"]),
   ("len(string) -> int",
    BuiltInFn(c4mStrLen),
    """
-Returns the length of a string in bytes.  This does NOT return the number
- of characters if there are multi-byte characters.  utf8_len() does that.
+Returns the length of a `string` in bytes. This does NOT return the number of characters if there are multi-byte characters. `utf8_len()` does that.
 """,
    @["string"]),
   ("slice(string, int) -> string",
    BuiltInFn(c4mSliceToEnd),
    """
-Returns a new string that's a substring of the first one, starting at
-the given index, continuing through to the end of the string.  This has
-Python-like semantics, accepting negative numbers to index from the back.
+Returns a new `string` that's a substring of the first one, starting at the given index, continuing through to the end of the string. This has Python-like semantics, accepting negative numbers to index from the back.
 """,
    @["string"]),
   ("slice(string, int, int) -> string",
    BuiltInFn(c4mSlice),
    """
-Returns a new string that's a substring of the first one, starting at
-the given index, continuing through to the second index (non-inclusive).
-This has python-like semantics, accepting negative numbers to index from
-the back.
+Returns a new `string` that's a substring of the first one, starting at the given index, continuing through to the second index (non-inclusive). This has Python-like semantics, accepting negative numbers to index from the back.
 """,
    @["string"]),
   ("slice(list[`x], int, int) -> list[`x]",
    BuiltInFn(c4mListSlice),
    """
-Returns a new list that's derived by copying fromthe first one, starting at
-the given index, continuing through to the second index (non-inclusive).
-This has python-like semantics, accepting negative numbers to index from
-the back.
+Returns a new list that's derived by copying from the first one, starting at the given index, continuing through to the second index (non-inclusive). This has python-like semantics, accepting negative numbers to index from the back.
 """,
    @["string"]),
   ("split(string,string) -> list[string]",
    BuiltInFn(c4mSplit),
    """
-Turns a list into an array by splitting the first string based on the second
-string.  The second string will not appear in the output.
+Turns a list into an array by splitting the first `string` based on the second `string`. The second `string` will not appear in the output.
 """,
    @["string"]),
   ("strip(string) -> string",
@@ -1739,44 +1694,32 @@ Returns a copy of the input, with any leading or trailing white space removed.
   ("pad(string, int) -> string",
    BuiltInFn(c4mPad),
    """
-Return a copy of the input string that is at least as wide as
-indicated by the integer parameter. If the input string is not long
-enough, spaces are added to the end.
+Return a copy of the input `string` that is at least as wide as indicated by the integer parameter. If the input `string` is not long enough, spaces are added to the end.
 """,
    @["string"]),
   ("format(string) -> string",
    BuiltInFn(c4mFormat),
    """
-Makes substitutions within a string, based on variables that are in
-scope. For the input string, anything inside braces {} will be treated
-as a specifier. You can access attributes that are out of scope by
-fully dotting from the top-level name. Note that all tags are
-currently part of the dotted name. You can use both attributes and
-variables in a specifier. Strings, bools, ints and floats are
-acceptable for specifiers, but lists and dictionaries are not. Note
-that there is currently no way to specify things like padding and
-alignment in a format specifier. If you want to insert an actual { or
-} character that shouldn't be part of a specifier, quote them by
-doubling them up (e.g., {{ to get a single left brace)
+Makes substitutions within a `string`, based on variables that are in scope. For the input `string`, anything inside braces {} will be treated as a specifier. You can access attributes that are out of scope by fully dotting from the top-level name. All tags are currently part of the dotted name. You can use both attributes and variables in a specifier. strings, bools, ints and floats are acceptable for specifiers, but lists and dictionaries are not.
+
+There is currently no way to specify things like padding and alignment in a format specifier. If you want to insert an actual { or } character that shouldn't be part of a specifier, quote them by doubling them up (e.g., {{ to get a single left brace).
 """,
    @["string"]),
   ("base64(string) -> string",
    BuiltInFn(c4mBase64),
    """
-Returns a base64-encoded version of the string, using the traditional
-Base64 character set.
+Returns a base64-encoded version of the `string`, using the traditional Base64 character set.
 """,
    @["string"]),
   ("base64_web(string) -> string",
    BuiltInFn(c4mBase64Web),
    """
-Returns a base64-encoded version of the string, using the web-safe
-Base64 character set.
+Returns a base64-encoded version of the `string`, using the web-safe Base64 character set.
 """,
    @["string"]),
   ("debase64(string) -> string",
    BuiltInFn(c4mDecode64),
-   "Decodes a base64 encoded string, accepting either common character set",
+   "Decodes a base64 encoded `string`, accepting either common character set.",
    @["string"]),
   ("hex(string) -> string",
    BuiltInFn(c4mToHex),
@@ -1784,114 +1727,99 @@ Base64 character set.
    @["string"]),
   ("hex(int) -> string",
    BuiltInFn(c4mIntToHex),
-   "Turns an integer into a hex-encoded string",
+   "Turns an integer into a hex-encoded `string`.",
    @["string"]),
   ("dehex(string) -> string",
    BuiltInFn(c4mFromHex),
    """
-Takes a hex-encoded string, and returns a string with the hex-decoded bytes
+Takes a hex-encoded `string`, and returns a `string` with the hex-decoded bytes.
 """,
    @["string"]),
   ("sha256(string) -> string",
    BuiltInFn(c4mSha256),
    """
-Computes the SHA-256 hash of a string, returning the result as a hex-encoded
-string.
+Computes the SHA-256 hash of a `string`, returning the result as a hex-encoded `string`.
 """
    ,
    @["string"]),
   ("sha512(string) -> string",
    BuiltInFn(c4mSha512),
    """
-Computes the SHA-512 hash of a string, returning the result as a hex-encoded
-string.
+Computes the SHA-512 hash of a `string`, returning the result as a hex-encoded `string`.
 """,
    @["string"]),
   ("upper(string) -> string",
    BuiltInFn(c4mUpper),
    """
-Converts any unicode characters to their upper-case representation, where
-possible, leaving them alone where not.
+Converts any unicode characters to their upper-case representation, where possible, leaving them alone where not.
 """,
    @["string"]),
   ("lower(string) -> string",
    BuiltInFn(c4mLower),
    """
-Converts any unicode characters to their lower-case representation, where
-possible, leaving them alone where not.
+Converts any unicode characters to their lower-case representation, where possible, leaving them alone where not.
 """,
    @["string"]),
   ("join(list[string], string) -> string",
    BuiltInFn(c4mJoin),
    """
-Creates a single string from a list of string, by adding the second
-value between each item in the list.
+Creates a single `string` from a list of `string`, by adding the second value between each item in the list.
 """,
    @["string"]),
   ("replace(string, string, string)->string",
    BuiltInFn(c4mReplace),
    """
-Return a copy of the first argument, where any instances of the second
-argument are replaced with the third argument.
+Return a copy of the first argument, where any instances of the second argument are replaced with the third argument.
 """,
    @["character"]),
   ("utf8_len(char) -> int",
    BuiltInFn(c4mUTF8Len),
    """
-Return the number of UTF-8 encoded characters (aka codepoints) in a string.
+Return the number of UTF-8 encoded characters (aka codepoints) in a `string`.
 """,
    @["character"]),
   ("is_combining(char) -> bool",
    BuiltInFn(c4mIsCombining),
    """
-Returns true if a character is a UTF-8 combining character, and
-false otherwise.
+Returns `true` if a character is a UTF-8 combining character, and `false` otherwise.
 """,
    @["character"]),
   ("is_lower(char) -> bool",
    BuiltInFn(c4mIsLower),
    """
-Returns true if the given character is a lower case character, false
-otherwise.
-
+Returns `true` if the given character is a lower case character, `false` otherwise.
 This function is unicode aware.
 """,
    @["character"]),
   ("is_upper(char) -> bool",
    BuiltInFn(c4mIsUpper),
    """
-Returns true if the given character is an upper case character, false
-otherwise.
-
+Returns `true` if the given character is an upper case character, `false` otherwise.
 This function is unicode aware.
 """,
    @["character"]),
   ("is_space(char) -> bool",
    BuiltInFn(c4mIsSpace),
    """
-Returns true if the given character is a valid space character, per
- the Unicode specification.
+Returns `true` if the given character is a valid space character, per  the Unicode specification.
 """,
    @["character"]),
   ("is_alpha(char) -> bool",
    BuiltInFn(c4mIsAlpha),
    """
-Returns true if the given character is considered an alphabet
-character in the Unicode spec.
+Returns `true` if the given character is considered an alphabet character in the Unicode spec.
 """,
    @["character"]),
   ("is_num(char) -> bool",
    BuiltInFn(c4mIsNum),
    """
-Returns true if the given character is considered an number in the
-Unicode spec.
+Returns `true` if the given character is considered an number in the Unicode spec.
 """,
    @["character"]),
   ("is_alphanum(char) -> bool",
    BuiltInFn(c4mIsAlphaNum),
    """
-Returns true if the given character is considered an alpha-numeric
-character in the Unicode spec.
+Returns `true` if the given character is considered an alpha-numeric character in the Unicode spec.
 """,
    @["character"]),
 
@@ -1915,71 +1843,59 @@ character in the Unicode spec.
   ("items(dict[`x,`y]) -> list[(`x,`y)]",
    BuiltInFn(c4mDictItems),
    """
-Returns a list containing two-tuples representing the keys and values
-in a dictionary.
+Returns a list containing two-tuples representing the keys and values in a dictionary.
 """,
    @["dict"]),
   ("contains(list[`x],`x) -> bool",
    BuiltInFn(c4mListContains),
    """
-Returns true if the first argument contains the second argument.
+Returns `true` if the first argument contains the second argument.
 """,
    @["dict"]),
   ("contains(dict[`x ,`y],`x) -> bool",
    BuiltInFn(c4mDictContains),
    """
-Returns true if the second argument is a set key in the dictionary, false
-otherwise.
+Returns `true` if the second argument is a set key in the dictionary, `false` otherwise.
 """,
    @["dict"]),
   ("set(list[`x], int, `x) -> list[`x]",
    BuiltInFn(c4mLSetItem),
    """
-This creates a new list, that is a copy of the original list, except that the
-index specified by the second parameter is replaced with the value in the
-third parameter.
+This creates a new list, that is a copy of the original list, except that the index specified by the second parameter is replaced with the value in the third parameter.
 
-Note that NO values in Con4m can be mutated.  Everything copies.
+NO values in Con4m can be mutated. Everything copies.
 """,
    @["list"]),
   ("set(dict[`k,`v],`k,`v) -> dict[`k,`v]",
    BuiltInFn(c4mDSetItem),
    """
-Returns a new dictionary based on the old dictionary, except that the
-new key/value pair will be set.  If the key was set in the old dictionary,
-the value will be replaced.
+Returns a new dictionary based on the old dictionary, except that the new key/value pair will be set. If the key was set in the old dictionary, the value will be replaced.
 
-Note that NO values in Con4m can be mutated.  Everything copies.
+NO values in Con4m can be mutated. Everything copies.
 """,
    @["dict"]),
   ("delete(list[`x], `x) -> list[`x]",
    BuiltInFn(c4mLDeleteItem),
    """
-Returns a new list, based on the one passed in the first parameter,
-where any instances of the item (the second parameter) are removed.
-If the item does not appear, a copy of the original list will be
-returned.
+Returns a new list, based on the one passed in the first parameter, where any instances of the item (the second parameter) are removed. If the item does not appear, a copy of the original list will be returned.
 
-Note that NO values in Con4m can be mutated.  Everything copies.
+NO values in Con4m can be mutated. Everything copies.
 """,
    @["list"]),
   ("delete(dict[`k,`v], `k) -> dict[`k,`v]",
    BuiltInFn(c4mDDeleteItem),
    """
-Returns a new dictionary that is a copy of the input dictionary,
-except the specified key will not be present, if it existed.
+Returns a new dictionary that is a copy of the input dictionary, except the specified key will not be present, if it existed.
 
-Note that NO values in Con4m can be mutated.  Everything copies.
+NO values in Con4m can be mutated. Everything copies.
 """,
    @["dict"]),
   ("remove(list[`x], int) -> list[`x]",
    BuiltInFn(c4mLRemoveIx),
    """
-This returns a copy of the first parameter, except that the item at
-the given index in the input will not be in the output.  This has
-Python indexing semantics.
+This returns a copy of the first parameter, except that the item at the given index in the input will not be in the output. This has Python indexing semantics.
 
-Note that NO values in Con4m can be mutated.  Everything copies.
+NO values in Con4m can be mutated. Everything copies.
 """,
    @["list"]),
   ("array_add(list[`x],list[`x])->list[`x]",
@@ -1987,7 +1903,7 @@ Note that NO values in Con4m can be mutated.  Everything copies.
    """
 This creates a new list by concatenating the items in two lists.
 
-Note that Con4m requires all items in a list have a comptable type.
+Con4m requires all items in a list have a comptable type.
 """,
    @["list"]),
 
@@ -1999,69 +1915,55 @@ Note that Con4m requires all items in a list have a comptable type.
   ("list_dir(string) -> list[string]",
    BuiltInFn(c4mListDir),
    """
-Returns a list of files in the specified directory. If the directory is
-invalid, no error is given; the results will be the same as if the
-directory were empty.
+Returns a list of files in the specified directory. If the directory is invalid, no error is given; the results will be the same as if the directory were empty.
 """,
    @["filesystem"]),
   ("read_file(string) -> string",
    BuiltInFn(c4mReadFile),
    """
-Returns the contents of the file.
-On error, this will return the empty string.
+Returns the contents of the file. On error, this will return the empty `string`.
 """,
    @["filesystem"]),
   ("write_file(string, string) -> bool",
    BuiltInFn(c4mWriteFile),
    """
-Writes, to the file name given in the first argument, the value of the
-string given in the second argument. Returns true if successful, false
-otherwise.
+Writes, to the file name given in the first argument, the value of the `string` given in the second argument. Returns `true` if successful, `false` otherwise.
 """,
    @["filesystem"]),
   ("copy_file(string, string) -> bool",
    BuiltInFn(c4mCopyFile),
    """
-Copies the contents of the file specified by the first argument to the
-file specified by the second, creating the new file if necessary,
- overwriting it otherwise. Returns true if successful, false otherwise.
+Copies the contents of the file specified by the first argument to the file specified by the second, creating the new file if necessary,  overwriting it otherwise. Returns `true` if successful, `false` otherwise.
 """,
    @["filesystem"]),
   ("move_file(string, string) -> bool",
    BuiltInFn(c4mMove),
    """
-Moves the file specified by the first argument to the location specified
-by the second, overwriting any file, if present. Returns true if
-successful, false otherwise.
+Moves the file specified by the first argument to the location specified by the second, overwriting any file, if present. Returns `true` if successful, `false` otherwise.
 """,
    @["filesystem"]),
   ("rm_file(string) -> bool",
    BuiltInFn(c4mRm),
    """
-Removes the specified file, if it exists, and the operation is allowed.
- Returns true if successful.
+Removes the specified file, if it exists, and the operation is allowed.  Returns `true` if successful.
 """,
    @["filesystem"]),
   ("join_path(string, string) -> string",
    BuiltInFn(c4mJoinPath),
    """
-Combines two pieces of a path in a way where you don't have to worry
-about extra slashes.
+Combines two pieces of a path in a way where you don't have to worry about extra slashes.
 """,
    @["filesystem"]),
   ("resolve_path(string) -> string",
    BuiltInFn(c4mResolvePath),
    """
-Turns a possibly relative path into an absolute path. This also
-expands home directories.
+Turns a possibly relative path into an absolute path. This also expands home directories.
 """,
    @["filesystem"]),
   ("path_split(string) -> tuple[string, string]",
    BuiltInFn(c4mSplitPath),
    """
-Separates out the final path component from the rest of the path,
-i.e., typically used to split out the file name from the remainder
-of the path.
+Separates out the final path component from the rest of the path, i.e., typically used to split out the file name from the remainder of the path.
 """,
    @["filesystem"]),
   ("cwd()->string",
@@ -2071,54 +1973,47 @@ of the path.
   ("chdir(string) -> bool",
    BuiltInFn(c4mChdir),
    """
-Changes the current working directory of the process.
-Returns true if successful.
+Changes the current working directory of the process. Returns `true` if successful.
 """,
    @["filesystem"]),
   ("mkdir(string) -> bool",
    BuiltInFn(c4mMkdir),
-   "Creates a directory, and returns true on success.",
+   "Creates a directory, and returns `true` on success.",
    @["filesystem"]),
   ("is_dir(string) -> bool",
    BuiltInFn(c4mIsDir),
    """
-Returns true if the given file name exists at the time of the call,
-and is a directory.
+Returns `true` if the given file name exists at the time of the call, and is a directory.
 """,
    @["filesystem"]),
   ("is_file(string) -> bool",
    BuiltInFn(c4mIsFile),
    """
-Returns true if the given file name exists at the time of the call,
- and is a regular file.
+Returns `true` if the given file name exists at the time of the call,  and is a regular file.
 """,
    @["filesystem"]),
   ("is_link(string) -> bool",
    BuiltInFn(c4mIsFile),
    """
-Returns true if the given file name exists at the time of the call,
-and is a link.
+Returns `true` if the given file name exists at the time of the call, and is a link.
 """,
    @["filesystem"]),
   ("chmod(string, int) -> bool",
    BuiltInFn(c4mChmod),
    """
-Attempt to set the file permissions; returns true if successful.
+Attempt to set the file permissions; returns `true` if successful.
 """,
    @["filesystem"]),
   ("file_len(string) -> int",
    BuiltInFn(c4mFileLen),
    """
-Returns the number of bytes in the specified file, or -1 if there is
-an error (e.g., no file, or not readable).
+Returns the number of bytes in the specified file, or -1 if there is an error (e.g., no file, or not readable).
    """,
    @["filesystem"]),
   ("to_tmp_file(string, string) -> string",
    BuiltInFn(c4mTmpWrite),
    """
-Writes the string in the first argument to a new temporary file.  The
-second argument specifies an extension; a random value is used in the
-tmp file name.
+Writes the `string` in the first argument to a new temporary file. The second argument specifies an extension; a random value is used in the tmp file name.
 
 This call returns the location that the file was written to.
 """,
@@ -2128,20 +2023,20 @@ This call returns the location that the file was written to.
   ("echo(*`a)",
    BuiltInFn(c4mEcho),
    """
-Output any parameters passed (after automatic conversion to string).
-Note that this outputs to stderr, NOT stdout.
-A newline is added at the end, but no spaces are added between arguments.
+Output any parameters passed (after automatic conversion to string). A newline is added at the end, but no spaces are added between arguments.
 
-This is the only function in con4m that:
-1) Accepts variable arguments
-2) Automatically converts items to strings.
+This outputs to stderr, NOT stdout.
+
+`echo()` is the only function in con4m that:
+
+- Accepts variable arguments
+- Automatically converts items to strings.
    """,
    @["system"]),
   ("abort(string)",
    BuiltInFn(c4mAbort),
    """
-Prints the given error message, then stops the entire program immediately
- (not just the config file execution).
+Prints the given error message, then stops the entire program immediately  (not just the config file execution).
 
 The exit code of the process will be 1.
 """,
@@ -2155,27 +2050,21 @@ Returns all environment variables set for the process.
   ("env(string) -> string",
    BuiltInFn(c4mEnv),
    """
-Returns the value of a specific environment variable.  If the environment
-variable isn't set, you will get the empty string, same as if the value is
-explicitly set, but to no value
+Returns the value of a specific environment variable. If the environment variable isn't set, you will get the empty string (`""`), same as if the value is explicitly set, but to no value.
 
-To distinguish between the two cases, either call env_exists() or dump
-all environment variables to a dictionary via env() and then call
-contains().
+To distinguish between the two cases, either call `env_exists()` or dump all environment variables to a dictionary via `env()` and then call `contains()`.
 """,
    @["system"]),
   ("env_exists(string) -> bool",
    BuiltInFn(c4mEnvExists),
    """
-Returns true if the parameter is a named environment variable in the current
-environment.
+Returns `true` if the parameter is a named environment variable in the current environment.
 """,
    @["system"]),
   ("set_env(string, string) -> bool",
    BuiltInFn(c4mSetEnv),
    """
-Sets the value of the environment variable passed in the first parameter,
-to the value from the second parameter. It returns true if successful.
+Sets the value of the environment variable passed in the first parameter, to the value from the second parameter. It returns `true` if successful.
 """,
    @["system"]),
   ("getpid() -> int",
@@ -2185,33 +2074,27 @@ to the value from the second parameter. It returns true if successful.
   ("quote(string)->string",
    BuiltInFn(c4mQuote),
    """
-Quote a string, so that it can be safely passed as a parameter to any shell
-(e.g., via run())
+Quote a `string`, so that it can be safely passed as a parameter to any shell (e.g., via `run()`)
 """,
   @["system"]),
   ("osname() -> string",
    BuiltInFn(c4mGetOsName),
    """
-Return a string containing the runtime operating system used.
-Possible values: 'macos', 'linux', 'windows', 'netbsd', 'freebsd', 'openbsd'
+Return a `string` containing the runtime operating system used. Possible values: "macos", "linux", "windows", "netbsd", "freebsd", "openbsd".
 """,
    @["system"]),
   ("arch() -> string",
    BuiltInFn(c4mGetArch),
    """
-Return a string containing the underlying hardware architecture.
-Supported values: amd64, arm64
+Return a `string` containing the underlying hardware architecture. Supported values: "amd64", "arm64"
 
-The value 'amd64' is returned for any x86-64 platform.  Other values may
-be returned on other operating systems, such as i386 on 32-bit X86, but
-Con4m is not built or tested against other environments.
+The value "amd64" is returned for any x86-64 platform. Other values may be returned on other operating systems, such as i386 on 32-bit X86, but Con4m is not built or tested against other environments.
 """,
    @["system"]),
   ("program_args() -> list[string]",
    BuiltInFn(c4mGetArgv),
    """
-Return the arguments passed to the program.  This does *not* include
-the program ame.
+Return the arguments passed to the program. This does *not* include the program name.
 """,
    @["system"]),
   ("program_path() -> string",
@@ -2230,15 +2113,13 @@ component.
   ("high() -> int",
    BuiltInFn(c4mIntHigh),
    """
-Returns the highest possible value storable by an int.  The int data type
-is always a signed 64-bit value, so this will always be: 9223372036854775807
+Returns the highest possible value storable by an int. The int data type is always a signed 64-bit value, so this will always be: 9223372036854775807
    """,
    @["system"]),
   ("low() -> int",
    BuiltInFn(c4mIntLow),
    """
-Returns the lowest possible value storable by an int.  The int data type
-is always a signed 64-bit value, so this will always be: -9223372036854775808
+Returns the lowest possible value storable by an int. The int data type is always a signed 64-bit value, so this will always be: -9223372036854775808
    """,
    @["system"]),
   ("rand() -> int",
@@ -2248,8 +2129,7 @@ is always a signed 64-bit value, so this will always be: -9223372036854775808
   ("now() -> int",
    BuiltInFn(c4mNow),
    """
-Return the current Unix time in ms since Jan 1, 1970.  Divide by 1000 for
-seconds.
+Return the current Unix time in ms since Jan 1, 1970. Divide by 1000 for seconds.
 """,
    @["system"]),
 
@@ -2275,16 +2155,13 @@ Returns the bitwise XOR of its parameters.
   ("shl(int, int) -> int",
    BuiltInFn(c4mBitShl),
    """
-Shifts the bits of the first argument left by the number of bits indicated
-by the second argument.
+Shifts the bits of the first argument left by the number of bits indicated by the second argument.
    """,
    @["binary_ops"]),
   ("shr(int, int) -> int",
    BuiltInFn(c4mBitShr),
    """
-Shifts the bits of the first argument right by the number of bits indicated
-by the second argument.  Note that this operation is a pure shift; it does
-NOT maintain the sign bit.
+Shifts the bits of the first argument right by the number of bits indicated by the second argument. Note that this operation is a pure shift; it does NOT maintain the sign bit.
 
 That is, it acts as if the two parameters are unsigned.
    """,
@@ -2300,16 +2177,19 @@ Returns a new integer where every bit from the input is flipped.
   ("mime_to_dict(string) -> dict[string, string]",
    BuiltInFn(c4mMimeToDict),
    """
-Takes a string consisting of mime headers, and converts them into
- a dictionary of key/value pairs.
+Takes a `string` consisting of mime headers, and converts them into  a dictionary of key/value pairs.
 
 For instance:
+```
 mime_to_dict("Content-Type: text/html\r\nCustom-Header: hi!\r\n")
+```
 
 will return:
+```
 { "Content-Type" : "text/html",
   "Custom-Header" : "hi!"
 }
+```
 
 Note that lines that aren't validly formatted are skipped.
 """,
@@ -2318,53 +2198,40 @@ Note that lines that aren't validly formatted are skipped.
   ("sections(string) -> list[string]",
    BuiltInFn(c4mSections),
    """
-This function is primarily intended to aid in custom config file
-validation, from a c42spec.
+This function is primarily intended to aid in custom config file validation, from a c42spec.
 
-In a c42spec, this function returns a list of all the available
-'sections' in the associated config file, beloinging the passed
-attribute.
+In a c42spec, this function returns a list of all the available 'sections' in the associated config file, beloinging the passed attribute.
 
-In the context of a c42 spec, this code will run in the validation
-phase that occurs after the config file has finished execution.
-
+In the context of a c42 spec, this code will run in the validation phase that occurs after the config file has finished execution.
 For instance, if the config file has:
-
+```
 net_config {
   host foo { }
   host bar { }
 
   somenum: 12
 }
+```
 
-Then sections("net_config.host") will return ["foo", "bar"]
+Then `sections("net_config.host")` will return `["foo", "bar"]`
 
-This does *not* return field values, only sections.  So, if you call:
-sections("net_config"), the result will be ["host"]; "somenum" is
-excluded.
+This does *not* return field values, only sections. So, if you call: `sections("net_config")`, the result will be `["host"]`; `"somenum"` is excluded.
 
-When not running within the context of a c42 spec, this will query the
-existing configuration file.
+When not running within the context of a c42 spec, this will query the existing configuration file.
 
-In any case, if the passed attribute doesn't exist, or has no sections
-inside it, the result will be empty.
+In any case, if the passed attribute doesn't exist, or has no sections inside it, the result will be empty.
 """,
    @["introspection"]),
   ("fields(string) -> list[string]",
    BuiltInFn(c4mFields),
 """
-This function is primarily intended to aid in custom config file
-validation, from a c42spec.
+This function is primarily intended to aid in custom config file validation, from a c42spec.
 
-In a c42spec, this function returns a list of all the available
-'fields' in the associated config file, beloinging the passed
-attribute.  Sections are ignored.
+In a c42spec, this function returns a list of all the available 'fields' in the associated config file, beloinging the passed attribute. Sections are ignored.
 
-In the context of a c42 spec, this code will run in the validation
-phase that occurs after the config file has finished execution.
-
+In the context of a c42 spec, this code will run in the validation phase that occurs after the config file has finished execution.
 For instance, if the config file has:
-
+```
 somesection {
   foo: "hello"
   bar: "world"
@@ -2372,154 +2239,116 @@ somesection {
   somesubsection {
   }
 }
+```
 
-Then fields("somesection") will return ["foo", "bar"]
-
-When not running within the context of a c42 spec, this will query the
-existing configuration file.
+Then `fields("somesection")` will return `["foo", "bar"]`
+When not running within the context of a c42 spec, this will query the existing configuration file.
 """,
    @["introspection"]),
   ("typeof(`a) -> typespec",
    BuiltInFn(c4mTypeOf),
    """
-This returns the type of the passed expression as a typespec object.
+This returns the type of the passed expression as a `typespec` object.
 
-Note that the expression is evaluated, so if it has any side effects,
-they will run.
+Note that the expression is evaluated, so if it has any side effects, they will run.
 
-Note that, if you are writing a c42 spec, and want to know the type of
-an attribute in the runtime config file, this is the WRONG call.  Pass
-the attribute name as a string to attr_type() for that.
+If you are writing a c42 spec, and want to know the type of an attribute in the runtime config file, this is the WRONG call. Pass the attribute name as a `string` to `attr_type()` for that.
 """,
    @["introspection"]),
   ("typecmp(typespec, typespec) -> bool",
    BuiltInFn(c4mCmpTypes),
    """
-Compares two types, and returns true if they are comptable, and
-false if they are not.  For example, typecmp(list[`x], [1])
-will return 'true', even though the two types aren't strictly identical.
+Compares two types, and returns `true` if they are comptable, and `false` if they are not. For example, ``typecmp(list[`x], [1])`` will return `true`, even though the two types aren't strictly identical. They are, however, compatable, if we bind ``` `x ``` to int.
 
-They are, however, compatable, if we bind `x to int.
-
-This is primarily intended to be used for custom type checking
-operations in a c42 spec.
+This is primarily intended to be used for custom type checking operations in a c42 spec.
 """,
    @["introspection"]),
   ("attr_type(string) -> typespec",
    BuiltInFn(c4mAttrGetType),
    """
-This function allows a c42 spec to retrieve the type associated with a
-specific attribute in an associated config file, at the time we're
-validating that config file, after its execution is finished.
+This function allows a c42 spec to retrieve the type associated with a specific attribute in an associated config file, at the time we're validating that config file, after its execution is finished.
 
-C42 spec files cannot check their own attributes with this field.
-Actual configuration files can.
+C42 spec files cannot check their own attributes with this field. Actual configuration files can.
    """,
    @["introspection"]),
   ("attr_typecmp(string, string) -> bool",
    BuiltInFn(c4mRefTypeCmp),
    """
-This allows the C42 specification to compare types of two attributes in the
-configuration file by attribute name.  The two lines below are functionally
-equal:
-
+This allows the C42 specification to compare types of two attributes in the configuration file by attribute name. The two lines below are functionally equal:
+```
 attr_typecmp(arg1, arg2)
+```
+and:
+```
 typecmp(attr_type(arg1), attr_type(arg2))
+```
 """,
    @["introspection"]),
   ("attr_get(string, typespec[`t]) -> `t",
    BuiltInFn(c4mGetAttr),
    """
+This function is meant to allow a c42 spec to get the value of the named attribute, after the config file has executed, during the validation process. It's imperative to provide the expected type of the return value in the second parameter.
 
-This function is meant to allow a c42 spec to get the value of the
-named attribute, after the config file has executed, during the
-validation process.  It's imperative to provide the expected type of
-the return value in the second parameter.
+It's used to dynamically check the type before returning. If it's wrong, execution will abort with an error message.
 
-It's used to dynamically check the type before returning.  If it's
-wrong, execution will abort with an error message.
+Passing in the dynamic type is important for supporting user-defined attributes of arbitrary type.
 
-Passing in the dynamic type is important for supporting user-defined
-attributes of arbitrary type.
-
-Con4m checks most types statically whenever possible, but in this
-case, there needs to be a runtime type check.
-
-As a result, you need to be sure to know what type the field you're
-querying will be.  You can use the attr_type() field to retrieve it,
-and you can be sure it will not change out from under you (unless you
-run an additional configuration file in the same evaluation context).
+Con4m checks most types statically whenever possible, but in this case, there needs to be a runtime type check.
+As a result, you need to be sure to know what type the field you're querying will be. You can use the `attr_type()` field to retrieve it, and you can be sure it will not change out from under you (unless you run an additional configuration file in the same evaluation context).
 """,
    @["introspection"]),
   ("function_exists(func) -> bool",
    BuiltInFn(c4mFnExists),
    """
-Returns true if if the function specification passed is a defined function.
+Returns `true` if if the function specification passed is a defined function.
 
-In a C42 spec, this is checking for the presense of the function in
-the user config file, while it's being validated post-execution.  The
-intent is to allow you to check dynamically for the appropriate
-user-defined callbacks existing.
+In a C42 spec, this is checking for the presense of the function in the user config file, while it's being validated post-execution. The intent is to allow you to check dynamically for the appropriate user-defined callbacks existing.
 
-If enabled outside the context of a c42 spec validation, this just
-checks the current runtime state of the current process at the time of
-evaluation.
-
+If enabled outside the context of a c42 spec validation, this just checks the current runtime state of the current process at the time of evaluation.
    """,
    @["introspection"]),
   ("attr_split(string)->tuple[string, string]",
    BuiltInFn(c4mSplitAttr),
    """
-This takes an attribute in full dot notation, and splits the final piece
-from the rest of the attribute path.
-
+This takes an attribute in full dot notation, and splits the final piece from the rest of the attribute path.
 For instance:
+```
 attr_split("config.fw_rules.default.rule2")
-
+```
 Will result in:
-
+```
 ("config.fw_rules.default", "rule2")
+```
    """,
    @["introspection"]),
   ("attr_exists(string) -> bool",
    BuiltInFn(c4mAttrExists),
    """
-In a C42 spec, this call checks the user runtime context, after
-execution (during the validation phase), returning true if the
-parameter is a valid, defined attribute, whether it's a field or a
-section.
+In a C42 spec, this call checks the user runtime context, after execution (during the validation phase), returning true if the parameter is a valid, defined attribute, whether it's a field or a section.
 """,
    @["introspection"]),
   ("add_override(string, `t) -> bool",
    BuiltInFn(c4mOverride),
    """
-This is intended to be used to set a value 'override' for an
-attribute.  A c42spec can use it to force a value in a config.  A
-configuration may also use it to force a value.
+This is intended to be used to set a value 'override' for an attribute. A c42spec can use it to force a value in a config. A configuration may also use it to force a value.
 
-Generally, overrides are always enforced once set.  They're primarily
-intended for command-line flags that are set early, to prevent the
-config file from setting different defaults.
+Generally, overrides are always enforced once set. They're primarily intended for command-line flags that are set early, to prevent the config file from setting different defaults.
 
-The con4m `getopts` facility automatically applies overrides to
-fields, if a command line flag is spec'd to set a particular
-configuration attribute.
+The Con4m `getopts` facility automatically applies overrides to fields, if a command line flag is spec'd to set a particular configuration attribute.
    """,
    @["introspection"]),
 
   ("function_doc_dump() -> string",
    BuiltInFn(c4mFuncDocDump),
   """
-Returns a JSON-encoded string consisting of a single JSON 'object' mapping
-the signatures of available functions to their documentation.
+Returns a JSON-encoded `string` consisting of a single JSON 'object' mapping the signatures of available functions to their documentation.
  """,
   @["introspection"]),
   when defined(posix):
     ("run(string) -> string",
      BuiltInFn(c4mCmd),
      """
-Execute the passed parameter via a shell, returning the output.  This
-function blocks while the subprocess runs.
+Execute the passed parameter via a shell, returning the output. This function blocks while the subprocess runs.
 
 The exit code is not returned in this version.
 
@@ -2529,9 +2358,7 @@ Stdout and Stderr are combined in the output.
     ("system(string) -> tuple[string, int]",
      BuiltInFn(c4mSystem),
      """
-Execute the passed parameter via a shell, returning a tuple containing
-the output and the return code of the subprocess. This function blocks
-while the subprocess runs.
+Execute the passed parameter via a shell, returning a tuple containing the output and the return code of the subprocess. This function blocks while the subprocess runs.
 
 Stdout and Stderr are combined in the output.
      """,
@@ -2547,20 +2374,15 @@ Stdout and Stderr are combined in the output.
     ("uname() -> list[string]",
      BuiltInFn(c4mUname),
      """
-Returns a string with common system information, generally should be the same
-as running uname -a on the commadn line.
+Returns a `string` with common system information, generally should be the same as running `uname -a` on the commadn line.
 """,
      @["posix", "system"]),
     ("using_tty() -> bool",
      BuiltInFn(c4mIsTty),
      """
-Returns true if the current process is attached to a TTY (unix
-terminal driver).  Generally, logged-in users can be expected to have
-a TTY (though some automation tools can have a TTY with no user).
+Returns `true` if the current process is attached to a TTY (unix terminal driver). Generally, logged-in users can be expected to have a TTY (though some automation tools can have a TTY with no user).
 
-Still, it's common to act as if a user is present when there is a TTY.
-For instance, it's common to default to showing colors when attached
-to a TTY, but to default to no-color otherwise.
+Still, it's common to act as if a user is present when there is a TTY. For instance, it's common to default to showing colors when attached to a TTY, but to default to no-color otherwise.
 """,
      @["posix", "system"]),
     ("tty_name() -> string",
@@ -2589,7 +2411,7 @@ proc addDefaultBuiltins*(s: ConfigState, exclusions: openarray[int] = []) =
   ## the historical order in which things were added.
   ##
   ## You can pass exclusions into the second parameter, identifying
-  ## the unique ID of functions you want to exclude.  If you pass in
+  ## the unique ID of functions you want to exclude. If you pass in
   ## invalid values, they're ignored.
 
   s.addBuiltinSet(defaultBuiltins, exclusions)
