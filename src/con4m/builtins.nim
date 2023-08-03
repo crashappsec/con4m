@@ -1242,6 +1242,92 @@ proc c4mTtyName*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack(""))
 
+proc copySection(src: AttrScope, dst: AttrScope) =
+  for k, v in src.contents:
+    if v.isA(AttrScope):
+      let
+        srcSub = v.get(AttrScope)
+        newDst = AttrScope(name: srcSub.name, config: srcSub.config)
+      copySection(srcSub, newDst)
+      newDst.parent   = some(dst)
+      dst.contents[k] = newDst
+    else:
+      let
+        srcField = v.get(Attribute)
+        newField = Attribute(name: srcField.name, scope: dst,
+                             tInfo: srcField.tInfo.copyType(),
+                             value: srcField.value)
+
+      dst.contents[k] = newField
+
+proc c4mCopyObject*(args: seq[Box], state: ConfigState): Option[Box] =
+  let
+    src      = unpack[string](args[0])
+    srcParts = src.split(".")
+    dst      = unpack[string](args[1])
+    aOrE     = attrLookup(state.attrs, srcParts, 0, vlExists)
+
+  result = falseRet
+
+  if aOrE.isA(AttrErr) or "." in dst:
+    return
+  let
+    srcAOrS = aOrE.get(AttrOrSub)
+
+  if srcAOrS.isA(Attribute):
+    return
+
+  let
+    newPathArr    = srcParts[0 ..< ^1] & @[dst]
+    conflictCheck = attrLookup(state.attrs, newPathArr, 0, vlExists)
+
+  # Conflict check trys to look it up, but tells con4m not to create it
+  # if it doesn't already exist.  If it returned something, then the
+  # object already exists, and we don't allow the copy (plus, it could
+  # be a field!)
+  if not conflictCheck.isA(AttrErr):
+    return
+
+  result = trueRet
+
+  let
+    dstAOrS    = attrLookup(state.attrs, newPathArr, 0, vlSecDef).get(AttrOrSub)
+    srcSection = srcAOrS.get(AttrScope)
+    dstSection = dstAOrS.get(AttrScope)
+
+  copySection(srcSection, dstSection)
+
+var   containerName: Option[string]
+const
+  mountInfoFile    = "/proc/self/mountinfo"
+  mountInfoPreface = "/docker/containers/"
+
+proc getContainerName*(): Option[string] {.inline.} =
+  once:
+    var f = newFileStream(mountInfoFile)
+
+    if f == nil: return none(string)
+
+    let lines = f.readAll().split("\n")
+
+    for line in lines:
+      let prefixIx = line.find(mountInfoPreface)
+      if prefixIx == -1: continue
+
+      let
+        startIx = prefixIx + mountInfoPreface.len()
+        endIx   = line.find("/", startIx)
+
+      containerName = some(line[startIx ..< endIx])
+
+  return containerName
+
+proc c4mContainerName(args: seq[Box], s: ConfigState): Option[Box] =
+  return some(pack(containerName.getOrElse("")))
+
+proc c4mInContainer(args: seq[Box], s: ConfigState): Option[Box] =
+  result = if containerName.isSome(): trueRet else: falseRet
+
 proc boolStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(false))
 proc intStub*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
@@ -1347,6 +1433,8 @@ proc newBuiltIn*(s:     ConfigState,
     let msg = getCurrentExceptionMsg()
     raise newException(ValueError,
                        fmt"When adding builtin '{sig}': {msg}")
+
+
 
 const defaultBuiltins* = [
   # Type conversion operations
@@ -2133,6 +2221,20 @@ Return the current Unix time in ms since Jan 1, 1970. Divide by 1000 for seconds
 """,
    @["system"]),
 
+  ("container_name() -> string",
+   BuiltInFn(c4mContainerName),
+   """
+Returns the name of the container we're running in, or the empty string if we
+don't seem to be running in one.
+""",
+   @["system"]),
+  ("in_container() -> bool",
+   BuiltInFn(c4mInContainer),
+   """
+Returns true if we can determine that we're running in a container, and false
+if not.
+""",
+   @["system"]),
   # Binary ops
   ("bitor(int, int) -> int",
    BuiltInFn(c4mBitOr),
@@ -2344,6 +2446,25 @@ The Con4m `getopts` facility automatically applies overrides to fields, if a com
 Returns a JSON-encoded `string` consisting of a single JSON 'object' mapping the signatures of available functions to their documentation.
  """,
   @["introspection"]),
+  ("copy_object(string, string) -> bool",
+   BuiltInFn(c4mCopyObject),
+   """
+Deep-copys a con4m object specified by full path in the first parameter, creating the object named in the second parameter.
+
+Note that the second parameter cannot be in dot notation; the new object will be created in the same scope of the object being copied.
+
+For instance, `copy_object("profile.foo", "bar")` will create `"profile.bar"`
+
+This function returns `true` on success. Reasons it would fail:
+1. The source path doesn't exist.
+2. The source path exists, but is a field, not an object.
+3. The destination already exists.
+
+Note that this function does not enforce any c42 specification
+itself. So if you copy a singleton object that doesn't comply with the
+section, nothing will complain until (and if) a validation occurs.
+""",
+   @["system"]),
   when defined(posix):
     ("run(string) -> string",
      BuiltInFn(c4mCmd),
