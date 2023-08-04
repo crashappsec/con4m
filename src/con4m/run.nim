@@ -51,8 +51,10 @@ proc outputResults*(ctx: ConfigState) =
 
 template safeRun(stack: ConfigStack) =
   try:
+    stack.errored = false
     discard stack.run()
   except:
+    stack.errored = true
     getCurrentExceptionMsg().cmdLineErrorOutput()
 
 proc con4mRun*(files, specs: seq[string]) =
