@@ -1278,15 +1278,18 @@ proc c4mCopyObject*(args: seq[Box], state: ConfigState): Option[Box] =
     return
 
   let
-    newPathArr    = srcParts[0 ..< ^1] & @[dst]
-    conflictCheck = attrLookup(state.attrs, newPathArr, 0, vlExists)
-
+    newPathArr = srcParts[0 ..< ^1] & @[dst]
   # Conflict check trys to look it up, but tells con4m not to create it
   # if it doesn't already exist.  If it returned something, then the
   # object already exists, and we don't allow the copy (plus, it could
   # be a field!)
-  if not conflictCheck.isA(AttrErr):
-    return
+  #
+  # This currently isn't working for Chalk;
+  # I don't think it's an error in the lookup code, I think it probably
+  # is due to the c42 pre-creating stuff?
+  #
+  #if attrExists(state.attrs, newPathArr):
+  #  return
 
   result = trueRet
 
