@@ -1,4 +1,4 @@
-import types, streams, run, st, tables, nimutils, c42spec, strutils, dollars
+import types, streams, legacy, st, tables, nimutils, c42spec, strutils, dollars
 
 type C4CSpecObj = ref object
   spec:  ConfigSpec
