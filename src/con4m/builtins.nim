@@ -527,6 +527,17 @@ proc c4mResolvePath*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mCwd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(getCurrentDir()))
 
+proc findExeC4m*(args: seq[Box], s: ConfigState): Option[Box] =
+  let
+    cmdName    = unpack[string](args[0])
+    extraPaths = unpack[seq[string]](args[1])
+    results    = findAllExePaths(cmdName, extraPaths, true)
+
+  if results.len() == 0:
+    return some(pack(""))
+  else:
+    return some(pack(results[0]))
+
 proc c4mChdir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let path = unpack[string](args[0])
   unprivileged:
@@ -2055,6 +2066,13 @@ Turns a possibly relative path into an absolute path. This also expands home dir
    BuiltInFn(c4mSplitPath),
    """
 Separates out the final path component from the rest of the path, i.e., typically used to split out the file name from the remainder of the path.
+""",
+   @["filesystem"]),
+  ("find_exe(string, list[string]) -> string",
+   BuiltInFn(findExeC4m),
+   """
+Locate an executable with the given name in the PATH, adding any extra
+directories passed in the second argument.
 """,
    @["filesystem"]),
   ("cwd()->string",

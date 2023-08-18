@@ -306,3 +306,33 @@ proc copyType*(t: Con4mType): Con4mType =
   return t.copytype(tVarCache)
 
 proc reprSig*(name: string, t: Con4mType): string = return name & $(t)
+
+
+proc getBoxType*(b: Box): Con4mType =
+  case b.kind
+  of MkStr:   return stringType
+  of MkInt:   return intType
+  of MkFloat: return floatType
+  of MkBool:  return boolType
+  of MkSeq:
+    var itemTypes: seq[Con4mType]
+    let l = unpack[seq[Box]](b)
+
+    if l.len() == 0:
+      return newListType(newTypeVar())
+
+    for item in l:
+      itemTypes.add(item.getBoxType())
+    for item in itemTypes[1..^1]:
+      if item.unify(itemTypes[0]).isBottom():
+        return Con4mType(kind: TypeTuple, itemTypes: itemTypes)
+    return newListType(itemTypes[0])
+  of MkTable:
+    # This is a lie, but con4m doesn't have real objects, or a "Json" / Mixed
+    # type, so we'll just continue to special case dicts.
+    return newDictType(stringType, newTypeVar())
+  else:
+    return newTypeVar() # The JSON "Null" can stand in for any type.
+
+proc checkAutoType*(b: Box, t: Con4mType): bool =
+  return not b.getBoxType().unify(t).isBottom()
