@@ -7,7 +7,11 @@
 
 import os, tables, osproc, strformat, strutils, options, streams, base64,
        macros, nimSHA2, types, typecheck, st, parse, nimutils, errmsg,
-       otherlits, treecheck, dollars, unicode, json
+       otherlits, treecheck, dollars, unicode, json, httpclient, net, uri,
+       openssl
+
+proc SSL_CTX_load_verify_file(ctx: SslCtx, CAfile: cstring):
+                       cint {.cdecl, dynlib: DLLSSLName, importc.}
 
 when defined(posix):
   import posix
@@ -1156,6 +1160,94 @@ proc c4mFuncDocDump*(args: seq[Box], localstate: ConfigState): Option[Box] =
 
   return some(pack($(retObj)))
 
+
+proc c4mUrlBase*(url: string, post: bool, body: string,
+                 headers: OrderedTableRef[string, string],
+                pinnedCert: string, timeout: int): string =
+  ## For now, the funcs that call us provide no interface to the timeout;
+  ## they hardcode to 5 seconds.
+
+  var
+    uri:      Uri = parseURI(url)
+    tups:     seq[(string, string)]
+    client:   HttpClient
+    hdrObj:   HttpHeaders
+    context:  SslContext
+    response: Response
+
+  if headers != nil:
+    for k, v in headers:
+      tups.add((k, v))
+
+  hdrObj = newHttpHeaders(tups)
+
+  if uri.scheme == "https":
+    context = newContext(verifyMode = CVerifyPeer)
+    if pinnedCert != "":
+      discard context.context.SSL_CTX_load_verify_file(pinnedCert)
+    client = newHttpClient(sslContext = context, timeout = timeout)
+  else:
+    client = newHttpClient(timeout = timeout)
+
+  if client == nil:
+    return "ERR 000 Invalid HTTP configuration"
+
+  if post:
+    response = client.request(url = uri, httpMethod = HttpPost,
+                                    body = body, headers = hdrObj)
+  else:
+    response = client.request(url = uri, httpMethod = HttpGet,
+                                    headers = hdrObj)
+  if response.status[0] != '2':
+    result = "ERR " & response.status
+
+  elif response.bodyStream == nil:
+    result = "ERR 000 Response body was empty (internal error?)"
+
+  else:
+    try:
+      result = response.bodyStream.readAll()
+    except:
+      result = "ERR 000 Read of response output stream failed."
+
+  client.close()
+
+proc c4mUrlGet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    url    = unpack[string](args[0])
+    res    = url.c4mUrlBase(post = false, body = "", headers = nil,
+                            pinnedCert = "", timeout = 5)
+
+  result = some(pack(res))
+
+proc c4mUrlGetPinned*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    url    = unpack[string](args[0])
+    cert   = unpack[string](args[1])
+    res    = url.c4mUrlBase(post = false, body = "", headers = nil,
+                            pinnedCert = cert, timeout = 5)
+
+  result = some(pack(res))
+
+proc c4mUrlPost*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    url     = unpack[string](args[0])
+    body    = unpack[string](args[1])
+    headers = unpack[OrderedTableRef[string, string]](args[2])
+    res     = url.c4mUrlBase(true, body, headers, pinnedCert = "", timeout = 5)
+
+  result = some(pack(res))
+
+proc c4mUrlPostPinned*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  let
+    url     = unpack[string](args[0])
+    body    = unpack[string](args[1])
+    headers = unpack[OrderedTableRef[string, string]](args[2])
+    cert    = unpack[string](args[3])
+    res     = url.c4mUrlBase(true, body, headers, cert, timeout = 5)
+
+  result = some(pack(res))
+
 when defined(posix):
   proc c4mCmd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     ## Generally exposed as `run(s)`
@@ -1440,15 +1532,13 @@ proc newBuiltIn*(s:     ConfigState,
                  sig:   string,
                  fn:    BuiltInFn,
                  doc:   string      = "",
-                 tags:  seq[string] = @[]) =
+                        tags:  seq[string] = @[]) =
   try:
     newCoreFunc(s, sig, fn, doc, tags)
   except:
     let msg = getCurrentExceptionMsg()
     raise newException(ValueError,
                        fmt"When adding builtin '{sig}': {msg}")
-
-
 
 const defaultBuiltins* = [
   # Type conversion operations
@@ -2486,6 +2576,59 @@ itself. So if you copy a singleton object that doesn't comply with the
 section, nothing will complain until (and if) a validation occurs.
 """,
    @["system"]),
+  ("url_get(string) -> string",
+   BuiltInFn(c4mUrlGet),
+   """
+Retrieve the contents of the given URL, returning a string. If it's
+a HTTPS URL, the remote host's certificate chain must validate for
+data to be returned.
+
+If there is an error, the first three digits will be an error code,
+followed by a space, followed by any returned message. If the error
+wasn't from a remote HTTP response code, it will be 000.
+
+Requests that take more than 5 seconds will be canceled.
+""",
+   @["network"]),
+
+  ("url_get_pinned(string, string) -> string",
+   BuiltInFn(c4mUrlGetPinned),
+   """
+Same as `url_get()`, except takes a second parameter, which is a path to a
+pinned certificate.
+
+The certificate will only be checked if it's an HTTPS connection, but
+the remote connection *must* be the party associated with the
+certificate passed, otherwise an error will be returned, instead of data.
+""",
+   @["network"]),
+  ("url_post(string, string, dict[string, string]) -> string",
+   BuiltInFn(c4mUrlPost),
+   """
+Uses HTTP post to post to a given URL, returning the resulting as a
+string, if successful. If not, the error code works the same was as
+for `url_get()`.
+
+The parameters here are:
+
+1. The URL to which to post
+2. The body to send with the request
+3. The MIME headers to send, as a dictionary. Generally you should at least
+   pass a Content-Type field (e.g., {"Content-Type" : "text/plain"}). Con4m
+   will NOT assume one for you.
+
+Requests that take more than 5 seconds will be canceled.
+""",
+   @["network"]),
+  ("url_post_pinned(string, string, dict[string, string], string) -> string",
+   BuiltInFn(c4mUrlPostPinned),
+   """
+Same as `url_post()`, but takes a certificate file location in the final
+parameter, with which HTTPS connections must authenticate against.
+""",
+   @["network"]),
+
+
   when defined(posix):
     ("run(string) -> string",
      BuiltInFn(c4mCmd),
