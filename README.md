@@ -75,7 +75,7 @@ root {
     type: bool
     require: false
   }
-  
+
     field log_level {
     choice: valid_log_levels
     default: "info"
@@ -128,7 +128,7 @@ This will add top-level flags: `--color, --no-color, -c, -C, --help, -h, --log-l
 
 It will also add a `run` command with its own sub-flags, generate a bunch of help docs, etc.
 
-And on the command line, by default, con4m is as forgiving as possible. For example, it doesn't care about spaces around an '=', and if args are required, whether you drop it.  Nor does it care if flags appear way before or after the command they're attached to (as long as there is no ambiguity).  You can even have it try to guess the top-level command so that it can be omitted or provided as a default via config file.  
+And on the command line, by default, con4m is as forgiving as possible. For example, it doesn't care about spaces around an '=', and if args are required, whether you drop it.  Nor does it care if flags appear way before or after the command they're attached to (as long as there is no ambiguity).  You can even have it try to guess the top-level command so that it can be omitted or provided as a default via config file.
 
 # Getting Started
 
