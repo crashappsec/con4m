@@ -71,12 +71,13 @@ type
     helpToPrint*: string
     parseCtx*:    ParseCtx
   ParseCtx = ref object
-    curArgs:  seq[string]
-    args:     seq[string]
-    res:      ArgResult
-    i:        int
-    parseId*: int # globally unique parse ID.
-    finalCmd*: CommandSpec
+    curArgs:    seq[string]
+    args:       seq[string]
+    res:        ArgResult
+    i:          int
+    foundCmd*:  bool
+    parseId*:   int # globally unique parse ID.
+    finalCmd*:  CommandSpec
 
 proc getValue*(f: FlagSpec): Box =
   case f.kind
@@ -516,15 +517,34 @@ proc parseCmd(ctx: var ParseCtx, spec: CommandSpec) =
         lookingForFlags = false
         ctx.i           = ctx.i + 1
         continue
-      ctx.parseOneFlag(spec, validFlags)
+      try:
+        ctx.parseOneFlag(spec, validFlags)
+      except:
+        # If we get an error when parsing a flag, but we don't have a
+        # top-level command yet, we're going to scan the whole string
+        # looking for any word that matches. If we find one, we'll
+        # assume the intent was to use that command, but that the
+        # error was with a flag.
+        if ctx.foundCmd == false:
+          while ctx.i != len(ctx.args):
+            let cur = ctx.args[ctx.i]
+            if cur in spec.commands:
+              ctx.foundCmd = true
+              break
+            else:
+              ctx.i = ctx.i + 1
+        raise # Reraise.
       continue
 
     if cur in spec.commands:
+      ctx.foundCmd = true
       ctx.i = ctx.i + 1
       if len(ctx.curArgs) < spec.minArgs:
-        argpError("Too few arguments (expected " & $(spec.minArgs) & ")")
+        argpError("Too few arguments for command " & cur &
+                  "(expected " & $(spec.minArgs) & ")")
       if len(ctx.curArgs) > spec.maxArgs:
-        argpError("Too many arguments provided (max = " & $(spec.maxArgs) & ")")
+        argpError("Too many arguments provided for command " & cur &
+          " (max = " & $(spec.maxArgs) & ")")
       ctx.res.args[ctx.res.command] = ctx.curArgs
       let nextSpec = spec.commands[cur]
       if ctx.res.command != "":
@@ -641,13 +661,15 @@ proc ambiguousParse*(spec:          CommandSpec,
   # First, try to see if no inferencing results in a full parse
   spec.computePossibleFlags()
 
+  var ctx = ParseCtx(args: args)
+
   try:
-    var ctx = ParseCtx(args: args)
     ctx.parseOne(spec)
     return @[ctx.res]
   except:
     firstError = getCurrentExceptionMsg()
-    if defaultCmd.isNone(): raise
+    if ctx.foundCmd or defaultCmd.isNone():
+      raise
     # else, ignore.
 
   let default = defaultCmd.get()
@@ -1136,7 +1158,7 @@ proc getCmdHelp*(basecmd: CommandSpec, args: seq[string]): string =
           let eht = cmd.extraHelpTopics
           if item in eht:
             legitCmds.add((false, item, getHelp(Corpus(eht), @[item])))
-          else:
+          elif not item.startswith("-"):
             stderr.writeLine("No such command: " & item)
 
     if len(legitCmds) == 0:
@@ -1240,13 +1262,28 @@ proc finalizeManagedGetopt*(runtime: ConfigState,
           if outputHelp and item.helpToPrint != "":
             stderr.writeLine(item.helpToPrint)
           return item
-        else:
+        elif cmd == "":
           matchingCmds.add(thisCmd)
 
-  raise newException(ValueError,
-                     "No explicit command provided in arguments, " &
-                       "and multiple commands match: " &
-                       matchingCmds.join(", "))
+      if cmd == "":
+        raise newException(ValueError, "Couldn't guess the command because " &
+          "multiple commands match: " & matchingCmds.join(", "))
+      # If we get here, there are one of two situations:
+      # 1) The default command isn't an actual valid command, in
+      #    which case whoever is using this API made a mistake
+      # 2) We assumed a valid command, but when we added it to the front
+      #    when we were trying all completions, we got a error.
+      #    But, currently, we're throwing away bad error messages.
+      #    So let's just give a pretty lame but clear message.
+
+      raise newException(ValueError, "Bad command line: no explicit command " &
+        "provided, and if we add the default command ('" & cmd & "') then " &
+        "the result doesn't properly parse (add the explicit command " &
+        " to see the error)")
+  else:
+    raise newException(ValueError,
+                     "No command found in input, and no default command " &
+                       "was provided by configuration.")
 
 proc runManagedGetopt*(runtime:      ConfigState,
                        args:         seq[string],

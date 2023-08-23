@@ -8,10 +8,20 @@
 import os, tables, osproc, strformat, strutils, options, streams, base64,
        macros, nimSHA2, types, typecheck, st, parse, nimutils, errmsg,
        otherlits, treecheck, dollars, unicode, json, httpclient, net, uri,
-       openssl
+       openssl, sugar, nimutils/managedtmp
 
 proc SSL_CTX_load_verify_file(ctx: SslCtx, CAfile: cstring):
                        cint {.cdecl, dynlib: DLLSSLName, importc.}
+
+var externalActionCallback: Option[(string, string) -> void]
+
+template logExternalAction*(kind: string, msg: string) =
+  if externalActionCallback.isSome():
+    let fn = externalActionCallback.get()
+    fn(kind, msg)
+
+proc setExternalActionCallback*(fn: (string, string) -> void) =
+  externalActionCallback = some(fn)
 
 when defined(posix):
   import posix
@@ -485,6 +495,8 @@ proc c4mListDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let dir = if len(args) == 0: "."
             else: resolvePath(unpack[string](args[0]))
 
+  logExternalAction("list_dir", dir)
+
   unprivileged:
     for item in walkdir(dir):
       res.add(item.path)
@@ -493,18 +505,25 @@ proc c4mListDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mReadFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
-    let f = newFileStream(resolvePath(unpack[string](args[0])), fmRead)
+    let
+      fname = resolvePath(unpack[string](args[0]))
+      f     = newFileStream(fname, fmRead)
+
     if f == nil:
       result = some(pack(""))
     else:
+      logExternalAction("read_file", fname)
       result = some(pack(f.readAll()))
       f.close()
 
 proc c4mWriteFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let f = newFileStream(resolvePath(unpack[string](args[0])), fmWrite)
+  let
+    fname = resolvePath(unpack[string](args[0]))
+    f     = newFileStream(fname, fmWrite)
 
   if f == nil: return falseRet
 
+  logExternalAction("write_file", fname)
   f.write(unpack[string](args[1]))
   f.close()
   return trueRet
@@ -521,6 +540,8 @@ proc c4mCopyFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
       copyFile(src, dst)
+      logExternalAction("copy_file", src & " -> " & dst)
+
       result = trueRet
     except:
       result = falseRet
@@ -552,10 +573,12 @@ proc c4mChdir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
       result = falseRet
 
 proc c4mMkdir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
   unprivileged:
     try:
       createDir(path)
+      logExternalAction("make_dir", path)
+
       result = trueRet
     except:
       result = falseRet
@@ -564,9 +587,12 @@ proc c4mSetEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     key = unpack[string](args[0])
     val = unpack[string](args[1])
+
   unprivileged:
     try:
       putEnv(key, val)
+      logExternalAction("set_env", key)
+
       result = trueRet
     except:
       result = falseRet
@@ -612,11 +638,14 @@ proc c4mIsLink*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 proc c4mChmod*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     path = unpack[string](args[0])
-    mode = cast[FilePermission](unpack[int](args[0]))
+    raw  = unpack[int](args[1])
+    mode = cast[FilePermission](raw)
 
   unprivileged:
     try:
       setFilePermissions(path, cast[set[FilePermission]](mode))
+      logExternalAction("chmod", path & " -> " & toOct(raw, 4))
+
       result = trueRet
     except:
       result = falseRet
@@ -635,11 +664,17 @@ proc c4mFileLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mTmpWrite*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   # args[0]: contents to write. args[1]: file extension. ret: full path
-  let path = joinPath("/tmp", getUlid(dash=false) & unpack[string](args[1]))
+  let
+    prefix = getUlid(dash=false)
+    suffix = unpack[string](args[1])
+
   try:
-    let f = newFileStream(path, fmWrite)
+    let (f, path) = getNewTempFile(prefix, suffix)
     f.write(unpack[string](args[0]))
     f.close()
+
+    logExternalAction("tmp_write", path)
+
     return some(pack(path))
   except:
     return some(pack(""))
@@ -1042,14 +1077,16 @@ proc c4mSplitAttr*(args: seq[Box], unused: ConfigState): Option[Box] =
 proc c4mRm*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   try:
     let
-      path = unpack[string](args[0])
+      path = resolvePath(unpack[string](args[0]))
       kind = getFileInfo(path, false).kind
 
     if kind == pcDir or kind == pcLinkToDir:
         removeDir(path, true)
+        logExternalAction("rm_dir", path)
         return trueRet
     else:
       removeFile(path)
+      logExternalAction("rm_file", path)
       return trueRet
   except:
     return falseRet
@@ -1205,6 +1242,7 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
     result = "ERR 000 Response body was empty (internal error?)"
 
   else:
+    logExternalAction(if post: "POST" else: "GET", url)
     try:
       result = response.bodyStream.readAll()
     except:
@@ -1272,6 +1310,7 @@ when defined(posix):
       cmd = unpack[string](args[0])
 
     unprivileged:
+      logExternalAction("run", cmd)
       let (output, _) = execCmdEx(cmd)
       result = some(pack(output))
 
@@ -1285,6 +1324,7 @@ when defined(posix):
       outlist: seq[Box] = @[]
 
     unprivileged:
+      logExternalAction("run", cmd)
       let (output, exitCode) = execCmdEx(cmd)
       outlist.add(pack(output))
       outlist.add(pack(exitCode))
