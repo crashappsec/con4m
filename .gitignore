@@ -4,3 +4,4 @@ htmldocs/
 tests/t[^.]*[^m]
 tags
 *.dSYM
+/con4m
