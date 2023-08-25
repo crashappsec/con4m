@@ -9,14 +9,14 @@ when (NimMajor, NimMinor, NimPatch) >= (1, 6, 12):
   # Someone made a move to deprecate, but they're undoing it.
   switch("warning", "BareExcept:off")
 if defined(macosx):
-  var cpu = ""
-  var target = ""
-  if defined(arm):
-    cpu = "arm64"
-    target = "arm64"
-  elif defined(amd64):
-    cpu = "amd64"
-    target = "x86_64"
-  switch("cpu", $cpu)
-  switch("passc", "-flto -target " & $target & "-apple-macos11")
-  switch("passl", "-flto -target " & $target & "-apple-macos11 -Wl,-object_path_lto,lto.o ")
+  var host: string
+
+  when defined(doAmd64Build):
+    host = "amd64"
+  else:
+    host = "arm64"
+
+  switch("cpu", host)
+  switch("passc", "-flto -target -arm64-apple-macos11")
+  switch("passl", "-flto -target -arm64-apple-macos11 " &
+    "-Wl,-object_path_lto,lto.o ")
