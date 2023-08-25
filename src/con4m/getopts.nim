@@ -512,7 +512,7 @@ proc parseCmd(ctx: var ParseCtx, spec: CommandSpec) =
   while ctx.i != len(ctx.args):
     let cur = ctx.args[ctx.i]
     # If len is 1, we pass it through, usually means 'use stdout'
-    if lookingForFlags and cur[0] == '-' and len(cur) != 1:
+    if lookingForFlags and len(cur) > 1 and cur[0] == '-':
       if cur == "--":
         lookingForFlags = false
         ctx.i           = ctx.i + 1
