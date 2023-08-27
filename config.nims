@@ -53,8 +53,8 @@ when defined(macosx):
   switch("passl", "-flto -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
-  if staticExec("rm /tmp/buildingCon4mExe").strip() == "":
-    echo "Sup dawg!"
+  if "con4m" in getCurrentDir():
+
     let
       libs   = ["ssl", "crypto"]
       libDir = getCurrentDir() & "/deps/macos/" & targetArch & "/"
