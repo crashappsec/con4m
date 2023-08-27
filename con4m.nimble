@@ -4,7 +4,7 @@ author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
 srcDir        = "src"
-bin           = @["con4m"]
+bin           = @["con4m", "bin/maclibs"]
 installExt    = @["nim", "c4m", "c42spec", "c", "h", "a"]
 
 # Dependencies
@@ -27,6 +27,3 @@ task ctest, "Build libcon4m":
   exec "cc -Wall -o bin/test src/c/test.c lib/libcon4m.a -I ~/.choosenim/toolchains/nim-1.6.10/lib/ -lc -lm -ldl"
  else:
   echo "Platform ", hostOs, " Not supported."
-
-before build:
-  exec "touch /tmp/buildingCon4mExe"
