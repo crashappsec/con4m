@@ -48,16 +48,14 @@ when defined(macosx):
 
   let
     libs   = ["ssl", "crypto"]
-    libDir = getCurrentDir() & "/deps/macos/" & hostCPU & "/"
-
-  #switch("passl", "-static")
+    libDir = getCurrentDir() & "/deps/macos/" & targetArch & "/"
 
   for item in libs:
     let libFile = "lib" & item & ".a"
     switch("passL", libDir & libFile)
     switch("dynlibOverride", item)
 
-  
+
 
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
