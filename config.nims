@@ -1,3 +1,5 @@
+import strutils
+
 switch("define", "testCases")
 switch("debugger", "native")
 switch("d", "nimPreviewHashRef")
