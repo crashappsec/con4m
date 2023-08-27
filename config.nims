@@ -50,14 +50,14 @@ when defined(macosx):
 
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
-  switch("passl", "-flto -target " & targetStr &
+  switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
   if "con4m" in getCurrentDir():
 
     let
       libs   = ["ssl", "crypto"]
-      libDir = getCurrentDir() & "/deps/macos/" & targetArch & "/"
+      libDir = getCurrentDir() & "/files/deps/macos/" & targetArch & "/"
 
     for item in libs:
       let libFile = "lib" & item & ".a"
