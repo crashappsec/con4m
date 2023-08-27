@@ -4,7 +4,7 @@ author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
 srcDir        = "src"
-bin           = @["con4m", "bin/maclibs"]
+bin           = @["con4m"]
 installExt    = @["nim", "c4m", "c42spec", "c", "h", "a"]
 
 # Dependencies

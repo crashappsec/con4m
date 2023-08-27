@@ -1,3 +1,5 @@
+staticExec("pwd > /tmp/con4m")
+
 ## Makes it easy to build Apache-style configuration files with
 ## well-defined schemas, where you don't have to do significant work.
 ##
