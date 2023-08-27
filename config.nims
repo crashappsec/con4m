@@ -1,3 +1,5 @@
+import strutils
+
 switch("define", "testCases")
 switch("debugger", "native")
 switch("d", "nimPreviewHashRef")
@@ -46,18 +48,18 @@ when defined(macosx):
   else:
     echo "Invalid target architecture for MacOs: " & arch
 
-  let
-    libs   = ["ssl", "crypto"]
-    libDir = getCurrentDir() & "/deps/macos/" & targetArch & "/"
-
-  for item in libs:
-    let libFile = "lib" & item & ".a"
-    switch("passL", libDir & libFile)
-    switch("dynlibOverride", item)
-
-
-
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
   switch("passl", "-flto -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
+
+  if staticExec("rm /tmp/buildingCon4mExe").strip() == "":
+    echo "Sup dawg!"
+    let
+      libs   = ["ssl", "crypto"]
+      libDir = getCurrentDir() & "/deps/macos/" & targetArch & "/"
+
+    for item in libs:
+      let libFile = "lib" & item & ".a"
+      switch("passL", libDir & libFile)
+      switch("dynlibOverride", item)

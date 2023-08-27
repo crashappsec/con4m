@@ -27,3 +27,6 @@ task ctest, "Build libcon4m":
   exec "cc -Wall -o bin/test src/c/test.c lib/libcon4m.a -I ~/.choosenim/toolchains/nim-1.6.10/lib/ -lc -lm -ldl"
  else:
   echo "Platform ", hostOs, " Not supported."
+
+before build:
+  exec "touch /tmp/buildingCon4mExe"
