@@ -15,7 +15,7 @@ when not defined(debug):
     switch("d", "release")
     switch("opt", "speed")
 
-if defined(macosx):
+when defined(macosx):
   # -d:arch=amd64 will allow you to specifically cross-compile to intel.
   # The .strdefine. pragma sets the variable from the -d: flag w/ the same
   # name, overriding the value of the const.
@@ -45,6 +45,19 @@ if defined(macosx):
     targetStr = "x86_64-apple-macos11"
   else:
     echo "Invalid target architecture for MacOs: " & arch
+
+  let
+    libs   = ["ssl", "crypto"]
+    libDir = getCurrentDir() & "/deps/macos/" & hostCPU & "/"
+
+  #switch("passl", "-static")
+
+  for item in libs:
+    let libFile = "lib" & item & ".a"
+    switch("passL", libDir & libFile)
+    switch("dynlibOverride", item)
+
+  
 
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
