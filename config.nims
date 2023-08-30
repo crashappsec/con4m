@@ -68,7 +68,12 @@ when defined(macosx):
       deploc = getenv("HOME")
       if not deploc.endswith("/"):
         deploc &= "/"
-      deploc &= nimblePkgRoot[1 .. ^1]
+
+      let rest = nimblePkgRoot[1 .. ^1]
+      if not rest.startswith("/"):
+        deploc &= rest
+      else:
+        deploc &= rest[1 .. ^1]
 
     else:
       deploc = nimblePkgRoot
