@@ -54,7 +54,7 @@ when defined(macosx):
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
-  if "con4m" in getCurrentDir():
+  if "files" in getCurrentDir():
 
     let
       libs   = ["ssl", "crypto"]
