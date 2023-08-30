@@ -1250,7 +1250,7 @@ proc c4mUrlGet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     url    = unpack[string](args[0])
     res    = url.c4mUrlBase(post = false, body = "", headers = nil,
-                            pinnedCert = "", timeout = 5)
+                            pinnedCert = "", timeout = 5000)
 
   result = some(pack(res))
 
@@ -1259,7 +1259,7 @@ proc c4mUrlGetPinned*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     url    = unpack[string](args[0])
     cert   = unpack[string](args[1])
     res    = url.c4mUrlBase(post = false, body = "", headers = nil,
-                            pinnedCert = cert, timeout = 5)
+                              pinnedCert = cert, timeout = 5000)
 
   result = some(pack(res))
 
@@ -1268,7 +1268,8 @@ proc c4mUrlPost*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     url     = unpack[string](args[0])
     body    = unpack[string](args[1])
     headers = unpack[OrderedTableRef[string, string]](args[2])
-    res     = url.c4mUrlBase(true, body, headers, pinnedCert = "", timeout = 5)
+    res     = url.c4mUrlBase(true, body, headers, pinnedCert = "",
+                             timeout = 5000)
 
   result = some(pack(res))
 

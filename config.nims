@@ -54,19 +54,18 @@ when defined(macosx):
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
-  if "con4m" in getCurrentDir():
-    var deploc = "/deps/macos/"
+  var deploc = "/deps/macos/"
 
-    # If we are developing nim, everything has to be under files,
-    # but if it's building the exe from nimble, there will be no files dir.
-    if "files" in getCurrentDir().listFiles():
-      deploc = "/files/" & depLoc
+  # If we are developing nim, everything has to be under files,
+  # but if it's building the exe from nimble, there will be no files dir.
+  if "pkgs2" notin getCurrentDir().listFiles():
+    deploc = "/files/" & depLoc
 
-    let
-      libs   = ["ssl", "crypto"]
-      libDir = getCurrentDir() & deploc & targetArch & "/"
+  let
+    libs   = ["ssl", "crypto"]
+    libDir = getCurrentDir() & deploc & targetArch & "/"
 
-    for item in libs:
-      let libFile = "lib" & item & ".a"
-      switch("passL", libDir & libFile)
-      switch("dynlibOverride", item)
+  for item in libs:
+    let libFile = "lib" & item & ".a"
+    switch("passL", libDir & libFile)
+    switch("dynlibOverride", item)
