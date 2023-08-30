@@ -79,9 +79,12 @@ when defined(macosx):
       deploc = nimblePkgRoot
 
     if not dirExists(deploc):
-      echo "Cannot find nimble path. Please set -d:nimblePkgRoot to the ",
-           "location where con4m lives (usually ~/.nimble/pkgs2/)"
-      quit(1)
+      echo "This is a hacky work-around for a nimble issue."
+      exec "nimble install con4m"
+      if not dirExists(deploc):
+         echo "Cannot find nimble path. Please set -d:nimblePkgRoot to the ",
+              "location where con4m lives (usually ~/.nimble/pkgs2/)"
+         quit(1)
 
     let
       latest = staticExec("ls " & deploc & " | egrep \"^con4m\" | " &
