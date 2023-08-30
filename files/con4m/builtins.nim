@@ -704,10 +704,10 @@ proc c4mFromHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     raise c4mException(getCurrentExceptionMsg())
 
 proc c4mSha256*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  return some(pack(SHA256_hex(unpack[string](args[0]))))
+  return some(pack(sha256Hex(unpack[string](args[0]))))
 
 proc c4mSha512*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  return some(pack(SHA512_hex(unpack[string](args[0]))))
+  return some(pack(sha512Hex(unpack[string](args[0]))))
 
 proc c4mUpper*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unicode.toUpper(unpack[string](args[0]))))

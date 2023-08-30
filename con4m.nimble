@@ -11,10 +11,6 @@ installExt    = @["nim", "c4m", "c42spec", "c", "h", "a"]
 requires "nim >= 1.6.12"
 requires "https://github.com/crashappsec/nimutils == 0.1.0"
 
-let s = "nimble doc --project " &
-  "--git.url:https://github.com/crashappsec/con4m.git --git.commit:v" &
-  version & " --outdir:docs src/con4m.nim"
-
 task ctest, "Build libcon4m":
  when hostOs == "linux" or hostOS == "macosx":
   exec "if [ ! -e lib ] ; then mkdir lib; fi"
