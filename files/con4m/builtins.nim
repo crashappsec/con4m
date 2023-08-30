@@ -6,7 +6,7 @@
 ## :Copyright: 2022 - 2023
 
 import os, tables, osproc, strformat, strutils, options, streams, base64,
-       macros, nimSHA2, types, typecheck, st, parse, nimutils, errmsg,
+       macros, types, typecheck, st, parse, nimutils, errmsg,
        otherlits, treecheck, dollars, unicode, json, httpclient, net, uri,
        openssl, sugar, nimutils/managedtmp
 
@@ -704,14 +704,10 @@ proc c4mFromHex*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     raise c4mException(getCurrentExceptionMsg())
 
 proc c4mSha256*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  var shaCtx = initSHA[SHA256]()
-  shaCtx.update(unpack[string](args[0]))
-  return some(pack(shaCtx.final().toHex().toLowerAscii()))
+  return some(pack(SHA256_hex(unpack[string](args[0]))))
 
 proc c4mSha512*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  var shaCtx = initSHA[SHA512]()
-  shaCtx.update(unpack[string](args[0]))
-  return some(pack(shaCtx.final().toHex().toLowerAscii()))
+  return some(pack(SHA512_hex(unpack[string](args[0]))))
 
 proc c4mUpper*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(unicode.toUpper(unpack[string](args[0]))))

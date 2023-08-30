@@ -5,6 +5,7 @@ switch("debugger", "native")
 switch("d", "nimPreviewHashRef")
 switch("d", "ssl")
 switch("d", "useOpenSSL3")
+switch("gc", "refc")
 
 when (NimMajor, NimMinor) < (1, 7):
   # Locklevels never worked and are gone but warnings persist.
