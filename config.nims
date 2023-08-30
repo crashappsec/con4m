@@ -22,7 +22,11 @@ when defined(macosx):
   # -d:arch=amd64 will allow you to specifically cross-compile to intel.
   # The .strdefine. pragma sets the variable from the -d: flag w/ the same
   # name, overriding the value of the const.
-  const arch {.strdefine.} = "detect"
+  const arch          {.strdefine.} = "detect"
+
+  # This one is used if we can't find where con4m ends up after nimble
+  # grabs the dep.
+  const nimblePkgRoot {.strdefine.} = "~/.nimble/pkgs2/"
 
   var
     targetArch = arch
@@ -54,16 +58,41 @@ when defined(macosx):
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
-  var deploc = "/deps/macos/"
+  var deploc: string
 
   # If we are developing nim, everything has to be under files,
   # but if it's building the exe from nimble, there will be no files dir.
-  if "pkgs2" notin getCurrentDir().listFiles():
-    deploc = "/files/" & depLoc
+  if "con4m" notin getCurrentDir():
+
+    if nimblePkgRoot.startsWith("~"):
+      deploc = getenv("HOME")
+      if not deploc.endswith("/"):
+        deploc &= "/"
+      deploc &= nimblePkgRoot[1 .. ^1]
+
+    else:
+      deploc = nimblePkgRoot
+
+    if not dirExists(deploc):
+      echo "Cannot find nimble path. Please set -d:nimblePkgRoot to the ",
+           "location where con4m lives (usually ~/.nimble/pkgs2/)"
+      quit(1)
+
+    let
+      latest = staticExec("ls " & deploc & " | egrep \"^con4m\" | " &
+                          "sort -V | tail -1")
+    if latest.strip() == "":
+      echo "Cannot find con4m install. Please set an appropriate nimble ",
+        "root where con4m is underneath via -d:nimblePkgRoot; we need it ",
+        "to find libraries we need to link."
+      quit(1)
+    deploc = deploc & "/" & latest & "/deps/macos/"
+  else:
+    deploc =  getCurrentDir() & "/files/deps/macos/"
 
   let
     libs   = ["ssl", "crypto"]
-    libDir = getCurrentDir() & deploc & targetArch & "/"
+    libDir = deploc & targetArch & "/"
 
   for item in libs:
     let libFile = "lib" & item & ".a"
