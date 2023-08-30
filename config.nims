@@ -90,20 +90,27 @@ when defined(macosx):
       latest = staticExec("ls " & deploc & " | egrep \"^con4m\" | " &
                           "sort -V | tail -1")
     if latest.strip() == "":
-      echo "Cannot find con4m install. Please set an appropriate nimble ",
-        "root where con4m is underneath via -d:nimblePkgRoot; we need it ",
-        "to find libraries we need to link."
-      echo "Detected directory: " & deploc
-      quit(1)
+      echo  "******************** WARNING ********************",
+            "Cannot find con4m install. You are probably installing ",
+            "it via Chalk or some similar program that uses con4m, and do ",
+            "not yet have con4m installed. The newer Nim package manager ",
+            "won't easily tell us where the tmp files it downloaded live, ",
+            "until it moves them in place, once the con4m install is done.\n",
+            "As a result, con4m will build without libraries it need to run.\n",
+            "When it's done, please run:\n\n",
+            "  rm `which con4m`\n\n",
+            "and rebuild the app you are trying to build!"
+
     deploc = deploc & "/" & latest & "/deps/macos/"
   else:
     deploc =  getCurrentDir() & "/files/deps/macos/"
 
-  let
-    libs   = ["ssl", "crypto"]
-    libDir = deploc & targetArch & "/"
+  if dirExists(depLoc):
+    let
+      libs   = ["ssl", "crypto"]
+      libDir = deploc & targetArch & "/"
 
-  for item in libs:
-    let libFile = "lib" & item & ".a"
-    switch("passL", libDir & libFile)
-    switch("dynlibOverride", item)
+    for item in libs:
+      let libFile = "lib" & item & ".a"
+      switch("passL", libDir & libFile)
+      switch("dynlibOverride", item)
