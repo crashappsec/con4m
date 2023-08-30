@@ -85,7 +85,7 @@ when defined(macosx):
       echo "Cannot find con4m install. Please set an appropriate nimble ",
         "root where con4m is underneath via -d:nimblePkgRoot; we need it ",
         "to find libraries we need to link."
-      echo "Detected directory: " & deploc"
+      echo "Detected directory: " & deploc
       quit(1)
     deploc = deploc & "/" & latest & "/deps/macos/"
   else:
