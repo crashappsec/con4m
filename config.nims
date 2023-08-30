@@ -54,11 +54,17 @@ when defined(macosx):
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 
-  if "files" in getCurrentDir():
+  if "con4m" in getCurrentDir():
+    var deploc = "/deps/macos/"
+
+    # If we are developing nim, everything has to be under files,
+    # but if it's building the exe from nimble, there will be no files dir.
+    if "files" in getCurrentDir().listFiles():
+      deploc = "/files/" & depLoc
 
     let
       libs   = ["ssl", "crypto"]
-      libDir = getCurrentDir() & "/files/deps/macos/" & targetArch & "/"
+      libDir = getCurrentDir() & deploc & targetArch & "/"
 
     for item in libs:
       let libFile = "lib" & item & ".a"
