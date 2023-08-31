@@ -90,7 +90,7 @@ when defined(macosx):
       latest = staticExec("ls " & deploc & " | egrep \"^con4m\" | " &
                           "sort -V | tail -1")
     if latest.strip() == "":
-      echo  "******************** WARNING ********************",
+      echo  "******************** WARNING ********************\n",
             "Cannot find con4m install. You are probably installing ",
             "it via Chalk or some similar program that uses con4m, and do ",
             "not yet have con4m installed. The newer Nim package manager ",

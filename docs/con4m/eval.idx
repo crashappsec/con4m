@@ -1,8 +1,0 @@
-runtimeVarLookup	con4m/eval.html#runtimeVarLookup,VarStack,string,Con4mScope	eval: runtimeVarLookup(frames: VarStack; name: string; scope: Con4mScope): Box
-runtimeVarSet	con4m/eval.html#runtimeVarSet,ConfigState,Con4mScope,string,Box	eval: runtimeVarSet(state: ConfigState; scope: Con4mScope; name: string; val: Box)
-sCall	con4m/eval.html#sCall,ConfigState,string,seq[Box],Con4mType,Option[Con4mNode]	eval: sCall(s: ConfigState; name: string; a1: seq[Box]; tinfo: Con4mType;\n      nodeOpt: Option[Con4mNode] = none(Con4mNode)): Option[Box]
-runCallback	con4m/eval.html#runCallback,ConfigState,string,seq[Box],Option[Con4mType]	eval: runCallback(s: ConfigState; name: string; args: seq[Box];\n            tinfo: Option[Con4mType] = none(Con4mType)): Option[Box]
-evalNode	con4m/eval.html#evalNode,Con4mNode,ConfigState	eval: evalNode(node: Con4mNode; s: ConfigState)
-evalTree	con4m/eval.html#evalTree,Con4mNode	eval: evalTree(node: Con4mNode): Option[ConfigState]
-evalConfig	con4m/eval.html#evalConfig,string	eval: evalConfig(filename: string): Option[(ConfigState, Con4mScope)]
-stackConfig	con4m/eval.html#stackConfig,ConfigState,string	eval: stackConfig(s: ConfigState; filename: string): Option[Con4mScope]
