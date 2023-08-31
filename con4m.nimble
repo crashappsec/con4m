@@ -5,7 +5,7 @@ description   = "A generic configuration file format that allows for flexible, l
 license       = "Apache-2.0"
 bin           = @["con4m"]
 srcDir        = "files"
-installExt    = @["nim", "c4m", "c42spec", "c", "h", "a"]
+installExt    = @["nim", "c4m", "c42spec", "c", "h", "a", "sh"]
 
 # Dependencies
 requires "nim >= 1.6.12"
@@ -20,5 +20,3 @@ task ctest, "Build libcon4m":
   exec "cc -Wall -o bin/test src/c/test.c lib/libcon4m.a -I ~/.choosenim/toolchains/nim-1.6.10/lib/ -lc -lm -ldl"
  else:
   echo "Platform ", hostOs, " Not supported."
-
-discard staticExec("pwd > /tmp/con4m-build-dir")

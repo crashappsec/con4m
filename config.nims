@@ -18,18 +18,16 @@ when not defined(debug):
     switch("d", "release")
     switch("opt", "speed")
 
+var targetArch = hostCPU
+
+
 when defined(macosx):
   # -d:arch=amd64 will allow you to specifically cross-compile to intel.
   # The .strdefine. pragma sets the variable from the -d: flag w/ the same
   # name, overriding the value of the const.
   const arch          {.strdefine.} = "detect"
 
-  # This one is used if we can't find where con4m ends up after nimble
-  # grabs the dep.
-  const nimblePkgRoot {.strdefine.} = "~/.nimble/pkgs2/"
-
   var
-    targetArch = arch
     targetStr  = ""
 
   if arch == "detect":
@@ -47,9 +45,11 @@ when defined(macosx):
     echo "Override: arch = " & arch
 
   if targetArch == "arm64":
+    echo "Building for arm64"
     targetStr = "arm64-apple-macos11"
   elif targetArch == "amd64":
     targetStr = "x86_64-apple-macos11"
+    echo "Building for amd64"
   else:
     echo "Invalid target architecture for MacOs: " & arch
 
@@ -57,60 +57,18 @@ when defined(macosx):
   switch("passc", "-flto -target " & targetStr)
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
+elif defined(linux):
+  switch("passc" "static")
 
-  var deploc: string
 
-  # If we are developing nim, everything has to be under files,
-  # but if it's building the exe from nimble, there will be no files dir.
-  if "con4m" notin getCurrentDir():
+exec thisDir() & "/bin/buildlibs.sh"
 
-    if nimblePkgRoot.startsWith("~"):
-      deploc = getenv("HOME")
-      if not deploc.endswith("/"):
-        deploc &= "/"
+let
+ deploc = thisDir() & "/deps/lib/" & hostOs & "-" & targetArch & "/"
+ libs   = ["ssl", "crypto"]
 
-      let rest = nimblePkgRoot[1 .. ^1]
-      if not rest.startswith("/"):
-        deploc &= rest
-      else:
-        deploc &= rest[1 .. ^1]
+for item in libs:
+  let libFile = "lib" & item & ".a"
 
-    else:
-      deploc = nimblePkgRoot
-
-    if not dirExists(deploc):
-      echo "This is a hacky work-around for a nimble issue."
-      exec "nimble install con4m"
-      if not dirExists(deploc):
-         echo "Cannot find nimble path. Please set -d:nimblePkgRoot to the ",
-              "location where con4m lives (usually ~/.nimble/pkgs2/)"
-         quit(1)
-
-    let
-      latest = staticExec("ls " & deploc & " | egrep \"^con4m\" | " &
-                          "sort -V | tail -1")
-    if latest.strip() == "":
-      echo  "******************** WARNING ********************\n",
-            "Cannot find con4m install. You are probably installing ",
-            "it via Chalk or some similar program that uses con4m, and do ",
-            "not yet have con4m installed. The newer Nim package manager ",
-            "won't easily tell us where the tmp files it downloaded live, ",
-            "until it moves them in place, once the con4m install is done.\n",
-            "As a result, con4m will build without libraries it need to run.\n",
-            "When it's done, please run:\n\n",
-            "  rm `which con4m`\n\n",
-            "and rebuild the app you are trying to build!"
-
-    deploc = deploc & "/" & latest & "/deps/macos/"
-  else:
-    deploc =  getCurrentDir() & "/files/deps/macos/"
-
-  if dirExists(depLoc):
-    let
-      libs   = ["ssl", "crypto"]
-      libDir = deploc & targetArch & "/"
-
-    for item in libs:
-      let libFile = "lib" & item & ".a"
-      switch("passL", libDir & libFile)
-      switch("dynlibOverride", item)
+  switch("passL", deploc & libFile)
+  switch("dynlibOverride", item)
