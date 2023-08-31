@@ -22,9 +22,3 @@ task ctest, "Build libcon4m":
   echo "Platform ", hostOs, " Not supported."
 
 discard staticExec("pwd > /tmp/con4m-build-dir")
-
-
-echo "When running con4m.nimble: "
-echo "thisDir() = ", thisDir()
-echo "getCurrentDir() = ", getCurrentDir()
-echo "pwd = ", staticExec("pwd")

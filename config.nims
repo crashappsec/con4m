@@ -18,6 +18,11 @@ when not defined(debug):
     switch("d", "release")
     switch("opt", "speed")
 
+echo "When running con4m's config.nims: "
+echo "thisDir() = ", thisDir()
+echo "getCurrentDir() = ", getCurrentDir()
+echo "pwd = ", staticExec("pwd")
+
 when defined(macosx):
   # -d:arch=amd64 will allow you to specifically cross-compile to intel.
   # The .strdefine. pragma sets the variable from the -d: flag w/ the same
