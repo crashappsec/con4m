@@ -21,10 +21,10 @@ task ctest, "Build libcon4m":
  else:
   echo "Platform ", hostOs, " Not supported."
 
-discard staticExec("pwd > /tmp/con4m-build-dir")
-
 when not withDir(thisDir(), system.fileExists("nimble.paths")):
   when not withDir(thisDir(), system.fileExists(".noloop")):
     exec "touch .noloop"
     exec "nimble setup"
+    echo "Run: echo nimble.paths"
+    exec "echo nimble.paths"
     exec "rm .noloop"

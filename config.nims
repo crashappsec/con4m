@@ -62,6 +62,9 @@ when defined(macosx):
 
   # If we are developing nim, everything has to be under files,
   # but if it's building the exe from nimble, there will be no files dir.
+  echo "In con4m's config.nims, thisDir() = ", thisDir()
+  echo "And getCurrentDir() = ", getCurrentDir()
+
   if "con4m" notin getCurrentDir():
 
     if nimblePkgRoot.startsWith("~"):
@@ -114,11 +117,3 @@ when defined(macosx):
       let libFile = "lib" & item & ".a"
       switch("passL", libDir & libFile)
       switch("dynlibOverride", item)
-
-when withDir(thisDir(), system.fileExists("nimble.paths")):
-  include "nimble.paths"
-# end Nimble config
-# begin Nimble config (version 2)
-when withDir(thisDir(), system.fileExists("nimble.paths")):
-  include "nimble.paths"
-# end Nimble config
