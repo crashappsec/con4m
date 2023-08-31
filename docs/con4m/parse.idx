@@ -1,6 +1,0 @@
-Con4mError	con4m/parse.html#Con4mError	parse: Con4mError
-fatal	con4m/parse.html#fatal,string,Con4mToken	parse: fatal(msg: string; token: Con4mToken)
-fatal	con4m/parse.html#fatal,string,Con4mNode	parse: fatal(msg: string; node: Con4mNode = nil)
-parse	con4m/parse.html#parse,seq[Con4mToken],string	parse: parse(tokens: seq[Con4mToken]; filename: string): Con4mNode
-parse	con4m/parse.html#parse,Stream,string	parse: parse(s: Stream; filename: string = &quot;&quot;): Con4mNode
-parse	con4m/parse.html#parse,string	parse: parse(filename: string): Con4mNode

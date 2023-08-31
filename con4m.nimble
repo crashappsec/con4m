@@ -1,20 +1,15 @@
 # Package
-version       = "0.8.10"
+version       = "0.1.0"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
-srcDir        = "files"
 bin           = @["con4m"]
+srcDir        = "files"
 installExt    = @["nim", "c4m", "c42spec", "c", "h", "a"]
 
 # Dependencies
-requires "nim >= 1.6.10"
-requires "https://github.com/crashappsec/nimutils == 0.4.7"
-requires "nimSHA2 == 0.1.1"
-
-let s = "nimble doc --project " &
-  "--git.url:https://github.com/crashappsec/con4m.git --git.commit:v" &
-  version & " --outdir:docs src/con4m.nim"
+requires "nim >= 1.6.12"
+requires "https://github.com/crashappsec/nimutils == 0.1.0"
 
 task ctest, "Build libcon4m":
  when hostOs == "linux" or hostOS == "macosx":

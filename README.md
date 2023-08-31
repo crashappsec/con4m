@@ -1,28 +1,84 @@
 # Con4m: Configuration and Far More
 
-By the 1.0 release, Con4m will be easily available in Go, Python, C and Nim (in which it's written).  Currently, we build both a command-line and libcon4m, so C and Nim are particularly easy.  Once we get closer to 1.0 and the API is stable and well documented, we'll build deeper integrations with those languages.
+Con4m makes it easy to give users rich configurability via config
+files and command line flags. You just have to write a spec to get
+your config file format and your command line flags / parsing. 
+
+You can do all of your input validation either through Con4m's built
+in constraints, or through custom validation routines (themselves
+written in con4m). Your main program can skip all that logic, and just
+get (or set) fields through a simple API.
+
+You can also document all your fields, commands and flags in your
+spec, which is then all easily accessible at runtime, or export the
+whole thing to JSon.
+
+
+By the 1.0 release, Con4m will be easily available in Go, Python, C
+and Nim (in which it's written).  Currently, we build both a
+command-line and libcon4m, so C and Nim are particularly easy.
+
+But we've got a long way to go before 1.0-- we have a long backlog of
+work that we only have been doing as needed for
+[Chalk](https://github.com/crashappsec/chalk); once we ship that (in
+mid Sept) we will spend significant time on it.
+
 
 ## Brief Overview
-To the typical user, Con4m looks like a normal config file, somewhere in the NginX family. But! power users get a statically typed Go-like language that seamlessly integrates, for any power user needs, but is tailored for configuration use cases (for instance, having built-in data types for things like dates, times, durations and sizes). But, Con4m can be invisible when people don't need the extra power.
+To the typical user, Con4m looks like a normal config file, somewhere
+in the NginX family. But! power users get a statically typed Go-like
+language that seamlessly integrates, for any power user needs, but is
+tailored for configuration use cases (for instance, having built-in
+data types for things like dates, times, durations and sizes). But,
+Con4m can be invisible when people don't need the extra power.
 
 You just write your own configuration file that specifies:
-1. What sections and fields your want your configuration file to have, and what properties you want them to have.
-2. What command-line commands and arguments you want to accept, and the properties you want them to have.
+
+1. What sections and fields your want your configuration file to have,
+   and what properties you want them to have.
+
+2. What command-line commands and arguments you want to accept, and
+   the properties you want them to have.
+
 3. Any other custom validation you want to do.
 
-Then, you just have to call con4m, passing your config, and then your user's configuration file. You'll then be able to query results, and if you like, change values, run callbacks, run additional config files in the same context (or in different contexts)...
+Then, you just have to call con4m, passing your config, and then your
+user's configuration file. You'll then be able to query results, and
+if you like, change values, run callbacks, run additional config files
+in the same context (or in different contexts)...
 
-As an example, replicating the whole of the command-line parsing for Docker took me about two hours, most of which was copying from their docs.
+As an example, replicating the whole of the command-line parsing for
+Docker took me about two hours, most of which was copying from their
+docs.
 
-Con4m validates configuration files before loading them, even making sure the types and values all what YOU need them to be, if your provide a brief specification defining the schema you want for your config files.  That validation can include common constraints, (like the value must be from a fixed list, must be in a particular range).  There are also constraints for field dependencies, and the ability to write custom field checkers. You basically just write the spec for what you want to accept in your config file, in Con4m, naturally.
+Con4m validates configuration files before loading them, even making
+sure the types and values all what YOU need them to be, if your
+provide a brief specification defining the schema you want for your
+config files.  That validation can include common constraints, (like
+the value must be from a fixed list, must be in a particular range).
+There are also constraints for field dependencies, and the ability to
+write custom field checkers. You basically just write the spec for
+what you want to accept in your config file, in Con4m, naturally.
 
-You are in total control-- do you want command-line flags to take prescendence over env variables?  Over the config file?  Do you want users to be able to add their own environment variables to suit their own needs?  It's all easy.
+You are in total control-- do you want command-line flags to take
+prescendence over env variables?  Over the config file?  Do you want
+users to be able to add their own environment variables to suit their
+own needs?  It's all easy.
 
-Con4m also allows you to 'stack' configuration files. For instance, the app can load an internal default configuration hardcoded into the program, then layer a system-level config over it, then layer a local config on top.
+Con4m also allows you to 'stack' configuration files. For instance,
+the app can load an internal default configuration hardcoded into the
+program, then layer a system-level config over it, then layer a local
+config on top.
 
-After the configuration file loads, you can call any user-defined functions provided, if your application might need feedback from the user after configuration loads.
+After the configuration file loads, you can call any user-defined
+functions provided, if your application might need feedback from the
+user after configuration loads.
 
-You can also create your own builtin functions to make available to users who use the scripting capabilities.  Con4m currently offers over 100 builtins, which you can selectively disable if you so choose.  We always drop privs before running, and you can easily make full audits available.
+You can also create your own builtin functions to make available to
+users who use the scripting capabilities.  Con4m currently offers over
+100 builtins, which you can selectively disable if you so choose.  We
+always drop privs before running, and you can easily make full audits
+available.
 
 ## Basic Example
 
@@ -124,38 +180,55 @@ getopts {
 }
 ```
 
-This will add top-level flags: `--color, --no-color, -c, -C, --help, -h, --log-level, -l, --info, --warn, --error, --verbose`.
+This will add top-level flags: `--color, --no-color, -c, -C, --help,
+-h, --log-level, -l, --info, --warn, --error, --verbose`.
 
-It will also add a `run` command with its own sub-flags, generate a bunch of help docs, etc.
+It will also add a `run` command with its own sub-flags, generate a
+bunch of help docs, etc.
 
-And on the command line, by default, con4m is as forgiving as possible. For example, it doesn't care about spaces around an '=', and if args are required, whether you drop it.  Nor does it care if flags appear way before or after the command they're attached to (as long as there is no ambiguity).  You can even have it try to guess the top-level command so that it can be omitted or provided as a default via config file.
+And on the command line, by default, con4m is as forgiving as
+possible. For example, it doesn't care about spaces around an '=', and
+if args are required, whether you drop it.  Nor does it care if flags
+appear way before or after the command they're attached to (as long as
+there is no ambiguity).  You can even have it try to guess the
+top-level command so that it can be omitted or provided as a default
+via config file.
 
 # Getting Started
 
-Currently, Con4m hasn't been officially released. We expect to provide a distro with the stand-alone compiler.  But if you're interested, you could use it, or at least, follow along while we're working.
+Currently, Con4m hasn't been officially released. We expect to provide
+a distro with the stand-alone compiler.  But if you're interested, you
+could use it, or at least, follow along while we're working.
 
-Right now, you have to build from source, which requires Nim (https://nim-lang.org/), a systems language that's fast and has strong memory safety by default, yet somehow feels like Python.
+Right now, you have to build from source, which requires Nim
+(https://nim-lang.org/), a systems language that's fast and has strong
+memory safety by default, yet somehow feels like Python. But it
+doesn't have much of an ecosystem.
 
-If you have Nim installed, you can easily install the current version with nimble:
+If you have Nim installed, you can easily install the current version
+with nimble:
 
 ```bash
 nimble install https://github.com/crashappsec/con4m
 ```
 
-Then, you can run the `con4m` compiler, link to libcon4m, or, if you're a Nim user, simply `import con4m`
+Then, you can run the `con4m` compiler, link to libcon4m, or, if
+you're a Nim user, simply `import con4m`
 
 # More Information
 
-- Getting started.
-- [Learn about the Con4m configuration file syntax](docs/writing.md). It’s familiar, fast, easy, while being just powerful enough. And it always terminates.  This is currently a bit out of date... we'll do a doc run before 1.0.
-- [Con4m API docs for Nim.](docs/nim-api.md)
-- Browse the current list of [builtin function calls](docs/builtins.md).  This is similarly a bit out of date.
-- Learn about planned features in [the Github backlog](https://github.com/crashappsec/con4m/issues).
+There's a lot of documentation embedded in con4m, but we will focus on
+documentation later in the year. For now, the core capabilities are
+best documented in the Chalk documentation, since it's the Chalk
+config file format.
+
+[Chalk](https://github.com/crashappsec/chalk)
 
 # About
 
 Con4m is open source under the Apache 2.0 license.
 
-Con4m was written by John Viega (john@crashoverride.com).
+Con4m was written by John Viega (john@crashoverride.com), originally
+for Chalk and other to-be-named projects, because other options for
+flexibile configs (like HCL, or YAML DSLs) all kinda suck.
 
-Pull requests are welcome! If you want to make this work in another language, please do reach out to be first.
