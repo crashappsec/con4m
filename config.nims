@@ -52,13 +52,18 @@ when defined(macosx):
     echo "Building for amd64"
   else:
     echo "Invalid target architecture for MacOs: " & arch
+    exit
 
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
 elif defined(linux):
-  switch("passc" "static")
+  switch("passc", "-static")
+  switch("passl", "-static")
+else:
+  echo "Platform not supported."
+  quit(1)
 
 
 exec thisDir() & "/bin/buildlibs.sh"
