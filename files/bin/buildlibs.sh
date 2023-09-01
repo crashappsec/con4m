@@ -129,6 +129,8 @@ function ensure_musl {
     make clean
     make
     make install
+    mv lib/*.a ${DEP_LIB}
+
     if [[ -f ${MUSL_GCC_OUTPUT_LOC} ]] ; then
       echo $(color green "Installed musl wrapper to " ${MUSL_GCC_INSTALL_LOC})
     else
