@@ -64,7 +64,8 @@ no-weak-ssl-ciphers
 no-zlib
 " | tr '\n' ' ')
 
-MUSL_GCC_INSTALL_LOC=${DEP_USR}/musl/bin/musl-gcc
+MUSL_GCC_OUTPUT_LOC=${DEP_USR}/musl/bin/musl-gcc
+MUSL_GCC_INSTALL_LOC=${DEP_USR}/musl/bin/musl-gcc.sh
 
 mkdir -p ${DEP_LIB}
 
@@ -128,13 +129,14 @@ function ensure_musl {
     make clean
     make
     make install
-    if [[ -f ${MUSL_GCC_INSTALL_LOC} ]] ; then
+    if [[ -f ${MUSL_GCC_OUTPUT_LOC} ]] ; then
       echo $(color green "Installed musl wrapper to " ${MUSL_GCC_INSTALL_LOC})
     else
       echo $(color red "Installation of musl failed!")
       exit 1
     fi
   fi
+  mv ${MUSL_GCC_OUTPUT_LOC} ${MUSL_GCC_INSTALL_LOC}
   export CC=${MUSL_GCC_INSTALL_LOC}
 }
 
