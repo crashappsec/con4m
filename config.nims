@@ -64,10 +64,15 @@ else:
   echo "Platform not supported."
   quit(1)
 
-exec thisDir() & "/files/bin/buildlibs.sh " & thisDir()
+var
+  subdir = ""
+if "files" in listDirs(thisDir()):
+  subdir = "/files"
+
+exec thisDir() & subdir & "/bin/buildlibs.sh " & thisDir()
 
 let
- deploc = thisDir() & "/files/deps/lib/" & hostOs & "-" & targetArch & "/"
+ deploc = thisDir() & subdir & "/deps/lib/" & hostOs & "-" & targetArch & "/"
  libs   = ["ssl", "crypto"]
 
 for item in libs:
