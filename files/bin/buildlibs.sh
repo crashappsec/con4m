@@ -66,7 +66,6 @@ no-zlib
 
 MUSL_GCC_OUTPUT_LOC=${DEP_USR}/musl/bin/musl-gcc
 MUSL_GCC_INSTALL_LOC=${DEP_USR}/musl/bin/musl-gcc.sh
-MUSL_SPEC_OUT_LOC=${DEP_USR}/musl/bin/musl-gcc.specs
 
 mkdir -p ${DEP_LIB}
 
@@ -137,15 +136,7 @@ function ensure_musl {
       exit 1
     fi
   fi
-  # We need to move the spec file.
-  SPEC_FILE=$(grep exec  ${MUSL_GCC_OUTPUT_LOC} | sed 's/.*\"\(.*\)\"$/\1/')
-  mv ${SPEC_FILE} ${MUSL_SPEC_OUT_LOC}
-  cat > ${MUSL_GCC_OUTPUT_LOC} <<EOF
-#!/bin/sh
-exec "${REALGCC:-gcc}" "$@" -specs "${SPEC_FILE}"
-EOF
-    chmod +x ${MUSL_GCC_OUTPUT_LOC}
-
+  mv ${MUSL_GCC_OUTPUT_LOC} ${MUSL_GCC_INSTALL_LOC}
   export CC=${MUSL_GCC_INSTALL_LOC}
 }
 
