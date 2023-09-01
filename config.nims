@@ -66,7 +66,6 @@ else:
   quit(1)
 
 echo staticexec("ls " & thisDir())
-echo ("sleep 50")
 exec thisDir() & "/bin/buildlibs.sh"
 
 let

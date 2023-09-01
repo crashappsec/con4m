@@ -4,9 +4,9 @@ author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
 bin           = @["con4m"]
-srcDir        = "files"
+srcDir        = "src"
 skipDirs      = @[]
-skipFiles     = @["CODEOWNERS"]
+skipFiles     = @[]
 
 
 # Dependencies
