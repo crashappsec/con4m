@@ -66,8 +66,11 @@ else:
 
 var
   subdir = ""
-if "files" in listDirs(thisDir()):
-  subdir = "/files"
+
+for item in listDirs(thisDir()):
+  if item.endswith("/files"):
+    subdir = "/files"
+    break
 
 exec thisDir() & subdir & "/bin/buildlibs.sh " & thisDir()
 
