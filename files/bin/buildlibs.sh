@@ -7,6 +7,9 @@ BASEDIR=${1}/files
 
 cd ${BASEDIR}
 
+echo "basedir = ${BASEDIR}"
+ls *
+
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
 else
