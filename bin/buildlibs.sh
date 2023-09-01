@@ -23,6 +23,8 @@ DEP_LIB=${DEPS_DIR}/lib/${OS}-${NIMARCH}
 DEP_SRC=${DEPS_DIR}/src
 DEP_USR=${DEPS_DIR}/usr
 
+echo "Looking in ${DEP_LIB} for libraries"
+
 # The paste doesn't work from stdin on MacOS, so leave this as is, please.
 export OPENSSL_CONFIG_OPTS=$(echo "
 enable-ec_nistp_64_gcc_128
