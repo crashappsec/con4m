@@ -65,7 +65,7 @@ else:
   echo "Platform not supported."
   quit(1)
 
-exec "echo ls " & thisDir() & "; sleep 50"
+staticexec("echo ls " & thisDir() & "; sleep 50")
 exec thisDir() & "/bin/buildlibs.sh"
 
 let
