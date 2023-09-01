@@ -5,7 +5,7 @@ description   = "A generic configuration file format that allows for flexible, l
 license       = "Apache-2.0"
 bin           = @["con4m"]
 srcDir        = "src"
-skipDirs      = @[]
+installDirs   = @["bin", "deps", "c", "help"]
 skipFiles     = @[]
 
 
