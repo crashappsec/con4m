@@ -52,7 +52,7 @@ when defined(macosx):
     echo "Building for amd64"
   else:
     echo "Invalid target architecture for MacOs: " & arch
-    exit
+    quit(1)
 
   switch("cpu", targetArch)
   switch("passc", "-flto -target " & targetStr)
