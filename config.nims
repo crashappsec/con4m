@@ -79,7 +79,22 @@ let
  libs   = ["ssl", "crypto"]
 
 when defined(linux):
-  var muslPath = getEnv("LOCAL_INSTALL_DIR", "~/.local") & "/musl/bin/musl-gcc")
+  var
+    homedir = getHomeDir()
+
+  if not homedir.endswith("/"):
+    homedir &= "/"
+
+  var
+    default    = homedir & ".local/"
+    installdir = getEnv("LOCAL_INSTALL_DIR", default)
+
+  if not installDir.endsWith("/"):
+    installDir &= "/"
+
+  let
+    muslPath = installDir & "musl/bin/musl-gcc"
+
   switch("gcc.exe", muslPath)
   switch("gcc.linkerexe", muslPath)
 
