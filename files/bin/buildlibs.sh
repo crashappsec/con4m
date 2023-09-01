@@ -8,7 +8,7 @@ BASEDIR=${1}/files
 cd ${BASEDIR}
 
 echo "basedir = ${BASEDIR}"
-ls deps/lib/*
+ls deps/lib/
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
@@ -24,7 +24,7 @@ else
     OS=linux
 fi
 
-DEPS_DIR=${DEPS_DIR:-${BASEDIR}/deps}
+DEPS_DIR=${BASEDIR}/deps
 DEP_LIB=${DEPS_DIR}/lib/${OS}-${NIMARCH}
 DEP_SRC=${DEPS_DIR}/src
 DEP_USR=${DEPS_DIR}/usr
