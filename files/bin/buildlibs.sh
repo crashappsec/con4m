@@ -29,8 +29,11 @@ DEP_SRC=${DEPS_DIR}/src
 DEP_USR=${DEPS_DIR}/usr
 
 echo "Looking in ${DEP_LIB} for libraries"
-echo "BASEDIR/deps:"
-ls $BASEDIR/deps
+echo "BASEDIR/deps/lib:"
+ls $BASEDIR/deps/lib/
+
+echo "DEP_LIB contents: "
+ls $DEP_LIB
 
 # The paste doesn't work from stdin on MacOS, so leave this as is, please.
 export OPENSSL_CONFIG_OPTS=$(echo "
