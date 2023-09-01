@@ -65,7 +65,7 @@ else:
   echo "Platform not supported."
   quit(1)
 
-exec thisDir() & "/files/bin/buildlibs.sh"
+exec thisDir() & "/files/bin/buildlibs.sh " & thisDir()
 
 let
  deploc = thisDir() & "/deps/lib/" & hostOs & "-" & targetArch & "/"
