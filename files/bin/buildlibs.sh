@@ -5,8 +5,7 @@ OS=$(uname -o)
 SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
 BASEDIR=${1}
 
-echo "ls *"
-ls *
+cd ${1}
 
 echo "basedir = ${BASEDIR}"
 
