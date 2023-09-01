@@ -6,8 +6,7 @@ SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
 BASEDIR=${1}
 
 echo "ls BASEDIR/.."
-echo ls ${BASEDIR}/..
-
+ls ${BASEDIR}/..
 
 echo "basedir = ${BASEDIR}"
 
