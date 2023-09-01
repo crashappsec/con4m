@@ -24,7 +24,9 @@ fi
 DEPS_DIR=${DEPS_DIR:-${BASEDIR}/files/deps}
 DEP_LIB=${DEPS_DIR}/lib/${OS}-${NIMARCH}
 DEP_SRC=${DEPS_DIR}/src
-DEP_USR=${DEPS_DIR}/usr
+LOCAL_INSTALL_DIR=${LOCAL_INSTALL_DIR:-${HOME}/.local}
+MUSL_INSTALL_DIR=${LOCAL_INSTALL_DIR}/musl
+MUSL_GCC_LOC=${MUSL_INSTALL_DIR}/bin/musl-gcc
 
 # The paste doesn't work from stdin on MacOS, so leave this as is, please.
 export OPENSSL_CONFIG_OPTS=$(echo "
@@ -63,9 +65,6 @@ no-uplink
 no-weak-ssl-ciphers
 no-zlib
 " | tr '\n' ' ')
-
-MUSL_GCC_OUTPUT_LOC=${DEP_USR}/musl/bin/musl-gcc
-MUSL_GCC_INSTALL_LOC=${DEP_USR}/musl/bin/musl-gcc.sh
 
 mkdir -p ${DEP_LIB}
 
@@ -120,26 +119,24 @@ function ensure_musl {
   if [[ ${OS} = "macosx" ]] ; then
       return
   fi
-  if [[ ! -f ${MUSL_GCC_INSTALL_LOC} ]] ; then
+  if [[ ! -f ${MUSL_GCC_LOC} ]] ; then
     get_src musl git://git.musl-libc.org/musl
     echo $(color cyan "Building musl")
     unset CC
-    mkdir -p ${DEP_USR}
-    ./configure --disable-shared --prefix=${DEP_USR}/musl/
+    ./configure --disable-shared --prefix=${MUSL_INSTALL_DIR}
     make clean
     make
     make install
     mv lib/*.a ${DEP_LIB}
 
-    if [[ -f ${MUSL_GCC_OUTPUT_LOC} ]] ; then
-      echo $(color green "Installed musl wrapper to " ${MUSL_GCC_INSTALL_LOC})
+    if [[ -f ${MUSL_GCC_LOC} ]] ; then
+      echo $(color green "Installed musl wrapper to " ${MUSL_GCC_LOC})
     else
       echo $(color red "Installation of musl failed!")
       exit 1
     fi
   fi
-  mv ${MUSL_GCC_OUTPUT_LOC} ${MUSL_GCC_INSTALL_LOC}
-  export CC=${MUSL_GCC_INSTALL_LOC}
+  export CC=${MUSL_GCC_LOC}
 }
 
 function install_kernel_headers {
@@ -148,7 +145,7 @@ function install_kernel_headers {
     fi
     echo $(color cyan "Installing kernel headers needed for musl install")
     get_src kernel-headers https://github.com/sabotage-linux/kernel-headers.git
-    make ARCH=${ARCH} prefix=/musl DESTDIR=${DEP_USR} install
+    make ARCH=${ARCH} prefix=/musl DESTDIR=${MUSL_INSTALL_DIR} install
 }
 
 function ensure_openssl {
@@ -212,5 +209,5 @@ ensure_musl
 ensure_openssl
 ensure_pcre
 
-echo $(color green "All dependencies installed.")
+echo $(color green "All dependencies satisfied.")
 remove_src
