@@ -1,8 +1,21 @@
 #!/bin/bash
 
-ORIGINAL_PWD=$(pwd)
 ARCH=$(uname -m)
 OS=$(uname -o)
+SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
+BASEDIR=$(realpath ${SCRIPRDIR}/..)
+
+
+echo "basedir = ${BASEDIR}"
+
+echo "ls BASEDIR/deps/"
+ls $BASEDIR/deps/
+
+echo "ls BASEDIR/deps/lib/"
+ls $BASEDIR/deps/lib
+
+echo "ls BASEDIR/deps/lib/*"
+ls $BASEDIR/deps/lib/*
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
@@ -18,7 +31,7 @@ else
     OS=linux
 fi
 
-DEPS_DIR=${DEPS_DIR:-${ORIGINAL_PWD}/deps}
+DEPS_DIR=${DEPS_DIR:-${BASEDIR}/deps}
 DEP_LIB=${DEPS_DIR}/lib/${OS}-${NIMARCH}
 DEP_SRC=${DEPS_DIR}/src
 DEP_USR=${DEPS_DIR}/usr
