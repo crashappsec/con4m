@@ -5,19 +5,10 @@ OS=$(uname -o)
 SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
 BASEDIR=${1}
 
-echo "ls BASEDIR/.."
-ls ${BASEDIR}/..
+echo "ls *"
+ls *
 
 echo "basedir = ${BASEDIR}"
-
-echo "ls BASEDIR/deps/"
-ls $BASEDIR/deps/
-
-echo "ls BASEDIR/deps/lib/"
-ls $BASEDIR/deps/lib
-
-echo "ls BASEDIR/deps/lib/*"
-ls $BASEDIR/deps/lib/*
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
