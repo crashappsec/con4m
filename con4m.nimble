@@ -52,7 +52,8 @@ exec "${REALGCC:-gcc}" "$@" -specs "X"
 EOF
 """.replace("X", specLoc)
 
-  discard staticExec(toRun)
+  echo "Fixing MUSL. Trying to run: " & toRun
+  echo staticExec(toRun)
 
 when defined(linux):
   after build:
