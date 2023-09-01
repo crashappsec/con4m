@@ -3,7 +3,7 @@
 ARCH=$(uname -m)
 OS=$(uname -o)
 SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
-BASEDIR=$1
+BASEDIR=${1}/src
 
 echo "basedir = ${BASEDIR}"
 
