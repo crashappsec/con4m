@@ -3,11 +3,9 @@
 ARCH=$(uname -m)
 OS=$(uname -o)
 SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
-BASEDIR=${1}
+BASEDIR=${1}/files
 
-cd ${1}
-
-echo "basedir = ${BASEDIR}"
+cd ${BASEDIR}
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
