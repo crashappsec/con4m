@@ -80,7 +80,7 @@ let
 
 when defined(linux):
   var
-    homedir = getHomeDir()
+    homedir = getEnv("HOME")
 
   if not homedir.endswith("/"):
     homedir &= "/"
