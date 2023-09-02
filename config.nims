@@ -76,7 +76,7 @@ exec thisDir() & subdir & "/bin/buildlibs.sh " & thisDir()
 
 let
  deploc = thisDir() & subdir & "/deps/lib/" & hostOs & "-" & targetArch & "/"
- libs   = ["ssl", "crypto"]
+ libs   = ["pcre", "ssl", "crypto"]
 
 when defined(linux):
   var
