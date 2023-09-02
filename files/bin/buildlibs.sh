@@ -67,8 +67,6 @@ no-weak-ssl-ciphers
 no-zlib
 " | tr '\n' ' ')
 
-mkdir -p ${DEP_LIB}
-
 function color {
     case $1 in
         black)

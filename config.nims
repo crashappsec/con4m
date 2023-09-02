@@ -57,6 +57,7 @@ when defined(macosx):
   switch("passc", "-flto -target " & targetStr)
   switch("passl", "-flto -w -target " & targetStr &
         "-Wl,-object_path_lto,lto.o")
+
 elif defined(linux):
   switch("passc", "-static")
   switch("passl", "-static")
@@ -72,28 +73,22 @@ for item in listDirs(thisDir()):
     subdir = "/files"
     break
 
-exec thisDir() & subdir & "/bin/buildlibs.sh" thisDir() & "/files/deps"
+proc getEnvDir(s: string, default = ""): string =
+  result = getEnv(s, default)
+  if not result.endsWith("/"):
+    result &= "/"
 
-let
- deploc = thisDir() & subdir & "/deps/lib/" & hostOs & "-" & targetArch & "/"
- libs   = ["pcre", "ssl", "crypto"]
+exec thisDir() & subdir & "/bin/buildlibs.sh " & thisDir() & "/files/deps"
+
+var
+  default  = getEnvDir("HOME") & ".local/c0"
+  localDir = getEnvDir("LOCAL_INSTALL_DIR", default)
+  libDir   = localdir & "libs"
+  libs     = ["pcre", "ssl", "crypto"]
 
 when defined(linux):
   var
-    homedir = getEnv("HOME")
-
-  if not homedir.endswith("/"):
-    homedir &= "/"
-
-  var
-    default    = homedir & ".local/"
-    installdir = getEnv("LOCAL_INSTALL_DIR", default)
-
-  if not installDir.endsWith("/"):
-    installDir &= "/"
-
-  let
-    muslPath = installDir & "musl/bin/musl-gcc"
+    muslPath = localdir & "musl/bin/musl-gcc"
 
   switch("gcc.exe", muslPath)
   switch("gcc.linkerexe", muslPath)
@@ -101,5 +96,5 @@ when defined(linux):
 for item in libs:
   let libFile = "lib" & item & ".a"
 
-  switch("passL", deploc & libFile)
+  switch("passL", libDir & "/" & libFile)
   switch("dynlibOverride", item)
