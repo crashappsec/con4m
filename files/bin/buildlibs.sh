@@ -2,10 +2,8 @@
 
 ARCH=$(uname -m)
 OS=$(uname -o)
-SCRIPTDIR=$(realpath $(dirname ${BASH_SOURCE[0]}))
-BASEDIR=${1}
 
-cd ${BASEDIR}
+cd ${DEPS_DIR}
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
@@ -21,12 +19,17 @@ else
     OS=linux
 fi
 
-DEPS_DIR=${DEPS_DIR:-${BASEDIR}/files/deps}
-DEP_LIB=${DEPS_DIR}/lib/${OS}-${NIMARCH}
-DEP_SRC=${LOCAL_INSTALL_DIR}/src
-LOCAL_INSTALL_DIR=${LOCAL_INSTALL_DIR:-${HOME}/.local}
-MUSL_INSTALL_DIR=${LOCAL_INSTALL_DIR}/musl
-MUSL_GCC_LOC=${MUSL_INSTALL_DIR}/bin/musl-gcc
+DEPS_DIR=${${BASEDIR}:-${HOME}/.local/c0}
+
+echo ${DEPS_DIR}
+exit 0
+PKG_LIBS=${1}/lib/${OS}-${NIMARCH}
+MY_LIBS=${DEPS_DIR}/libs
+SRC_DIR=${DEPS_DIR}/src
+MUSL_DIR=${DEPS_DIR}/musl
+MUSL_GCC=${MUSL_DIR}/bin/musl-gcc
+
+mkdir -p ${MY_LIBS}
 
 # The paste doesn't work from stdin on MacOS, so leave this as is, please.
 export OPENSSL_CONFIG_OPTS=$(echo "
@@ -100,16 +103,30 @@ function color {
     #echo "$2"
 }
 
-function get_src {
-  mkdir -p ${DEP_SRC}
-  cd ${DEP_SRC}
+function copy_from_pkg {
+    for item in ${@}
+    do
+        if [[ ! -f ${MY_LIBS}/${item} ]] ; then
+            if [[ ! -f ${PKG_LIBS}/${item} ]] ; then
+                return 1
+            else
+                cp ${PKG_LIBS}/${ITEM} ${MY_LIBS}
+            fi
+        fi
+    done
+    return 0
+}
 
-  if [[ ! -d ${DEP_SRC}/${1} ]] ; then
+function get_src {
+  mkdir -p ${SRC_DIR}
+  cd ${SRC_DIR}
+
+  if [[ ! -d ${SRC_DIR}/${1} ]] ; then
     echo $(color cyan "Downloading ${1} from ${2}")
     git clone ${2}
   fi
   if [[ ! -d ${1} ]] ; then
-    echo "Could not create directory: ${DEP_SRC}/${1}"
+    echo "Could not create directory: ${SRC_DIR}/${1}"
     exit 1
   fi
   cd ${1}
@@ -119,24 +136,24 @@ function ensure_musl {
   if [[ ${OS} = "macosx" ]] ; then
       return
   fi
-  if [[ ! -f ${MUSL_GCC_LOC} ]] ; then
+  if [[ ! -f ${MUSL_GCC} ]] ; then
     get_src musl git://git.musl-libc.org/musl
     echo $(color cyan "Building musl")
     unset CC
-    ./configure --disable-shared --prefix=${MUSL_INSTALL_DIR}
+    ./configure --disable-shared --prefix=${MUSL_DIR}
     make clean
     make
     make install
-    mv lib/*.a ${DEP_LIB}
+    mv lib/*.a ${MY_LIBS}
 
-    if [[ -f ${MUSL_GCC_LOC} ]] ; then
-      echo $(color green "Installed musl wrapper to " ${MUSL_GCC_LOC})
+    if [[ -f ${MUSL_GCC} ]] ; then
+      echo $(color green "Installed musl wrapper to " ${MUSL_GCC})
     else
       echo $(color red "Installation of musl failed!")
       exit 1
     fi
   fi
-  export CC=${MUSL_GCC_LOC}
+  export CC=${MUSL_GCC}
 }
 
 function install_kernel_headers {
@@ -149,7 +166,8 @@ function install_kernel_headers {
 }
 
 function ensure_openssl {
-  if [[ ! -f ${DEP_LIB}/libssl.a ]] || [[ ! -f ${DEP_LIB}/libcrypto.a ]] ; then
+
+  if [[ ! $(copy_from_package libssl.a libcrypto.a) ]] ; then
       ensure_musl
       install_kernel_headers
 
@@ -162,8 +180,8 @@ function ensure_openssl {
       fi
       make clean
       make build_libs
-      mv *.a ${DEP_LIB}
-      if [[ -f ${DEP_LIB}/libssl.a ]] && [[ -f ${DEP_LIB}/libcrypto.a ]] ; then
+      mv *.a ${MY_LIBS}
+      if [[ -f ${MY_LIBS}/libssl.a ]] && [[ -f ${MY_LIBS}/libcrypto.a ]] ; then
         echo $(color green "Installed openssl libs to ${DEP_LIB}")
       else
         echo $(color red "Installation of openssl failed!")
@@ -173,7 +191,7 @@ function ensure_openssl {
 }
 
 function ensure_pcre {
-  if [[ ! -f ${DEP_LIB}/libpcre.a ]] ; then
+  if [[ ! $(copy_from_package libpcre.a) ]] ; then
 
     get_src pcre https://github.com/luvit/pcre.git
     echo $(color cyan "Building libpcre")
@@ -183,8 +201,8 @@ function ensure_pcre {
     make clean
     make
 
-    mv .libs/libpcre.a ${DEP_LIB}
-    if [[ -f ${DEP_LIB}/libpcre.a ]] ; then
+    mv .libs/libpcre.a ${MY_LIBS}
+    if [[ -f ${MY_LIBS}/libpcre.a ]] ; then
       echo $(color green "Installed libpcre to ${DEP_LIB}")
     else
       echo $(color red "Installation of libprce failed. This may be due to missing build dependencies. Please make sure autoconf, m4 and perl are installed.")
@@ -195,10 +213,10 @@ function ensure_pcre {
 
 function remove_src {
   # Don't nuke the src if CON4M_DEV is on.
-  if [[ -d ${DEP_SRC} ]] ; then
+  if [[ -d ${SRC_DIR} ]] ; then
     if [[ -z ${CON4M_DEV+woo} ]] ; then
       echo $(color cyan "Removing code (because CON4M_DEV is not set)")
-      rm -rf ${DEP_SRC}
+      rm -rf ${SRC_DIR}
     else
       echo $(color cyan "Keeping source code (CON4M_DEV is set!)")
     fi
