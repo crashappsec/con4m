@@ -72,7 +72,7 @@ for item in listDirs(thisDir()):
     subdir = "/files"
     break
 
-exec thisDir() & subdir & "/bin/buildlibs.sh"
+exec thisDir() & subdir & "/bin/buildlibs.sh" thisDir() & "/files/deps"
 
 let
  deploc = thisDir() & subdir & "/deps/lib/" & hostOs & "-" & targetArch & "/"

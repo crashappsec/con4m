@@ -19,10 +19,8 @@ else
     OS=linux
 fi
 
-DEPS_DIR=${${BASEDIR}:-${HOME}/.local/c0}
+DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
 
-echo ${DEPS_DIR}
-exit 0
 PKG_LIBS=${1}/lib/${OS}-${NIMARCH}
 MY_LIBS=${DEPS_DIR}/libs
 SRC_DIR=${DEPS_DIR}/src
@@ -103,14 +101,14 @@ function color {
     #echo "$2"
 }
 
-function copy_from_pkg {
+function copy_from_package {
     for item in ${@}
     do
         if [[ ! -f ${MY_LIBS}/${item} ]] ; then
             if [[ ! -f ${PKG_LIBS}/${item} ]] ; then
                 return 1
             else
-                cp ${PKG_LIBS}/${ITEM} ${MY_LIBS}
+                cp ${PKG_LIBS}/${item} ${MY_LIBS}
             fi
         fi
     done
@@ -167,7 +165,7 @@ function install_kernel_headers {
 
 function ensure_openssl {
 
-  if [[ ! $(copy_from_package libssl.a libcrypto.a) ]] ; then
+  if ! copy_from_package libssl.a libcrypto.a ; then
       ensure_musl
       install_kernel_headers
 
@@ -191,7 +189,7 @@ function ensure_openssl {
 }
 
 function ensure_pcre {
-  if [[ ! $(copy_from_package libpcre.a) ]] ; then
+  if ! copy_from_package libpcre.a ; then
 
     get_src pcre https://github.com/luvit/pcre.git
     echo $(color cyan "Building libpcre")
