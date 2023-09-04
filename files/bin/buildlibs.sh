@@ -83,7 +83,7 @@ function color {
     shift
 
     export TERM=${TERM:-vt100}
-    echo -n $(tput setaf ${CODE})$@$(tput op)
+    echo -n $(tput -T ${TERM} setaf ${CODE})$@$(tput -T ${TERM} op)
 }
 
 function colorln {
