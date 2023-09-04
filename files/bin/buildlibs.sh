@@ -82,6 +82,7 @@ function color {
     esac
     shift
 
+    export TERM=${TERM:-vt100}
     echo -n $(tput setaf ${CODE})$@$(tput op)
 }
 
@@ -203,9 +204,12 @@ function ensure_cmark {
         ensure_musl
         get_src cmark-gfm https://github.com/github/cmark-gfm
         colorln CYAN "Building cmark-gfm"
+        mkdir build
+        cd build
+        cmake -DCMARK_TESTS=0 ..
         make
-        mv build/src/libcmark-gfm.a ${MY_LIBS}
-        mv build/extensions/libcmark-gfm-extensions.a ${MY_LIBS}
+        mv src/libcmark-gfm.a ${MY_LIBS}
+        mv extensions/libcmark-gfm-extensions.a ${MY_LIBS}
         if [[ -f ${MY_LIBS}/libcmark-gfm.a ]] ; then
             echo $(color GREEN Installed cmark-gtm to:) ${MY_LIBS}/libcmark-gfm.a
         else
