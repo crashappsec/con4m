@@ -1,9 +1,10 @@
 #!/bin/bash
 
+set -eEu
+set -o pipefail
+
 ARCH=$(uname -m)
 OS=$(uname -o)
-
-cd ${DEPS_DIR}
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
