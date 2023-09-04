@@ -2,7 +2,7 @@
 
 Con4m makes it easy to give users rich configurability via config
 files and command line flags. You just have to write a spec to get
-your config file format and your command line flags / parsing. 
+your config file format and your command line flags / parsing.
 
 You can do all of your input validation either through Con4m's built
 in constraints, or through custom validation routines (themselves
@@ -231,4 +231,3 @@ Con4m is open source under the Apache 2.0 license.
 Con4m was written by John Viega (john@crashoverride.com), originally
 for Chalk and other to-be-named projects, because other options for
 flexibile configs (like HCL, or YAML DSLs) all kinda suck.
-

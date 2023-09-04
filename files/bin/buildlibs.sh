@@ -82,7 +82,8 @@ function color {
     esac
     shift
 
-    echo -n $(tput setaf ${CODE})$@$(tput op)
+    export TERM=${TERM:-vt100}
+    echo -n $(tput -T ${TERM} setaf ${CODE})$@$(tput -T ${TERM} op)
 }
 
 function colorln {
@@ -203,9 +204,12 @@ function ensure_cmark {
         ensure_musl
         get_src cmark-gfm https://github.com/github/cmark-gfm
         colorln CYAN "Building cmark-gfm"
+        mkdir build
+        cd build
+        cmake -DCMARK_TESTS=0 ..
         make
-        mv build/src/libcmark-gfm.a ${MY_LIBS}
-        mv build/extensions/libcmark-gfm-extensions.a ${MY_LIBS}
+        mv src/libcmark-gfm.a ${MY_LIBS}
+        mv extensions/libcmark-gfm-extensions.a ${MY_LIBS}
         if [[ -f ${MY_LIBS}/libcmark-gfm.a ]] ; then
             echo $(color GREEN Installed cmark-gtm to:) ${MY_LIBS}/libcmark-gfm.a
         else
@@ -219,6 +223,7 @@ function ensure_gumbo {
     if ! copy_from_package libgumbo.a ; then
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
+        sed -i '/examples/d' CMake*
         colorln CYAN "Cooking up some gumbo"
         mkdir build
         cd build
