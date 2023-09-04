@@ -45,9 +45,9 @@ when defined(macosx):
 
   if targetArch == "arm64":
     echo "Building for arm64"
-    targetStr = "arm64-apple-macos11"
+    targetStr = "arm64-apple-macos13"
   elif targetArch == "amd64":
-    targetStr = "x86_64-apple-macos11"
+    targetStr = "x86_64-apple-macos13"
     echo "Building for amd64"
   else:
     echo "Invalid target architecture for MacOs: " & arch
@@ -84,12 +84,12 @@ var
   default  = getEnvDir("HOME") & ".local/c0"
   localDir = getEnvDir("LOCAL_INSTALL_DIR", default)
   libDir   = localdir & "libs"
-  libs     = ["pcre", "ssl", "crypto"]
+  libs     = ["pcre", "ssl", "crypto", "cmark-gfm", "cmark-gfm-extensions",
+              "gumbo"]
 
 when defined(linux):
   var
     muslPath = localdir & "musl/bin/musl-gcc"
-
   switch("gcc.exe", muslPath)
   switch("gcc.linkerexe", muslPath)
 
