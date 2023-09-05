@@ -223,7 +223,8 @@ function ensure_gumbo {
     if ! copy_from_package libgumbo.a ; then
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
-        sed -i '/examples/d' CMake*
+        sed -i.bakconf4mbak '/examples/d' CMake*
+        rm *.bakconf4mbak
         colorln CYAN "Cooking up some gumbo"
         mkdir build
         cd build
