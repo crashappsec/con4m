@@ -21,8 +21,7 @@ else
 fi
 
 DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
-
-PKG_LIBS=${1}/lib/${OS}-${NIMARCH}
+PKG_LIBS=${1:-"./files/deps"}/lib/${OS}-${NIMARCH}
 MY_LIBS=${DEPS_DIR}/libs
 SRC_DIR=${DEPS_DIR}/src
 MUSL_DIR=${DEPS_DIR}/musl
