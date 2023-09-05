@@ -1,10 +1,14 @@
 #!/bin/bash
+OS=$(uname -o 2>/dev/null)
+if [[ ${?} != 0 ]] ; then
+    # Older macOS/OSX versions of uname don't support -o
+    OS=$(uname -s)
+fi
 
 set -eEu
 set -o pipefail
 
 ARCH=$(uname -m)
-OS=$(uname -o)
 
 if [[ ${ARCH} = "x86_64" ]] ; then
     NIMARCH=amd64
