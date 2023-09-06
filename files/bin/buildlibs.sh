@@ -10,18 +10,29 @@ set -o pipefail
 
 ARCH=$(uname -m)
 
-if [[ ${ARCH} = "x86_64" ]] ; then
-    NIMARCH=amd64
-else
-    NIMARCH=arm64
-fi
 
 if [[ ${OS} = "Darwin" ]] ; then
     # Not awesome, but this is what nim calls it.
     OS=macosx
+
+    # We might be running virtualized, so do some more definitive
+    # tesitng. Note that there's no cross-compiling flag; if you
+    # want to cross compile, you currently need to manually build
+    # these libs.
+    SYSCTL=$(sysctl -n sysctl.proc_translated)
+    if [[ ${SYSCTL} = '0' ]] || [[ ${SYSCTL} == '1' ]] ; then
+        NIMARCH=arm64
+    else
+        NIMARCH=amd64
+    fi
 else
     # We don't support anything else at the moment.
     OS=linux
+    if [[ ${ARCH} = "x86_64" ]] ; then
+        NIMARCH=amd64
+    else
+        NIMARCH=arm64
+    fi
 fi
 
 DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
