@@ -226,8 +226,23 @@ function ensure_gumbo {
     if ! copy_from_package libgumbo.a ; then
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
-        sed -i.bakconf4mbak '/examples/d' CMake*
-        rm *.bakconf4mbak
+        colorln CYAN "Watching our waistline, selecting only required gumbo ingredients...."
+        cat > CMakelists.txt <<EOL
+cmake_minimum_required( VERSION 3.0 ) 
+
+project(gumbo) 
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${PROJECT_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${PROJECT_BINARY_DIR}/.libs)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${PROJECT_BINARY_DIR}/.libs)
+
+set(TOP_BUILD_LEVEL \${PROJECT_BINARY_DIR})
+
+set(GUMBO_STATIC_LIB 1)
+set(GUMBO_IS_SUBTREE 0)
+
+add_subdirectory(src/)
+EOL
         colorln CYAN "Cooking up some gumbo"
         mkdir build
         cd build
