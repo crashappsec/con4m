@@ -228,9 +228,9 @@ function ensure_gumbo {
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
         colorln CYAN "Watching our waistline, selecting only required gumbo ingredients...."
         cat > CMakelists.txt <<EOL
-cmake_minimum_required( VERSION 3.0 ) 
+cmake_minimum_required( VERSION 3.0 )
 
-project(gumbo) 
+project(gumbo)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${PROJECT_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${PROJECT_BINARY_DIR}/.libs)
