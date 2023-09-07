@@ -1,15 +1,40 @@
 #!/bin/bash
+
+function color {
+    case $1 in
+        black)   CODE=0 ;;
+        red)     CODE=1 ;; RED)     CODE=9 ;;
+        green)   CODE=2 ;; GREEN)   CODE=10 ;;
+        yellow)  CODE=3 ;; YELLOW)  CODE=11 ;;
+        blue)    CODE=4 ;; BLUE)    CODE=12 ;;
+        magenta) CODE=5 ;; MAGENTA) CODE=13 ;;
+        cyan)    CODE=6 ;; CYAN)    CODE=14 ;;
+        white)   CODE=7 ;; WHITE)   CODE=15 ;;
+        grey)    CODE=8 ;; *)       CODE=$1 ;;
+    esac
+    shift
+
+    export TERM=${TERM:-vt100}
+    echo -n $(tput -T ${TERM} setaf ${CODE})$@$(tput -T ${TERM} op)
+}
+
+function colorln {
+    echo $(color $@)
+}
+
+if [[ ${#} -eq 0 ]] ; then
+    colorln RED Script requires an argument pointing to the deps directory
+    exit 1
+fi
+set -eEu
+set -o pipefail
+
+ARCH=$(uname -m)
 OS=$(uname -o 2>/dev/null)
 if [[ ${?} != 0 ]] ; then
     # Older macOS/OSX versions of uname don't support -o
     OS=$(uname -s)
 fi
-
-set -eEu
-set -o pipefail
-
-ARCH=$(uname -m)
-
 
 if [[ ${OS} = "Darwin" ]] ; then
     # Not awesome, but this is what nim calls it.
@@ -36,7 +61,8 @@ else
 fi
 
 DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
-PKG_LIBS=${1:-"./files/deps"}/lib/${OS}-${NIMARCH}
+
+PKG_LIBS=${1}/lib/${OS}-${NIMARCH}
 MY_LIBS=${DEPS_DIR}/libs
 SRC_DIR=${DEPS_DIR}/src
 MUSL_DIR=${DEPS_DIR}/musl
@@ -81,28 +107,6 @@ no-uplink
 no-weak-ssl-ciphers
 no-zlib
 " | tr '\n' ' ')
-
-function color {
-    case $1 in
-        black)   CODE=0 ;;
-        red)     CODE=1 ;; RED)     CODE=9 ;;
-        green)   CODE=2 ;; GREEN)   CODE=10 ;;
-        yellow)  CODE=3 ;; YELLOW)  CODE=11 ;;
-        blue)    CODE=4 ;; BLUE)    CODE=12 ;;
-        magenta) CODE=5 ;; MAGENTA) CODE=13 ;;
-        cyan)    CODE=6 ;; CYAN)    CODE=14 ;;
-        white)   CODE=7 ;; WHITE)   CODE=15 ;;
-        grey)    CODE=8 ;; *)       CODE=$1 ;;
-    esac
-    shift
-
-    export TERM=${TERM:-vt100}
-    echo -n $(tput -T ${TERM} setaf ${CODE})$@$(tput -T ${TERM} op)
-}
-
-function colorln {
-    echo $(color $@)
-}
 
 function copy_from_package {
     for item in ${@}
@@ -237,7 +241,7 @@ function ensure_gumbo {
     if ! copy_from_package libgumbo.a ; then
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
-        colorln CYAN "Watching our waistline, selecting only required gumbo ingredients...."
+        colorln CYAN "Watching our waistline, selecting only required gumbo ingredients..."
         cat > CMakelists.txt <<EOL
 cmake_minimum_required( VERSION 3.0 )
 
