@@ -26,8 +26,6 @@ if [[ ${#} -eq 0 ]] ; then
     colorln RED Script requires an argument pointing to the deps directory
     exit 1
 fi
-set -eEu
-set -o pipefail
 
 ARCH=$(uname -m)
 OS=$(uname -o 2>/dev/null)
@@ -35,6 +33,9 @@ if [[ ${?} != 0 ]] ; then
     # Older macOS/OSX versions of uname don't support -o
     OS=$(uname -s)
 fi
+
+set -eEu
+set -o pipefail
 
 if [[ ${OS} = "Darwin" ]] ; then
     # Not awesome, but this is what nim calls it.
