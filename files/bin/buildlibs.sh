@@ -29,13 +29,10 @@ fi
 
 ARCH=$(uname -m)
 OS=$(uname -o 2>/dev/null)
-if [[ ${?} != 0 ]] ; then
+if [[ $? -ne 0 ]] ; then
     # Older macOS/OSX versions of uname don't support -o
     OS=$(uname -s)
 fi
-
-set -eEu
-set -o pipefail
 
 if [[ ${OS} = "Darwin" ]] ; then
     # Not awesome, but this is what nim calls it.
@@ -60,6 +57,9 @@ else
         NIMARCH=arm64
     fi
 fi
+
+set -eEu
+set -o pipefail
 
 DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
 
