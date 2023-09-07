@@ -42,7 +42,7 @@ if [[ ${OS} = "Darwin" ]] ; then
     # tesitng. Note that there's no cross-compiling flag; if you
     # want to cross compile, you currently need to manually build
     # these libs.
-    SYSCTL=$(sysctl -n sysctl.proc_translated)
+    SYSCTL=$(sysctl -n sysctl.proc_translated 2>/dev/null)
     if [[ ${SYSCTL} = '0' ]] || [[ ${SYSCTL} == '1' ]] ; then
         NIMARCH=arm64
     else
@@ -57,9 +57,6 @@ else
         NIMARCH=arm64
     fi
 fi
-
-set -eEu
-set -o pipefail
 
 DEPS_DIR=${DEPS_DIR:-${HOME}/.local/c0}
 
