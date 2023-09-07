@@ -26,12 +26,10 @@ if [[ ${#} -eq 0 ]] ; then
     colorln RED Script requires an argument pointing to the deps directory
     exit 1
 fi
-set -eEu
-set -o pipefail
 
 ARCH=$(uname -m)
 OS=$(uname -o 2>/dev/null)
-if [[ ${?} != 0 ]] ; then
+if [[ $? -ne 0 ]] ; then
     # Older macOS/OSX versions of uname don't support -o
     OS=$(uname -s)
 fi
@@ -44,7 +42,7 @@ if [[ ${OS} = "Darwin" ]] ; then
     # tesitng. Note that there's no cross-compiling flag; if you
     # want to cross compile, you currently need to manually build
     # these libs.
-    SYSCTL=$(sysctl -n sysctl.proc_translated)
+    SYSCTL=$(sysctl -n sysctl.proc_translated 2>/dev/null)
     if [[ ${SYSCTL} = '0' ]] || [[ ${SYSCTL} == '1' ]] ; then
         NIMARCH=arm64
     else
