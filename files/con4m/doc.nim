@@ -233,8 +233,6 @@ proc getObjectLevelDocs*(state: ConfigState, path: string,
 
   var secSpec: Con4mSectionType
 
-  dbug("getObjectLevelDocs", path)
-
   let
     obj   = state.attrs.getObject(path)
     doc   = getOpt[string](obj, "doc").getOrElse("")
@@ -404,19 +402,20 @@ proc formatChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts,
 
   for k, v in scope.contents:
     let subscope = v.get(AttrScope)
-    choices   = get[seq[string]](subscope, "choices")
-    flag      = getOpt[bool](subscope, "add_choice_flags").getOrElse(false)
+    choices    = get[seq[string]](subscope, "choices")
+    flag       = getOpt[bool](subscope, "add_choice_flags").getOrElse(false)
+    choicetext = ""
 
     formatted = @[]
     if flag:
       for item in choices:
         formatted.add(item.formatFlag())
-      choiceText &= "Per-choice alias flags: " & formatted.join(", ") & "<br>\n"
+      choiceText &= "Per-choice alias flags: <ul><li>" & formatted.join("</li><li>") & "</li></ul>\n"
       formatted = @[]
 
     for item in choices:
       formatted.add("<em>" & item & "</em>")
-    choiceText &= "Value choices: " & formatted.join(", ") & "<br>\n"
+    choiceText &= "Value choices: <ul><li>" & formatted.join("</li><li>") & "</li></ul>\n"
 
     if multi:
       choiceText &= "<em> Multiple arguments may be provided. </em><br>\n"
