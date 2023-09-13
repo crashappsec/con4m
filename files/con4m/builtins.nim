@@ -1226,11 +1226,11 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
     return "ERR 000 Invalid HTTP configuration"
 
   if post:
-    response = client.request(url = uri, httpMethod = HttpPost,
-                                    body = body, headers = hdrObj)
+    response = client.safeRequest(url = uri, httpMethod = HttpPost,
+                                  body = body, headers = hdrObj)
   else:
-    response = client.request(url = uri, httpMethod = HttpGet,
-                                    headers = hdrObj)
+    response = client.safeRequest(url = uri, httpMethod = HttpGet,
+                                  headers = hdrObj)
   if response.status[0] != '2':
     result = "ERR " & response.status
 
