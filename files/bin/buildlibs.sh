@@ -207,32 +207,12 @@ function ensure_pcre {
 
     mv .libs/libpcre.a ${MY_LIBS}
     if [[ -f ${MY_LIBS}/libpcre.a ]] ; then
-      echo $(color GREEN Installed libpcre to:) ${MY_LIBS}/libpcrea.
+      echo $(color GREEN Installed libpcre to:) ${MY_LIBS}/libpcre.a
     else
       colorln RED "Installation of libprce failed. This may be due to missing build dependencies. Please make sure autoconf, m4 and perl are installed."
       exit 1
     fi
   fi
-}
-
-function ensure_cmark {
-    if ! copy_from_package libcmark-gfm.a libcmark-gfm-extensions.a ; then
-        ensure_musl
-        get_src cmark-gfm https://github.com/github/cmark-gfm
-        colorln CYAN "Building cmark-gfm"
-        mkdir build
-        cd build
-        cmake -DCMARK_TESTS=0 ..
-        make
-        mv src/libcmark-gfm.a ${MY_LIBS}
-        mv extensions/libcmark-gfm-extensions.a ${MY_LIBS}
-        if [[ -f ${MY_LIBS}/libcmark-gfm.a ]] ; then
-            echo $(color GREEN Installed cmark-gtm to:) ${MY_LIBS}/libcmark-gfm.a
-        else
-            colorln RED "Installation of cmark-gtm failed!"
-            exit 1
-        fi
-    fi
 }
 
 function ensure_gumbo {
@@ -286,7 +266,6 @@ function remove_src {
 ensure_musl
 ensure_openssl
 ensure_pcre
-ensure_cmark
 ensure_gumbo
 
 colorln GREEN All dependencies satisfied.

@@ -103,6 +103,14 @@ this field for more detail (that field provides the default).
     doc:        default_doc_doc
   }
 
+  field shortdoc {
+    type:       string
+    default:    "Currently unused."
+    write_lock: true
+    hidden:     true
+    doc:        default_doc_doc
+  }
+
   field callback  {
     type:       func (bool) -> string
     require:    false
@@ -434,6 +442,14 @@ be output.
 """
   }
 
+  field shortdoc {
+    type:       string
+    default:    "There is no help for this command."
+    write_lock: true
+    hidden:     true
+    doc:        default_doc_doc
+  }
+
   field arg_name {
     type:    string
     default: "ARG"
@@ -581,6 +597,14 @@ arguments.
   }
 
   field doc {
+    type:       string
+    default:    "There is no help for this command."
+    write_lock: true
+    hidden:     true
+    doc:        default_doc_doc
+  }
+
+  field shortdoc {
     type:       string
     default:    "There is no help for this command."
     write_lock: true

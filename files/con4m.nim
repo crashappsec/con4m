@@ -10,9 +10,9 @@
 ## :Copyright: 2022
 
 import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
-import con4m/[eval, dollars, spec, run, c42spec, getopts, stack, legacy]
+import con4m/[eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc]
 export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
-export eval, dollars, spec, run, c42spec, getopts, stack, legacy
+export eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc
 import streams, nimutils, os
 
 const compilerC42FileName = "con4m/c4m/compiler-config.c42spec"

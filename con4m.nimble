@@ -11,6 +11,14 @@ installExt    = @["nim", "c4m", "c42spec", "sh"]
 requires "nim >= 1.6.12"
 requires "https://github.com/crashappsec/nimutils == 0.1.2"
 
+
+before build:
+  let script = "files/bin/devmode.sh"
+  # only missing in Dockerfile compile step
+  if not fileExists(script):
+    return
+  exec script
+
 task ctest, "Build libcon4m":
  when hostOs == "linux" or hostOS == "macosx":
   exec "if [ ! -e lib ] ; then mkdir lib; fi"
