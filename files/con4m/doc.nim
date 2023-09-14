@@ -448,6 +448,7 @@ proc formatAutoHelpFlag(opts: CmdLineDocOpts): string =
 proc formatFlags(obj: AttrScope, subsects: OrderedTable[string, AttrScope],
                  opts: CmdLineDocOpts, defaultYes: seq[string],
                  defaultNo: seq[string]): string =
+  var foundFlags = false
   result &= """
 <table>
 <tr>
@@ -456,19 +457,29 @@ proc formatFlags(obj: AttrScope, subsects: OrderedTable[string, AttrScope],
 </tr>
 """
   if "flag_yn" in subsects:
+    foundFlags = true
     result &= subsects["flag_yn"].formatYnFlags(opts, defaultYes, defaultNo)
   if "flag_arg" in subsects:
+    foundFlags = true
     result &= subsects["flag_arg"].formatArgFlags(opts)
+    foundFlags = true
   if "flag_multi_arg" in subsects:
+    foundFlags = true
     result &= subsects["flag_multi_arg"].formatMultiArgFlags(opts)
   if "flag_choice" in subsects:
+    foundFlags = true
     result &= subsects["flag_choice"].formatChoiceFlags(opts)
   if "flag_multi_choice" in subsects:
+    foundFlags = true
     result &= subsects["flag_multi_choice"].formatMultiChoiceFlags(opts)
   if "flag_help" in subsects:
     result &= formatAutoHelpFlag(opts)
 
-proc formatProps(obj: AttrScope, cmd: string, opts: CmdLineDocOpts): string =
+  if not foundFlags:
+    return ""
+
+proc formatProps(obj: AttrScope, cmd: string, opts: CmdLineDocOpts,
+                 table = false): string =
   var props: seq[(string, string)]
 
   if opts.showDefaultProps:
@@ -476,15 +487,15 @@ proc formatProps(obj: AttrScope, cmd: string, opts: CmdLineDocOpts): string =
       aliasOpts = getOpt[seq[string]](obj, "aliases")
       argOpts   = getOpt[seq[Box]](obj, "args")
 
-    if aliasOpts.isSome():
+    if aliasOpts.isSome() and aliasOpts.get().len() != 0:
       var fmtAliases: seq[string]
 
       for item in aliasOpts.get():
-        fmtAliases.add("<code>" & item & "</code>")
+        fmtAliases.add("<em>" & item & "</em>")
 
-      props.add(("aliases", fmtAliases.join(", ")))
+      props.add(("aliases  ", fmtAliases.join(", ")))
     else:
-      props.add(("aliases", "none"))
+      props.add(("aliases  ", "none"))
 
     if argOpts.isNone():
       props.add(("arguments", "none"))
@@ -512,14 +523,47 @@ proc formatProps(obj: AttrScope, cmd: string, opts: CmdLineDocOpts): string =
     props &= opts.userPropsFunc(cmd)
 
   if len(props) != 0:
-    result &= "<table>"
-    for (k, v) in props:
-      result &= "<tr>\n  <td>" & k & "</td>\n  <td>" & v & "</td>\n</tr>"
-    result &= "</table>"
+    if table:
+      result &= "<table>"
+      for (k, v) in props:
+        result &= "<tr>\n  <td>" & k & "</td>\n  <td>" & v & "</td>\n</tr>"
+        result &= "</table>"
+    else:
+      result &= "<ul>"
+      for (k, v) in props:
+        result &= "<li><b><underline>"
+        result &= k
+        result &= "</underline></b>: "
+        result &= v
+        result &= "</li>"
+      result &= "</ul><p>"
 
-proc getCommandDocs*(state: ConfigState, cmd = "",
-                     opts = defaultCmdLineDocOpts): string =
 
+proc getHelpOverview*(state: ConfigState, kind = CDocConsole): string =
+  try:
+    let
+      attrPath = "getopts.command.help"
+      obj      = state.attrs.getObject(attrPath)
+      objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
+      short    = objDocs.sectionDocs["shortdoc"]
+      long     = objDocs.sectionDocs["longdoc"]
+
+
+    result = "<h1>" & getMyAppPath().splitPath().tail & "</h1>"
+    if short != "":
+      result &= "<h2>" & short & "</h2>"
+
+    result &= long.markdownToHtml()
+    result  = result.docFormat(kind)
+
+
+  except:
+    return "<h1> Please provide a 'help' command to get this to work.</h1>"
+
+proc getCommandDocsInternal(state: ConfigState, cmd: string,
+                            opts: CmdLineDocOpts): string =
+  # This should explicitly test for the section existing.  Right now it'll
+  # throw an error when it doesn't.
   var
     attrPath: string = opts.attrStart
 
@@ -594,9 +638,199 @@ line, or in generated HTML docs.
       defaultYes = getOpt[seq[string]](state.attrs, yesAttr).getOrElse(@[])
       defaultNo  = getOpt[seq[string]](state.attrs, noAttr).getOrElse(@[])
 
-    result &= opts.subsecHeadingStr & "Flags" & "\n"
-    result &= obj.formatFlags(subsects, opts, defaultYes, defaultNo)
+    let flagFmt = obj.formatFlags(subsects, opts, defaultYes, defaultNo)
+
+    if flagFmt != "":
+      result &= opts.subsecHeadingStr & "Flags" & "\n"
+      result &= flagFmt
 
 
 
   return result.docFormat(opts.docKind)
+
+proc getCommandDocs*(state: ConfigState, cmd = "",
+                     opts = defaultCmdLineDocOpts): string =
+  try:
+    result = state.getCommandDocsInternal(cmd, opts)
+  except:
+    return ""
+
+proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
+                          skipTypeSpecs = false, skipTypePtrs = false):
+                         OrderedTable[string, FieldSpec] =
+  # This only pulls out actual fields; the dictionary also has any
+  # sub-sections that are acceptable.
+  for n, spec in sec.fields:
+    if spec.hidden and not showHidden:
+      continue
+    case spec.extType.kind
+    of TypeSection:
+      continue
+    of TypeC4TypeSpec:
+      if skipTypeSpecs:
+        continue
+    of TypeC4TypePtr:
+      if skipTypePtrs:
+        continue
+    of TypePrimitive:
+      discard
+
+    result[n] = spec
+
+type ConfigCols* = enum
+  CcVarName, CcShort, CcLong, CcType, CcDefault
+
+# proc getSectionRefDoc*(state: ConfigState, section: string,
+#                       docKind = CDocConsole,
+
+proc getConfigOptionDocs*(state: ConfigState,
+            section = "", docKind = CDocConsole,
+            showHiddenSections = false,
+            showHiddenFields = false,
+            cols: openarray[ConfigCols] = [CcVarName, CcType,
+                                           CcDefault, CcLong],
+            colNames: openarray[string] = ["Variable", "Type",
+                                           "Default Value", "Description"],
+            secVarHeader = "<h2>Section configuration variables</h2>"): string =
+  ## This returns a document with a single 'section' of configuration
+  ## variables.
+  ##
+  ## The section name you pass in ideally would be a 'singleton'
+  ## section in the TOP-LEVEL root scope.  Singleton sections in other
+  ## named sections feel more like object data than configuration.
+  ##
+  ## We do not look these up by path, we go straight to the specs for
+  ## the various sections, and we do ensure that it's a singleton.
+
+  if state.spec.isNone():
+    return ""
+
+  var sec: Con4mSectionType
+
+  if section == "":
+    sec = state.spec.get().rootSpec
+  else:
+    let secspecs = state.spec.get().secSpecs
+
+    if section notin secspecs:
+      return ""
+
+    sec = secspecs[section]
+
+  if sec.hidden and not showHiddenSections: return ""
+
+  if sec.shortdoc.isSome():
+    result = "<h1>" & sec.shortdoc.get() & "</h1>"
+  else:
+    let txt = if section == "":
+                "the command"
+              else:
+                "the <em>" & section & "</em> section"
+    result = "<h1>Configuration for " & txt & "</h1>"
+
+  if sec.doc.isSome():
+    result &= sec.doc.get().markdownToHtml()
+  else:
+    result &= """There is no documentation for this section.
+Document this section by adding a 'doc' field to its definition
+in your configuration file.
+"""
+  let fieldsToShow = sec.extractSectionFields(showHidden = showHiddenFields)
+  if len(fieldsToShow) == 0:
+    return
+
+  result &= "<table>"
+  if len(colNames) != 0:
+    result &= "<thead><tr>"
+    for item in colNames:
+      result &= "<th>" & item & "</th>"
+    result &= "</tr></thead>"
+
+  result &= "<tbody>"
+  for n, f in fieldsToShow:
+    result &= "<tr>"
+    for item in cols:
+      result &= "<td>"
+      case item
+      of CcVarName:
+        result &= n
+      of CcShort:
+        result &= f.shortDoc.getOrElse("No description available.")
+      of CcLong:
+        result &= f.doc.getOrElse("There is no documentation for this option.")
+      of CcType:
+        case f.extType.kind:
+          of TypeC4TypePtr:
+            result &= "Type set by field <code>" & f.extType.fieldRef &
+              "</code>"
+          of TypeC4TypeSpec:
+            result &= "A type specification"
+          of TypePrimitive:
+            result &= $(f.extType.tInfo)
+          else:
+            discard
+      of CcDefault:
+        if f.default.isSome():
+          result &= "<code>" &
+            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) & "</code>"
+        else:
+          result &= "<em>None</em>"
+          # TODO: constraints.
+      result &= "</td>"
+    result &= "</tr>"
+  result &= "</tbody></table>"
+  result = result.docFormat(docKind)
+
+type BuiltInCols* = enum
+  BiSig, BiCategories, BiLong
+
+
+proc buildEntryList(state: ConfigState, categories: openarray[string],
+                    skipcategories: bool):
+                   seq[FuncTableEntry] =
+
+  for _, entryList in state.funcTable:
+    for entry in entryList:
+      if entry.kind == FnUserDefined:
+        continue
+      if len(categories) != 0:
+        var match = false
+        for category in categories:
+          if category in entry.tags:
+            match = true
+            break
+        if match and skipcategories:
+            continue
+        elif not match and not skipcategories:
+            continue
+      result.add(entry)
+
+proc getBuiltinsTableDoc*(state: ConfigState,
+                          categories: openarray[string] = ["introspection"],
+                          skipcategories = true,
+                          columns  = [BiSig, BiCategories, BiLong],
+                          colnames = ["Signature", "Categories", "Description"],
+                          preamble = "",
+                          docKind  = CDocConsole): string =
+  ## If skipcategories is true, we skip funcs with category names
+  ## matching an item in the list. However, when it is false,
+  ## we ONLY include funcs with matching categories.
+  result  = preamble
+  result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
+  result &= "</tr></thead><tbody>"
+  for entry in state.buildEntryList(categories, skipCategories):
+    result &= "<tr>"
+    for col in columns:
+      result &= "<td>"
+      case col
+      of BiSig:
+        result &= "<code>" & entry.name & $(entry.tInfo) & "</code>"
+      of BiCategories:
+        result &= entry.tags.join(", ")
+      of BiLong:
+        let docstr = entry.doc.getOrElse("No description available.")
+        result &= docstr.markdownToHtml()
+      result &= "</td>"
+    result &= "</tr>"
+  result &= "</tbody></table>"
+  result = result.docFormat(docKind)
