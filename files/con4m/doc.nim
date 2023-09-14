@@ -1,5 +1,5 @@
 import options, tables, strutils, strformat, nimutils, macros, unicode, sugar
-import algorithm, builtins, types, typecheck, eval, st, dollars, spec, os
+import types, st, dollars, spec, os
 
 type
   CDocKind* = enum
@@ -95,12 +95,10 @@ proc docFormat*(s: string, kind = CDocConsole): string =
   case kind
   of CDocHtml:
     return s.markdownToHtml()
-    discard
   of CDocRaw:
     return s
   of CDocConsole:
     return stylize(s)
-    discard
 
 proc getOneFieldDocs*(state: ConfigState, path: string,
                    docKind = CDocConsole): (string, string) =
@@ -309,9 +307,9 @@ proc formatCommandTable(obj:  AttrScope,
 
 proc formatFlag(flagname: string): string =
   if len(flagname) == 1:
-    result = "<code>-" & flagname & "</code>"
+    result = "<pre><code>-" & flagname & "</code></pre>"
   else:
-    result = "<code>--" & flagname & "</code>"
+    result = "<pre><code>--" & flagname & "</code></pre>"
 
 proc formatAliases(scope: AttrScope, flagname: string,
                    defYes, defNo: seq[string]): string =
@@ -365,8 +363,8 @@ proc baseFlag(flagname: string, scope: AttrScope, opts: CmdLineDocOpts,
     ensureNewLine()
     result &= "<br>"
     if "field_to_set" in scope.contents:
-      result &= "    <em>Sets config field: <code>"
-      result &= get[string](scope, "field_to_set") & "</code></em>\n"
+      result &= "    <em>Sets config field: <pre><code>"
+      result &= get[string](scope, "field_to_set") & "</code></pre></em>\n"
     if extraCol2 != "":
       result &= "<br>\n" & extraCol2
       ensureNewLine()
@@ -434,10 +432,10 @@ proc formatMultiChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
 proc formatAutoHelpFlag(opts: CmdLineDocOpts): string =
   return """
 <tr>
-  <td><code>--help</code>
+  <td><pre><code>--help</code></pre>
     <br>
     <br>
-    <em>Aliases:</em> <code>-h</code>
+    <em>Aliases:</em> <pre><code>-h</code></pre>
   </td>
   <td>
     Shows help for this command.
@@ -761,8 +759,8 @@ in your configuration file.
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            result &= "Type set by field <code>" & f.extType.fieldRef &
-              "</code>"
+            result &= "Type set by field <pre><code>" & f.extType.fieldRef &
+              "</code></pre>"
           of TypeC4TypeSpec:
             result &= "A type specification"
           of TypePrimitive:
@@ -771,8 +769,9 @@ in your configuration file.
             discard
       of CcDefault:
         if f.default.isSome():
-          result &= "<code>" &
-            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) & "</code>"
+          result &= "<pre><code>" &
+            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
+            "</code></pre>"
         else:
           result &= "<em>None</em>"
           # TODO: constraints.
@@ -824,7 +823,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
       result &= "<td>"
       case col
       of BiSig:
-        result &= "<code>" & entry.name & $(entry.tInfo) & "</code>"
+        result &= "<pre><code>" & entry.name & $(entry.tInfo) & "</code></pre>"
       of BiCategories:
         result &= entry.tags.join(", ")
       of BiLong:
