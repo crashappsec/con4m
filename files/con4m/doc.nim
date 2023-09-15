@@ -928,7 +928,7 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
   ## we generate a series of H2 / UL
 
   if table:
-    result = "<table><thead><tr><th></th>"
+    result = "<table><thead><tr>"
     if len(headings) != 0:
       for item in headings:
         result &= "<th>" & item & "</th>"
