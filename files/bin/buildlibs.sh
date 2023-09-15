@@ -140,6 +140,15 @@ function ensure_musl {
       return
   fi
   if [[ ! -f ${MUSL_GCC} ]] ; then
+      # if musl-gcc is already installed, use it
+      existing_musl=$(which musl-gcc 2> /dev/null)
+      if [[ -n "${existing_musl}" ]]; then
+        mkdir -p $(dirname ${MUSL_GCC})
+        ln -s ${existing_musl} ${MUSL_GCC}
+        echo $(color GREEN Linking existing musl-gcc: ) ${existing_musl} $(color GREEN "->" ) ${MUSL_GCC}
+      fi
+  fi
+  if [[ ! -f ${MUSL_GCC} ]] ; then
     get_src musl git://git.musl-libc.org/musl
     colorln CYAN Building musl
     unset CC
