@@ -220,7 +220,7 @@ function ensure_gumbo {
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
         colorln CYAN "Watching our waistline, selecting only required gumbo ingredients..."
-        cat > CMakelists.txt <<EOL
+        cat > CMakeLists.txt <<EOL
 cmake_minimum_required( VERSION 3.0 )
 
 project(gumbo)
