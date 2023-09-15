@@ -6,8 +6,8 @@ type
     CDocHtml, CDocRaw, CDocConsole
 
   CObjDocs* = object
-    sectionDocs: Table[string, string]
-    fieldInfo:   OrderedTable[string, TableRef[string, string]]
+    sectionDocs: OrderedTable[string, string]
+    fieldInfo:   OrderedTable[string, OrderedTableRef[string, string]]
 
   # Note, we're currently not supporting all these options.
   CmdLineDocOpts* = object
@@ -28,6 +28,20 @@ type
     inlineSubCmds*:     bool        = true
     docKind*:           CDocKind    = CDocConsole
     attrStart*:         string      = "getopts"
+
+  FieldPropDocs*   = OrderedTableRef[string, string]
+  ObjectFieldDocs* = OrderedTable[string, FieldPropDocs] # field name -> props
+  SectionObjDocs*  = OrderedTable[string, ObjectFieldDocs] # obj name -> fields
+
+  ConfigCols* = enum
+    CcVarName, CcShort, CcLong, CcType, CcDefault
+  BuiltInCols* = enum
+    BiSig, BiCategories, BiLong
+
+  ## FieldTransformer takes a field name and value, and returns a new value
+  FieldTransformer*  = (string, string) -> string
+  TransformTableRef* = TableRef[string, FieldTransformer]
+
 
 
 const
@@ -116,8 +130,8 @@ proc getOneFieldDocs*(state: ConfigState, path: string,
   return
 
 proc extractFieldInfo*(finfo: FieldSpec, docKind: CDocKind):
-                     TableRef[string, string] =
-  result = newTable[string, string]()
+                     OrderedTableRef[string, string] =
+  result = newOrderedTable[string, string]()
 
   let eType = finfo.extType
   case eType.kind
@@ -159,7 +173,8 @@ proc extractFieldInfo*(finfo: FieldSpec, docKind: CDocKind):
   else:
     result["required"] = "true"
 
-proc fillFromObj(obj: AttrScope, name: string, info: TableRef[string, string]) =
+proc fillFromObj(obj: AttrScope, name: string,
+                 info: FieldPropDocs) =
   let opt = obj.attrLookup([name], 0, vlExists)
 
   if opt.isA(AttrErr):
@@ -171,12 +186,20 @@ proc fillFromObj(obj: AttrScope, name: string, info: TableRef[string, string]) =
     attr = aOrS.get(Attribute)
 
   if attr.override.isSome():
+    let
+      asBox = get[Box](attr.override)
+      asStr = attr.tInfo.oneArgToString(asBox, lit = false)
+
     info["override_on"] = "true"
-    info["value"]       = $(get[Box](attr.override))
+    info["value"]       = asStr
     info["is_set"]      = "true"
   elif attr.value.isSome():
+    let
+      asBox = get[Box](attr.value)
+      asStr = attr.tInfo.oneArgToString(asBox, lit = false)
+
     info["override_on"] = "false"
-    info["value"]       = $(get[Box](attr.value))
+    info["value"]       = asStr
     info["is_set"]      = "true"
   else:
     info["override_on"] = "false"
@@ -189,7 +212,7 @@ proc fillFromObj(obj: AttrScope, name: string, info: TableRef[string, string]) =
 proc getAllFieldInfoForObj*(state: ConfigState, path: string,
                             docKind: CDocKind = CDocConsole):
                         OrderedTable[string,
-                                     TableRef[string, string]] =
+                                     OrderedTableRef[string, string]] =
   ## Returns all the field documentation for a specific
   ## 'object'.
 
@@ -221,7 +244,7 @@ template dbug(a, b) = print("<jazzberry>" & a & ": </jazzberry>" & b)
 
 proc getObjectLevelDocs*(state: ConfigState, path: string,
                            docKind = CDocConsole):
-                   Table[string, string] =
+                   OrderedTable[string, string] =
   ## This returns the sections docs for a particular fully dotted
   ## section (meaning, a fully dotted object).
 
@@ -675,8 +698,6 @@ proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
 
     result[n] = spec
 
-type ConfigCols* = enum
-  CcVarName, CcShort, CcLong, CcType, CcDefault
 
 # proc getSectionRefDoc*(state: ConfigState, section: string,
 #                       docKind = CDocConsole,
@@ -780,13 +801,9 @@ in your configuration file.
   result &= "</tbody></table>"
   result = result.docFormat(docKind)
 
-type BuiltInCols* = enum
-  BiSig, BiCategories, BiLong
-
-
 proc buildEntryList(state: ConfigState, categories: openarray[string],
-                    skipcategories: bool):
-                   seq[FuncTableEntry] =
+                    skipcategories: bool, groupByCategory: bool):
+                   OrderedTable[string, seq[FuncTableEntry]] =
 
   for _, entryList in state.funcTable:
     for entry in entryList:
@@ -802,34 +819,160 @@ proc buildEntryList(state: ConfigState, categories: openarray[string],
             continue
         elif not match and not skipcategories:
             continue
-      result.add(entry)
+      if groupByCategory:
+        var primary: string
+        for tag in entry.tags:
+          if skipcategories and tag in categories:
+            continue
+          elif not skipcategories and tag notin categories:
+            continue
+          primary = tag
+          break
+        if primary notin result:
+          result[primary] = @[entry]
+        else:
+          result[primary].add(entry)
+      else:
+        if result.len() == 0:
+          result[""] = @[entry]
+        else:
+          result[""].add(entry)
+
+const defaultPreamble = "<h1>Builtin Functions for Configuration Files</h1>"
 
 proc getBuiltinsTableDoc*(state: ConfigState,
                           categories: openarray[string] = ["introspection"],
                           skipcategories = true,
-                          columns  = [BiSig, BiCategories, BiLong],
-                          colnames = ["Signature", "Categories", "Description"],
-                          preamble = "",
-                          docKind  = CDocConsole): string =
+                          columns    = [BiSig, BiLong],
+                          byCategory = true,
+                          colnames   = ["Signature", "Description"],
+                          preamble   = defaultPreamble,
+                          docKind    = CDocConsole): string =
   ## If skipcategories is true, we skip funcs with category names
   ## matching an item in the list. However, when it is false,
   ## we ONLY include funcs with matching categories.
   result  = preamble
-  result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
-  result &= "</tr></thead><tbody>"
-  for entry in state.buildEntryList(categories, skipCategories):
-    result &= "<tr>"
-    for col in columns:
-      result &= "<td>"
-      case col
-      of BiSig:
-        result &= "<pre><code>" & entry.name & $(entry.tInfo) & "</code></pre>"
-      of BiCategories:
-        result &= entry.tags.join(", ")
-      of BiLong:
-        let docstr = entry.doc.getOrElse("No description available.")
-        result &= docstr.markdownToHtml()
-      result &= "</td>"
-    result &= "</tr>"
-  result &= "</tbody></table>"
+
+  if not byCategory:
+    result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
+    result &= "</tr></thead><tbody>"
+  for category, funcs in state.buildEntryList(categories, skipCategories, byCategory):
+    if byCategory:
+      result &= "<h2> Builtins in category:"
+      result &= "<strong>" & category & "</strong></h2>"
+      result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
+      result &= "</tr></thead><tbody>"
+    for entry in funcs:
+      result &= "<tr>"
+      for col in columns:
+        result &= "<td>"
+        case col
+        of BiSig:
+          result &= "<pre><code>" & entry.name & $(entry.tInfo) &
+            "</code></pre>"
+        of BiCategories:
+          result &= entry.tags.join(", ")
+        of BiLong:
+          let docstr = entry.doc.getOrElse("No description available.")
+          result &= docstr.markdownToHtml()
+        result &= "</td>"
+      result &= "</tr>"
+    if byCategory:
+      result &= "</tbody></table>"
+
+  if not byCategory:
+    result &= "</tbody></table>"
+
   result = result.docFormat(docKind)
+
+proc getOneInstanceForDocs*(state: ConfigState, obj: AttrScope):
+                          ObjectFieldDocs =
+  ## Whereas getAllFieldInfoForObj returns everything, this function
+  ## doesn't give the spec docs, just values and props for specific fields you
+  ## request.
+  for name, scope in obj.contents:
+    if isA(obj.contents[name], AttrScope):
+      continue
+    var info = FieldPropDocs()
+    obj.fillFromObj(name, info)
+    result[name] = info
+
+var sectionDocCache = Table[string, SectionObjDocs]()
+
+proc getAllInstanceRawDocs*(state: ConfigState, fqn: string): SectionObjDocs =
+  if fqn in sectionDocCache:
+    return sectionDocCache[fqn]
+
+  let obj = state.attrs.getObject(fqn)
+
+  for name, scopeOrAttr in obj.contents:
+    if scopeOrAttr.isA(Attribute):
+      continue
+    let scope = scopeOrAttr.get(AttrScope)
+    result[name] = state.getOneInstanceForDocs(scope)
+
+  sectionDocCache[fqn] = result
+
+
+proc getAllInstanceDocs*(state: ConfigState, fqn: string,
+                         fieldsToUse: openarray[string],
+                         headings: openarray[string] = [],
+                         filterField = "", filterValue = "",
+                         markdownFields: openarray[string] = [],
+                         transformers: TransformTableRef = nil,
+                         table = true, docKind = CDocConsole): string =
+  ## The filter is an exact-match only.
+  ## If the fieldsToUse array is empty, we return all fields.
+  ##
+  ## If you ask for table format, we generate an HTML table, otherwise
+  ## we generate a series of H2 / UL
+
+  if table:
+    result = "<table><thead><tr><th></th>"
+    if len(headings) != 0:
+      for item in headings:
+        result &= "<th>" & item & "</th>"
+    result &= "</tr></thead><tbody>"
+
+  let allInfo = state.getAllInstanceRawDocs(fqn)
+  for name, fieldDocs in allInfo:
+    if filterField != "":
+       if fieldDocs[filterfield]["value"] != filterValue:
+         continue
+
+    if table:
+      result &= "<tr><td>" & name & "</td>"
+    else:
+      result &= "<h2>" & name & "</h2><ul>"
+
+    for field in fieldsToUse:
+      let propDocs = if field in fieldDocs:
+                       fieldDocs[field]
+                     else: nil
+
+      var oneValue = if propDocs == nil:
+                       "<em>None</em>"
+                     else:
+                       propDocs["value"]
+
+      if field in markdownFields:
+        oneValue = oneValue.markdownToHtml()
+
+      if transformers != nil and field in transformers:
+        oneValue = transformers[field](field, oneValue)
+
+      if table:
+        result &= "<td>" & oneValue & "</td>"
+      else:
+        result &= "<li>" & onevalue & "</li>"
+
+    if table:
+      result &= "</tr>"
+    else:
+      result &= "</ul>"
+  if table:
+    result &= "</tbody></table>"
+
+  result = result.docFormat(docKind)
+
+#proc getInstanceIndex*() =
