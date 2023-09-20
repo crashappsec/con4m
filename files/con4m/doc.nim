@@ -985,6 +985,7 @@ proc getConfigOptionDocs*(state: ConfigState,
             section = "", docKind = CDocConsole,
             showHiddenSections = false,
             showHiddenFields = false,
+            expandDocField = true,
             cols: openarray[ConfigCols] = [CcVarName, CcType,
                                            CcDefault, CcLong],
             colNames: openarray[string] = ["Variable", "Type",
@@ -1018,16 +1019,19 @@ proc getConfigOptionDocs*(state: ConfigState,
   if sec.hidden and not showHiddenSections: return ""
 
   if sec.shortdoc.isSome():
-    result = "<h1>" & sec.shortdoc.get() & "</h1>"
+    result = "\n\n# " & sec.shortdoc.get() & "\n\n"
   else:
     let txt = if section == "":
                 "the command"
               else:
-                "the <em>" & section & "</em> section"
-    result = "<h1>Configuration for " & txt & "</h1>"
+                "the *" & section & "* section"
+    result = "# Configuration for " & txt
 
   if sec.doc.isSome():
-    result &= sec.doc.get().markdownToHtml()
+    if expandDocField:
+      result &= sec.doc.get().markdownToHtml()
+    else:
+      result &= sec.doc.get()
   else:
     result &= """There is no documentation for this section.
 Document this section by adding a 'doc' field to its definition
@@ -1059,8 +1063,7 @@ in your configuration file.
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            result &= "Type set by field <pre><code>" & f.extType.fieldRef &
-              "</code></pre>"
+            result &= "Type set by field `" & f.extType.fieldRef & "`"
           of TypeC4TypeSpec:
             result &= "A type specification"
           of TypePrimitive:
@@ -1069,11 +1072,11 @@ in your configuration file.
             discard
       of CcDefault:
         if f.default.isSome():
-          result &= "<pre><code>" &
+          result &= "`" &
             f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "</code></pre>"
+            "`"
         else:
-          result &= "<em>None</em>"
+          result &= "*None*"
           # TODO: constraints.
       result &= "</td>"
     result &= "</tr>"
@@ -1117,7 +1120,7 @@ proc buildEntryList(state: ConfigState, categories: openarray[string],
         else:
           result[""].add(entry)
 
-const defaultPreamble = "<h1>Builtin Functions for Configuration Files</h1>"
+const defaultPreamble = "\n\n# Builtin Functions for Configuration Files\n"
 
 proc getBuiltinsTableDoc*(state: ConfigState,
                           categories: openarray[string] = ["introspection"],
@@ -1135,10 +1138,11 @@ proc getBuiltinsTableDoc*(state: ConfigState,
   if not byCategory:
     result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
     result &= "</tr></thead><tbody>"
-  for category, funcs in state.buildEntryList(categories, skipCategories, byCategory):
+  for category, funcs in state.buildEntryList(categories, skipCategories,
+                                              byCategory):
     if byCategory:
-      result &= "<h2>Builtins in category:"
-      result &= "<strong>" & category & "</strong></h2>"
+      result &= "\n\n## Builtins in category:"
+      result &= "*" & category & "*\n\n"
       result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
       result &= "</tr></thead><tbody>"
     for entry in funcs:
@@ -1147,13 +1151,16 @@ proc getBuiltinsTableDoc*(state: ConfigState,
         result &= "<td>"
         case col
         of BiSig:
-          result &= "<pre><code>" & entry.name & $(entry.tInfo) &
-            "</code></pre>"
+          result &= "```" & entry.name & $(entry.tInfo) &
+            "```"
         of BiCategories:
           result &= entry.tags.join(", ")
         of BiLong:
           let docstr = entry.doc.getOrElse("No description available.")
-          result &= docstr.markdownToHtml()
+          if docKind == CDocRaw:
+            result &= docstr
+          else:
+            result &= docstr.markdownToHtml()
         result &= "</td>"
       result &= "</tr>"
     if byCategory:
@@ -1309,6 +1316,8 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
 
     if table:
       result &= "<tr><td>" & name & "</td>"
+    elif docKind == CDocRaw:
+      result &= "\n\n## " & name
     else:
       result &= "<h2>" & name & "</h2><ul>"
 
@@ -1318,7 +1327,7 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
                      else: nil
 
       var oneValue = if propDocs == nil:
-                       "<i>None</i>"
+                       "*None*"
                      else:
                        propDocs["value"]
 
@@ -1334,10 +1343,15 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
         var toShow = field
         if len(headings) != 0:
           toShow = headings[i]
-        result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
+        if docKind == CDocRaw:
+          result &= "\n- *" & toShow & "*\n" & onevalue
+        else:
+          result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
 
     if table:
       result &= "</tr>"
+    elif docKind == CDocRaw:
+      result &= "\n"
     else:
       result &= "</ul>"
   if table:
@@ -1378,7 +1392,10 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
     if table:
       result &= "<tr><td>" & name & "</td>"
     else:
-      result &= "<h2>" & name & "</h2><ul>"
+      if docKind == CDocRaw:
+        result &= "\n\n## " & name
+      else:
+        result &= "<h2>" & name & "</h2><ul>"
 
     for i, field in fieldsToUse:
       let propDocs = if field in fieldDocs:
@@ -1386,7 +1403,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                      else: nil
 
       var oneValue = if propDocs == nil:
-                       "<i>None</i>"
+                       "*None*"
                      else:
                        propDocs["value"]
 
@@ -1402,12 +1419,18 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
         var toShow = field
         if len(headings) != 0:
           toShow = headings[i]
-        result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
+          if docKind == CDocRaw:
+            result &= "\n- *" & toShow & "*" & "\n  " & onevalue & "\n"
+          else:
+            result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
 
     if table:
       result &= "</tr>"
     else:
-      result &= "</ul>"
+      if docKind == CDocRaw:
+        result &= "\n\n"
+      else:
+        result &= "</ul>"
   if table:
     result &= "</tbody></table>"
 
