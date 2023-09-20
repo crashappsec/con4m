@@ -290,6 +290,24 @@ proc getObjectLevelDocs*(state: ConfigState, path: string,
     result["metashort"] = mshort
     result["metalong"]  = mlong
 
+
+proc getSectionDocs*(state: ConfigState, section: string,
+                     docKind = CDocConsole): (string, string) =
+
+  var sec: Con4mSectionType
+
+  let specs = state.spec.get()
+
+  if section == "":
+    sec = specs.rootSpec
+  else:
+    sec = specs.secSpecs[section]
+
+  let
+    mshort = sec.shortdoc.getOrElse("").docFormat(docKind)
+    mlong  = sec.doc.getOrElse("").docFormat(docKind)
+  return (mshort, mlong)
+
 proc getAllSubScopes*(scope: AttrScope): OrderedTable[string, AttrScope] =
   for k, v in scope.contents:
     if v.isA(Attribute):
@@ -579,7 +597,193 @@ proc getHelpOverview*(state: ConfigState, kind = CDocConsole): string =
 
 
   except:
-    return "<h1> Please provide a 'help' command to get this to work.</h1>"
+    return "<h1>Please provide a 'help' command to get this to work.</h1>"
+
+proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
+                           filterTerms: openarray[string] = [],
+                           baseGetoptPath = "getopts"): seq[seq[string]] =
+
+  for commandPath in commandList:
+    var attrPath = baseGetoptPath
+    for item in commandPath.split("."):
+      attrPath &= ".command"
+      if item != "":
+        attrPath &= "." & item
+
+    let
+      obj      = state.attrs.getObject(attrPath)
+      objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
+      short    = objDocs.sectionDocs["shortdoc"]
+      long     = objDocs.sectionDocs["longdoc"]
+
+    if len(filterTerms) != 0:
+      var includeMe = false
+
+      for term in filterTerms:
+        if term in short or term in long:
+          includeMe = true
+          break
+      if not includeMe:
+        continue
+
+    var thisRow   = @[commandPath, short, long]
+    let
+      aliasOpts = getOpt[seq[string]](obj, "aliases")
+      aliases   = aliasOpts.getOrElse(@[])
+      argOpts   = getOpt[seq[Box]](obj, "args")
+
+    thisRow.add(aliases.join(", "))
+
+    if argOpts.isNone():
+      thisRow.add("")
+
+    else:
+      let
+        vals = argOpts.get() # Will contain 2 items.
+        vmin = unpack[int](vals[0])
+        vmax = unpack[int](vals[1])
+
+      if vmin == vmax:
+        if vmin == 0:
+          thisRow.add("none")
+        else:
+          thisRow.add($(vmin) & " (exactly)")
+      elif vmax > (1 shl 32):
+        case vmin
+        of 0:
+          thisRow.add("not required; any number okay")
+        else:
+          thisRow.add($(vmin) & " required; more allowed")
+      else:
+        thisRow.add($(vmin) & " to " & $(vmax))
+
+    result.add(thisRow)
+
+type
+  FlagDoc* = object
+    flagName*:    string
+    yesAliases*:  seq[string]
+    noAliases*:   seq[string]
+    kind*:        string
+    doc*:         string
+    sets*:        string      # What field the flag sets.
+    argRequired*: bool
+    multiArg*:    bool
+    choices*:     seq[string]
+    autoFlags*:   bool        # Whether choices were auto-flagged.
+
+proc getYesAliases(scope: AttrScope, flagname: string,
+                    defYes: openarray[string]): seq[string] =
+
+  if "aliases" in scope.contents:
+    result = get[seq[string]](scope, "aliases")
+  elif "yes_aliases" in scope.contents:
+    result = get[seq[string]](scope, "yes_aliases")
+
+  if len(defYes) != 0:
+    for item in defYes:
+      result.add(item & "-" & flagName)
+
+proc getNoAliases(scope: AttrScope, flagname: string,
+                  defNo: openarray[string]): seq[string] =
+  if "no_aliases" in scope.contents:
+    result = get[seq[string]](scope, "no_aliases")
+
+  if len(defNo) != 0:
+    for item in defNo:
+      result.add(item & "-" & flagName)
+
+proc getOneFlagInfo(scope: AttrScope, flagname: string,
+                    kind: string,
+                    defYes: openarray[string] = [],
+                    defNo: openarray[string] = []): FlagDoc =
+
+  result.yesAliases = scope.getYesAliases(flagName, defYes)
+  result.noAliases  = scope.getNoAliases(flagName, defNo)
+  result.kind       = kind
+
+  if len(flagname) == 1:
+    result.flagName = "-" & flagname
+  else:
+    result.flagName = "--" & flagname
+
+  if "doc" in scope.contents:
+    result.doc = get[string](scope, "doc")
+
+  if "field_to_set" in scope.contents:
+    result.sets = get[string](scope, "field_to_set")
+
+  if "choices" in scope.contents:
+    result.choices   = get[seq[string]](scope, "choices")
+    result.autoFlags = getOpt[bool](scope, "add_choice_flags").
+                            getOrElse(false)
+
+proc getAllCommandFlagInfo*(state: ConfigState, command: string,
+                            baseGetoptPath = "getopts"): seq[FlagDoc] =
+  var attrPath = baseGetoptPath
+  for item in command.split("."):
+    if item != "":
+      attrPath &= ".command." & item
+
+  let
+    obj        = state.attrs.getObject(attrPath)
+    subsects   = obj.getAllSubScopes()
+    yesAttr    = baseGetoptPath & ".default_yes_prefixes"
+    noAttr     = baseGetoptPath & ".default_yes_prefixes"
+    defaultYes = getOpt[seq[string]](state.attrs, yesAttr).getOrElse(@[])
+    defaultNo  = getOpt[seq[string]](state.attrs, noAttr).getOrElse(@[])
+
+  if "flag_yn" in subsects:
+    for k, v in subsects["flag_yn"].contents:
+      result.add(v.get(AttrScope).getOneFlagInfo(k, "boolean",
+                                                 defaultYes, defaultNo))
+
+  if "flag_arg" in subsects:
+    for k, v in subsects["flag_arg"].contents:
+      var toAdd         = v.get(AttrScope).getOneFlagInfo(k, "arg",
+[], [])
+      toAdd.argRequired = true
+      result.add(toAdd)
+
+  if "flag_multi_arg" in subsects:
+    for k, v in subsects["flag_multi_arg"].contents:
+      var toAdd      = v.get(AttrScope).getOneFlagInfo(k, "multi-arg",
+[], [])
+      toAdd.multiArg = true
+      result.add(toAdd)
+
+  if "flag_choice" in subsects:
+    for k, v in subsects["flag_choice"].contents:
+      result.add(v.get(AttrScope).getOneFlagInfo(k, "choice", [], []))
+
+  if "flag_multi_choice" in subsects:
+    for k, v in subsects["flag_multi_choice"].contents:
+      var
+        subscope = v.get(AttrScope)
+        toAdd    = subscope.getOneFlagInfo(k, "multi-choice", [], [])
+      toAdd.multiArg = true
+      result.add(toAdd)
+
+proc getCommandFlagInfo*(state: ConfigState, command: string,
+                         filterTerms: openarray[string] = [],
+                         baseGetoptPath = "getopts"): seq[FlagDoc] =
+  let preResult = state.getAllCommandFlagInfo(command, baseGetoptPath)
+
+  for item in preResult:
+    var addIt: bool
+    for term in filterTerms:
+      if addIt: break
+      if term in item.flagName or term in item.yesAliases or
+         term in item.noAliases or term in item.doc or term in item.sets:
+        addIt = true
+        break
+      for choice in item.choices:
+        if term in choice:
+          addIt = true
+          break
+    if addIt:
+      result.add(item)
+      break
 
 proc getCommandDocsInternal(state: ConfigState, cmd: string,
                             opts: CmdLineDocOpts): string =
@@ -701,6 +905,81 @@ proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
 
 # proc getSectionRefDoc*(state: ConfigState, section: string,
 #                       docKind = CDocConsole,
+
+proc getMatchingConfigOptions*(state: ConfigState,
+            section = "",
+            showHiddenFields = false,
+            filterTerms: openarray[string] = [],
+            cols: openarray[ConfigCols] = [CcVarName, CcType,
+                                           CcDefault, CcLong]):
+                                             seq[seq[string]] =
+  if state.spec.isNone():
+    return
+
+  var sec: Con4mSectionType
+
+  if section == "":
+    sec = state.spec.get().rootSpec
+  else:
+    let secspecs = state.spec.get().secSpecs
+
+    if section notin secspecs:
+      return
+
+    sec = secspecs[section]
+
+  let fieldsToShow = sec.extractSectionFields(showHidden = showHiddenFields)
+  if len(fieldsToShow) == 0:
+    return
+
+  for n, f in fieldsToShow:
+    var
+      thisRow: seq[string] = @[]
+      showRow: bool = false
+
+    for item in cols:
+      case item
+      of CcVarName:
+        thisRow.add(n)
+      of CcShort:
+        thisRow.add(f.shortDoc.getOrElse("No description available."))
+      of CcLong:
+        thisRow.add(f.doc.getOrElse(
+          "There is no documentation for this option."))
+      of CcType:
+        case f.extType.kind:
+          of TypeC4TypePtr:
+            thisRow.add("Type set by field <pre><code>" &
+              f.extType.fieldRef &
+              "</code></pre>")
+          of TypeC4TypeSpec:
+            thisRow.add("A type specification")
+          of TypePrimitive:
+            thisRow.add($(f.extType.tInfo))
+          else:
+            discard
+      of CcDefault:
+        if f.default.isSome():
+          thisRow.add("<pre><code>" &
+            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
+            "</code></pre>")
+        else:
+          thisRow.add("<em>None</em>")
+
+    if len(filterTerms) == 0:
+      showRow = true
+    else:
+      for term in filterTerms:
+        if showRow:
+          break
+        for item in thisRow:
+          if term in item:
+            showRow = true
+            break
+
+    if showRow:
+      result.add(thisRow)
+
 
 proc getConfigOptionDocs*(state: ConfigState,
             section = "", docKind = CDocConsole,
@@ -858,7 +1137,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
     result &= "</tr></thead><tbody>"
   for category, funcs in state.buildEntryList(categories, skipCategories, byCategory):
     if byCategory:
-      result &= "<h2> Builtins in category:"
+      result &= "<h2>Builtins in category:"
       result &= "<strong>" & category & "</strong></h2>"
       result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
       result &= "</tr></thead><tbody>"
@@ -913,6 +1192,93 @@ proc getAllInstanceRawDocs*(state: ConfigState, fqn: string): SectionObjDocs =
 
   sectionDocCache[fqn] = result
 
+proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
+                                fieldsToUse: openarray[string],
+                                transformers: TransformTableRef = nil):
+                                  seq[seq[string]] =
+  let allInfo = state.getAllInstanceRawDocs(fqn)
+
+  for name, fieldDocs in allInfo:
+    var curResult: seq[string]
+
+    curResult.add(name)
+
+    for i, field in fieldsToUse:
+      let propDocs = if field in fieldDocs:
+                       fieldDocs[field]
+                     else: nil
+
+      var oneValue = if propDocs == nil:
+                       "*None*"
+                     else:
+                       propDocs["value"]
+
+      if transformers != nil and field in transformers:
+        oneValue = transformers[field](field, oneValue)
+
+      curResult.add(oneValue)
+
+    result.add(curResult)
+
+proc formatCellsAsMarkdownList*(base: seq[seq[string]],
+                                toEmph: openarray[string],
+                                firstCellPrefix = "\n## "): string =
+  for row in base:
+    result &= "\n"
+    if firstCellPrefix != "":
+      result &= firstCellPrefix
+      if len(toEmph) != 0 and toEmph[0] != "":
+        result &= "**" & toEmph[0] & "** "
+
+    for i, cell in row:
+      if i == 0:
+        result &= row[0] & "\n\n"
+      else:
+        result &= "- "
+        if i < len(toEmph) and toEmph[i] != "":
+          result &= "**" & toEmph[i] & "** "
+          result &= cell & "\n"
+
+    result &= "\n"
+
+  result &= "\n"
+
+proc formatCellsAsHtmlTable*(base:            seq[seq[string]],
+                             headers:         openarray[string],
+                             mToHtml         = true,
+                             verticalHeaders = false): string =
+  if verticalHeaders:
+    for row in base:
+      if len(headers) != len(row):
+        raise newException(ValueError, "Can't omit headers when doing " &
+          "one cell per table")
+
+      result &= "<table><tbody>"
+      for i, cell in row:
+        result &= "<tr><th>" & headers[i] & "</th><td>"
+        if mToHtml:
+          result &= cell.markdownToHtml()
+        else:
+          result &= cell
+        result &= "</td></tr>"
+      result &= "</tbody></table>"
+  else:
+    result &= "<table><thead><tr>"
+    for item in headers:
+      result &= "<th>" & item & "</th>"
+    result &= "</tr></thead><tbody>"
+
+    for row in base:
+      result &= "<tr>"
+      for cell in row:
+        result &= "<td>"
+        if mToHtml:
+          result &= cell.markdownToHtml()
+        else:
+          result &= cell
+        result &= "</td>"
+      result &= "</tr>"
+    result &= "</tbody></table>"
 
 proc getAllInstanceDocs*(state: ConfigState, fqn: string,
                          fieldsToUse: openarray[string],
@@ -935,23 +1301,24 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
     result &= "</tr></thead><tbody>"
 
   let allInfo = state.getAllInstanceRawDocs(fqn)
+
   for name, fieldDocs in allInfo:
-    if filterField != "":
-       if fieldDocs[filterfield]["value"] != filterValue:
-         continue
+    if filterField != "" and filterValue != "":
+      if fieldDocs[filterfield]["value"] != filterValue:
+        continue
 
     if table:
       result &= "<tr><td>" & name & "</td>"
     else:
       result &= "<h2>" & name & "</h2><ul>"
 
-    for field in fieldsToUse:
+    for i, field in fieldsToUse:
       let propDocs = if field in fieldDocs:
                        fieldDocs[field]
                      else: nil
 
       var oneValue = if propDocs == nil:
-                       "<em>None</em>"
+                       "<i>None</i>"
                      else:
                        propDocs["value"]
 
@@ -964,7 +1331,10 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
       if table:
         result &= "<td>" & oneValue & "</td>"
       else:
-        result &= "<li>" & onevalue & "</li>"
+        var toShow = field
+        if len(headings) != 0:
+          toShow = headings[i]
+        result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
 
     if table:
       result &= "</tr>"
@@ -975,4 +1345,70 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
 
   result = result.docFormat(docKind)
 
-#proc getInstanceIndex*() =
+proc searchInstanceDocs*(state: ConfigState, fqn: string,
+                         fieldsToUse: openarray[string],
+                         searchFields: openarray[string],
+                         searchTerms: openarray[string],
+                         headings: openarray[string] = [],
+                         markdownFields: openarray[string] = [],
+                         transformers: TransformTableRef = nil,
+                         table = true, docKind = CDocConsole): string =
+  var gotAnyMatch = false
+
+  if table:
+    result = "<table><thead><tr>"
+    if len(headings) != 0:
+      for item in headings:
+        result &= "<th>" & item & "</th>"
+    result &= "</tr></thead><tbody>"
+
+  let allInfo = state.getAllInstanceRawDocs(fqn)
+  for name, fieldDocs in allInfo:
+    var found =  false
+    for field in searchFields:
+      if found: break
+      if field notin fieldDocs:
+        continue
+      for term in searchTerms:
+        if term.toLowerAscii() in fieldDocs[field]["value"].toLowerAscii():
+          found       = true
+          gotAnyMatch = true
+          break
+
+    if table:
+      result &= "<tr><td>" & name & "</td>"
+    else:
+      result &= "<h2>" & name & "</h2><ul>"
+
+    for i, field in fieldsToUse:
+      let propDocs = if field in fieldDocs:
+                       fieldDocs[field]
+                     else: nil
+
+      var oneValue = if propDocs == nil:
+                       "<i>None</i>"
+                     else:
+                       propDocs["value"]
+
+      if field in markdownFields:
+        oneValue = oneValue.markdownToHtml()
+
+      if transformers != nil and field in transformers:
+        oneValue = transformers[field](field, oneValue)
+
+      if table:
+        result &= "<td>" & oneValue & "</td>"
+      else:
+        var toShow = field
+        if len(headings) != 0:
+          toShow = headings[i]
+        result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
+
+    if table:
+      result &= "</tr>"
+    else:
+      result &= "</ul>"
+  if table:
+    result &= "</tbody></table>"
+
+  result = result.docFormat(docKind)
