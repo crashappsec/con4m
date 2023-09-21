@@ -1,5 +1,5 @@
 import options, tables, strutils, strformat, nimutils, macros, unicode, sugar
-import types, st, dollars, spec, os
+import types, st, dollars, os
 
 type
   CDocKind* = enum
@@ -34,7 +34,7 @@ type
   SectionObjDocs*  = OrderedTable[string, ObjectFieldDocs] # obj name -> fields
 
   ConfigCols* = enum
-    CcVarName, CcShort, CcLong, CcType, CcDefault
+    CcVarName, CcShort, CcLong, CcType, CcDefault, CcCurValue
   BuiltInCols* = enum
     BiSig, BiCategories, BiLong
 
@@ -911,8 +911,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
             showHiddenFields = false,
             filterTerms: openarray[string] = [],
             cols: openarray[ConfigCols] = [CcVarName, CcType,
-                                           CcDefault, CcLong]):
-                                             seq[seq[string]] =
+                                           CcDefault, CcLong],
+            sectionPath = ""): seq[seq[string]] =
+  # SectionPath is only needed if you request CcCurValue
   if state.spec.isNone():
     return
 
@@ -941,6 +942,20 @@ proc getMatchingConfigOptions*(state: ConfigState,
       case item
       of CcVarName:
         thisRow.add(n)
+      of CcCurValue:
+        var path: string
+        if sectionPath == "":
+          path = n
+        else:
+          path = sectionPath & "." & n
+
+        let objOpt = getOpt[Box](state.attrs, path)
+        if objOpt.isNone():
+          thisRow.add("<em>None</em>")
+        else:
+          let obj = objOpt.get()
+          thisRow.add("<pre><code>" &
+              f.extType.tInfo.oneArgToString(obj, lit = true) & "</code></pre>")
       of CcShort:
         thisRow.add(f.shortDoc.getOrElse("No description available."))
       of CcLong:
@@ -979,7 +994,6 @@ proc getMatchingConfigOptions*(state: ConfigState,
 
     if showRow:
       result.add(thisRow)
-
 
 proc getConfigOptionDocs*(state: ConfigState,
             section = "", docKind = CDocConsole,
@@ -1056,6 +1070,8 @@ in your configuration file.
       case item
       of CcVarName:
         result &= n
+      of CcCurValue:
+        result &= "not implemented here"
       of CcShort:
         result &= f.shortDoc.getOrElse("No description available.")
       of CcLong:
@@ -1199,6 +1215,55 @@ proc getAllInstanceRawDocs*(state: ConfigState, fqn: string): SectionObjDocs =
 
   sectionDocCache[fqn] = result
 
+proc getObjectValuesAsArray*(state: ConfigState, fqn: string,
+                             fieldsToUse: openarray[string],
+                             asLit = true,
+                             transformers: TransformTableRef = nil):
+                               seq[string] =
+  let objOpt = state.attrs.getObjectOpt(fqn)
+
+  if objOpt.isNone():
+    raise newException(ValueError, "No object found: " & fqn)
+
+  let obj = objOpt.get()
+  for name in fieldsToUse:
+    if name notin obj.contents:
+      result.add("*None*")
+      continue
+    if obj.contents[name].isA(AttrScope):
+      result.add("*Not a field*")
+      continue
+    let
+      valueType   = obj.contents[name].get(Attribute).tInfo
+      valueAsBox  = get[Box](obj, name)
+      valAsString = valueType.oneArgToString(valueAsBox, lit = asLit)
+
+    if transformers == nil or name notin transformers:
+      result.add(valAsString)
+
+    else:
+      result.add(transformers[name](name, valAsString))
+
+proc getValuesForAllObjects*(state: ConfigState, fqn: string,
+                             fieldsToUse: openarray[string],
+                             asLit = true,
+                             transformers: TransformTableRef = nil):
+                               seq[seq[string]] =
+  let objOpt = state.attrs.getObjectOpt(fqn)
+
+  if objOpt.isNone():
+    raise newException(ValueError, "No object found: " & fqn)
+
+  let obj = objOpt.get()
+  for k, v in obj.contents:
+    if v.isA(Attribute):
+      continue
+    var thisRow = @[k]
+
+    thisRow &= state.getObjectValuesAsArray(fqn & "." & k, fieldsToUse, asLit,
+                                                        transformers)
+    result.add(thisRow)
+
 proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
                                 fieldsToUse: openarray[string],
                                 transformers: TransformTableRef = nil):
@@ -1226,66 +1291,6 @@ proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
       curResult.add(oneValue)
 
     result.add(curResult)
-
-proc formatCellsAsMarkdownList*(base: seq[seq[string]],
-                                toEmph: openarray[string],
-                                firstCellPrefix = "\n## "): string =
-  for row in base:
-    result &= "\n"
-    if firstCellPrefix != "":
-      result &= firstCellPrefix
-      if len(toEmph) != 0 and toEmph[0] != "":
-        result &= "**" & toEmph[0] & "** "
-
-    for i, cell in row:
-      if i == 0:
-        result &= row[0] & "\n\n"
-      else:
-        result &= "- "
-        if i < len(toEmph) and toEmph[i] != "":
-          result &= "**" & toEmph[i] & "** "
-          result &= cell & "\n"
-
-    result &= "\n"
-
-  result &= "\n"
-
-proc formatCellsAsHtmlTable*(base:            seq[seq[string]],
-                             headers:         openarray[string],
-                             mToHtml         = true,
-                             verticalHeaders = false): string =
-  if verticalHeaders:
-    for row in base:
-      if len(headers) != len(row):
-        raise newException(ValueError, "Can't omit headers when doing " &
-          "one cell per table")
-
-      result &= "<table><tbody>"
-      for i, cell in row:
-        result &= "<tr><th>" & headers[i] & "</th><td>"
-        if mToHtml:
-          result &= cell.markdownToHtml()
-        else:
-          result &= cell
-        result &= "</td></tr>"
-      result &= "</tbody></table>"
-  else:
-    result &= "<table><thead><tr>"
-    for item in headers:
-      result &= "<th>" & item & "</th>"
-    result &= "</tr></thead><tbody>"
-
-    for row in base:
-      result &= "<tr>"
-      for cell in row:
-        result &= "<td>"
-        if mToHtml:
-          result &= cell.markdownToHtml()
-        else:
-          result &= cell
-        result &= "</td>"
-      result &= "</tr>"
-    result &= "</tbody></table>"
 
 proc getAllInstanceDocs*(state: ConfigState, fqn: string,
                          fieldsToUse: openarray[string],

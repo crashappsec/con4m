@@ -9,7 +9,7 @@
 ## :Copyright: 2023
 
 import tables, strformat, options, streams, nimutils
-import types, parse, run, spec, errmsg, typecheck, dollars, legacy
+import types, parse, spec, errmsg, typecheck, dollars, legacy
 
 const
   validatorSig    = "func(string, `t) -> string"

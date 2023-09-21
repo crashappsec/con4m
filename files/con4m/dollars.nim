@@ -44,16 +44,16 @@ else:
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
 template colorType(s: string): string =
-  toAnsiCode(acGreen) & s & toAnsiCode(acReset)
+  stylize("<green>" & s & "</green>")
 
 template colorLit(s: string): string =
-  toAnsiCode(acRed) & s & toAnsiCode(acReset)
+  stylize("<red>" & s & "</red>")
 
 template colorNT(s: string): string =
-  toAnsiCode(acBrown) & s & toAnsiCode(acReset)
+  stylize("<jazzberry>" & s & "</jazzberry>")
 
 template colorT(s: string): string =
-  toAnsiCode(acYellow) & s & toAnsiCode(acReset)
+  stylize("<orange>" & s & "</orange>")
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]
@@ -399,7 +399,7 @@ proc oneArgToString*(t: Con4mType,
 proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
   var path = inpath & @[self.name]
 
-  result = toAnsiCode([acBold]) & path.join(".") & toAnsiCode([acReset]) & "\n"
+  result = path.join(".") & "\n"
   var rows = @[@["Name", "Type", "Value"]]
 
 
@@ -418,17 +418,7 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
       row.add(@[sec.name, "section", "n/a"])
     rows.add(row)
 
-  var tbl = newTextTable(3,
-                         rows          = rows,
-                         fillWidth     = true,
-                         rowHeaderSep  = some(Rune('-')),
-                         colHeaderSep  = none(Rune),
-                         colSep        = some(Rune('|')),
-                         addLeftBorder = true, addRightBorder = true,
-                         rHdrFmt       = @[acBCyan],
-                         eColFmt       = @[acBGCyan, acBBlack],
-                         oColFmt       = @[acBGWhite, acBBlack])
-  result &= tbl.render()
+  result &= rows.instantTableWithHeaders()
 
   for k, v in self.contents:
     if v.isA(AttrScope):
@@ -449,19 +439,7 @@ proc `$`*(self: VarScope): string =
   for k, v in self.contents:
     rows.add(@[k, $(v.tInfo)])
 
-  var tbl = newTextTable(2,
-                         rows          = rows,
-                         fillWidth     = true,
-                         rowHeaderSep  = some(Rune('-')),
-                         colHeaderSep  = none(Rune),
-                         colSep        = some(Rune('|')),
-                         addLeftBorder = true, addRightBorder  = true,
-                         addTopBorder  = true, addBottomBorder = true,
-                         rHdrFmt       = @[acBCyan],
-                         eRowFmt       = @[acBGCyan, acBBlack],
-                         oRowFmt       = @[acBGWhite, acBBlack])
-
-  return result & tbl.render()
+  result &= rows.instantTableWithHeaders()
 
 proc `<`(x, y: seq[string]): bool =
   if x[0] == y[0]:
@@ -480,16 +458,4 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
   rows.sort()
   rows = @[@["Name", "Type", "Kind"]] & rows
 
-  var tbl = newTextTable(3,
-                         rows          = rows,
-                         fillWidth     = true,
-                         rowHeaderSep  = some(Rune('-')),
-                         colHeaderSep  = none(Rune),
-                         colSep        = some(Rune('|')),
-                         addLeftBorder = true, addRightBorder  = true,
-                         addTopBorder  = true, addBottomBorder = true,
-                         rHdrFmt       = @[acBCyan],
-                         eRowFmt       = @[acBGCyan, acBBlack],
-                         oRowFmt       = @[acBGWhite, acBBlack])
-
-  return result & tbl.render()
+  result &= rows.instantTableWithHeaders()

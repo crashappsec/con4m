@@ -43,11 +43,9 @@ proc formatCompilerError(msg: string,
                          ii:  InstInfo): string =
   let
     me    = getAppFileName().splitPath().tail
-    red   = toAnsiCode(acRed)
-    reset = toAnsiCode(acReset)
-    bold  = toAnsiCode(acBold)
 
-  result = fmt"{red}{me}{reset}: {curFileName}: "
+  result = stylize("<red>" & me & "</red>" & curFileName & ": ")
+
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
   result &= msg
@@ -66,15 +64,15 @@ proc formatCompilerError(msg: string,
         pad    = repeat(' ', offset + 1)
 
       result &= "\n  " & lines[line] & "\n"
-      result &= pad & bold & "^" & reset
+      result &= pad & "<strong>^</strong>".stylize()
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
-      result &= "\n" & toAnsiCode(@[acBold]) & tb
+      result &= "\n"
+      result &= stylize("<bold>" & tb & "</bold>")
       if ii.line != 0:
         result &= "Exception thrown at: "
         result &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")\n"
-      result &= toAnsiCode(@[acReset])
 
 proc rawPublish(level: LogLevel, msg: string) {.inline.} =
   publishParams["loglevel"] = $(level)

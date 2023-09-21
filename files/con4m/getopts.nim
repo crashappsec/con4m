@@ -6,7 +6,7 @@
 ## results are undefined :)
 
 import unicode, options, tables, os, sequtils, types, nimutils, st, eval,
-       std/terminal, algorithm, spec, nimutils/help, typecheck
+       algorithm, typecheck
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"
@@ -950,42 +950,8 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
 
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
-template heading(s: string, color = acMagenta): string =
-  toAnsiCode(color) & s & toAnsiCode(acReset)
-
-proc instantTable*(cells: seq[string]): string =
-  #  TODO: push this into texttable.
-  var
-    remainingWidth         = terminalWidth()
-    numcol                 = 0
-    rows: seq[seq[string]]
-    row:  seq[string]      = @[]
-
-  # Find the ideal with.
-  for item in cells:
-    remainingWidth = remainingWidth - len(item) - 2
-    if remainingWidth < 0: break
-    numcol = numcol + 1
-  if numcol == 0: numcol = 1
-
-  for i, item in cells:
-    if i != 0 and i mod numcol == 0:
-      rows.add(row)
-      row = @[]
-    row.add(item)
-
-  var n = len(cells)
-  while n mod numcol != 0:
-    row.add("")
-    n = n + 1
-
-  rows.add(row)
-
-  var outTbl = tableC4mStyle(numcol, rows)
-  outTbl.setNoHeaders()
-  outTbl.setNoFormatting()
-
-  return outTbl.render()
+template heading(s: string): string =
+  ("<h1>" & s & "</h1>").stylize()
 
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
@@ -1018,7 +984,7 @@ proc getUsage(cmd: CommandSpec): string =
     else:               subs = "COMMAND"
 
   let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
-  return heading(use, color = acBRed)
+  return heading(use)
 
 proc getCommandList(cmd: CommandSpec): string =
   var cmds: seq[string]
@@ -1030,8 +996,8 @@ proc getCommandList(cmd: CommandSpec): string =
   cmds.sort()
 
   return heading("Available Commands: ") & "\n" & instantTable(cmds) & "\n" &
-         heading("See additional help for info on individual commands.",
-                   color = acBold) & "\n"
+         heading("See additional help for info on individual commands.") & "\n"
+
 
 proc getAdditionalTopics(cmd: CommandSpec): string =
   var topics: seq[string]
@@ -1119,13 +1085,12 @@ proc getFlagHelp(cmd: CommandSpec): string =
         fstr &= "\nor: " & aliases.join(", ")
       rows.add(@[fstr, spec.doc])
 
-  var outTbl = tableC4mStyle(2, rows, wrapStyle = WrapLinesHang)
+  var outTbl = instantTableWithHeaders(rows)
 
-  result = heading("Flags: ") & "\n" & outTbl.render()
+  result = heading("Flags: ") & "\n" & outTbl
 
 proc getOneCmdHelp(cmd: CommandSpec): string =
-  result = getUsage(cmd) &
-    formatHelp(cmd.doc, Corpus(cmd.extraHelpTopics)) & "\n"
+  result = getUsage(cmd) & cmd.doc.stylize()
 
   if len(cmd.commands) != 0:
      result &= cmd.getCommandList()
@@ -1134,6 +1099,35 @@ proc getOneCmdHelp(cmd: CommandSpec): string =
 
   if len(cmd.extraHelpTopics) != 0:
     result &= cmd.getAdditionalTopics()
+
+type Corpus = OrderedFileTable
+
+proc getHelp(corpus: Corpus, inargs: seq[string]): string =
+  var args  = inargs
+
+  if len(args) == 0:
+    args = @["main"]
+
+  for arg in args:
+    if arg notin corpus:
+      if arg != "topics":
+        result.add("<h2>" & "No such topic: <em>" & arg & "</em></h2>")
+        continue
+
+      var topics: seq[string] = @[]
+      var widest              = 0
+
+      for key, _ in corpus: topics.add(key)
+
+      result.add("<h1> Available Help Topics</h1>")
+
+      result.add(topics.instantTable(html = true))
+
+    else:
+      var processed = arg.replace('_', ' ')
+      processed = $(Rune(processed[0]).toUpper()) & processed[1 .. ^1]
+
+      result.add(unicode.strip(corpus[arg]).markdownToHtml())
 
 proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
 
@@ -1164,12 +1158,12 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
-          stderr.writeLine(heading("Help for " & given, color = acBCyan))
+          stderr.writeLine(heading("Help for " & given))
           stderr.writeLine(reporting.perLineWrap())
           continue
         if given != reporting:
           stderr.writeLine(heading("Note: '" & given & "' is an alias for '" &
-            reporting & "'", color = acBCyan))
+            reporting & "'"))
 
         result &= getOneCmdHelp(cmd.commands[reporting])
 
