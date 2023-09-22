@@ -264,6 +264,8 @@ proc c4mStartsWith*(args: seq[Box],
     arg2 = unpack[string](args[1])
     res = arg1.startsWith(arg2)
 
+  return some(pack(res))
+
 proc c4mEndsWith*(args: seq[Box],
                     unused = ConfigState(nil)): Option[Box] =
 
@@ -271,6 +273,8 @@ proc c4mEndsWith*(args: seq[Box],
     arg1 = unpack[string](args[0])
     arg2 = unpack[string](args[1])
     res = arg1.endsWith(arg2)
+
+  return some(pack(res))
 
 proc c4mFindFromStart*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
@@ -686,6 +690,7 @@ proc c4mTmpWrite*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   try:
     let (f, path) = getNewTempFile(prefix, suffix)
+
     f.write(unpack[string](args[0]))
     f.close()
 
