@@ -1898,7 +1898,7 @@ Turn a list of characters into a `string` object. Will work for both arrays utf8
    BuiltInFn(c4mStartsWith),
    "Returns `true` if the first argument starts with the second argument.",
    @["string"]),
-  ("contains(string, string) -> bool",
+  ("ends_with(string, string) -> bool",
    BuiltInFn(c4mEndsWith),
    "Returns `true` if the first argument ends with the second argument.",
    @["string"]),
