@@ -348,9 +348,9 @@ proc formatCommandTable(obj:  AttrScope,
 
 proc formatFlag(flagname: string): string =
   if len(flagname) == 1:
-    result = "<pre><code>-" & flagname & "</code></pre>"
+    result = "<code>-" & flagname & "</code>"
   else:
-    result = "<pre><code>--" & flagname & "</code></pre>"
+    result = "<code>--" & flagname & "</code>"
 
 proc formatAliases(scope: AttrScope, flagname: string,
                    defYes, defNo: seq[string]): string =
@@ -404,8 +404,8 @@ proc baseFlag(flagname: string, scope: AttrScope, opts: CmdLineDocOpts,
     ensureNewLine()
     result &= "<br>"
     if "field_to_set" in scope.contents:
-      result &= "    <em>Sets config field: <pre><code>"
-      result &= get[string](scope, "field_to_set") & "</code></pre></em>\n"
+      result &= "    <em>Sets config field: <code>"
+      result &= get[string](scope, "field_to_set") & "</code></em>\n"
     if extraCol2 != "":
       result &= "<br>\n" & extraCol2
       ensureNewLine()
@@ -473,10 +473,10 @@ proc formatMultiChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
 proc formatAutoHelpFlag(opts: CmdLineDocOpts): string =
   return """
 <tr>
-  <td><pre><code>--help</code></pre>
+  <td><code>--help</code>
     <br>
     <br>
-    <em>Aliases:</em> <pre><code>-h</code></pre>
+    <em>Aliases:</em> <code>-h</code>
   </td>
   <td>
     Shows help for this command.
@@ -952,8 +952,8 @@ proc getMatchingConfigOptions*(state: ConfigState,
           thisRow.add("<em>None</em>")
         else:
           let obj = objOpt.get()
-          thisRow.add("<pre><code>" &
-              f.extType.tInfo.oneArgToString(obj, lit = true) & "</code></pre>")
+          thisRow.add("<code>" &
+              f.extType.tInfo.oneArgToString(obj, lit = true) & "</code>")
       of CcShort:
         thisRow.add(f.shortDoc.getOrElse("No description available."))
       of CcLong:
@@ -962,9 +962,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            thisRow.add("Type set by field <pre><code>" &
+            thisRow.add("Type set by field <code>" &
               f.extType.fieldRef &
-              "</code></pre>")
+              "</code>")
           of TypeC4TypeSpec:
             thisRow.add("A type specification")
           of TypePrimitive:
@@ -973,9 +973,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
             discard
       of CcDefault:
         if f.default.isSome():
-          thisRow.add("<pre><code>" &
+          thisRow.add("<code>" &
             f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "</code></pre>")
+            "</code>>")
         else:
           thisRow.add("<em>None</em>")
 
@@ -1370,6 +1370,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                          fieldsToUse: openarray[string],
                          searchFields: openarray[string],
                          searchTerms: openarray[string],
+                         searchItemName: bool = true,
                          headings: openarray[string] = [],
                          markdownFields: openarray[string] = [],
                          transformers: TransformTableRef = nil,
@@ -1384,8 +1385,15 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
     result &= "</tr></thead><tbody>"
 
   let allInfo = state.getAllInstanceRawDocs(fqn)
+
   for name, fieldDocs in allInfo:
     var found =  false
+    for term in searchTerms:
+      if term.toLowerAscii() in name.toLowerAscii():
+        found = true
+        gotAnyMatch = true
+      echo term, " ", name
+
     for field in searchFields:
       if found: break
       if field notin fieldDocs:
@@ -1395,6 +1403,9 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
           found       = true
           gotAnyMatch = true
           break
+
+    if not found:
+      continue
 
     if table:
       result &= "<tr><td>" & name & "</td>"
@@ -1410,7 +1421,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                      else: nil
 
       var oneValue = if propDocs == nil:
-                       "*None*"
+                       "<i>None</i>"
                      else:
                        propDocs["value"]
 
@@ -1440,5 +1451,8 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
         result &= "</ul>"
   if table:
     result &= "</tbody></table>"
+
+  if not gotAnyMatch:
+    result = "<h1>No match found.</h1>"
 
   result = result.docFormat(docKind)
