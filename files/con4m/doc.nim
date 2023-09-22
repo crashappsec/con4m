@@ -18,9 +18,9 @@ type
     showSubs*:          bool        = true
     noteEmptySubs*:     bool        = false
     addDescHeader*:     bool        = true
-    commandHeadingStr*: string      = "# "
-    descrHeadingStr*:   string      = "### "
-    subsecHeadingStr*:  string      = "## "
+    commandHeadingStr*: string      = "\n\n# "
+    descrHeadingStr*:   string      = "\n\n### "
+    subsecHeadingStr*:  string      = "\n\n## "
     recursiveSubPaths*: seq[string] = @["help"]
     showFlags*:         bool        = true
     showNumFlags*:      bool        = true
@@ -800,7 +800,7 @@ proc getCommandDocsInternal(state: ConfigState, cmd: string,
     objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
     subsects = obj.getAllSubScopes()
     short    = objDocs.sectionDocs["shortdoc"]
-    long     = objDocs.sectionDocs["longdoc"]
+    long     = objDocs.sectionDocs["longdoc"].markdownToHtml()
     subCmd   = if '.' in cmd: true else: false
 
   result = opts.commandHeadingStr
@@ -868,8 +868,6 @@ line, or in generated HTML docs.
     if flagFmt != "":
       result &= opts.subsecHeadingStr & "Flags" & "\n"
       result &= flagFmt
-
-
 
   return result.docFormat(opts.docKind)
 
@@ -996,7 +994,7 @@ proc getMatchingConfigOptions*(state: ConfigState,
       result.add(thisRow)
 
 proc getConfigOptionDocs*(state: ConfigState,
-            section = "", docKind = CDocConsole,
+            secName = "", docKind = CDocConsole,
             showHiddenSections = false,
             showHiddenFields = false,
             expandDocField = true,
@@ -1018,7 +1016,9 @@ proc getConfigOptionDocs*(state: ConfigState,
   if state.spec.isNone():
     return ""
 
-  var sec: Con4mSectionType
+  var
+    sec: Con4mSectionType
+    section = secName
 
   if section == "":
     sec = state.spec.get().rootSpec
@@ -1030,7 +1030,8 @@ proc getConfigOptionDocs*(state: ConfigState,
 
     sec = secspecs[section]
 
-  if sec.hidden and not showHiddenSections: return ""
+    if sec.hidden and not showHiddenSections:
+      return ""
 
   if sec.shortdoc.isSome():
     result = "\n\n# " & sec.shortdoc.get() & "\n\n"
@@ -1039,7 +1040,7 @@ proc getConfigOptionDocs*(state: ConfigState,
                 "the command"
               else:
                 "the *" & section & "* section"
-    result = "# Configuration for " & txt
+    result = "\n\n# Configuration for " & txt & "\n\n"
 
   if sec.doc.isSome():
     if expandDocField:
@@ -1047,7 +1048,7 @@ proc getConfigOptionDocs*(state: ConfigState,
     else:
       result &= sec.doc.get()
   else:
-    result &= """There is no documentation for this section.
+    result &= "There is no documentation for the section: " & section & """
 Document this section by adding a 'doc' field to its definition
 in your configuration file.
 """
@@ -1088,11 +1089,11 @@ in your configuration file.
             discard
       of CcDefault:
         if f.default.isSome():
-          result &= "`" &
+          result &= "<em>" &
             f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "`"
+            "</em>"
         else:
-          result &= "*None*"
+          result &= "<i>None</i>"
           # TODO: constraints.
       result &= "</td>"
     result &= "</tr>"
@@ -1143,6 +1144,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
                           skipcategories = true,
                           columns    = [BiSig, BiLong],
                           byCategory = true,
+                          expandDoc  = true,
                           colnames   = ["Signature", "Description"],
                           preamble   = defaultPreamble,
                           docKind    = CDocConsole): string =
@@ -1173,10 +1175,10 @@ proc getBuiltinsTableDoc*(state: ConfigState,
           result &= entry.tags.join(", ")
         of BiLong:
           let docstr = entry.doc.getOrElse("No description available.")
-          if docKind == CDocRaw:
-            result &= docstr
-          else:
+          if expandDoc:
             result &= docstr.markdownToHtml()
+          else:
+            result &= docstr
         result &= "</td>"
       result &= "</tr>"
     if byCategory:
