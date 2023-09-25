@@ -140,6 +140,15 @@ function ensure_musl {
       return
   fi
   if [[ ! -f ${MUSL_GCC} ]] ; then
+      # if musl-gcc is already installed, use it
+      existing_musl=$(which musl-gcc 2> /dev/null)
+      if [[ -n "${existing_musl}" ]]; then
+        mkdir -p $(dirname ${MUSL_GCC})
+        ln -s ${existing_musl} ${MUSL_GCC}
+        echo $(color GREEN Linking existing musl-gcc: ) ${existing_musl} $(color GREEN "->" ) ${MUSL_GCC}
+      fi
+  fi
+  if [[ ! -f ${MUSL_GCC} ]] ; then
     get_src musl git://git.musl-libc.org/musl
     colorln CYAN Building musl
     unset CC
@@ -220,7 +229,7 @@ function ensure_gumbo {
         ensure_musl
         get_src sigil-gumbo https://github.com/Sigil-Ebook/sigil-gumbo/
         colorln CYAN "Watching our waistline, selecting only required gumbo ingredients..."
-        cat > CMakelists.txt <<EOL
+        cat > CMakeLists.txt <<EOL
 cmake_minimum_required( VERSION 3.0 )
 
 project(gumbo)
