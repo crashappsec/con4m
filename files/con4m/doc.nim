@@ -1,5 +1,5 @@
 import options, tables, strutils, strformat, nimutils, macros, unicode, sugar
-import types, st, dollars, spec, os
+import types, st, dollars, os
 
 type
   CDocKind* = enum
@@ -18,9 +18,9 @@ type
     showSubs*:          bool        = true
     noteEmptySubs*:     bool        = false
     addDescHeader*:     bool        = true
-    commandHeadingStr*: string      = "# "
-    descrHeadingStr*:   string      = "### "
-    subsecHeadingStr*:  string      = "## "
+    commandHeadingStr*: string      = "\n\n# "
+    descrHeadingStr*:   string      = "\n\n### "
+    subsecHeadingStr*:  string      = "\n\n## "
     recursiveSubPaths*: seq[string] = @["help"]
     showFlags*:         bool        = true
     showNumFlags*:      bool        = true
@@ -34,7 +34,7 @@ type
   SectionObjDocs*  = OrderedTable[string, ObjectFieldDocs] # obj name -> fields
 
   ConfigCols* = enum
-    CcVarName, CcShort, CcLong, CcType, CcDefault
+    CcVarName, CcShort, CcLong, CcType, CcDefault, CcCurValue
   BuiltInCols* = enum
     BiSig, BiCategories, BiLong
 
@@ -348,9 +348,9 @@ proc formatCommandTable(obj:  AttrScope,
 
 proc formatFlag(flagname: string): string =
   if len(flagname) == 1:
-    result = "<pre><code>-" & flagname & "</code></pre>"
+    result = "<code>-" & flagname & "</code>"
   else:
-    result = "<pre><code>--" & flagname & "</code></pre>"
+    result = "<code>--" & flagname & "</code>"
 
 proc formatAliases(scope: AttrScope, flagname: string,
                    defYes, defNo: seq[string]): string =
@@ -404,8 +404,8 @@ proc baseFlag(flagname: string, scope: AttrScope, opts: CmdLineDocOpts,
     ensureNewLine()
     result &= "<br>"
     if "field_to_set" in scope.contents:
-      result &= "    <em>Sets config field: <pre><code>"
-      result &= get[string](scope, "field_to_set") & "</code></pre></em>\n"
+      result &= "    <em>Sets config field: <code>"
+      result &= get[string](scope, "field_to_set") & "</code></em>\n"
     if extraCol2 != "":
       result &= "<br>\n" & extraCol2
       ensureNewLine()
@@ -473,10 +473,10 @@ proc formatMultiChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
 proc formatAutoHelpFlag(opts: CmdLineDocOpts): string =
   return """
 <tr>
-  <td><pre><code>--help</code></pre>
+  <td><code>--help</code>
     <br>
     <br>
-    <em>Aliases:</em> <pre><code>-h</code></pre>
+    <em>Aliases:</em> <code>-h</code>
   </td>
   <td>
     Shows help for this command.
@@ -800,7 +800,7 @@ proc getCommandDocsInternal(state: ConfigState, cmd: string,
     objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
     subsects = obj.getAllSubScopes()
     short    = objDocs.sectionDocs["shortdoc"]
-    long     = objDocs.sectionDocs["longdoc"]
+    long     = objDocs.sectionDocs["longdoc"].markdownToHtml()
     subCmd   = if '.' in cmd: true else: false
 
   result = opts.commandHeadingStr
@@ -869,8 +869,6 @@ line, or in generated HTML docs.
       result &= opts.subsecHeadingStr & "Flags" & "\n"
       result &= flagFmt
 
-
-
   return result.docFormat(opts.docKind)
 
 proc getCommandDocs*(state: ConfigState, cmd = "",
@@ -911,8 +909,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
             showHiddenFields = false,
             filterTerms: openarray[string] = [],
             cols: openarray[ConfigCols] = [CcVarName, CcType,
-                                           CcDefault, CcLong]):
-                                             seq[seq[string]] =
+                                           CcDefault, CcLong],
+            sectionPath = ""): seq[seq[string]] =
+  # SectionPath is only needed if you request CcCurValue
   if state.spec.isNone():
     return
 
@@ -941,6 +940,20 @@ proc getMatchingConfigOptions*(state: ConfigState,
       case item
       of CcVarName:
         thisRow.add(n)
+      of CcCurValue:
+        var path: string
+        if sectionPath == "":
+          path = n
+        else:
+          path = sectionPath & "." & n
+
+        let objOpt = getOpt[Box](state.attrs, path)
+        if objOpt.isNone():
+          thisRow.add("<em>None</em>")
+        else:
+          let obj = objOpt.get()
+          thisRow.add("<code>" &
+              f.extType.tInfo.oneArgToString(obj, lit = true) & "</code>")
       of CcShort:
         thisRow.add(f.shortDoc.getOrElse("No description available."))
       of CcLong:
@@ -949,9 +962,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            thisRow.add("Type set by field <pre><code>" &
+            thisRow.add("Type set by field <code>" &
               f.extType.fieldRef &
-              "</code></pre>")
+              "</code>")
           of TypeC4TypeSpec:
             thisRow.add("A type specification")
           of TypePrimitive:
@@ -960,9 +973,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
             discard
       of CcDefault:
         if f.default.isSome():
-          thisRow.add("<pre><code>" &
+          thisRow.add("<code>" &
             f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "</code></pre>")
+            "</code>>")
         else:
           thisRow.add("<em>None</em>")
 
@@ -980,9 +993,8 @@ proc getMatchingConfigOptions*(state: ConfigState,
     if showRow:
       result.add(thisRow)
 
-
 proc getConfigOptionDocs*(state: ConfigState,
-            section = "", docKind = CDocConsole,
+            secName = "", docKind = CDocConsole,
             showHiddenSections = false,
             showHiddenFields = false,
             expandDocField = true,
@@ -1004,7 +1016,9 @@ proc getConfigOptionDocs*(state: ConfigState,
   if state.spec.isNone():
     return ""
 
-  var sec: Con4mSectionType
+  var
+    sec: Con4mSectionType
+    section = secName
 
   if section == "":
     sec = state.spec.get().rootSpec
@@ -1016,7 +1030,8 @@ proc getConfigOptionDocs*(state: ConfigState,
 
     sec = secspecs[section]
 
-  if sec.hidden and not showHiddenSections: return ""
+    if sec.hidden and not showHiddenSections:
+      return ""
 
   if sec.shortdoc.isSome():
     result = "\n\n# " & sec.shortdoc.get() & "\n\n"
@@ -1025,7 +1040,7 @@ proc getConfigOptionDocs*(state: ConfigState,
                 "the command"
               else:
                 "the *" & section & "* section"
-    result = "# Configuration for " & txt
+    result = "\n\n# Configuration for " & txt & "\n\n"
 
   if sec.doc.isSome():
     if expandDocField:
@@ -1033,7 +1048,7 @@ proc getConfigOptionDocs*(state: ConfigState,
     else:
       result &= sec.doc.get()
   else:
-    result &= """There is no documentation for this section.
+    result &= "There is no documentation for the section: " & section & """
 Document this section by adding a 'doc' field to its definition
 in your configuration file.
 """
@@ -1056,6 +1071,8 @@ in your configuration file.
       case item
       of CcVarName:
         result &= n
+      of CcCurValue:
+        result &= "not implemented here"
       of CcShort:
         result &= f.shortDoc.getOrElse("No description available.")
       of CcLong:
@@ -1072,11 +1089,11 @@ in your configuration file.
             discard
       of CcDefault:
         if f.default.isSome():
-          result &= "`" &
+          result &= "<em>" &
             f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "`"
+            "</em>"
         else:
-          result &= "*None*"
+          result &= "<i>None</i>"
           # TODO: constraints.
       result &= "</td>"
     result &= "</tr>"
@@ -1127,6 +1144,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
                           skipcategories = true,
                           columns    = [BiSig, BiLong],
                           byCategory = true,
+                          expandDoc  = true,
                           colnames   = ["Signature", "Description"],
                           preamble   = defaultPreamble,
                           docKind    = CDocConsole): string =
@@ -1157,10 +1175,10 @@ proc getBuiltinsTableDoc*(state: ConfigState,
           result &= entry.tags.join(", ")
         of BiLong:
           let docstr = entry.doc.getOrElse("No description available.")
-          if docKind == CDocRaw:
-            result &= docstr
-          else:
+          if expandDoc:
             result &= docstr.markdownToHtml()
+          else:
+            result &= docstr
         result &= "</td>"
       result &= "</tr>"
     if byCategory:
@@ -1199,6 +1217,55 @@ proc getAllInstanceRawDocs*(state: ConfigState, fqn: string): SectionObjDocs =
 
   sectionDocCache[fqn] = result
 
+proc getObjectValuesAsArray*(state: ConfigState, fqn: string,
+                             fieldsToUse: openarray[string],
+                             asLit = true,
+                             transformers: TransformTableRef = nil):
+                               seq[string] =
+  let objOpt = state.attrs.getObjectOpt(fqn)
+
+  if objOpt.isNone():
+    raise newException(ValueError, "No object found: " & fqn)
+
+  let obj = objOpt.get()
+  for name in fieldsToUse:
+    if name notin obj.contents:
+      result.add("*None*")
+      continue
+    if obj.contents[name].isA(AttrScope):
+      result.add("*Not a field*")
+      continue
+    let
+      valueType   = obj.contents[name].get(Attribute).tInfo
+      valueAsBox  = get[Box](obj, name)
+      valAsString = valueType.oneArgToString(valueAsBox, lit = asLit)
+
+    if transformers == nil or name notin transformers:
+      result.add(valAsString)
+
+    else:
+      result.add(transformers[name](name, valAsString))
+
+proc getValuesForAllObjects*(state: ConfigState, fqn: string,
+                             fieldsToUse: openarray[string],
+                             asLit = true,
+                             transformers: TransformTableRef = nil):
+                               seq[seq[string]] =
+  let objOpt = state.attrs.getObjectOpt(fqn)
+
+  if objOpt.isNone():
+    raise newException(ValueError, "No object found: " & fqn)
+
+  let obj = objOpt.get()
+  for k, v in obj.contents:
+    if v.isA(Attribute):
+      continue
+    var thisRow = @[k]
+
+    thisRow &= state.getObjectValuesAsArray(fqn & "." & k, fieldsToUse, asLit,
+                                                        transformers)
+    result.add(thisRow)
+
 proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
                                 fieldsToUse: openarray[string],
                                 transformers: TransformTableRef = nil):
@@ -1226,66 +1293,6 @@ proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
       curResult.add(oneValue)
 
     result.add(curResult)
-
-proc formatCellsAsMarkdownList*(base: seq[seq[string]],
-                                toEmph: openarray[string],
-                                firstCellPrefix = "\n## "): string =
-  for row in base:
-    result &= "\n"
-    if firstCellPrefix != "":
-      result &= firstCellPrefix
-      if len(toEmph) != 0 and toEmph[0] != "":
-        result &= "**" & toEmph[0] & "** "
-
-    for i, cell in row:
-      if i == 0:
-        result &= row[0] & "\n\n"
-      else:
-        result &= "- "
-        if i < len(toEmph) and toEmph[i] != "":
-          result &= "**" & toEmph[i] & "** "
-          result &= cell & "\n"
-
-    result &= "\n"
-
-  result &= "\n"
-
-proc formatCellsAsHtmlTable*(base:            seq[seq[string]],
-                             headers:         openarray[string],
-                             mToHtml         = true,
-                             verticalHeaders = false): string =
-  if verticalHeaders:
-    for row in base:
-      if len(headers) != len(row):
-        raise newException(ValueError, "Can't omit headers when doing " &
-          "one cell per table")
-
-      result &= "<table><tbody>"
-      for i, cell in row:
-        result &= "<tr><th>" & headers[i] & "</th><td>"
-        if mToHtml:
-          result &= cell.markdownToHtml()
-        else:
-          result &= cell
-        result &= "</td></tr>"
-      result &= "</tbody></table>"
-  else:
-    result &= "<table><thead><tr>"
-    for item in headers:
-      result &= "<th>" & item & "</th>"
-    result &= "</tr></thead><tbody>"
-
-    for row in base:
-      result &= "<tr>"
-      for cell in row:
-        result &= "<td>"
-        if mToHtml:
-          result &= cell.markdownToHtml()
-        else:
-          result &= cell
-        result &= "</td>"
-      result &= "</tr>"
-    result &= "</tbody></table>"
 
 proc getAllInstanceDocs*(state: ConfigState, fqn: string,
                          fieldsToUse: openarray[string],
@@ -1363,6 +1370,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                          fieldsToUse: openarray[string],
                          searchFields: openarray[string],
                          searchTerms: openarray[string],
+                         searchItemName: bool = true,
                          headings: openarray[string] = [],
                          markdownFields: openarray[string] = [],
                          transformers: TransformTableRef = nil,
@@ -1377,8 +1385,15 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
     result &= "</tr></thead><tbody>"
 
   let allInfo = state.getAllInstanceRawDocs(fqn)
+
   for name, fieldDocs in allInfo:
     var found =  false
+    for term in searchTerms:
+      if term.toLowerAscii() in name.toLowerAscii():
+        found = true
+        gotAnyMatch = true
+      echo term, " ", name
+
     for field in searchFields:
       if found: break
       if field notin fieldDocs:
@@ -1388,6 +1403,9 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
           found       = true
           gotAnyMatch = true
           break
+
+    if not found:
+      continue
 
     if table:
       result &= "<tr><td>" & name & "</td>"
@@ -1403,7 +1421,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                      else: nil
 
       var oneValue = if propDocs == nil:
-                       "*None*"
+                       "<i>None</i>"
                      else:
                        propDocs["value"]
 
@@ -1433,5 +1451,8 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
         result &= "</ul>"
   if table:
     result &= "</tbody></table>"
+
+  if not gotAnyMatch:
+    result = "<h1>No match found.</h1>"
 
   result = result.docFormat(docKind)

@@ -20,8 +20,7 @@ proc getConf*[T](s: string): Option[T] =
 import st, stack
 
 template cmdLineErrorOutput(msg: string) =
-    let formatted = perLineWrap(toAnsiCode(acBRed) & "error: " &
-                                toAnsiCode(acReset) & msg,
+    let formatted = perLineWrap(withColor( "error: ", "red") & msg ,
                                 firstHangingIndent = len("error: con4m: "),
                                 remainingIndents = 0)
     stderr.writeLine(formatted)
@@ -43,10 +42,9 @@ proc outputResults*(ctx: ConfigState) =
   of "raw": echo ctx.attrs.scopeToJson()
   of "json":
     let raw = ctx.attrs.scopeToJson()
-    stderr.write(toAnsiCode([acBRed]))
-    stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
-    echo parseJson(ctx.attrs.scopeToJson()).pretty()
-    stderr.writeLine(toAnsiCode([acReset]))
+    stderr.writeLine(withColor("Results:", "red"))
+    stderr.writeLine(parseJson(ctx.attrs.scopeToJson()).pretty())
+
   else: discard
 
 template safeRun(stack: ConfigStack) =

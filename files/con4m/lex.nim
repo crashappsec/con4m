@@ -513,10 +513,10 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
           continue # Back to the top
       while true:
         let r = s.readRune()
-        case char(r.ord())
-        of '\\':
+        case r
+        of Rune('\\'):
           discard s.readRune()
-        of '"':
+        of Rune('"'):
           if not tristring:
             tok(TtStringLit, 1)
             break
@@ -529,11 +529,11 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
           tok(TtStringLit, 3)
           tristring = false
           break
-        of '\x00':
+        of Rune('\x00'):
           tok(ErrorStringLit)
           s.setPosition(startPos)
           return (false, toks)
-        of '\n':
+        of Rune('\n'):
           if tristring:
             atNewLine()
             continue

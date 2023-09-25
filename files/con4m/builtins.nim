@@ -256,6 +256,26 @@ proc c4mContainsStrStr*(args: seq[Box],
 
   return some(pack(res))
 
+proc c4mStartsWith*(args: seq[Box],
+                    unused = ConfigState(nil)): Option[Box] =
+
+  let
+    arg1 = unpack[string](args[0])
+    arg2 = unpack[string](args[1])
+    res = arg1.startsWith(arg2)
+
+  return some(pack(res))
+
+proc c4mEndsWith*(args: seq[Box],
+                    unused = ConfigState(nil)): Option[Box] =
+
+  let
+    arg1 = unpack[string](args[0])
+    arg2 = unpack[string](args[1])
+    res = arg1.endsWith(arg2)
+
+  return some(pack(res))
+
 proc c4mFindFromStart*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   ## Returns the index of the substring `s2`'s first appearence in the
   ## string `s1`, or -1 if it does not appear. Exposed by default as
@@ -670,6 +690,7 @@ proc c4mTmpWrite*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   try:
     let (f, path) = getNewTempFile(prefix, suffix)
+
     f.write(unpack[string](args[0]))
     f.close()
 
@@ -1877,6 +1898,14 @@ Turn a list of characters into a `string` object. Will work for both arrays utf8
   ("contains(string, string) -> bool",
    BuiltInFn(c4mContainsStrStr),
    "Returns `true` if the first argument contains the second argument.",
+   @["string"]),
+  ("starts_with(string, string) -> bool",
+   BuiltInFn(c4mStartsWith),
+   "Returns `true` if the first argument starts with the second argument.",
+   @["string"]),
+  ("ends_with(string, string) -> bool",
+   BuiltInFn(c4mEndsWith),
+   "Returns `true` if the first argument ends with the second argument.",
    @["string"]),
   ("find(string, string) -> int",
    BuiltInFn(c4mFindFromStart),

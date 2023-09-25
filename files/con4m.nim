@@ -57,7 +57,7 @@ elif isMainModule:
     colorOpt  = getOpt[bool](config, "color")
     specs     = get[seq[string]](config, "specs")
 
-  if colorOpt.isSome(): setShowColors(colorOpt.get())
+  if colorOpt.isSome(): setShowColor(colorOpt.get())
 
   setConfigState(config)
   if command == "run":

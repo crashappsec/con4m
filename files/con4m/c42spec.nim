@@ -9,7 +9,7 @@
 ## :Copyright: 2023
 
 import tables, strformat, options, streams, nimutils
-import types, parse, run, spec, errmsg, typecheck, dollars, legacy
+import types, parse, spec, errmsg, typecheck, dollars, st, legacy
 
 const
   validatorSig    = "func(string, `t) -> string"
@@ -320,6 +320,9 @@ proc populateType(spec: ConfigSpec, tInfo: Con4mSectionType, scope: AttrScope) =
   if unpack[bool](attr.value.get()):
     addAttr(tInfo, "*", newTypeVar(), false)
 
+  tInfo.doc      = getOpt[string](scope, "doc")
+  tInfo.shortdoc = getOpt[string](scope, "shortdoc")
+
 template setDocInfo() {.dirty.} =
   var
     shortdoc  = none(string)
@@ -392,9 +395,7 @@ proc generateC42Spec*(state: ConfigState,
     for name, objectSpec in contents["object"].get(AttrScope).contents:
       result.populateType(result.secSpecs[name], objectSpec.get(AttrScope))
 
-
   result.populateType(result.rootSpec, contents["root"].get(AttrScope))
-
 
 proc c42Spec*(s:        Stream,
               fileName: string): Option[(ConfigSpec, ConfigState)] =

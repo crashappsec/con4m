@@ -5,17 +5,17 @@
 ## :Copyright: 2022
 
 import options, tables, strutils, strformat, nimutils, macros, unicode, sugar
-import algorithm, builtins, types, typecheck, eval, st, dollars
+import builtins, types, typecheck, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
   let
-    name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
+    name = withColor(scope.fullNameAsStr(), "cyan")
     full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
   raise newException(ValueError, full)
 
 proc specErr*(attr: Attribute, msg: string) =
   let
-    name = toAnsiCode(acBCyan) & attr.fullNameAsStr() & toAnsiCode(acReset)
+    name = withColor(attr.fullNameAsStr(), "cyan")
     full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
   raise newException(ValueError, full)
 
@@ -24,12 +24,12 @@ proc specErr*(msg: string) =
                      fmt"In post execution check, at top-level: {msg}")
 
 proc defErr*(scope: AttrScope, msg: string) =
-  let name = toAnsiCode(acBCyan) & scope.fullNameAsStr() & toAnsiCode(acReset)
+  let name = withColor(scope.fullNameAsStr(), "cyan")
   raise newException(ValueError,
                      fmt"When defining section {name}: {msg}")
 
 proc defErr*(scope: Con4mSectionType, msg: string) =
-  let name = toAnsiCode(acBCyan) & scope.typeName & toAnsiCode(acReset)
+  let name = withColor(scope.typeName, "cyan")
   raise newException(ValueError,
                      fmt"When defining section {name}: {msg}")
 
@@ -471,9 +471,9 @@ proc validateOneAttrFieldPass2(attrs:        AttrScope,
         attrType = $(attr.tInfo)
 
       specErr(attr, fmt"Wrong type for '{name}' (spec said " &
-        toAnsiCode(acBGreen) & fmt"{specType} " & toAnsiCode(acReset) &
-        "but value is a: " & toAnsiCode(acBGreen) & fmt"{attrType}" &
-        toAnsiCode(acReset) & ")")
+        withColor(fmt"{specType} ", "green") &
+        "but value is a: " & withColor(fmt"{attrType}", "green") & ")")
+
 
     var attrVal = attr.attrToVal()
     if attrVal.isSome():
@@ -763,397 +763,5 @@ type
 
 let defaultObjDoc = @[fcName, fcLong, fcType, fcDefault, fcProps]
 
-proc tableC4mStyle*(numColumns:  int,
-                    rows:        seq[seq[string]]      = @[],
-                    headerAlign: Option[AlignmentType] = some(AlignCenter),
-                    wrapStyle                          =  WrapBlock,
-                    maxCellSz                          =  200): TextTable =
-  return newTextTable(numColumns      = numColumns,
-                      rows            = rows,
-                      fillWidth       = true,
-                      colHeaderSep    = some(Rune('|')),
-                      colSep          = some(Rune('|')),
-                      rowHeaderSep    = some(Rune('-')),
-                      intersectionSep = some(Rune('+')),
-                      rHdrFmt         = @[acFont1, acBMagenta],
-                      eRowFmt         = @[acFont0, acBGMagenta, acBBlack],
-                      oRowFmt         = @[acFont0, acBGWhite, acBBlack],
-                      addLeftBorder   = true,
-                      addRightBorder  = true,
-                      addTopBorder    = true,
-                      addBottomBorder = true,
-                      headerRowAlign  = headerAlign,
-                      wrapStyle       = wrapStyle)
-
 proc defaultCmp(x, y: seq[string]) : int =
   system.cmp(x, y)
-
-template applyFiltersAndAdd(row:         untyped,
-                            filter:      untyped,
-                            searchTerms: seq[string]) =
-  if filter != nil:
-    if not filter(row): continue
-
-  if len(searchTerms) != 0:
-    var inResults = false
-    block outer:
-      for term in searchTerms:
-        for field in row:
-          if field.toLowerAscii().contains(term.toLowerAscii()):
-            inResults = true
-            break outer
-    if not inResults: continue
-  rows.add(row)
-  addedRows += 1
-
-proc sectionsToTextTable*(obj:         AttrScope,
-                          heading:     string,
-                          filter:      Con4mRowFilter  = nil,
-                          searchTerms: seq[string]     = @[],
-                          cmp                          = defaultCmp,
-                          ): Option[TextTable] =
-  var
-    rows: seq[seq[string]] = @[]
-    addedRows = 0
-
-  for k, v in obj.contents:
-    if v.isA(Attribute): continue
-    applyFiltersAndAdd(@[k], filter, searchTerms)
-
-  if addedRows == 0: return none(TextTable)
-  rows.sort(cmp)
-
-  rows = @[@[heading]] & rows
-
-  return some(tableC4mStyle(1, rows))
-
-proc listSections*(obj:         AttrScope,
-                   heading:     string,
-                   filter:      Con4mRowFilter  = nil,
-                   searchTerms: seq[string]     = @[],
-                   cmp = defaultCmp): string =
-  var t = obj.sectionsToTextTable(heading, filter, searchTerms, cmp)
-  return if t.isSome(): t.get().render() else: ""
-
-proc arrayToTextTable*(obj:         AttrScope,
-                       fnames:      seq[string],
-                       hdrs:        seq[string],
-                       filter:      Con4mRowFilter = nil,
-                       searchTerms: seq[string]    = @[],
-                       cmp                         = defaultCmp):
-                         Option[TextTable] =
-  var
-    rows      = @[hdrs]
-    addedRows = 0
-
-  if len(hdrs) != len(fnames) + 1:
-    raise newException(ValueError, "Bad header info")
-
-  for k, v in obj.contents:
-    if v.isA(Attribute): continue
-    var row = @[k]
-    for fname in fnames:
-      let attr = v.get(AttrScope).contents[fname].get(Attribute)
-      row.add(oneArgToString(attr.tInfo, attr.attrToVal.get(), vTNoLits))
-    applyFiltersAndAdd(row, filter, searchTerms)
-
-  if addedRows == 0: return none(TextTable)
-  rows.sort(cmp)
-
-  rows = @[hdrs] & rows
-
-  return some(tableC4mStyle(len(hdrs), rows))
-
-proc arrayToTable*(obj:         AttrScope,
-                   fnames:      seq[string],
-                   hdrs:        seq[string],
-                   filter:      Con4mRowFilter = nil,
-                   searchTerms: seq[string]    = @[],
-                   cmp                         = defaultCmp): string =
-  var t = obj.arrayToTextTable(fnames, hdrs, filter, searchTerms, cmp)
-  return if t.isSome(): t.get().render() else: ""
-
-proc oneObjTypeToTextTable*(spec:            ConfigSpec,
-                            tname:           string,
-                            cols:            seq[FieldColType] = defaultObjDoc,
-                            hdrs:            seq[string]       = @[],
-                            xforms:          XFormTable        = nil,
-                            filter:          Con4mRowFilter    = nil,
-                            searchTerms:     seq[string]       = @[],
-                            cmp                                = defaultCmp,
-                            overrideHidden                     = false):
-                              Option[TextTable] =
-  var
-    secInfo: Con4mSectionType
-    rows:    seq[seq[string]] = @[]
-    addedRows = 0
-    firstRow: seq[string] = @[]
-
-  if tname == "":
-    secInfo = spec.rootSpec
-  else:
-    if tname notin spec.secSpecs: return none(TextTable)
-    secInfo = spec.secSpecs[tname]
-
-  if len(cols) != 0:
-    if len(hdrs) == 0:
-      for item in cols:
-        case item
-        of fcName:     firstRow.add("Name")
-        of fcFullName: firstRow.add("Attribute")
-        of fcType:     firstRow.add("Type")
-        of fcDefault:  firstRow.add("Default Value")
-        of fcValue:    raise newException(ValueError, "Invalid column for spec")
-        of fcProps:    firstRow.add("Properties")
-        of fcShort:    firstRow.add("Description")
-        of fcLong:     firstRow.add("Details")
-
-    elif len(cols) != len(hdrs):
-      raise newException(ValueError,
-               "# of col headers, if provided, must match # of provided cols")
-    else:
-      firstRow = hdrs
-  for name, fieldSpec in secInfo.fields:
-
-    if fieldSpec.hidden and not overrideHidden: continue
-    if name == "*": continue # Skip the * field.
-
-    var row: seq[string] = @[]
-    for colType in cols:
-      var s: string
-      case colType
-      of fcName:     s = name
-      of fcFullName: s = name # doesn't work here.
-      of fcType:     s = fieldSpec.reprType()
-      of fcDefault:  s = fieldSpec.reprDefaultValue()
-      of fcShort:    s = fieldSpec.shortdoc.getOrElse("<none>")
-      of fcLong:
-        if fieldSpec.extType.kind == TypeC4TypeSpec and name in spec.secSpecs:
-          let subsec = spec.secSpecs[name]
-          s = subsec.doc.getOrElse("<none>")
-        else:
-          s = fieldSpec.doc.getOrElse("<none>")
-      of fcProps:
-        if fieldSpec.extType.kind == TypeC4TypeSpec and name in spec.secSpecs:
-          let subsec = spec.secSpecs[name]
-          s = subsec.shortdoc.getOrElse("<none>")
-        else:
-          s = fieldSpec.reprFieldProps()
-      else:         unreachable
-
-      if xforms != nil and $(colType) in xforms:
-        s = xforms[$(colType)](s)
-      row.add(s)
-    applyFiltersAndAdd(row, filter, searchTerms)
-
-  if addedRows == 0: return none(TextTable)
-  rows.sort(cmp)
-
-  rows = @[firstRow] & rows
-
-  return some(tableC4mStyle(len(cols), rows))
-
-proc oneObjTypeToTable*(spec:            ConfigSpec,
-                        tname:           string,
-                        cols:            seq[FieldColType] = defaultObjDoc,
-                        hdrs:            seq[string]       = @[],
-                        xforms:          XFormTable        = nil,
-                        filter:          Con4mRowFilter    = nil,
-                        searchTerms:     seq[string]       = @[],
-                        cmp                                = defaultCmp,
-                        overrideHidden                     = false): string =
-  var t = spec.oneObjTypeToTextTable(tname, cols, hdrs, xforms, filter,
-                                     searchTerms, cmp, overrideHidden)
-  return if t.isSome(): t.get().render() else: ""
-
-proc oneObjToTextTable*(obj:             AttrScope,
-                        cols:            seq[FieldColType],
-                        hdrs:            seq[string]        = @[],
-                        objType:         string             = "",
-                        xforms:          XFormTable         = nil,
-                        filter:          Con4mRowFilter     = nil,
-                        searchTerms:     seq[string]        = @[],
-                        cmp                                 = defaultCmp,
-                        overrideHidden                      = false):
-                          Option[TextTable] =
-  ## Generate a table for a given con4m object. This ignores sub-sections.
-  var
-    rows:     seq[seq[string]]   = @[]
-    specOpt:  Option[ConfigSpec] = obj.config.spec
-    secInfo:  Con4mSectionType   = nil
-    firstRow: seq[string]        = @[]
-    addedRows                    = 0
-
-
-  if specOpt.isNone():
-    for item in cols:
-      if item in [fcDefault, fcShort, fcLong]:
-        raise newException(ValueError,
-                 "Cannot use columns that require a spec, without a spec")
-  else:
-    let spec = specOpt.get()
-    secInfo  = if objType != "": spec.secSpecs[objType]
-               else: spec.rootSpec
-
-  if len(cols) != 0:
-    if len(hdrs) == 0:
-      for item in cols:
-        case item
-        of fcName:    firstRow.add("Name")
-        of fcFullName: firstRow.add("Attribute")
-        of fcType:    firstRow.add("Type")
-        of fcDefault: firstRow.add("Default Value")
-        of fcValue:   firstRow.add("Current Value")
-        of fcProps:   firstRow.add("Properties")
-        of fcShort:   firstRow.add("Description")
-        of fcLong:    firstRow.add("Details")
-
-    elif len(cols) != len(hdrs):
-      raise newException(ValueError,
-               "# of col headers, if provided, must match # of provided cols")
-    else:
-      firstRow = hdrs
-  for k, v in obj.contents:
-    var row: seq[string] = @[]
-
-    if not v.isA(Attribute): continue
-    var
-      attr      = v.get(Attribute)
-      fieldSpec: FieldSpec
-
-    if secInfo != nil and attr.name in secInfo.fields:
-      fieldSpec = secInfo.fields[attr.name]
-      if fieldSpec.hidden and not overrideHidden: continue
-
-    for colType in cols:
-      case colType
-      of fcName:     row.add(attr.name)
-      of fcFullName: row.add(attr.fullNameAsStr())
-      of fcType:     row.add($(attr.tInfo))
-      of fcValue:
-        let valOpt = attr.attrToVal()
-        let val    = if    valOpt.isNone(): "<none>"
-                     else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
-        if xforms != nil and attr.name in xforms:
-          row.add(xforms[attr.name](val))
-        else:
-          row.add(val)
-      of fcDefault:  row.add(fieldSpec.reprDefaultValue())
-      of fcShort:    row.add(fieldSpec.shortdoc.getOrElse("<none>"))
-      of fcLong:     row.add(fieldSpec.doc.getOrElse("<none>"))
-      of fcProps:    row.add(fieldSpec.reprFieldProps())
-    applyFiltersAndAdd(row, filter, searchTerms)
-
-  if addedRows == 0: return none(TextTable)
-  rows.sort(cmp)
-
-  rows = @[firstRow] & rows
-
-  return some(tableC4mStyle(len(cols), rows))
-
-proc oneObjToTable*(obj:             AttrScope,
-                    cols:            seq[FieldColType],
-                    hdrs:            seq[string]            = @[],
-                    objType:         string                 = "",
-                    xforms:          XFormTable             = nil,
-                    filter:          Con4mRowFilter         = nil,
-                    searchTerms:     seq[string]            = @[],
-                    cmp                                     = defaultCmp,
-                    overrideHidden                          = false): string =
-  var t = obj.oneObjToTextTable(cols, hdrs, objType, xforms, filter,
-                                searchTerms, cmp, overrideHidden)
-  return if t.isSome(): t.get().render() else: ""
-
-proc objectsToTextTable*(scope:       AttrScope,
-                         fields:      seq[string]    = @[],
-                         hdrs:        seq[string]    = @[],
-                         xforms:      XFormTable     = nil,
-                         filter:      Con4mRowFilter = nil,
-                         searchTerms: seq[string]    = @[],
-                         cmp                         = defaultCmp,
-                         overrideHidden              = false):
-                           Option[TextTable] =
-  # Search terms currently are logically OR'd, not AND'd.
-  var
-    rows:      seq[seq[string]]   = @[]
-    specOpt:   Option[ConfigSpec] = scope.config.spec
-    secInfo:   Con4mSectionType   = nil
-    colnames:  seq[string]        = fields
-    addedRows: int                = 0
-
-  if specOpt.isNone(): raise newException(ValueError,
-                          "Con4m doc tables require using spec objects")
-  let spec = specOpt.get()
-
-  if scope.name != "<<root>>":
-    secInfo = spec.secSpecs[scope.name]
-  else:
-    secInfo = spec.rootSpec
-
-  if len(fields) == 0:
-    for f, fspec in secInfo.fields:
-      if fspec.hidden and not overrideHidden: continue
-      colnames.add(f)
-  else:
-    colnames = fields
-
-  if len(hdrs) != 0 and len(hdrs) != len(colnames) + 1:
-    raise newException(ValueError, "Bad header info")
-
-  for k, v in scope.contents:
-    if v.isA(Attribute): continue
-    let obj = v.get(AttrScope)
-    var row: seq[string] = @[obj.name]
-
-    if len(colnames) != 0:
-      for col in colnames:
-        if col notin obj.contents or obj.contents[col].isA(AttrScope):
-          row.add("<none>")
-          continue
-        let
-          attr   = obj.contents[col].get(Attribute)
-          valOpt = attr.attrToVal()
-          val    = if    valOpt.isNone(): "<none>"
-                   else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
-
-        if xforms != nil and col in xforms:
-          row.add(xforms[col](val))
-        else:
-          row.add(val)
-    else:
-      for fieldname, aOrS in obj.contents:
-        if aOrS.isA(AttrScope): continue
-        let
-          attr   = aOrS.get(Attribute)
-          valOpt = attr.attrToVal()
-          val    = if    valOpt.isNone(): "<none>"
-                   else: oneArgToString(attr.tInfo, valOpt.get(), vtNoLits)
-        if xforms != nil and fieldName in xforms:
-          row.add(xforms[fieldName](val))
-        else:
-          row.add(val)
-
-    applyFiltersAndAdd(row, filter, searchTerms)
-
-  if addedRows == 0: return none(TextTable)
-
-  rows.sort(cmp)
-
-  if len(hdrs) == 0:
-    rows = @[@["Name"] & colnames] & rows
-  else:
-    rows = @[hdrs] & rows
-
-  return some(tableC4mStyle(len(colnames) + 1, rows))
-
-proc objectsToTable*(scope:       AttrScope,
-                     fields:      seq[string]    = @[],
-                     hdrs:        seq[string]    = @[],
-                     xforms:      XFormTable     = nil,
-                     filter:      Con4mRowFilter = nil,
-                     searchTerms: seq[string]    = @[],
-                     cmp                         = defaultCmp,
-                     overrideHidden = false): string =
-  var t = scope.objectsToTextTable(fields, hdrs, xforms, filter, searchTerms,
-                                   cmp, overrideHidden)
-  return if t.isSome(): t.get().render() else: ""

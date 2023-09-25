@@ -2,8 +2,6 @@ import tables, options, streams, strutils, sequtils, sugar, os, json
 import lex, types, errmsg, parse, treecheck, eval, spec, builtins, dollars,
        getopts, c42spec, st, typecheck, run, codegen, nimutils
 
-import nimutils/ansi
-
 const getOptsSpec = staticRead("c4m/getopts.c42spec")
 
 type
@@ -527,14 +525,11 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
       tree.checkTree(conf)
 
       if step.showTyped:
-        stderr.write(toAnsiCode(acBCyan) & "Entry point:\n" &
-                     toAnsiCode(acReset))
+        stderr.write("# EntryPoint:".stylize())
         stderr.writeLine($tree)
         for item in conf.moduleFuncDefs:
           let typeStr = `$`(item.tInfo)
-          stderr.write(toAnsiCode(acBCyan))
-          stderr.writeLine("Function: " & item.name & typeStr)
-          stderr.write(toAnsiCode(acReset))
+          stderr.write(("# Function: " & item.name & typeStr).stylize())
           stderr.writeLine($item.impl.get())
 
       if step.showFuncs:
@@ -588,7 +583,6 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
     echo conf.attrs
 
   if step.showJson:
-    stderr.writeLine(toAnsiCode([acBRed]))
-    stderr.writeLine("Results:" & toAnsiCode([acUnbold, acCyan]))
-    echo parseJson(conf.attrs.scopeToJson()).pretty()
-    stderr.writeLine(toAnsiCode([acReset]))
+    print("<h1>Results:</h1><code><pre>" &
+      parseJson(conf.attrs.scopeToJson()).pretty() &
+       "</pre></code>")
