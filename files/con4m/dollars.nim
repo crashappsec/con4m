@@ -205,6 +205,8 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeVarDecl:      fmtNt("VarDecl")
   of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")
+  of NodeUse:          fmtNt("Use")
+  of NodeParameter:    fmtNt("Parameter")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))

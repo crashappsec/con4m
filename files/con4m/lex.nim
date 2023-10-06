@@ -580,6 +580,8 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
       of "else":           tok(TtElse)
       of "for":            tok(TtFor)
       of "from":           tok(TtFrom)
+      of "use":            tok(TtUse)
+      of "parameter":      tok(TtParameter)
       of "to":             tok(TtTo)
       of "break":          tok(TtBreak)
       of "continue":       tok(TtContinue)

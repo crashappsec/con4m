@@ -17,11 +17,11 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec, TtList,
-    TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime,
-    TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit,
-    ErrorCharLit, ErrorOtherLit
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow, TtUse,
+    TtParameter, TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec,
+    TtList, TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate,
+    TtTime, TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment,
+    ErrorStringLit, ErrorCharLit, ErrorOtherLit
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -49,7 +49,7 @@ type
     NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames, NodeUse, NodeParameter
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -81,7 +81,6 @@ type
       cycle*:       bool
       components*:  seq[Con4mType]
     else: discard
-
 
   Con4mDuration* = uint64
   Con4mSize*     = uint64
@@ -282,10 +281,37 @@ type
     secondPass*:         bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
+    currentComponent*:   ComponentInfo
 
   Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
   FieldColType* = enum
     fcName, fcFullName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
+
+  ComponentInfo* = ref object
+    url*:             string
+    version*:         (int, int, int)
+    desc*:            string
+    doc*:             string
+    hash*:            string
+    source*:          string
+    varParams*:       Table[string, ParameterInfo]
+    attrParams*:      Table[string, ParameterInfo]
+    componentsUsed*:  seq[ComponentInfo]
+    cachedSrc*:       Option[string]
+    savedVars*:       OrderedTable[string, VarSym]
+    typed*:           bool
+    alreadyRunning*:  bool # Breaks cycles at runtime.
+    entrypoint*:      Con4mNode
+
+  ParameterInfo* = ref object
+    name*:          Con4mNode
+    desc*:          Option[string] # Short description
+    doc*:           Option[string] # Long description
+    validator*:     Option[CallbackObj]
+    default*:       Option[Box]
+    defaultType*:   Con4mType
+    defaultCb*:     Option[CallbackObj]
+    attrRef*:       Attribute # nil for var params
 
 let
   # These are just shared instances for types that aren't

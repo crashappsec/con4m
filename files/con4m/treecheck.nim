@@ -12,8 +12,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import math, options, strformat, strutils, tables
-import errmsg, types, st, parse, otherlits, typecheck, dollars, nimutils
+import math, options, strformat, strutils, tables, nimutils
+import errmsg, types, st, parse, otherlits, typecheck, dollars, components
 
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
@@ -46,6 +46,13 @@ proc findMatchingProcs*(s:          ConfigState,
 
   if len(s.funcTable[name]) == 0 and not s.secondpass:
     s.addPlaceHolder(name)
+
+proc ensureCallbackImplementationExists*(s: ConfigState: cbObj: CallbackObj) =
+  let
+    candidates = s.findMatchingProcs(cbObj.name, cbObj.tInfo)
+
+  if len(candidates) == 0:
+    fatal("Could not find an implementation of the callback:  " & $(cbobj))
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
@@ -289,8 +296,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
   of NodeAttrAssign, NodeAttrSetLock:
     var nameParts: seq[string]
-    if s.funcOrigin:
-      fatal("Cannot assign to attributes within functions.", node)
+    # Deleted the restriction against assigning inside functions.
     if node.children[0].kind != NodeIdentifier:
       nameParts = @[]
       for child in node.children[0].children:
@@ -322,10 +328,11 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       else:
         entry.tInfo = t
 
-    if entry.locked:
-      fatal("You cannot assign to the (locked) attribute " &
-            fmt"""{nameParts.join(".")}.""",
-            node.children[0])
+    # This is now a runtime error.
+    # if entry.locked:
+    #   fatal("You cannot assign to the (locked) attribute " &
+    #         fmt"""{nameParts.join(".")}.""",
+    #         node.children[0])
     node.attrRef = entry
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
@@ -348,13 +355,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       entry = node.addVariable(name)
       t     = unify(tinfo, entry.tinfo)
 
-    if entry.locked:
-      # Could be a loop index or enum.
-        fatal(fmt"Cannot assign to the (locked) value {name}", node.children[0])
-
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
+    # Locking is now a runtime check only, so we can allow multiple
+    # components to work together as long as they agree on the value
+    # once locked.
 
   of NodeUnpack:
     node.children[^1].checkNode(s)
@@ -920,12 +926,122 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if not s.secondPass:
       node.typeInfo = Con4mType(kind: TypeTypeSpec, binding: node.typeInfo)
       node.value    = pack[Con4mType](node.typeInfo.binding)
+
+  of NodeUse:
+    # This pass does NOT go and retrieve the 'used' component. That happens
+    # after the second pass, but before we start any evaluation.
+    if not s.secondPass:
+      let
+        kids   = node.children
+        module = kids[0].getTokenText()
+        url    = if len(kids) > 1: kids[1].getTokenText() else: ""
+
+      let component = getComponentReference(module, url)
+      if component notin state.currentComponent.components:
+        state.currentComponent.components.add(component)
+
+  of NodeParameter:
+    node.checkkids(s)
+    let nameNode = node.children[0]
+    var
+      name = nameNode.children[0].getTokenText()
+      attr = false
+    if nameNode.kind != NodeVarDecl:
+      attr = true
+      for i in 1 ..< nameNode.children.len():
+        name &= "." & nameNode.children[i].getTokenText()
+
+    if not s.secondPass:
+      # Force the second pass.  We'll validate that the types are
+      # consistent in pass 2, and we'll make sure the local variables
+      # exist (the attributes do not have to exist).
+
+      s.waitingForTypeInfo = true
+      var paramObj: ParameterInfo
+
+      if len node.children > 1:
+        paramObj = node.children[1].validateParameterBody(name)
+      else:
+        paramObj = ParameterInfo()
+
+      if attr:
+        if name in s.currentComponent.attrParams:
+          fatal("Duplicate parameter spec for attribute: " & name, n)
+        s.currentComponent.attrParams[name] = paramObj
+      else:
+        if name in s.currentComponent.varParams:
+          fatal("Duplicate parameter spec for variable: " & name, n)
+        s.currentComponent.varParams[name] = paramObj
+    elif attr:
+      let
+        obj      = s.currentComponents.attrParams[name]
+        parts    = name.split(".")
+        entryOpt = s.attrs.attrLookup(parts, 0, vlAttrDef)
+
+      if entryOpt.isA(AttrErr):
+        fatal(entryOpt.get(AttrErr).msg, node)
+
+      let entry = entryOpt.get(AttrOrSub).get(Attribute)
+
+      if entry.tInfo = nil:
+        if obj.default.isSome():
+          entry.tInfo = obj.defaultType
+        else:
+          entry.tInfo = obj.defaultCb.get().tInfo.retType
+      elif obj.default.isSome():
+        if entry.tInfo.unify(obj.defaultType).isBottom():
+          fatal2Type("Attribute parameter's default value does not match " &
+            "the existing type for the attribute", n, obj.defaultType,
+            entry.tInfo)
+      elif obj.defaultCb.isSome():
+        let
+          cbObj = obj.defaultCb.get()
+
+        if cbObj.tInfo.params.len() != 0:
+          fatal("Callback function to set default value must not take " &
+            "any parameters.")
+        if cbObj.tInfo.retType.unify(entry.tInfo).isBottom():
+          fatal2Type("Parameter's default value callback does not have " &
+            "a return type that is compatable with the attribute", n,
+            cbObj.tInfo.retType, entry.tInfo)
+
+        s.ensureCallbackImplementationExists(cbObj)
+    else:
+      if name == "result":
+        fatal("Cannot use special variable 'result' outside a function")
+      let symbolOpt = node.varUse(name)
+
+      if symbolOpt.isNone():
+        fatal("Variable parameter '" & name & "' is not defined in the " &
+          "top-level component scope.")
+      let
+        obj = s.currentComponent.varParams[name]
+        sym = symbolOpt.get()
+
+      if obj.default.isSome():
+        if sym.tInfo.unify(obj.defaultType).isBottom():
+          fatal2Type("Variable parameter's default value does not " &
+            "match its type as used in the module", n, obj.defaultType,
+            sym.tInfo)
+      elif obj.defaultCb.isSome():
+        let
+          cbObj = obj.defaultCb.get()
+
+        if cbObj.tInfo.params.len() != 0:
+          fatal("Callback function to set default value must not take " &
+            "any parameters.")
+        if cbObj.tInfo.retType.unify(sym.tInfo).isBottom():
+          fatalToType("Variable parameter's callback does not have " &
+            "a specified return type that is compatable with the " &
+            "variable used in the body", n, cbObj.tInfo, sym.tInfo)
+
+        s.ensureCallbackImplementationExists(cbObj)
   else:
     # Many nodes need no semantic checking, just ask their children,
     # if any, to check.
     node.checkKids(s)
 
-proc checkTree*(node: Con4mNode, s: ConfigState) =
+proc checkTree*(node: Con4mNode, s: ConfigState) {.exportc, cdecl.} =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
   ## anything we can easily find before execution).  This version
   ## accepts a `ConfigState` object, so that you can keep an

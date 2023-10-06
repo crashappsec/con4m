@@ -6,7 +6,7 @@
 ## :Copyright: 2022
 
 import options, tables, strformat, unicode, nimutils, types, st, parse,
-       treecheck, typecheck, dollars, errmsg
+       treecheck, typecheck, dollars, errmsg, components
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -200,6 +200,36 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = pack(ret)
 
+proc evalNode*(node: Con4mNode, s: ConfigState)
+
+proc evalComponent*(s: ConfigState, module: string, url: string = "") =
+  let
+    savedGlobals    = s.keptGlobals
+    savedScopes     = s.frames
+    savedComponent  = s.currentComponent
+    savedFuncOrigin = s.funcOrigin
+
+  s.currentComponent = getComponentReference(module, url)
+  s.funcOrigin       = false
+  s.keptGlobals     =  s.currentComponent.savedVars
+
+  var newFrame = RuntimeFrame()
+  s.frames     = @[newFrame]
+
+  for k, v in s.currentComponent.savedVars:
+    newFrame[k] = v.value
+
+  s.evalNode(s.currentComponent.entrypoint, s)
+
+  if len(s.frames) > 0:
+    for k, v in s.frames[0]:
+      s.currentComponent.savedVars[k] = v
+
+  s.funcOrigin       = savedFuncOrigin
+  s.currentComponent = savedComponent
+  s.frames           = savedScopes
+  s.keptGlobals      = savedGlobals
+
 proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
   ## the tree to evaluate, and then take whatever action is
@@ -208,8 +238,18 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
   of NodeFuncDef, NodeType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
-       NodeCallbackLit:
+       NodeCallbackLit, NodeParameter:
     return # Nothing to do, everything was done in the check phase.
+  of NodeUse:
+    let
+      kids      = node.children
+      module    = kids[0].getTokenText()
+
+    if len(kids) == 1:
+      s.evalComponent(module)
+    else:
+      s.evalComponent(module, kids[1].getTokenText())
+
   of NodeReturn:
     if node.children.len() != 0:
       node.children[0].evalNode(s)
@@ -581,3 +621,10 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = node.attrRef.value.get()
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
+
+proc evalComponent*(s: ConfigState, name, location: string,
+                    extension = ".c4m") =
+  let
+    component = s.loadComponent(name, location, extension)
+
+  component.entrypoint.evalNode(s)
