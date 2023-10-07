@@ -44,7 +44,7 @@ proc formatCompilerError(msg: string,
   let
     me    = getAppFileName().splitPath().tail
 
-  result = stylize("<red>" & me & "</red>" & curFileName & ": ")
+  result = stylize("<red>" & me & "</red>: " & curFileName & ": ").strip()
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
@@ -64,12 +64,12 @@ proc formatCompilerError(msg: string,
         pad    = repeat(' ', offset + 1)
 
       result &= "\n  " & lines[line] & "\n"
-      result &= pad & "<strong>^</strong>".stylize()
+      result &= pad & "<bold>^</bold>".stylize().strip()
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
       result &= "\n"
-      result &= stylize("<bold>" & tb & "</bold>")
+      result &= stylize("<bold>" & tb & "</bold>").strip()
       if ii.line != 0:
         result &= "Exception thrown at: "
         result &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")\n"

@@ -49,7 +49,8 @@ type
     NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames, NodeUse, NodeParameter
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames, NodeUse, NodeParameter,
+    NodeParamBody
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -279,6 +280,7 @@ type
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
     moduleFuncImpls*:    seq[Con4mNode] # Passed from the parser.
     secondPass*:         bool
+    lockAllAttrWrites*:  bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
     currentComponent*:   ComponentInfo
@@ -304,14 +306,14 @@ type
     entrypoint*:      Con4mNode
 
   ParameterInfo* = ref object
-    name*:          Con4mNode
-    desc*:          Option[string] # Short description
+    name*:          string
+    shortdoc*:      Option[string] # Short description
     doc*:           Option[string] # Long description
     validator*:     Option[CallbackObj]
     default*:       Option[Box]
     defaultType*:   Con4mType
     defaultCb*:     Option[CallbackObj]
-    attrRef*:       Attribute # nil for var params
+    value*:         Option[Box]
 
 let
   # These are just shared instances for types that aren't

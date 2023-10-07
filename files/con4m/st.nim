@@ -347,9 +347,15 @@ proc attrSet*(attr:  Attribute,
     n         = nameparts.join(".")
 
   if `over?`.isSome():
-    return AttrErr(code: errCantSet,
-                   msg:  fmt"{n} attr can't be set due to user override")
+    when defined(errOnOverride):
+      return AttrErr(code: errCantSet,
+                     msg:  fmt"{n} attr can't be set due to user override")
+    else:
+      return AttrErr(code: errOk)
   if attr.locked:
+    # If it's locked, setting to an equal value is OK.
+    if attr.value.getOrElse(value) == value:
+      return AttrErr(code: errOk)
     return AttrErr(code: errCantSet,
                    msg:  fmt"{n}: attribute is locked and can't be set")
   if hook != nil:

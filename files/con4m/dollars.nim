@@ -44,16 +44,16 @@ else:
       result = tok.stream.readStr(tok.endPos - tok.startPos)
       tok.stream.setPosition(pos)
 template colorType(s: string): string =
-  stylize("<green>" & s & "</green>")
+  stylize("<green>" & s & "</green>").strip()
 
 template colorLit(s: string): string =
-  stylize("<red>" & s & "</red>")
+  stylize("<red>" & s & "</red>").strip()
 
 template colorNT(s: string): string =
-  stylize("<jazzberry>" & s & "</jazzberry>")
+  stylize("<jazzberry>" & s & "</jazzberry>").strip()
 
 template colorT(s: string): string =
-  stylize("<orange>" & s & "</orange>")
+  stylize("<orange>" & s & "</orange>").strip()
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]
@@ -174,6 +174,7 @@ template fmtT(name: string) =
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
   of NodeBody:         fmtNt("Body")
+  of NodeParamBody:    fmtNt("ParamBody")
   of NodeAttrAssign:   fmtNt("AttrAssign")
   of NodeAttrSetLock:  fmtNt("AttrSetLock")
   of NodeVarAssign:    fmtNt("VarAssign")

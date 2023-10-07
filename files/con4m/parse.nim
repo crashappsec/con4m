@@ -25,7 +25,6 @@ type ParseCtx* = ref object
   curTokIx*:   int
   nlWatch*:    bool
   nesting*:    int
-  useTargets*:
 
 var nodeId = 0
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
@@ -139,7 +138,7 @@ proc isValidEndOfStatement(ctx: ParseCtx,
       parseError("Expected either end of statement or one of: " &
         tokens.join(", "))
 
-template endOfStatement(ctx: ParseCtx) =
+proc endOfStatement(ctx: ParseCtx) =
   discard ctx.isValidEndOfStatement([])
 
     # These productions need to be forward referenced.
@@ -849,8 +848,6 @@ proc section(ctx: ParseCtx): Con4mNode =
     ctx.unconsume()
 
   result.children.add(ctx.optionalBody())
-  if ctx.consume().kind != TtLBrace:
-    parseError("Expected '{' to start section")
 
 proc useStmt(ctx: ParseCtx): Con4mNode =
   let startTok = ctx.consume()
@@ -901,7 +898,17 @@ proc parameterBlock(ctx: ParseCtx): Con4mNode =
     parseError("parameter keyword must be followed by an attribute " &
       "(can be dotted) or `var` and a local variable name.")
 
-  result.children.add(ctx.optionalBody())
+  # Here we parse as body, but then swap out the top-level body node
+  # with a NodeParamBody node. The treecheck first pass will validate
+  # that the tree is the allowed subset of body for parameter blocks.
+  let
+    bodyParse = ctx.optionalBody()
+    paramBody = newNode(NodeParamBody, bodyParse.token.get())
+
+  for item in paramBody.children:
+    bodyParse.children.add(item)
+
+  result.children.add(bodyParse)
 
 proc varAssign(ctx: ParseCtx): Con4mNode =
   var
@@ -1084,7 +1091,7 @@ proc optionalBody(ctx: ParseCtx): Con4mNode =
   # it, I'm sure I had a reason at the time)
 
   ctx.nlWatch = false
-  if ctx.lookAhead().kind == TtLBrace:
+  if ctx.curTok().kind == TtLBrace:
     discard ctx.consume()
     result = ctx.body()
     ctx.consumeOrError(TtRBrace)

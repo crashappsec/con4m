@@ -200,35 +200,7 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = pack(ret)
 
-proc evalNode*(node: Con4mNode, s: ConfigState)
-
-proc evalComponent*(s: ConfigState, module: string, url: string = "") =
-  let
-    savedGlobals    = s.keptGlobals
-    savedScopes     = s.frames
-    savedComponent  = s.currentComponent
-    savedFuncOrigin = s.funcOrigin
-
-  s.currentComponent = getComponentReference(module, url)
-  s.funcOrigin       = false
-  s.keptGlobals     =  s.currentComponent.savedVars
-
-  var newFrame = RuntimeFrame()
-  s.frames     = @[newFrame]
-
-  for k, v in s.currentComponent.savedVars:
-    newFrame[k] = v.value
-
-  s.evalNode(s.currentComponent.entrypoint, s)
-
-  if len(s.frames) > 0:
-    for k, v in s.frames[0]:
-      s.currentComponent.savedVars[k] = v
-
-  s.funcOrigin       = savedFuncOrigin
-  s.currentComponent = savedComponent
-  s.frames           = savedScopes
-  s.keptGlobals      = savedGlobals
+proc evalComponent*(s: ConfigState, module: string, url: string = "")
 
 proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
@@ -238,17 +210,23 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
   of NodeFuncDef, NodeType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
-       NodeCallbackLit, NodeParameter:
+       NodeCallbackLit, NodeParameter, NodeParamBody:
     return # Nothing to do, everything was done in the check phase.
   of NodeUse:
     let
       kids      = node.children
       module    = kids[0].getTokenText()
+      savedLock = s.lockAllAttrWrites
+
+    s.lockAllAttrWrites = true
 
     if len(kids) == 1:
       s.evalComponent(module)
     else:
       s.evalComponent(module, kids[1].getTokenText())
+
+    if not savedLock:
+      s.lockAllAttrWrites = false
 
   of NodeReturn:
     if node.children.len() != 0:
@@ -296,21 +274,18 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     case err.code
     of errCantSet:
-      when defined(errOnOverride):
-        fatal(err.msg, node)
+      fatal(err.msg, node)
     of errOk:
-      if node.kind == NodeAttrSetLock:
+      if node.kind == NodeAttrSetLock or s.lockAllAttrWrites:
         node.attrRef.locked = true
     else:
       unreachable
-
   of NodeVarAssign:
     node.children[1].evalNode(s)
 
     let name  = node.children[0].getTokenText()
 
     s.runtimeVarSet(name, node.children[1].value)
-
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let
@@ -321,7 +296,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for i, item in tup:
       let name = node.children[i].getTokenText()
       s.runtimeVarSet(name, item)
-
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -622,9 +596,43 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
 
-proc evalComponent*(s: ConfigState, name, location: string,
-                    extension = ".c4m") =
-  let
-    component = s.loadComponent(name, location, extension)
 
-  component.entrypoint.evalNode(s)
+proc evalComponent*(s: ConfigState, module: string, url: string = "") =
+  let
+    savedGlobals    = s.keptGlobals
+    savedScopes     = s.frames
+    savedComponent  = s.currentComponent
+    savedFuncOrigin = s.funcOrigin
+
+  s.currentComponent = getComponentReference(module, url)
+  s.funcOrigin       = false
+  s.keptGlobals     =  s.currentComponent.savedVars
+
+  var newFrame = RuntimeFrame()
+  s.frames     = @[newFrame]
+
+  for k, v in s.currentComponent.savedVars:
+    newFrame[k] = v.value
+
+  for k, v in s.currentComponent.varParams:
+    if v.value.isSome():
+      newFrame[k] = v.value
+    else:
+      raise newException(ValueError, "Component not configured")
+
+  for k, v in s.currentcomponent.attrParams:
+    if v.value.isSome():
+      s.attrs.attrSet(k, v.value.get(), v.defaultType)
+    else:
+      raise newException(ValueError, "Component not configured")
+
+  evalNode(s.currentComponent.entrypoint, s)
+
+  if len(s.frames) > 0:
+    for k, v in s.frames[0]:
+      s.currentComponent.savedVars[k].value = v
+
+  s.funcOrigin       = savedFuncOrigin
+  s.currentComponent = savedComponent
+  s.frames           = savedScopes
+  s.keptGlobals      = savedGlobals

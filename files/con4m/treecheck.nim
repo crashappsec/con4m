@@ -15,6 +15,9 @@
 import math, options, strformat, strutils, tables, nimutils
 import errmsg, types, st, parse, otherlits, typecheck, dollars, components
 
+const allLiteralTypes = [ NodeSimpLit, NodeDictLit, NodeListLit, NodeTupleLit,
+                         NodeCallbackLit ]
+
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
                          tinfo:       bottomType,
@@ -47,7 +50,7 @@ proc findMatchingProcs*(s:          ConfigState,
   if len(s.funcTable[name]) == 0 and not s.secondpass:
     s.addPlaceHolder(name)
 
-proc ensureCallbackImplementationExists*(s: ConfigState: cbObj: CallbackObj) =
+proc ensureCallbackImplementationExists*(s: ConfigState, cbObj: CallbackObj) =
   let
     candidates = s.findMatchingProcs(cbObj.name, cbObj.tInfo)
 
@@ -937,8 +940,63 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         url    = if len(kids) > 1: kids[1].getTokenText() else: ""
 
       let component = getComponentReference(module, url)
-      if component notin state.currentComponent.components:
-        state.currentComponent.components.add(component)
+      if component notin s.currentComponent.componentsUsed:
+        s.currentComponent.componentsUsed.add(component)
+
+  of NodeParamBody:
+    # We don't want to call checkkids() here because the assignments
+    # aren't going to be interpreted in the way they are in any other
+    # part of a program.
+    const
+      validParamProps = ["doc", "shortdoc", "validate", "default"]
+    var
+      foundProps: seq[string]
+
+    for kid in node.children:
+      # Since these 'assignments' do not show up in any program scope,
+      # we're leniant and accept any kind of assignment syntax so that
+      # people don't have to remember.
+      if kid.kind notin [NodeAttrAssign, NodeVarAssign]:
+        fatal("Parameter body must only contain parameter property " &
+          "assignments. Valid properties are: " & validParamProps.join(", "))
+      let
+        varNode  = kid.children[0]
+        propname = varNode.getTokenText()
+
+      if varnode.children.len() != 0 or propname notin validParamProps:
+        fatal("Parameter properties must be one of: " &
+          validParamProps.join(", "))
+
+      if propname in foundProps:
+        fatal("Dupliciate parameter property setting not allowed.")
+
+      foundProps.add(propname)
+      kid.children[1].checkNode(s)
+      case propname
+      of "doc", "shortdoc":
+        if kid.children[1].kind != NodeSimpLit or
+          node.getTokenType() != TtStringLit:
+          fatal("Parameter's doc and shortdoc properties must be string " &
+            "literals")
+      of "default":
+        if kid.children[1].kind notin allLiteralTypes:
+          fatal("Parameter's 'default' property must be a literal value " &
+            "or a callback that will set the default when needed")
+        if kid.children[1].kind == NodeCallbackLit:
+          let allowedCallbackType = "() -> `x".toCon4mType()
+
+          if allowedCallbackType.unify(kid.children[1].typeInfo).isBottom():
+            fatal("Callback must be a function that takes no arguments and " &
+              "Returns a value of the proper type.")
+      of "validator":
+        let allowedValidatorType = "(`x) -> string".toCon4mType()
+        if kid.children[1].kind != NodeCallbackLit or
+           allowedValidatorType.unify(kid.children[1].typeInfo).isBottom:
+          fatal("Validator properties must point to a function taking " &
+            " a single argument to validate and returning either the " &
+            " empty string (on success), or an error message.")
+      else:
+        unreachable
 
   of NodeParameter:
     node.checkkids(s)
@@ -957,55 +1015,58 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # exist (the attributes do not have to exist).
 
       s.waitingForTypeInfo = true
-      var paramObj: ParameterInfo
+      var paramObj = ParameterInfo(name: name, defaultType: newTypeVar())
 
-      if len node.children > 1:
-        paramObj = node.children[1].validateParameterBody(name)
-      else:
-        paramObj = ParameterInfo()
+      for assignNode in node.children:
+        case assignNode.children[0].getTokenText()
+        of "doc":
+          paramObj.doc       = some(assignNode.children[1].getTokenText())
+        of "shortdoc":
+          paramObj.shortdoc  = some(assignNode.children[1].getTokenText())
+        of "validator":
+          let vType          = assignNode.children[1].typeInfo.params[0]
+          let callback       = unpack[CallbackObj](assignNode.children[1].value)
+          paramObj.validator = some(callback)
 
-      if attr:
-        if name in s.currentComponent.attrParams:
-          fatal("Duplicate parameter spec for attribute: " & name, n)
-        s.currentComponent.attrParams[name] = paramObj
-      else:
-        if name in s.currentComponent.varParams:
-          fatal("Duplicate parameter spec for variable: " & name, n)
-        s.currentComponent.varParams[name] = paramObj
+          if paramobj.defaultType.unify(vType).isBottom():
+            fatal2Type("Validator parameter does not match inferred type",
+                       assignNode, paramObj.defaultType, vType)
+        of "default":
+          let defType = assignNode.children[1].typeInfo
+
+          if defType.kind == TypeFunc:
+            let
+              callback = unpack[CallbackObj](assignNode.children[1].value)
+
+            paramObj.defaultCb   = some(callback)
+            if paramObj.defaultType.unify(defType.retType).isBottom():
+              fatal2Type("Default value callback does not match inferred type",
+                         assignNode, paramObj.defaultType, defType.retType)
+        else:
+          unreachable
     elif attr:
       let
-        obj      = s.currentComponents.attrParams[name]
+        obj      = s.currentComponent.attrParams[name]
         parts    = name.split(".")
         entryOpt = s.attrs.attrLookup(parts, 0, vlAttrDef)
+
+      if "result" in parts:
+        fatal("Cannot use special variable 'result' outside a function")
 
       if entryOpt.isA(AttrErr):
         fatal(entryOpt.get(AttrErr).msg, node)
 
       let entry = entryOpt.get(AttrOrSub).get(Attribute)
 
-      if entry.tInfo = nil:
-        if obj.default.isSome():
+      if entry.tInfo == nil:
           entry.tInfo = obj.defaultType
-        else:
-          entry.tInfo = obj.defaultCb.get().tInfo.retType
-      elif obj.default.isSome():
-        if entry.tInfo.unify(obj.defaultType).isBottom():
-          fatal2Type("Attribute parameter's default value does not match " &
-            "the existing type for the attribute", n, obj.defaultType,
-            entry.tInfo)
-      elif obj.defaultCb.isSome():
-        let
-          cbObj = obj.defaultCb.get()
+      elif entry.tInfo.unify(obj.defaultType).isBottom():
+        fatal2Type("Attribute parameter's inferred type does not match " &
+          "the existing type for the attribute", node, obj.defaultType,
+          entry.tInfo)
 
-        if cbObj.tInfo.params.len() != 0:
-          fatal("Callback function to set default value must not take " &
-            "any parameters.")
-        if cbObj.tInfo.retType.unify(entry.tInfo).isBottom():
-          fatal2Type("Parameter's default value callback does not have " &
-            "a return type that is compatable with the attribute", n,
-            cbObj.tInfo.retType, entry.tInfo)
-
-        s.ensureCallbackImplementationExists(cbObj)
+      if obj.defaultCb.isSome():
+        s.ensureCallbackImplementationExists(obj.defaultCb.get())
     else:
       if name == "result":
         fatal("Cannot use special variable 'result' outside a function")
@@ -1018,24 +1079,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         obj = s.currentComponent.varParams[name]
         sym = symbolOpt.get()
 
-      if obj.default.isSome():
-        if sym.tInfo.unify(obj.defaultType).isBottom():
+      if sym.tInfo.unify(obj.defaultType).isBottom():
           fatal2Type("Variable parameter's default value does not " &
-            "match its type as used in the module", n, obj.defaultType,
+            "match its type as used in the module", node, obj.defaultType,
             sym.tInfo)
-      elif obj.defaultCb.isSome():
-        let
-          cbObj = obj.defaultCb.get()
 
-        if cbObj.tInfo.params.len() != 0:
-          fatal("Callback function to set default value must not take " &
-            "any parameters.")
-        if cbObj.tInfo.retType.unify(sym.tInfo).isBottom():
-          fatalToType("Variable parameter's callback does not have " &
-            "a specified return type that is compatable with the " &
-            "variable used in the body", n, cbObj.tInfo, sym.tInfo)
-
-        s.ensureCallbackImplementationExists(cbObj)
+      if obj.defaultCb.isSome():
+        s.ensureCallbackImplementationExists(obj.defaultCb.get())
   else:
     # Many nodes need no semantic checking, just ask their children,
     # if any, to check.
