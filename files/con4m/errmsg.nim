@@ -2,8 +2,8 @@
 ## everything to a "con4m" topic.  By default, we'll use the nimutils
 ## log-level system to decide what to publish.
 
-import tables, streams, strutils, strformat, os
-import nimutils, nimutils/logging, types
+import tables, strutils, strformat, os, unicode, nimutils, nimutils/logging,
+       types
 export getOrElse
 
 type
@@ -24,6 +24,15 @@ var
   verbosity     = c4vShowLoc
   curFileName: string
 
+proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
+  var start = 0
+
+  for i in 0 ..< len(str):
+    if str[i] == ch:
+      result.add(str[start ..< i])
+      start = i + 1
+
+  result.add(str[start .. ^1])
 
 proc setCon4mVerbosity*(level: C4Verbosity) =
   verbosity = level
@@ -44,32 +53,30 @@ proc formatCompilerError(msg: string,
   let
     me    = getAppFileName().splitPath().tail
 
-  result = stylize("<red>" & me & "</red>: " & curFileName & ": ").strip()
+  result = stylize("<red>" & me & "</red>: " & curFileName & ": ")
+  result = unicode.strip(result)
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
   result &= msg
 
-  if verbosity in [c4vShowLoc, c4vMax]:
-    let f = if t != nil: t.stream else: newFileStream(curFileName, fmRead)
-    if f != nil:
-      f.setPosition(0)
+  if t != nil and verbosity in [c4vShowLoc, c4vMax]:
+    let
+      line   = t.lineNo - 1
+      offset = t.lineOffset + 1
+      src    = t.cursor.runes
+      lines  = src.split(Rune('\n'))
+      pad    = repeat((' '), offset + 1)
 
-    if t != nil and f != nil:
-      let
-        line   = t.lineNo - 1
-        offset = t.lineOffset + 1
-        src    = f.readAll()
-        lines  = src.split("\n")
-        pad    = repeat(' ', offset + 1)
-
-      result &= "\n  " & lines[line] & "\n"
-      result &= pad & "<bold>^</bold>".stylize().strip()
+    result &= "\n  " & $(lines[line]) & "\n"
+    result &= $(pad) & "<bold>^</bold>".stylize()
+    result = unicode.strip(result)
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
       result &= "\n"
-      result &= stylize("<bold>" & tb & "</bold>").strip()
+      result &= stylize("<bold>" & tb & "</bold>")
+      result = unicode.strip(result)
       if ii.line != 0:
         result &= "Exception thrown at: "
         result &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")\n"

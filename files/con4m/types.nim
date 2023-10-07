@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import streams, tables, options, sugar, macros, nimutils
+import unicode, tables, options, sugar, macros, nimutils
 
 type
   ## Enumeration of all possible lexical tokens. Should not be exposed
@@ -23,6 +23,10 @@ type
     TtTime, TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment,
     ErrorStringLit, ErrorCharLit, ErrorOtherLit
 
+  StringCursor* = ref object
+    runes*: seq[Rune]
+    i*:     int
+
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
     case kind*:   Con4mTokenKind
@@ -31,7 +35,7 @@ type
     of TtCharLit:
       codepoint*: int
     else:  nil
-    stream*:      Stream
+    cursor*:      StringCursor
     startPos*:    int
     endPos*:      int
     lineNo*:      int

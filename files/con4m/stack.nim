@@ -491,7 +491,8 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
         fatal("Unable to open '" & step.fileName & "' for reading")
         step.stream.setPosition(0)
       let
-        (valid, tokens) = step.stream.lex(step.fileName)
+        contents        = step.stream.readAll()
+        (valid, tokens) = contents.lex(step.fileName)
 
       if not valid:
         let msg = case tokens[^1].kind

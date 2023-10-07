@@ -94,9 +94,7 @@ proc fetchComponent*(name, location: string, extension = ".c4m"):
         raise newException(IOError, "Could not retrieve needed source " &
           "file: " & result.url)
 
-  let
-    stream          = newStringStream(result.source)
-    (valid, toks)   = stream.lex(result.url)
+  let (valid, toks)   = result.source.lex(result.url)
 
   if not valid:
     let msg = case toks[^1].kind

@@ -285,7 +285,7 @@ proc typeSpec(ctx: ParseCtx): Con4mNode =
 
 proc toCon4mType*(s: string): Con4mType =
   ## Converts a string to a Con4m type object.
-  let (valid, tokens) = s.newStringStream().lex()
+  let (valid, tokens) = s.lex()
 
   if not valid:
     raise newException(ValueError, "Invalid character found in type")
@@ -1129,17 +1129,11 @@ proc parse*(tokens: seq[Con4mToken], filename: string):
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
 
-proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
-  ## This version converts a stream into tokens, then calls the parse
-  ## implementation on tokens, which kicks off the actual parsing.
 
-  # if s is a file, avoid unnecessary seeking by converting
-  # to a stringStream
-  if s == nil:
-    fatal(fmt"Unable to open file '{filename}' for reading")
+proc parse*(s: string | StringCursor, filename: string = "<<unknown>>"):
+          Con4mNode =
   let
-    toParse = s.readAll()
-    (valid, tokens) = toParse.newStringStream().lex()
+    (valid, tokens) = s.lex(filename)
 
   if valid:
     return tokens.parse(filename)
@@ -1155,4 +1149,17 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
         else: "Unknown error" # Shouldn't be possible w/o a lex bug
 
     fatal(msg, tok)
-    return
+
+proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
+  ## This version converts a stream into tokens, then calls the parse
+  ## implementation on tokens, which kicks off the actual parsing.
+
+  # if s is a file, avoid unnecessary seeking by converting
+  # to a stringStream
+  if s == nil:
+    fatal(fmt"Unable to open file '{filename}' for reading")
+  let
+    toParse = s.readAll()
+
+  result = toParse.parse(filename)
+  s.close()

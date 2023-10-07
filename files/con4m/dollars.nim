@@ -5,8 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, streams, tables, json, unicode, algorithm
-import nimutils, types
+import options, strformat, tables, json, unicode, algorithm, nimutils, types,
+       strcursor
 from strutils import join, repeat, toHex, toLowerAscii
 
 
@@ -14,20 +14,12 @@ from strutils import join, repeat, toHex, toLowerAscii
 # false to true.
 when false:
   proc `$`*(tok: Con4mToken): string =
-    let pos = tok.stream.getPosition()
+    result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
-    tok.stream.setPosition(tok.startPos)
-    result = tok.stream.readStr(tok.endPos - tok.startPos)
-    tok.stream.setPosition(pos)
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
-    of TtStringLit: result = "\"" & tok.unescaped & "\""
-    of TtOtherLit:
-      let pos = tok.stream.getPosition()
-      tok.stream.setPosition(tok.startPos)
-      result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
-      tok.stream.setPosition(pos)
+    of TtStringLit:       result = "\"" & tok.unescaped & "\""
     of TtWhiteSpace:     result = "~ws~"
     of TtNewLine:        result = "~nl~"
     of TtSof:            result = "~sof~"
@@ -37,12 +29,11 @@ else:
     of ErrorStringLit:   result = "~unterm string~"
     of ErrorCharLit:     result = "~bad char lit~"
     of ErrorOtherLit:    result =  "~unterm other lit~"
+    of TtOtherLit:
+      result = "<<" & $(tok.cursor.slice(tok.startPos, tok.endPos)) & ">>"
     else:
-      let pos = tok.stream.getPosition()
+      result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
-      tok.stream.setPosition(tok.startPos)
-      result = tok.stream.readStr(tok.endPos - tok.startPos)
-      tok.stream.setPosition(pos)
 template colorType(s: string): string =
   stylize("<green>" & s & "</green>").strip()
 
