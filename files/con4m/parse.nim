@@ -1014,6 +1014,15 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
     of TtLockAttr:
       result.children.add(ctx.attrAssign())
     of TtIdentifier:
+      case ctx.curTok.getTokenText()
+      of "use":
+        result.children.add(ctx.useStmt())
+        continue
+      of "parameter":
+        result.children.add(ctx.parameterBlock())
+        continue
+      else:
+        discard
       case ctx.lookAhead().kind
       of TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
@@ -1038,10 +1047,6 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       result.children.add(ctx.breakStmt())
     of TtReturn:
       result.children.add(ctx.returnStmt())
-    of TtUse:
-      result.children.add(ctx.useStmt())
-    of TtParameter:
-      result.children.add(ctx.parameterBlock())
     of TtFunc:
       # These will get skipped in top-level execution, but we leave
       # them in the main tree until the tree checking gets here, just

@@ -17,8 +17,8 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow, TtUse,
-    TtParameter, TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec,
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
+    TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec,
     TtList, TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate,
     TtTime, TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment,
     ErrorStringLit, ErrorCharLit, ErrorOtherLit

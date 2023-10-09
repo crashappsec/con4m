@@ -9,11 +9,13 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck]
-import con4m/[eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc]
-export errmsg, types, lex, parse, st, builtins, treecheck, typecheck
-export eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc
+import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck,
+              eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc,
+              components, strcursor]
 import streams, nimutils, os
+export errmsg, types, lex, parse, st, builtins, treecheck, typecheck, eval,
+       dollars, spec, run, c42spec, getopts, stack, legacy, doc, components,
+       strcursor
 
 const compilerC42FileName = "con4m/c4m/compiler-config.c42spec"
 const compilerConfigFName = "con4m/c4m/c4m-cmdline.c4m"
