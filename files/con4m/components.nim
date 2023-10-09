@@ -72,10 +72,10 @@ proc cacheComponent*(component: ComponentInfo, str: string, force = false) =
 proc cacheComponent*(component: ComponentInfo, stream: Stream) =
   component.cacheComponent(stream.readAll())
 
-proc fetchComponent*(item: ComponentInfo, extension = ".c4m") =
+proc fetchComponent*(item: ComponentInfo, extension = ".c4m", force = false) =
   var source: string
 
-  if item.hash == "":
+  if force or item.hash == "":
     if item.url.startsWith("https://"):
       source = item.url.fetchAttempt(extension)
 
@@ -89,10 +89,10 @@ proc fetchComponent*(item: ComponentInfo, extension = ".c4m") =
         raise newException(IOError, "Could not retrieve needed source " &
           "file: " & item.url)
 
-    item.cacheComponent(source)
+    item.cacheComponent(source, force)
 
-proc fetchComponent*(s: ConfigState, name, loc: string, extension = ".c4m"):
-                   ComponentInfo =
+proc fetchComponent*(s: ConfigState, name, loc: string, extension = ".c4m",
+                     force = false): ComponentInfo =
   ## This returns a parsed component, but does NOT go beyond that.  The
   ## parse phase will NOT attempt to semantically validate a component,
   ## will NOT go and fetch dependent comonents, and will NOT do cycle
@@ -100,9 +100,30 @@ proc fetchComponent*(s: ConfigState, name, loc: string, extension = ".c4m"):
   ##
   ## This will raise an exception if anything goes wrong.
 
-  result = s.getComponentReference(name & extension, loc)
+  result = s.getComponentReference(name, loc)
 
-  fetchComponent(result, extension)
+  fetchComponent(result, extension, force)
+
+proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
+                      seq[ComponentInfo] =
+  var
+    allDependents: seq[ComponentInfo] = @[component]
+
+  for sub in component.componentsUsed:
+    let sublist = sub.getUsedComponents()
+    for item in sublist:
+      if item == component:
+        raise newException(ValueError, "Cyclical components not allowed-- " &
+          "component " & component.url & " can import itself")
+      if item notin allDependents:
+        allDependents.add(item)
+
+  if not paramOnly:
+    return allDependents
+  else:
+    for item in allDependents:
+      if item.varParams.len() != 0 or item.attrParams.len() != 0:
+        result.add(item)
 
 proc loadComponent*(s: ConfigState, component: ComponentInfo):
                   seq[ComponentInfo] {.discardable.} =
@@ -134,21 +155,57 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
 
   if component in result:
     raise newException(ValueError, "Cyclical components are not allowed-- " &
-      "component " & component.url & "can import itself")
+      "component " & component.url & " can import itself")
+
+proc fullUrlToParts*(url: string): (string, string, string) =
+  var fullPath: string
+
+  if url.startswith("http://"):
+    raise newException(ValueError, "Only https URLs and local files accepted")
+  if url.startswith("https://") or url.startswith("/"):
+    fullPath = url
+  else:
+    fullPath = url.resolvePath()
+
+  result = fullPath.splitFile()
+
+proc componentAtUrl*(s: ConfigState, url: string, force: bool): ComponentInfo =
+  ## Unlike the rest of this API, this call assumes the url is either:
+  ## - A full https URL or;
+  ## - A local filename, either as an absolutely path or relative to cwd.
+  ##
+  ## Here, unlike the other functions, we look for a file extension and chop
+  ## it off.
+
+  let
+    (base, module, ext) = fullUrlToParts(url)
+
+  result = s.fetchComponent(module, base, ext, force)
+
+  s.loadComponent(result)
+
+proc loadComponentFromUrl*(s: ConfigState, url: string): ComponentInfo =
+  return s.componentAtUrl(url, force = true)
+
+proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
+  ## Does not fetch, only returns the component if we're using it.
+
+  let
+    (base, module, ext) = fullUrlToParts(url)
+    component = s.fetchComponent(module, base, ext)
+
+  if component.source != "":
+    return some(component)
 
 proc loadCurrentComponent*(s: ConfigState) =
   s.loadComponent(s.currentComponent)
 
-template setParamValue*(s:             ConfigState,
-                        componentName: string,
-                        location:      string,
-                        paramName:     string,
-                        value:         Box,
-                        valueType:     Con4mType,
-                        paramStore:    untyped) =
-
-  let component = s.getComponentReference(componentName, location)
-
+template setParamValue*(s:          ConfigState,
+                        component:  ComponentInfo,
+                        paramName:  string,
+                        value:      Box,
+                        valueType:  Con4mType,
+                        paramStore: untyped) =
   if paramName notin component.paramStore:
     raise newException(ValueError, "Parameter not found: " & paramName)
 
@@ -159,14 +216,45 @@ template setParamValue*(s:             ConfigState,
 
   parameter.value = some(value)
 
+proc setVariableParamValue*(s:         ConfigState,
+                            component: ComponentInfo,
+                            paramName: string,
+                            value:     Box,
+                            valueType: Con4mType) =
+  s.setParamValue(component, paramName, value, valueType, varParams)
+
+
+proc setAttributeParamValue*(s:         ConfigState,
+                             component: ComponentInfo,
+                             paramName: string,
+                             value:     Box,
+                             valueType: Con4mType) =
+  s.setParamValue(component, paramName, value, valueType, attrParams)
+
+proc setVariableParamValue*(s:         ConfigState,
+                            urlKey:    string,
+                            paramName: string,
+                            value:     Box,
+                            valueType: Con4mType) =
+  let component = s.getComponentReference(urlKey)
+  s.setParamValue(component, paramName, value, valueType, varParams)
+
+proc setAttribueParamValue*(s:         ConfigState,
+                            urlKey:    string,
+                            paramName: string,
+                            value:     Box,
+                            valueType: Con4mType) =
+  let component = s.getComponentReference(urlKey)
+  s.setParamValue(component, paramName, value, valueType, attrParams)
+
 proc setVariableParamValue*(s:             ConfigState,
                             componentName: string,
                             location:      string,
                             paramName:     string,
                             value:         Box,
                             valueType:     Con4mType) =
-  s.setParamValue(componentName, location, paramName, value, valueType,
-                varParams)
+  let component = s.getComponentReference(componentName, location)
+  s.setParamValue(component, paramName, value, valueType, varParams)
 
 proc setAttributeParamValue*(s:             ConfigState,
                              componentName: string,
@@ -174,8 +262,8 @@ proc setAttributeParamValue*(s:             ConfigState,
                              paramName:     string,
                              value:         Box,
                              valueType:     Con4mType) =
-  s.setParamValue(componentName, location, paramName, value, valueType,
-                attrParams)
+  let component = s.getComponentReference(componentName, location)
+  s.setParamValue(component, paramName, value, valueType, attrParams)
 
 proc getAllVariableParamInfo*(s:              ConfigState,
                               name, location: string): seq[ParameterInfo] =

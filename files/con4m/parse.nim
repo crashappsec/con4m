@@ -1149,3 +1149,28 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
 
   result = toParse.parse(filename)
   s.close()
+
+proc parseLiteral*(s: string): Con4mNode =
+  let
+    (valid, tokens) = s.lex()
+
+  if not valid:
+    let
+      tok = tokens[^1]
+      msg = case tok.kind:
+        of ErrorTok:         "Invalid character found"
+        of ErrorLongComment: "Unterminated comment"
+        of ErrorStringLit:   "Unterminated string"
+        of ErrorCharLit:     "Invalid char literal"
+        of ErrorOtherLit:    "Unterminated literal"
+        else:                "Unknown error"
+
+    fatal(msg, tok)
+    var ctx = ParseCtx(tokens:   tokens,
+                       curTokIx: 0,
+                       nesting:  0,
+                       nlWatch:  false)
+    setCurrentFileName("<<literal parser>>")
+    result = ctx.literal()
+    if ctx.curTok().kind != TtEof:
+      parseError("Invalid contents after literal")

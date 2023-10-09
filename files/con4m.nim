@@ -11,11 +11,11 @@
 
 import con4m/[errmsg, types, lex, parse, st, builtins, treecheck, typecheck,
               eval, dollars, spec, run, c42spec, getopts, stack, legacy, doc,
-              components, strcursor]
+              components, strcursor, params]
 import streams, nimutils, os
 export errmsg, types, lex, parse, st, builtins, treecheck, typecheck, eval,
        dollars, spec, run, c42spec, getopts, stack, legacy, doc, components,
-       strcursor
+       strcursor, params
 
 const compilerC42FileName = "con4m/c4m/compiler-config.c42spec"
 const compilerConfigFName = "con4m/c4m/c4m-cmdline.c4m"

@@ -179,6 +179,7 @@ type
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
     id*:           int
+    isConst*:      bool
     kind*:         Con4mNodeKind
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
@@ -307,7 +308,6 @@ type
     varParams*:       Table[string, ParameterInfo]
     attrParams*:      Table[string, ParameterInfo]
     componentsUsed*:  seq[ComponentInfo]
-    cachedSrc*:       Option[string]
     beenChecked*:     seq[ConfigState] # Which contexts have we been checked in
     alreadyRunning*:  bool # Breaks cycles at runtime.
     entrypoint*:      Con4mNode

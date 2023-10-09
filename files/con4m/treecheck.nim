@@ -18,6 +18,22 @@ import errmsg, types, st, parse, otherlits, typecheck, dollars, components
 const allLiteralTypes = [ NodeSimpLit, NodeDictLit, NodeListLit, NodeTupleLit,
                          NodeCallbackLit ]
 
+proc isConstLit(node: Con4mNode): bool =
+  if node.isConst:
+    return true
+  case node.kind
+  of NodeSimpLit, NodeType, NodeCallbackLit:
+    node.isConst = true
+    return true
+  of NodeListLit, NodeTupleLit, NodeDictLit, NodeKvPair:
+    for kid in node.children:
+      if not kid.isConstLit:
+        return false
+    node.isConst = true
+    return true
+  else:
+    return false
+
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
                          tinfo:       bottomType,
@@ -31,6 +47,130 @@ proc addPlaceHolder(s: ConfigState, name: string) =
   else:
     s.funcTable[name] = @[f]
   s.waitingForTypeInfo = true
+
+proc nodeToStringLit(node: Con4mNode): Box =
+  node.typeInfo = stringType
+  var s = node.getTokenText()
+  return pack(s)
+
+proc nodeToCharLit(node: Con4mNode): Box =
+  node.typeInfo = charType
+  return  pack(node.token.get().codepoint)
+
+proc nodeToIntLit(node: Con4mNode): Box =
+  node.typeInfo = intType
+  try:
+    result = pack(node.getTokenText().parseInt())
+  except:
+    fatal("Number too large for int type.", node)
+
+proc nodeToTrueLit(node: Con4mNode): Box =
+  node.typeInfo = boolType
+  return pack(true)
+
+proc nodeToFalseLit(node: Con4mNode): Box =
+  node.typeInfo = boolType
+  return pack(false)
+
+proc nodeToFloatLit(node: Con4mNode): Box =
+  node.typeInfo = floatType
+
+  let
+    txt = node.getTokenText()
+    dotLoc = txt.find('.')
+  var
+    eLoc = txt.find('e')
+    value:        float
+    intPartS:     string
+    intPartI:     int
+    floatPartS:   string
+    expPartS:     string
+    expPartI:     int    = 1
+    eSignIsMinus: bool
+
+  if eLoc == -1:
+    eLoc = txt.find('E')
+
+  if dotLoc != -1:
+    intPartS = txt[0 ..< dotLoc]
+    if eLoc != -1:
+      floatPartS = txt[dotLoc+1 ..< eLoc]
+    else:
+      floatPartS = txt[dotLoc+1 .. ^1]
+  else:
+    intPartS = txt[0 ..< eLoc]
+
+  if eLoc != -1:
+    eLoc = eLoc + 1
+    case txt[eLoc]
+    of '+':
+      eLoc = eLoc + 1
+    of '-':
+      eLoc = eLoc + 1
+      eSignIsMinus = true
+    else:
+      discard
+    expPartS = txt[eLoc .. ^1]
+
+  try:
+    intPartI = intPartS.parseInt()
+  except:
+    fatal("Integer piece is too large for an int; use 'e' notation.", node)
+
+  if expPartS != "":
+    try:
+      expPartI = expPartS.parseInt()
+    except:
+      fatal("Exponent piece of float overflows integer type", node)
+
+  # Fow now, we just truncate floating point digits if there are
+  # $(high(int)).len() digits or more.
+
+  if floatPartS != "":
+    const
+      maxAsString = $(high(int))
+      maxLen = maxAsString.len()
+
+    if floatPartS.len() >= maxLen:
+      floatPartS = floatPartS[0 ..< maxLen]
+
+    value = floatPartS.parseInt() / (10 ^ floatPartS.len())
+
+  value = value + float(intPartI)
+  value = value * pow(10.0, float(expPartI))
+
+  return pack(value)
+
+proc nodeToOtherLit(node: Con4mNode): Box =
+  var txt = node.getTokenText()
+  if len(txt) >= 4 and txt[0..1] == "<<":
+    txt = txt[2..^3]
+
+  var opt = txt.otherLitToValue()
+
+  if opt.isNone():
+    fatal("Invalid literal: <<" & txt & ">>")
+
+  (result, node.typeInfo) = opt.get()
+
+proc nodeToSimpLit(node: Con4mNode): Box =
+  case node.token.get().kind:
+    of TtStringLit:
+      return node.nodeToStringLit()
+    of TtCharLit:
+      return node.nodeToCharLit()
+    of TtOtherLit:
+      return node.nodeToOtherLit()
+    of TtIntLit:
+      return node.nodeToIntLit()
+    of TtFloatLit:
+      return node.nodeToFloatLit()
+    of TtTrue:
+      return node.nodeToTrueLit()
+    of TtFalse:
+      return node.nodeToFalseLit()
+    else:
+      unreachable
 
 proc findMatchingProcs*(s:          ConfigState,
                         name:       string,
@@ -413,106 +553,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
   of NodeSimpLit:
     if s.secondPass:
       return
-    case node.getTokenType()
-    of TtStringLit:
-      node.typeInfo = stringType
-      var s = node.getTokenText()
-      node.value = pack(s)
-    of TtCharLit:
-      node.typeInfo = charType
-      node.value = pack(node.token.get().codepoint)
-    of TtOtherLit:
-      var txt = node.getTokenText()
-      if len(txt) >= 4 and txt[0..1] == "<<":
-        txt = txt[2..^3]
-      var opt = txt.otherLitToValue()
-
-      if opt.isNone():
-        fatal("Invalid literal: <<" & txt & ">>")
-
-      (node.value, node.typeInfo) = opt.get()
-    of TtIntLit:
-      node.typeInfo = intType
-      try:
-        node.value = pack(node.getTokenText().parseInt())
-      except:
-        fatal("Number too large for int type.", node)
-    of TtFloatLit:
-      node.typeInfo = floatType
-
-      let
-        txt = node.getTokenText()
-        dotLoc = txt.find('.')
-      var
-        eLoc = txt.find('e')
-        value:        float
-        intPartS:     string
-        intPartI:     int
-        floatPartS:   string
-        expPartS:     string
-        expPartI:     int    = 1
-        eSignIsMinus: bool
-
-      if eLoc == -1:
-        eLoc = txt.find('E')
-
-      if dotLoc != -1:
-        intPartS = txt[0 ..< dotLoc]
-        if eLoc != -1:
-          floatPartS = txt[dotLoc+1 ..< eLoc]
-        else:
-          floatPartS = txt[dotLoc+1 .. ^1]
-      else:
-        intPartS = txt[0 ..< eLoc]
-
-      if eLoc != -1:
-        eLoc = eLoc + 1
-        case txt[eLoc]
-        of '+':
-          eLoc = eLoc + 1
-        of '-':
-          eLoc = eLoc + 1
-          eSignIsMinus = true
-        else:
-          discard
-        expPartS = txt[eLoc .. ^1]
-
-      try:
-        intPartI = intPartS.parseInt()
-      except:
-        fatal("Integer piece is too large for an int; use 'e' notation.", node)
-
-      if expPartS != "":
-        try:
-          expPartI = expPartS.parseInt()
-        except:
-          fatal("Exponent piece of float overflows integer type", node)
-
-      # Fow now, we just truncate floating point digits if there are
-      # $(high(int)).len() digits or more.
-
-      if floatPartS != "":
-        const
-          maxAsString = $(high(int))
-          maxLen = maxAsString.len()
-
-        if floatPartS.len() >= maxLen:
-          floatPartS = floatPartS[0 ..< maxLen]
-
-        value = floatPartS.parseInt() / (10 ^ floatPartS.len())
-
-      value = value + float(intPartI)
-      value = value * pow(10.0, float(expPartI))
-
-      node.value = pack(value)
-    of TtTrue:
-      node.typeInfo = boolType
-      node.value = pack(true)
-    of TtFalse:
-      node.typeInfo = boolType
-      node.value = pack(false)
-    else:
-      unreachable
+    node.value = node.nodeToSimpLit()
   of NodeUnary:
     node.checkKids(s)
     let t = node.children[0].getType()
@@ -795,6 +836,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if ct.isBottom():
         fatal("Dict items must all be the same type.", node)
     node.typeInfo = ct
+
+    if node.isConstLit():
+      var dict = newCon4mDict[Box, Box]()
+
+      for pair in node.children:
+        let
+          boxedKey = pair.children[0].value
+          boxedVal = pair.children[1].value
+        dict[boxedKey] = boxedVal
+      node.value   = pack(dict)
   of NodeKVPair:
     node.checkKids(s)
     if node.children[0].isBottom() or node.children[1].isBottom():
@@ -809,6 +860,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if ct.isBottom():
         fatal("List items must all be the same type", node)
     node.typeInfo = newListType(ct)
+
+    if node.isConstLit():
+      var l: seq[Box]
+      for item in node.children:
+        l.add(item.value)
+      node.value   = pack[seq[Box]](l)
+
   of NodeTupleLit:
     node.checkKids(s)
     var itemTypes: seq[Con4mType]
@@ -816,6 +874,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for item in node.children:
       itemTypes.add(item.getType())
     node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: itemTypes)
+
+    if node.isConstLit():
+      var l: seq[Box]
+      for item in node.children:
+        l.add(item.value)
+      node.value   = pack[seq[Box]](l)
+
   of NodeOr, NodeAnd:
     node.checkKids(s)
     if isBottom(node.children[0], boolType) or
@@ -1194,3 +1259,22 @@ proc checkTree*(node: Con4mNode, s: ConfigState) {.exportc, cdecl.} =
     # are resolved.
     s.cycleCheck()
   ctrace(fmt"{getCurrentFileName()}: type checking completed.")
+
+proc parseConstLiteral*(s: string, t: Con4mType): Box =
+  var err = false
+
+  if not t.unify(stringType).isBottom():
+    return pack(s)
+
+  try:
+    let tree = s.parseLiteral()
+
+    if tree.isConstLit():
+      tree.checkNode(ConfigState())
+
+    if not tree.typeInfo.unify(t).isBottom():
+      return tree.value
+  except:
+    discard
+
+  raise newException(ValueError, "Not a valid Con4m constant of type " & $t)
