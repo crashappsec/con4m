@@ -239,11 +239,11 @@ proc setVariableParamValue*(s:         ConfigState,
   let component = s.getComponentReference(urlKey)
   s.setParamValue(component, paramName, value, valueType, varParams)
 
-proc setAttribueParamValue*(s:         ConfigState,
-                            urlKey:    string,
-                            paramName: string,
-                            value:     Box,
-                            valueType: Con4mType) =
+proc setAttributeParamValue*(s:         ConfigState,
+                             urlKey:    string,
+                             paramName: string,
+                             value:     Box,
+                             valueType: Con4mType) =
   let component = s.getComponentReference(urlKey)
   s.setParamValue(component, paramName, value, valueType, attrParams)
 
