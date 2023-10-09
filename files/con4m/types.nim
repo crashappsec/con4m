@@ -288,6 +288,8 @@ type
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
     currentComponent*:   ComponentInfo
+    programRoot*:        ComponentInfo
+    components*:         Table[string, ComponentInfo]
 
   Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
   FieldColType* = enum
@@ -300,12 +302,13 @@ type
     doc*:             string
     hash*:            string
     source*:          string
+    typed*:           bool
     savedGlobals*:    RuntimeFrame
     varParams*:       Table[string, ParameterInfo]
     attrParams*:      Table[string, ParameterInfo]
     componentsUsed*:  seq[ComponentInfo]
     cachedSrc*:       Option[string]
-    typed*:           bool
+    beenChecked*:     seq[ConfigState] # Which contexts have we been checked in
     alreadyRunning*:  bool # Breaks cycles at runtime.
     entrypoint*:      Con4mNode
 

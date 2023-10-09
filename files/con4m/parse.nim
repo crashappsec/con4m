@@ -120,8 +120,8 @@ proc isValidEndOfStatement(ctx: ParseCtx,
   let kind = ctx.curTok().kind
 
   case kind
-  of TtSemi, TtNewLine, TtRBracket, TtRParen, TtEOF:
-    while ctx.curTok.kind == TtSemi: discard ctx.consume()
+  of TtSemi, TtNewLine, TtRBrace, TtRParen, TtEOF:
+    while ctx.curTok().kind == TtSemi: discard ctx.consume()
     return true
   else:
     if kind in valid:
@@ -1081,18 +1081,14 @@ proc optionalBody(ctx: ParseCtx): Con4mNode =
   # the braces, it requires the caller to do it. (Yes, I know I wrote
   # it, I'm sure I had a reason at the time)
 
-  ctx.nlWatch = false
-  if ctx.curTok().kind == TtLBrace:
+  ctx.nlWatch = true
+  if ctx.isValidEndOfStatement([TtLBrace]):
+    result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
+  else:
     discard ctx.consume()
     result = ctx.body()
+    ctx.nlWatch = false
     ctx.consumeOrError(TtRBrace)
-  else:
-    ctx.nlWatch = true
-    if not ctx.isValidEndOfStatement([]):
-      parseError("Expected either a { to start a block, or a newline for " &
-        "an empty block.")
-    else:
-      result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
 
 # Since we don't need to navigate the tree explicitly to parse, it's
 # far less error prone to just add parent info when the parsing is done.

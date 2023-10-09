@@ -940,7 +940,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         module = kids[0].getTokenText()
         url    = if len(kids) > 1: kids[1].getTokenText() else: ""
 
-      let component = getComponentReference(module, url)
+      let component = s.getComponentReference(module, url)
       if component notin s.currentComponent.componentsUsed:
         s.currentComponent.componentsUsed.add(component)
 
@@ -1066,8 +1066,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
         else:
           unreachable
-      if s.currentComponent == nil:
-        s.currentComponent = getComponentReference("", "")
       if attr:
         s.currentComponent.attrParams[name] = paramObj
       else:

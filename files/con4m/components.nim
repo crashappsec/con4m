@@ -7,13 +7,7 @@ import os, tables, streams, strutils, httpclient, net, uri, options, nimutils,
 proc parse(s: seq[Con4mToken], filename: string): Con4mNode {.importc, cdecl.}
 proc checkTree(node: Con4mNode, s: ConfigState) {.importc, cdecl.}
 
-var
-  defaultUrlStore = ""
-  componentInfo: Table[string, ComponentInfo]
-  programRoot:   ComponentInfo
-
-proc getRootComponent*(): ComponentInfo =
-  return programRoot
+var defaultUrlStore = ""
 
 proc fullComponentSpec*(name, location: string): string =
   if location == "":
@@ -32,14 +26,14 @@ proc setDefaultStoreUrl*(url: string) =
   once:
     defaultUrlStore = url
 
-proc getComponentReference*(url: string): ComponentInfo =
-  if url notin componentInfo:
-    componentInfo[url] = ComponentInfo(url: url)
+proc getComponentReference*(s: ConfigState, url: string): ComponentInfo =
+  if url notin s.components:
+    s.components[url] = ComponentInfo(url: url)
 
-  return componentInfo[url]
+  return s.components[url]
 
-proc getComponentReference*(name: string, location: string): ComponentInfo =
-  return fullComponentSpec(name, location).getComponentReference()
+proc getComponentReference*(s: ConfigState, name, loc: string): ComponentInfo =
+  return s.getComponentReference(fullComponentSpec(name, loc))
 
 proc fetchAttempt(url, extension: string): string =
   var
@@ -54,8 +48,9 @@ proc fetchAttempt(url, extension: string): string =
 
   return response.bodyStream.readAll()
 
-proc cacheComponent*(component: ComponentInfo, str: string) =
-  ## Use the passed version, especially if stored in memory, etc.
+proc cacheComponent*(component: ComponentInfo, str: string, force = false) =
+  if component.entrypoint != nil and not force:
+    return
 
   component.source = str
   component.hash   = sha256(component.source)
@@ -96,7 +91,7 @@ proc fetchComponent*(item: ComponentInfo, extension = ".c4m") =
 
     item.cacheComponent(source)
 
-proc fetchComponent*(name, location: string, extension = ".c4m"):
+proc fetchComponent*(s: ConfigState, name, loc: string, extension = ".c4m"):
                    ComponentInfo =
   ## This returns a parsed component, but does NOT go beyond that.  The
   ## parse phase will NOT attempt to semantically validate a component,
@@ -105,7 +100,7 @@ proc fetchComponent*(name, location: string, extension = ".c4m"):
   ##
   ## This will raise an exception if anything goes wrong.
 
-  result = getComponentReference(name & extension, location)
+  result = s.getComponentReference(name & extension, loc)
 
   fetchComponent(result, extension)
 
@@ -120,35 +115,39 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
   let savedComponent = s.currentComponent
 
   if not component.typed:
-    s.currentComponent                     = component
-    s.currentComponent.entrypoint.varScope = VarScope(parent: none(VarScope))
+    s.currentComponent            = component
+    component.entryPoint.varScope = VarScope(parent: none(VarScope))
 
-    s.currentComponent.entrypoint.checkTree(s)
-    s.currentComponent.typed = true
+    component.entrypoint.checkTree(s)
+    component.typed = true
 
-    for subcomponent in s.currentComponent.componentsUsed:
+    for subcomponent in component.componentsUsed:
       s.loadComponent(subcomponent)
 
-  for subcomponent in s.currentComponent.componentsUsed:
+    s.currentComponent = savedComponent
+
+  for subcomponent in component.componentsUsed:
     let recursiveUsedComponents = s.loadComponent(subcomponent)
     for item in recursiveUsedComponents:
       if item notin result:
         result.add(item)
 
-  if s.currentComponent in result:
+  if component in result:
     raise newException(ValueError, "Cyclical components are not allowed-- " &
-      "component " & s.currentComponent.url & "can import itself")
-
-  s.currentComponent = savedComponent
+      "component " & component.url & "can import itself")
 
 proc loadCurrentComponent*(s: ConfigState) =
   s.loadComponent(s.currentComponent)
 
-template setParamValue*(componentName, location, paramName: string,
-                        value: Box, valueType: Con4mType,
-                        paramStore: untyped) =
+template setParamValue*(s:             ConfigState,
+                        componentName: string,
+                        location:      string,
+                        paramName:     string,
+                        value:         Box,
+                        valueType:     Con4mType,
+                        paramStore:    untyped) =
 
-  let component = getComponentReference(componentName, location)
+  let component = s.getComponentReference(componentName, location)
 
   if paramName notin component.paramStore:
     raise newException(ValueError, "Parameter not found: " & paramName)
@@ -160,24 +159,34 @@ template setParamValue*(componentName, location, paramName: string,
 
   parameter.value = some(value)
 
-proc setVariableParamValue*(componentName, location, paramName: string,
-                            value: Box, valueType: Con4mType) =
-  setParamValue(componentName, location, paramName, value, valueType,
+proc setVariableParamValue*(s:             ConfigState,
+                            componentName: string,
+                            location:      string,
+                            paramName:     string,
+                            value:         Box,
+                            valueType:     Con4mType) =
+  s.setParamValue(componentName, location, paramName, value, valueType,
                 varParams)
 
-proc setAttributeParamValue*(componentName, location, paramName: string,
-                             value: Box, valueType: Con4mType) =
-  setParamValue(componentName, location, paramName, value, valueType,
+proc setAttributeParamValue*(s:             ConfigState,
+                             componentName: string,
+                             location:      string,
+                             paramName:     string,
+                             value:         Box,
+                             valueType:     Con4mType) =
+  s.setParamValue(componentName, location, paramName, value, valueType,
                 attrParams)
 
-proc getAllVariableParamInfo*(name, location: string): seq[ParameterInfo] =
-  let component = getComponentReference(name, location)
+proc getAllVariableParamInfo*(s:              ConfigState,
+                              name, location: string): seq[ParameterInfo] =
+  let component = s.getComponentReference(name, location)
 
   for _, v in component.varParams:
     result.add(v)
 
-proc getAllAttrParamInfo*(name, location: string): seq[ParameterInfo] =
-  let component = getComponentReference(name, location)
+proc getAllAttrParamInfo*(s:              ConfigState,
+                          name, location: string): seq[ParameterInfo] =
+  let component = s.getComponentReference(name, location)
 
   for _, v in component.attrParams:
     result.add(v)

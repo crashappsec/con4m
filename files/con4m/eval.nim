@@ -285,8 +285,7 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   of NodeVarAssign:
     node.children[1].evalNode(s)
 
-    let name  = node.children[0].getTokenText()
-
+    let name = node.children[0].getTokenText()
     s.runtimeVarSet(name, node.children[1].value)
   of NodeUnpack:
     node.children[^1].evalNode(s)
@@ -677,4 +676,4 @@ proc evalComponent*(s: ConfigState, component: ComponentInfo) =
 
 
 proc evalComponent*(s: ConfigState, module: string, loc: string = "") =
-  s.evalComponent(getComponentReference(module, loc))
+  s.evalComponent(s.getComponentReference(module, loc))

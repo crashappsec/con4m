@@ -200,7 +200,7 @@ template initializeSpec(specRuntime: ConfigState) =
 proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
   let
     step      = stack.steps[stack.ix]
-    component = step.url.getComponentReference()
+    component = conf.getComponentReference(step.url)
 
   try:
     if step.run:
@@ -528,6 +528,8 @@ proc run*(stack: ConfigStack, backtrace = false):
 
   while stack.ix < len(stack.steps):
     let step = stack.steps[stack.ix]
+    when false:
+      print("<jazzberry>" & step.stageName)
     try:
       case step.kind
       of akInitState:       stack.doInit()

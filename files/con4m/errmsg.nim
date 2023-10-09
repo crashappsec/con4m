@@ -69,14 +69,12 @@ proc formatCompilerError*(msg: string,
       pad    = repeat((' '), offset + 1)
 
     result &= "\n  " & $(lines[line]) & "\n"
-    result &= $(pad) & "<bold>^</bold>".stylize()
-    result = unicode.strip(result)
+    result &= $(pad) & "^"
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
       result &= "\n"
-      result &= stylize("<bold>" & tb & "</bold>")
-      result = unicode.strip(result)
+      result &= unicode.strip(stylize("<bold>" & tb & "</bold>"))
       if ii.line != 0:
         result &= "Exception thrown at: "
         result &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")\n"

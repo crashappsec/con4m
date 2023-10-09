@@ -415,7 +415,10 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
       row.add(@[sec.name, "section", "n/a"])
     rows.add(row)
 
-  result &= rows.instantTableWithHeaders()
+  try:
+    result &= rows.instantTableWithHeaders()
+  except:
+    result &= "<h2>Empty table.</h2>".stylize()
 
   for k, v in self.contents:
     if v.isA(AttrScope):

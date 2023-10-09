@@ -2,7 +2,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023, Crash Override, Inc.
 
-import types, options, st, streams, os, nimutils, json
+import types, options, st, streams, os, nimutils, json, strutils
 
 # This stuff comes before some imports because Nim sucks at forward referencing.
 var config: AttrScope = nil
@@ -20,7 +20,7 @@ proc getConf*[T](s: string): Option[T] =
 import st, stack
 
 template cmdLineErrorOutput(msg: string) =
-    let formatted = perLineWrap(withColor( "error: ", "red") & msg ,
+    let formatted = perLineWrap((withColor( "error: ", "red") & msg).strip() ,
                                 firstHangingIndent = len("error: con4m: "),
                                 remainingIndents = 0)
     stderr.writeLine(formatted)
@@ -43,7 +43,7 @@ proc outputResults*(ctx: ConfigState) =
   of "json":
     let raw = ctx.attrs.scopeToJson()
     stderr.writeLine(withColor("Results:", "red"))
-    stderr.writeLine(parseJson(ctx.attrs.scopeToJson()).pretty())
+    stderr.writeLine(parseJson(raw).pretty())
 
   else: discard
 
@@ -93,7 +93,6 @@ proc specGenRun*(files: seq[string]) =
     stack = newConfigStack().addSystemBuiltins(which=srsValidation).
             addGetoptSpecLoad()
 
-
   for item in files:
     let
       fname  = item.resolvePath()
@@ -103,5 +102,5 @@ proc specGenRun*(files: seq[string]) =
 
   stack.addCodeGen(getConf[string]("language").get(),
                    getConf[string]("output_file").getOrElse(""))
-
-  stack.safeRun()
+  stack.safeRun(backtrace = true)
+  echo stylize("<atomiclime>Code generation successful.").strip()
