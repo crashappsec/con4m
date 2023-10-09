@@ -120,7 +120,7 @@ proc isValidEndOfStatement(ctx: ParseCtx,
   let kind = ctx.curTok().kind
 
   case kind
-  of TtSemi, TtNewLine, TtRBracket, TtRParen:
+  of TtSemi, TtNewLine, TtRBracket, TtRParen, TtEOF:
     while ctx.curTok.kind == TtSemi: discard ctx.consume()
     return true
   else:
@@ -643,6 +643,8 @@ proc exportStmt(ctx: ParseCtx): Con4mNode =
     if ctx.curTok().kind != TtComma: break
     discard ctx.consume()
 
+  ctx.endOfStatement()
+
 proc varStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeVarDecl, ctx.consume())
 
@@ -671,13 +673,8 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
       item.children.add(spec)
     ctx.nlWatch = true
 
-    case ctx.consume().kind
-    of TtSemi, TtNewLine:
-      while ctx.curTok().kind == TtSemi: discard ctx.consume()
-    of TtComma:
-      continue
-    else:
-      parseError("Expected a newline, or more vars")
+    if ctx.isValidEndOfStatement([TtComma]):
+      break
 
 proc funcDecl(ctx: ParseCtx): Con4mNode =
   let
@@ -732,30 +729,26 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
   ctx.nlWatch = true
 
   case ctx.curTok().kind
-  of TtSemi, TtNewLine:
-    discard ctx.consume()
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
+  of TtSemi, TtNewLine, TtRBracket, TtRparen, TtEOF:
+    ctx.endOfStatement()
   else:
     try:
       result.children.add(ctx.expression())
     except:
       parseError("Expected valid expression after return")
-    case ctx.consume().kind
-    of TtSemi, TtNewLine, TtRBrace:
-      while ctx.curTok().kind == TtSemi: discard ctx.consume()
-    else:
-      parseError("Unexpected input after return")
-
+    ctx.endOfStatement()
 
 proc breakStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeBreak, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Break not allowed outside of a loop")
+  ctx.endOfStatement()
 
 proc continueStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeContinue, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Continue not allowed outside of a loop")
+  ctx.endOfStatement()
 
 #[
 proc whileStmt(ctx: ParseCtx): Con4mNode =
@@ -884,7 +877,17 @@ proc parameterBlock(ctx: ParseCtx): Con4mNode =
   let tok = ctx.curTok()
   case tok.kind
   of TtIdentifier:
-    result.children.add(ctx.memberExpr(Con4mNode(nil)))
+    let
+      idTok  = ctx.consume()
+      idNode = newNode(NodeIdentifier, idTok)
+
+    if idTok.kind != TtIdentifier:
+      parseError("Expected an attribute here")
+
+    if ctx.curTok().kind != TtPeriod:
+      result.children.add(idNode)
+    else:
+      result.children.add(ctx.memberExpr(idNode))
   of TtVar:
     var child = newNode(NodeVarDecl, ctx.consume())
     let idTok = ctx.consume()
@@ -905,10 +908,10 @@ proc parameterBlock(ctx: ParseCtx): Con4mNode =
     bodyParse = ctx.optionalBody()
     paramBody = newNode(NodeParamBody, bodyParse.token.get())
 
-  for item in paramBody.children:
-    bodyParse.children.add(item)
+  for item in bodyParse.children:
+    parambody.children.add(item)
 
-  result.children.add(bodyParse)
+  result.children.add(paramBody)
 
 proc varAssign(ctx: ParseCtx): Con4mNode =
   var
@@ -948,12 +951,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
   ctx.nlWatch = true
   result.children.add(ctx.expression())
 
-  case ctx.consume().kind
-  of TtSemi, TtNewLine, TtEOF:
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
-  else:
-    parseError("Newline needed after variable assignment")
-
+  ctx.endOfStatement()
 
 proc attrAssign(ctx: ParseCtx): Con4mNode =
   var
@@ -983,12 +981,7 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
   result.children.add(child)
   result.children.add(ctx.expression())
 
-  let tmp = ctx.consume()
-  case tmp.kind
-  of TtSemi, TtNewLine, TtEOF:
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
-  else:
-    parseError("Newline needed after attribute assignment")
+  ctx.endOfStatement()
 
 proc enumeration(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeEnum, ctx.consume())
@@ -999,10 +992,9 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     let kid = newNode(NodeIdentifier, ctx.consume())
     result.children.add(kid)
     if ctx.curTok().kind != TtComma:
+      ctx.endOfStatement()
       return
-    ctx.nlWatch = false
     discard ctx.consume()
-    ctx.nlWatch = true
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
   result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
@@ -1068,13 +1060,7 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       let t = ctx.curTok()
       try:
         result.children.add(ctx.expression())
-        case ctx.consume().kind
-        of TtSemi, TtNewLine:
-          ctx.nlWatch = false
-          while ctx.curTok().kind == TtSemi: discard ctx.consume()
-        else:
-          parseError("Expect a newline (or ;) at end of a body expression")
-
+        ctx.endOfStatement()
       except:
         parseError("Expected an assignment, unpack (no parens), block " &
                    "start, or expression", t)
@@ -1129,7 +1115,6 @@ proc parse*(tokens: seq[Con4mToken], filename: string):
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
 
-
 proc parse*(s: string | StringCursor, filename: string = "<<unknown>>"):
           Con4mNode =
   let
@@ -1141,12 +1126,12 @@ proc parse*(s: string | StringCursor, filename: string = "<<unknown>>"):
     let
       tok = tokens[^1]
       msg = case tok.kind:
-        of ErrorTok: "Invalid character found"
+        of ErrorTok:         "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
-        of ErrorStringLit: "Unterminated string"
-        of ErrorCharLit: "Invalid char literal"
-        of ErrorOtherLit: "Unterminated literal"
-        else: "Unknown error" # Shouldn't be possible w/o a lex bug
+        of ErrorStringLit:   "Unterminated string"
+        of ErrorCharLit:     "Invalid char literal"
+        of ErrorOtherLit:    "Unterminated literal"
+        else:                "Unknown error"
 
     fatal(msg, tok)
 

@@ -46,12 +46,12 @@ proc setCurrentFileName*(s: string) =
 proc getCurrentFileName*(): string =
   return curFileName
 
-proc formatCompilerError(msg: string,
-                         t:   Con4mToken,
-                         tb:  string = "",
-                         ii:  InstInfo): string =
+proc formatCompilerError*(msg: string,
+                          t:   Con4mToken,
+                          tb:  string = "",
+                          ii:  InstInfo): string =
   let
-    me    = getAppFileName().splitPath().tail
+    me = getAppFileName().splitPath().tail
 
   result = stylize("<red>" & me & "</red>: " & curFileName & ": ")
   result = unicode.strip(result)
@@ -84,7 +84,6 @@ proc formatCompilerError(msg: string,
 proc rawPublish(level: LogLevel, msg: string) {.inline.} =
   publishParams["loglevel"] = $(level)
   discard publish(con4mTopic, msg & "\n", publishParams)
-
 
 proc fatal*(baseMsg: string,
             token:   Con4mToken,

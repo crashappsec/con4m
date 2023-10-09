@@ -1,5 +1,5 @@
 import os, tables, streams, strutils, httpclient, net, uri, options, nimutils,
-       types, lex, typecheck
+       types, lex, typecheck, errmsg
 
 # This has some cyclic dependencies, so we make sure C prototypes get
 # generated with local scope only; we then do not import those modules.
@@ -11,6 +11,9 @@ var
   defaultUrlStore = ""
   componentInfo: Table[string, ComponentInfo]
   programRoot:   ComponentInfo
+
+proc getRootComponent*(): ComponentInfo =
+  return programRoot
 
 proc fullComponentSpec*(name, location: string): string =
   if location == "":
@@ -29,13 +32,14 @@ proc setDefaultStoreUrl*(url: string) =
   once:
     defaultUrlStore = url
 
+proc getComponentReference*(url: string): ComponentInfo =
+  if url notin componentInfo:
+    componentInfo[url] = ComponentInfo(url: url)
+
+  return componentInfo[url]
+
 proc getComponentReference*(name: string, location: string): ComponentInfo =
-  let key = fullComponentSpec(name, location)
-
-  if key notin componentInfo:
-    componentInfo[key] = ComponentInfo(url: key)
-
-  return componentInfo[key]
+  return fullComponentSpec(name, location).getComponentReference()
 
 proc fetchAttempt(url, extension: string): string =
   var
@@ -50,51 +54,13 @@ proc fetchAttempt(url, extension: string): string =
 
   return response.bodyStream.readAll()
 
-proc fetchComponent*(name, location: string, extension = ".c4m"):
-                   ComponentInfo =
-  ## This returns a parsed component, but does NOT go beyond that.  The
-  ## parse phase will NOT attempt to semantically validate a component,
-  ## will NOT go and fetch dependent comonents, and will NOT do cycle
-  ## checking at all. Use loadComponent below for those.
-  ##
-  ## This will raise an exception if anything goes wrong.
+proc cacheComponent*(component: ComponentInfo, str: string) =
+  ## Use the passed version, especially if stored in memory, etc.
 
-  result = getComponentReference(name, location)
+  component.source = str
+  component.hash   = sha256(component.source)
 
-  if result.url.startsWith("https://"):
-    if result.hash == "":
-      let
-        source = result.url.fetchAttempt(extension)
-        hash   = sha256(source)
-
-      if source == "":
-        if result.hash == "":
-          raise newException(IOError, "Could not retrieve needed source " &
-            "file: " & result.url)
-
-      elif hash == result.hash:
-        return
-
-      result.hash   = hash
-      result.source = source
-
-  else:
-    try:
-      let
-        source = result.url.readFile()
-        hash   = sha256(source)
-
-      if hash == result.hash:
-        return
-
-      result.hash   = hash
-      result.source = source
-    except:
-      if result.hash == "":
-        raise newException(IOError, "Could not retrieve needed source " &
-          "file: " & result.url)
-
-  let (valid, toks)   = result.source.lex(result.url)
+  let (valid, toks) = component.source.lex(component.url)
 
   if not valid:
     let msg = case toks[^1].kind
@@ -104,34 +70,79 @@ proc fetchComponent*(name, location: string, extension = ".c4m"):
     of ErrorCharLit:     "Invalid char literal"
     of ErrorOtherLit:    "Unterminated literal"
     else:                "Unknown error" # Not be possible w/o a lex bug
+    fatal(msg, toks[^1])
 
-  result.entrypoint = toks.parse(result.url)
+  component.entrypoint = toks.parse(component.url)
 
-proc loadComponent*(s: ConfigState, component: ComponentInfo) =
+proc cacheComponent*(component: ComponentInfo, stream: Stream) =
+  component.cacheComponent(stream.readAll())
+
+proc fetchComponent*(item: ComponentInfo, extension = ".c4m") =
+  var source: string
+
+  if item.hash == "":
+    if item.url.startsWith("https://"):
+      source = item.url.fetchAttempt(extension)
+
+      if source == "":
+        raise newException(IOError, "Could not retrieve needed source " &
+          "file: " & item.url)
+    else:
+      try:
+        source = item.url.readFile()
+      except:
+        raise newException(IOError, "Could not retrieve needed source " &
+          "file: " & item.url)
+
+    item.cacheComponent(source)
+
+proc fetchComponent*(name, location: string, extension = ".c4m"):
+                   ComponentInfo =
+  ## This returns a parsed component, but does NOT go beyond that.  The
+  ## parse phase will NOT attempt to semantically validate a component,
+  ## will NOT go and fetch dependent comonents, and will NOT do cycle
+  ## checking at all. Use loadComponent below for those.
+  ##
+  ## This will raise an exception if anything goes wrong.
+
+  result = getComponentReference(name & extension, location)
+
+  fetchComponent(result, extension)
+
+proc loadComponent*(s: ConfigState, component: ComponentInfo):
+                  seq[ComponentInfo] {.discardable.} =
+  ## Recursively fetches any dependent components (if not cached) and
+  ## checks them.
+
+  if component.hash == "":
+    component.fetchComponent()
+
   let savedComponent = s.currentComponent
 
   if not component.typed:
-    s.currentComponent = component
+    s.currentComponent                     = component
+    s.currentComponent.entrypoint.varScope = VarScope(parent: none(VarScope))
+
     s.currentComponent.entrypoint.checkTree(s)
     s.currentComponent.typed = true
+
     for subcomponent in s.currentComponent.componentsUsed:
       s.loadComponent(subcomponent)
-    s.currentComponent = savedComponent
 
-  # Now that any sub-components have loaded, we *could* do a check for
-  # cycles, but we are currently skipping it. It'll be runtime-only
-  # for now.
+  for subcomponent in s.currentComponent.componentsUsed:
+    let recursiveUsedComponents = s.loadComponent(subcomponent)
+    for item in recursiveUsedComponents:
+      if item notin result:
+        result.add(item)
 
-proc loadComponent*(s: ConfigState, name, location: string, extension = ".c4m"):
-                  ComponentInfo =
+  if s.currentComponent in result:
+    raise newException(ValueError, "Cyclical components are not allowed-- " &
+      "component " & s.currentComponent.url & "can import itself")
 
-  if s.currentComponent == ComponentInfo(nil):
-    # Main file; register the component.
-    programRoot = getComponentReference(name, location)
+  s.currentComponent = savedComponent
 
-  result = fetchComponent(name, location, extension)
-
-  s.loadComponent(result)
+proc loadCurrentComponent*(s: ConfigState) =
+  s.loadComponent(s.currentComponent)
 
 template setParamValue*(componentName, location, paramName: string,
                         value: Box, valueType: Con4mType,

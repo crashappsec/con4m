@@ -7,7 +7,7 @@
 
 import options, strformat, tables, json, unicode, algorithm, nimutils, types,
        strcursor
-from strutils import join, repeat, toHex, toLowerAscii
+from strutils import join, repeat, toHex, toLowerAscii, replace
 
 
 # If you want to be able to reconstruct the original file, swap this
@@ -34,17 +34,20 @@ else:
     else:
       result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
+proc htmlEscape(s: string): string =
+  s.replace("<", "&lt;").replace(">", "&gt;")
+
 template colorType(s: string): string =
-  stylize("<green>" & s & "</green>").strip()
+  stylize("<green>" & s.htmlEscape() & "</green>").strip()
 
 template colorLit(s: string): string =
-  stylize("<red>" & s & "</red>").strip()
+  stylize("<red>" & s.htmlEscape() & "</red>").strip()
 
 template colorNT(s: string): string =
-  stylize("<jazzberry>" & s & "</jazzberry>").strip()
+  stylize("<jazzberry>" & s.htmlEscape() & "</jazzberry>").strip()
 
 template colorT(s: string): string =
-  stylize("<orange>" & s & "</orange>").strip()
+  stylize("<orange>" & s.htmlEscape() & "</orange>").strip()
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]

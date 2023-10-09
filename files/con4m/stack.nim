@@ -1,6 +1,6 @@
-import tables, options, streams, strutils, sequtils, sugar, os, json
-import lex, types, errmsg, parse, treecheck, eval, spec, builtins, dollars,
-       getopts, c42spec, st, typecheck, run, codegen, nimutils
+import tables, options, streams, strutils, sequtils, sugar, os, json, types,
+       errmsg, parse, eval, spec, builtins, dollars, getopts, c42spec, st,
+       typecheck, run, codegen, nimutils, components
 
 const getOptsSpec = staticRead("c4m/getopts.c42spec")
 
@@ -27,7 +27,7 @@ type
     of akCallback:
       callback*:    StackCallback
     of akSpecLoad, akConfLoad, akValidate:
-      fileName*:       string
+      url*:            string
       stream*:         Stream
       genSpec*:        bool
       run*:            bool
@@ -108,14 +108,14 @@ proc setErrorHandler*(stack: ConfigStack, cb: ErrorCallback):
   stack.steps.add(step)
 
 proc addSpecLoad*(stack:        ConfigStack,
-                  fileName:     string,
-                  stream:       Stream,
+                  url:          string,
+                  stream:       Stream = nil,
                   checkLevel:   CheckLevel = checkAll,
                   genSpec:      bool = true,
-                  stageName:    string = fileName):
+                  stageName:    string = url):
                     ConfigStack {.discardable.} =
   result   = stack
-  var step = ConfigStep(kind: akSpecLoad, fileName: fileName, run: true,
+  var step = ConfigStep(kind: akSpecLoad, url: url, run: true,
                         checkLevel: checkLevel, stageName: stageName,
                         stream: stream, genSpec: genSpec)
 
@@ -125,20 +125,20 @@ proc addGetoptSpecLoad*(stack:     ConfigStack,
                         stageName: string = "getopts-specload"):
                           ConfigStack {.discardable.} =
   result = stack
-  var step = ConfigStep(kind: akSpecLoad, filename: "getopts-spec",
+  var step = ConfigStep(kind: akSpecLoad, url: "getopts-spec",
                         run: true, checkLevel: checkNone,
                         stageName: stageName, genSpec: true,
                         stream: newStringStream(getOptsSpec))
   stack.steps.add(step)
 
 proc addConfLoad*(stack:        ConfigStack,
-                  fileName:     string,
-                  stream:       Stream,
+                  url:          string,
+                  stream:       Stream = nil,
                   checkLevel:   CheckLevel = checkAll,
-                  stageName:    string = fileName):
+                  stageName:    string = url):
                     ConfigStack {.discardable.} =
   result   = stack
-  var step = ConfigStep(kind: akConfLoad, fileName: fileName, run: true,
+  var step = ConfigStep(kind: akConfLoad, url: url, run: true,
                         checkLevel: checkLevel, stageName: stageName,
                         stream: stream)
   stack.steps.add(step)
@@ -197,7 +197,84 @@ proc createEmptyRuntime(): ConfigState =
 template initializeSpec(specRuntime: ConfigState) =
   specRuntime.spec = some(buildC42Spec())
 
-proc runOneConf(stack: ConfigStack, conf, spec: ConfigState)
+proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
+  let
+    step      = stack.steps[stack.ix]
+    component = step.url.getComponentReference()
+
+  try:
+    if step.run:
+      if step.stream != nil:
+        component.cacheComponent(step.stream)
+      else:
+        component.fetchComponent()
+
+      # TODO: this should all get redone to handle Showing the same
+      # things for any sub-components.
+      # if step.showToks:
+      #   for i, token in tokens:
+      #     stderr.writeLine($i & ": " & $token)
+
+      # if step.showParsed:
+      #   stderr.writeLine($tree)
+
+      # if step.showEarlyFns:
+      #   stderr.writeLine($(conf.funcTable))
+
+      if step.endPhase in ["parse", "tokenize"]:
+        return
+
+      conf.secondPass = false
+      conf.loadComponent(component)
+
+      # if step.showTyped:
+      #   stderr.write("# EntryPoint:".stylize())
+      #   stderr.writeLine($(component.entrypoint))
+      #   for item in conf.moduleFuncDefs:
+      #     let typeStr = `$`(item.tInfo)
+      #     stderr.write(("# Function: " & item.name & typeStr).stylize())
+      #     stderr.writeLine($item.impl.get())
+
+      # if step.showFuncs:
+      #   stderr.writeLine($(conf.funcTable))
+
+    if step.endPhase == "precheck":
+      return
+
+    if step.run: # Set up the runtime stack.
+      ctrace(step.url & ": Beginning evaluation.")
+      conf.evalComponent(component)
+      ctrace(step.url & ": Evaluation done.")
+  finally:
+    if step.run:
+      conf.numExecutions += 1
+
+      # Clean up the runtime stack and stash exported global state.
+      if conf.frames.len() > 0:
+        for k, v in conf.frames[0]:
+          if k in conf.keptGlobals:
+            conf.keptGlobals[k].value = v
+        conf.frames = @[]
+
+  if step.endPhase == "eval":
+    if step.checkLevel != notEvenDefaults and spec != nil:
+      conf.setDefaults(spec)
+    return
+
+  if spec != nil:
+    if step.checkLevel in [checkAll, checkPost]:
+      conf.basicSanityCheck(spec)
+      conf.validateState(spec)
+    elif step.checkLevel != notEvenDefaults:
+      conf.setDefaults(spec)
+
+  if step.showPretty:
+    echo conf.attrs
+
+  if step.showJson:
+    print("<h1>Results:</h1><code><pre>" &
+      parseJson(conf.attrs.scopeToJson()).pretty() &
+       "</pre></code>")
 
 proc oneInit(s: ConfigState, step: ConfigStep) =
   if step.addBuiltins:
@@ -480,110 +557,3 @@ proc run*(stack: ConfigStack, backtrace = false):
       stack.ix = stack.ix + 1
 
   if stack.configState != nil: return some(stack.configState)
-
-proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
-  let step = stack.steps[stack.ix]
-  var tree: Con4mNode
-
-  try:
-    if step.run:
-      if step.stream == nil:
-        fatal("Unable to open '" & step.fileName & "' for reading")
-        step.stream.setPosition(0)
-      let
-        contents        = step.stream.readAll()
-        (valid, tokens) = contents.lex(step.fileName)
-
-      if not valid:
-        let msg = case tokens[^1].kind
-        of ErrorTok:         "Invalid character found"
-        of ErrorLongComment: "Unterminated comment"
-        of ErrorStringLit:   "Unterminated string"
-        of ErrorCharLit:     "Invalid char literal"
-        of ErrorOtherLit:    "Unterminated literal"
-        else:                "Unknown error" # Not be possible w/o a lex bug
-
-        fatal(msg, tokens[^1])
-
-      if step.showToks:
-        for i, token in tokens:
-          stderr.writeLine($i & ": " & $token)
-
-      if step.endPhase == "tokenize": return
-
-      tree          = tokens.parse(step.fileName)
-      tree.varScope = VarScope(parent: none(VarScope))
-
-      if step.showParsed:
-        stderr.writeLine($tree)
-
-      if step.showEarlyFns:
-        stderr.writeLine($(conf.funcTable))
-
-      if step.endPhase == "parse": return
-
-      conf.secondPass = false
-      tree.checkTree(conf)
-
-      if step.showTyped:
-        stderr.write("# EntryPoint:".stylize())
-        stderr.writeLine($tree)
-        for item in conf.moduleFuncDefs:
-          let typeStr = `$`(item.tInfo)
-          stderr.write(("# Function: " & item.name & typeStr).stylize())
-          stderr.writeLine($item.impl.get())
-
-      if step.showFuncs:
-        stderr.writeLine($(conf.funcTable))
-
-    if step.checkLevel != notEvenDefaults and spec != nil:
-      if conf.spec.isNone():
-        if stack.c42SpecObj == nil:
-          fatal("Spec runtime exists, but no spec object generated from it.")
-        conf.spec = some(stack.c42SpecObj)
-      if step.checkLevel in [checkAll, checkPre]:
-        conf.preEvalCheck(spec)
-
-    if step.endPhase == "precheck": return
-
-    if step.run: # Set up the runtime stack.
-      var topFrame = RuntimeFrame()
-      for k, sym in tree.varScope.contents:
-        if k notin topFrame:
-          topFrame[k] = sym.value
-
-      conf.frames = @[topFrame]
-
-      ctrace(step.fileName & ": Beginning evaluation.")
-      tree.evalNode(conf)
-      ctrace(step.fileName & ": Evaluation done.")
-  finally:
-    if step.run:
-      conf.numExecutions += 1
-
-      # Clean up the runtime stack and stash exported global state.
-      if conf.frames.len() > 0:
-        for k, v in conf.frames[0]:
-          if k in conf.keptGlobals:
-            conf.keptGlobals[k].value = v
-        conf.frames = @[]
-
-  if step.endPhase == "eval":
-    if step.checkLevel != notEvenDefaults and spec != nil:
-      conf.setDefaults(spec)
-    return
-
-
-  if spec != nil:
-    if step.checkLevel in [checkAll, checkPost]:
-      conf.validateState(spec)
-    elif step.checkLevel != notEvenDefaults:
-      conf.setDefaults(spec)
-
-  if step.showPretty:
-    echo conf.attrs
-
-  if step.showJson:
-    print("<h1>Results:</h1><code><pre>" &
-      parseJson(conf.attrs.scopeToJson()).pretty() &
-       "</pre></code>")

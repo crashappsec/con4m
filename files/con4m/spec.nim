@@ -668,7 +668,8 @@ proc setDefaults*(state: ConfigState, c42env: ConfigState) =
   ## set, so that subsequent queries can work right :)
   validateOneSectionPass2(state.attrs, state.spec.get().rootSpec, c42env, true)
 
-proc preEvalCheck*(state: ConfigState, c42env: ConfigState = nil) {.inline.} =
+proc basicSanityCheck*(state: ConfigState, c42env: ConfigState = nil)
+    {.inline.} =
   validateOneSectionPass1(state.attrs, state.spec.get().rootSpec, c42env)
 
 proc getDocableSecs*(state: ConfigState): seq[Con4mSectionType] =

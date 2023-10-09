@@ -144,13 +144,31 @@ proc unescape(token: Con4mToken) =
 
   token.unescaped = $(res)
 
-template tok(k: Con4mTokenKind) =
+template atNewLine() =
+  lineNo.inc()
+  lineStart = s.getPosition()
+
+template tok(k: Con4mTokenKind, eatNewlines: static[bool] = false) =
   toks.add(Con4mToken(startPos:   startPos,
                       endPos:     s.getPosition(),
                       kind:       k,
                       cursor:     s,
                       lineNo:     tokenLine,
                       lineOffset: tokenLineOffset))
+  when eatNewlines:
+    let wsStart = s.getPosition()
+    while s.peek() in [Rune(' '), Rune('\t')]:
+      s.advance()
+    if s.peek() == Rune('\n'):
+      atNewLine()
+      s.advance()
+      while s.peek() in [Rune(' '), Rune('\t')]:
+        s.advance()
+    let wsEnd = s.getPosition()
+    if wsEnd != wsStart:
+      toks.add(Con4mToken(startPos: wsStart, endPos: wsEnd,
+                          kind: TtWhiteSpace, cursor: s, lineNo: tokenLine,
+                          lineOffSet: tokenLineOffset + wsStart - startPos))
 
 # The adjustment is to chop off start/end delimiters for
 # literals... strings, tristrings, and 'other' literals: << >>
@@ -161,10 +179,6 @@ template tok(k: Con4mTokenKind, adjustment: int) =
                       cursor:     s,
                       lineNo:     tokenLine,
                       lineOffset: tokenLineOffset))
-
-template atNewLine() =
-  lineNo.inc()
-  lineStart = s.getPosition()
 
 proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
@@ -290,16 +304,16 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
     of Rune('`'):
       tok(TtBacktick)
     of Rune('+'):
-      tok(TtPlus)
+      tok(TtPlus, true)
     of Rune('-'):
       case s.peek()
       of Rune('>'):
         s.advance()
-        tok(TtArrow)
+        tok(TtArrow, true)
       else:
-        tok(TtMinus)
+        tok(TtMinus, true)
     of Rune('*'):
-      tok(TtMul)
+      tok(TtMul, true)
     of Rune('/'):
       case s.peek()
       of Rune('/'):
@@ -327,9 +341,9 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           else:
             discard
       else:
-        tok(TtDiv)
+        tok(TtDiv, true)
     of Rune('%'):
-      tok(TtMod)
+      tok(TtMod, true)
     of Rune('<'):
       if s.peek() == Rune('<'):
         while true:
@@ -345,50 +359,50 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
             continue
       elif s.peek() == Rune('='):
         s.advance()
-        tok(TtLte)
+        tok(TtLte, true)
       else:
-        tok(TtLt)
+        tok(TtLt, true)
     of Rune('>'):
       if s.peek() == Rune('='):
         s.advance()
-        tok(TtGte)
+        tok(TtGte, true)
       else:
-        tok(TtGt)
+        tok(TtGt, true)
     of Rune('!'):
       if s.peek() == Rune('='):
         s.advance()
-        tok(TtNeq)
+        tok(TtNeq, true)
       else:
-        tok(TtNot)
+        tok(TtNot, true)
     of Rune(';'):
-      tok(TtSemi)
+      tok(TtSemi, true)
     of Rune(':'):
       if s.peek() == Rune('='):
         s.advance()
-        tok(TtLocalAssign)
+        tok(TtLocalAssign, true)
       else:
-        tok(TtColon)
+        tok(TtColon, true)
     of Rune('='):
       case s.peek()
       of Rune('='):
         s.advance()
-        tok(TtCmp)
+        tok(TtCmp, true)
       else:
-        tok(TtAttrAssign)
+        tok(TtAttrAssign, true)
     of Rune(','):
-      tok(TtComma)
+      tok(TtComma, true)
     of Rune('.'):
-      tok(TtPeriod)
+      tok(TtPeriod, true)
     of Rune('{'):
-      tok(TtLBrace)
+      tok(TtLBrace, true)
     of Rune('}'):
       tok(TtRBrace)
     of Rune('['):
-      tok(TtLBracket)
+      tok(TtLBracket, true)
     of Rune(']'):
       tok(TtRBracket)
     of Rune('('):
-      tok(TtLParen)
+      tok(TtLParen, true)
     of Rune(')'):
       tok(TtRParen)
     of Rune('&'):
@@ -396,13 +410,13 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
         tok(ErrorTok)
         return (false, toks)
       else:
-        tok(TtAnd)
+        tok(TtAnd, true)
     of Rune('|'):
       if s.read() != Rune('|'):
         tok(ErrorTok)
         return (false, toks)
       else:
-        tok(TtOr)
+        tok(TtOr, true)
     of Rune('0') .. Rune('9'):
       block numLit:
         var isFloat: bool

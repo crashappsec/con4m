@@ -60,7 +60,7 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
         stderr.writeLine($item.impl.get())
 
   if state.spec.isSome():
-    state.preEvalCheck(evalCtx)
+    state.basicSanityCheck(evalCtx)
 
   tree.initRun(state)
   try:

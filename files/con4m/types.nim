@@ -300,11 +300,11 @@ type
     doc*:             string
     hash*:            string
     source*:          string
+    savedGlobals*:    RuntimeFrame
     varParams*:       Table[string, ParameterInfo]
     attrParams*:      Table[string, ParameterInfo]
     componentsUsed*:  seq[ComponentInfo]
     cachedSrc*:       Option[string]
-    savedVars*:       OrderedTable[string, VarSym]
     typed*:           bool
     alreadyRunning*:  bool # Breaks cycles at runtime.
     entrypoint*:      Con4mNode

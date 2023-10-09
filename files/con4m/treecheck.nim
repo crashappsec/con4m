@@ -874,6 +874,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     let cbObj  = CallbackObj(name: node.getTokenText(), tInfo: node.typeInfo)
     node.value = pack(cbObj)
+
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -948,7 +949,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # aren't going to be interpreted in the way they are in any other
     # part of a program.
     const
-      validParamProps = ["doc", "shortdoc", "validate", "default"]
+      validParamProps = ["doc", "shortdoc", "validator", "default"]
     var
       foundProps: seq[string]
 
@@ -975,7 +976,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       case propname
       of "doc", "shortdoc":
         if kid.children[1].kind != NodeSimpLit or
-          node.getTokenType() != TtStringLit:
+          kid.children[1].getTokenType() != TtStringLit:
           fatal("Parameter's doc and shortdoc properties must be string " &
             "literals")
       of "default":
@@ -997,17 +998,24 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             " empty string (on success), or an error message.")
       else:
         unreachable
-
   of NodeParameter:
-    node.checkkids(s)
-    let nameNode = node.children[0]
+    for item in node.children[1 .. ^1]:
+      item.checkNode(s)
+
     var
-      name = nameNode.children[0].getTokenText()
-      attr = false
-    if nameNode.kind != NodeVarDecl:
+      name: string
+      attr: bool
+    case node.children[0].kind
+    of NodeIdentifier:
       attr = true
-      for i in 1 ..< nameNode.children.len():
-        name &= "." & nameNode.children[i].getTokenText()
+      name = node.children[0].getTokenText()
+    of NodeVarDecl:
+      attr = false
+      name = node.children[0].children[0].getTokenText()
+    else:
+      attr = true
+      for item in node.children[0].children:
+        name &= item.getTokenText()
 
     if not s.secondPass:
       # Force the second pass.  We'll validate that the types are
@@ -1015,22 +1023,30 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # exist (the attributes do not have to exist).
 
       s.waitingForTypeInfo = true
-      var paramObj = ParameterInfo(name: name, defaultType: newTypeVar())
+      var
+        paramObj = ParameterInfo(name: name, defaultType: newTypeVar())
+        assnNodes: seq[Con4mNode]
 
-      for assignNode in node.children:
+      if len(node.children) > 1:
+        assnNodes = node.children[1].children
+      for assignNode in assnNodes:
         case assignNode.children[0].getTokenText()
         of "doc":
           paramObj.doc       = some(assignNode.children[1].getTokenText())
         of "shortdoc":
           paramObj.shortdoc  = some(assignNode.children[1].getTokenText())
         of "validator":
-          let vType          = assignNode.children[1].typeInfo.params[0]
-          let callback       = unpack[CallbackObj](assignNode.children[1].value)
+          let fnode    = assignNode.children[1]
+          let callback = unpack[CallbackObj](assignNode.children[1].value)
+
+          if len(callback.tinfo.params) == 0:
+            callback.tInfo = "(`x) -> string".toCon4mType()
+
           paramObj.validator = some(callback)
 
-          if paramobj.defaultType.unify(vType).isBottom():
+          if paramobj.defaultType.unify(callback.tInfo.params[0]).isBottom():
             fatal2Type("Validator parameter does not match inferred type",
-                       assignNode, paramObj.defaultType, vType)
+                       assignNode, paramObj.defaultType, callback.tInfo)
         of "default":
           let defType = assignNode.children[1].typeInfo
 
@@ -1042,8 +1058,22 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             if paramObj.defaultType.unify(defType.retType).isBottom():
               fatal2Type("Default value callback does not match inferred type",
                          assignNode, paramObj.defaultType, defType.retType)
+          else:
+            paramObj.default = some(assignNode.children[1].value)
+            if paramObj.defaultType.unify(defType).isBottom():
+              fatal2Type("Default value provided does not match inferred type",
+                         assignNode, paramObj.defaultType, defType)
+
         else:
           unreachable
+      if s.currentComponent == nil:
+        s.currentComponent = getComponentReference("", "")
+      if attr:
+        s.currentComponent.attrParams[name] = paramObj
+      else:
+        let sym = node.addVariable(name)
+
+        s.currentcomponent.varParams[name]  = paramObj
     elif attr:
       let
         obj      = s.currentComponent.attrParams[name]
@@ -1070,14 +1100,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     else:
       if name == "result":
         fatal("Cannot use special variable 'result' outside a function")
+
       let symbolOpt = node.varUse(name)
 
-      if symbolOpt.isNone():
-        fatal("Variable parameter '" & name & "' is not defined in the " &
-          "top-level component scope.")
       let
         obj = s.currentComponent.varParams[name]
         sym = symbolOpt.get()
+
+      if sym.defs.len() + sym.uses.len() == 1:
+        fatal("Variable parameter '" & name & "' is not defined in the " &
+          "top-level component scope.")
 
       if sym.tInfo.unify(obj.defaultType).isBottom():
           fatal2Type("Variable parameter's default value does not " &

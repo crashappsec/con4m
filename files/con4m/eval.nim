@@ -8,6 +8,8 @@
 import options, tables, strformat, unicode, nimutils, types, st, parse,
        treecheck, typecheck, dollars, errmsg, components
 
+from strutils import nil
+
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
 
@@ -200,7 +202,7 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = pack(ret)
 
-proc evalComponent*(s: ConfigState, module: string, url: string = "")
+proc evalComponent*(s: ConfigState, module: string, loc: string = "")
 
 proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
@@ -596,43 +598,83 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
 
-
-proc evalComponent*(s: ConfigState, module: string, url: string = "") =
+proc evalComponent*(s: ConfigState, component: ComponentInfo) =
   let
-    savedGlobals    = s.keptGlobals
     savedScopes     = s.frames
     savedComponent  = s.currentComponent
     savedFuncOrigin = s.funcOrigin
 
-  s.currentComponent = getComponentReference(module, url)
+  s.currentComponent = component
   s.funcOrigin       = false
-  s.keptGlobals     =  s.currentComponent.savedVars
 
-  var newFrame = RuntimeFrame()
-  s.frames     = @[newFrame]
+  s.loadCurrentComponent()
+  # When we parsed and checked the component, we did not fetch any
+  # of its dependencies.
 
-  for k, v in s.currentComponent.savedVars:
-    newFrame[k] = v.value
+  if component.alreadyRunning:
+    # This shouldn't be possible due to the static check, but hey.
+    raise newException(ValueError, "Recursive call of module " & component.url)
+
+  component.alreadyRunning = true
+
+  if len(savedScopes) != 0:
+    for k, v in savedScopes[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
+
+  var globalScope: RuntimeFrame
+
+  if component.savedGlobals == nil:
+    component.savedGlobals = RuntimeFrame()
+    let varScope = component.entryPoint.varScope
+
+    for k, v in varScope.contents:
+      component.savedGlobals[k] = v.value
+
+  globalScope = component.savedGlobals
+
+  for k, v in s.keptGlobals:
+    globalScope[k] = v.value
+
+  s.frames = @[globalScope]
 
   for k, v in s.currentComponent.varParams:
-    if v.value.isSome():
-      newFrame[k] = v.value
+    if v.value.isSome() and k notin globalScope:
+      globalScope[k] = v.value
+    elif v.default.isSome():
+      globalScope[k] = v.default
+    elif v.defaultCb.isSome():
+      globalScope[k] = s.sCall(v.defaultCb.get(), @[])
     else:
       raise newException(ValueError, "Component not configured")
 
   for k, v in s.currentcomponent.attrParams:
-    if v.value.isSome():
-      s.attrs.attrSet(k, v.value.get(), v.defaultType)
-    else:
-      raise newException(ValueError, "Component not configured")
+    if not s.attrs.attrExists(strutils.split(k, ".")):
+      if v.value.isSome():
+        s.attrs.attrSet(k, v.value.get(), v.defaultType)
+      elif v.default.isSome():
+        s.attrs.attrSet(k, v.default.get(), v.defaultType)
+      elif v.defaultCb.isSome():
+        s.attrs.attrSet(k, s.scall(v.defaultCb.get(), @[]).get(), v.defaultType)
+      else:
+        raise newException(ValueError, "Component not configured")
 
   evalNode(s.currentComponent.entrypoint, s)
 
-  if len(s.frames) > 0:
-    for k, v in s.frames[0]:
-      s.currentComponent.savedVars[k].value = v
+  component.alreadyRunning = false
 
-  s.funcOrigin       = savedFuncOrigin
-  s.currentComponent = savedComponent
-  s.frames           = savedScopes
-  s.keptGlobals      = savedGlobals
+  for k, v in s.keptGlobals:
+    v.value = globalScope[k]
+
+  if len(savedScopes) != 0:
+    for k, v in savedScopes[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
+
+  s.funcOrigin        = savedFuncOrigin
+  s.currentComponent  = savedComponent
+  s.frames            = savedScopes
+
+
+proc evalComponent*(s: ConfigState, module: string, loc: string = "") =
+  s.evalComponent(getComponentReference(module, loc))

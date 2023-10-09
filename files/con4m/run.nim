@@ -47,10 +47,10 @@ proc outputResults*(ctx: ConfigState) =
 
   else: discard
 
-template safeRun(stack: ConfigStack) =
+template safeRun(stack: ConfigStack, backtrace = false) =
   try:
     stack.errored = false
-    discard stack.run()
+    discard stack.run(backtrace)
   except:
     stack.errored = true
     getCurrentExceptionMsg().cmdLineErrorOutput()
@@ -85,7 +85,7 @@ proc con4mRun*(files, specs: seq[string]) =
     if addOut:
       stack.addCallback(outputResults)
 
-  stack.safeRun()
+  stack.safeRun(backtrace = true)
 
 proc specGenRun*(files: seq[string]) =
   let

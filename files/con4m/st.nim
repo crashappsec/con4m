@@ -464,6 +464,7 @@ proc runtimeVarSet*(state: ConfigState, name: string, val: Box) =
       frame[name] = some(val)
       return
 
+  echo name
   unreachable
 
 proc lockAttribute*(attrs: AttrScope, fqn: string): bool =
