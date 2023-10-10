@@ -189,6 +189,7 @@ proc attrLookup*(scope: AttrScope,
 
     return newScope.attrLookup(parts, ix + 1, op)
 
+
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
 

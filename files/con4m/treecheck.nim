@@ -66,11 +66,11 @@ proc nodeToIntLit(node: Con4mNode): Box =
 
 proc nodeToTrueLit(node: Con4mNode): Box =
   node.typeInfo = boolType
-  return pack(true)
+  result        = pack(true)
 
 proc nodeToFalseLit(node: Con4mNode): Box =
   node.typeInfo = boolType
-  return pack(false)
+  result        = pack(false)
 
 proc nodeToFloatLit(node: Con4mNode): Box =
   node.typeInfo = floatType
@@ -551,8 +551,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
        node.children[2].getType().unify(intType).isBottom():
       fatal("For index ranges must be integers.")
   of NodeSimpLit:
-    if s.secondPass:
-      return
+    #if s.secondPass:
+    #  return
     node.value = node.nodeToSimpLit()
   of NodeUnary:
     node.checkKids(s)
@@ -1079,8 +1079,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       name = node.children[0].children[0].getTokenText()
     else:
       attr = true
+      var parts: seq[string]
+
       for item in node.children[0].children:
-        name &= item.getTokenText()
+        parts.add item.getTokenText()
+
+      name = parts.join(".")
 
     if not s.secondPass:
       # Force the second pass.  We'll validate that the types are
@@ -1132,7 +1136,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         else:
           unreachable
       if attr:
-        s.currentComponent.attrParams[name] = paramObj
+          s.currentComponent.attrParams[name] = paramObj
       else:
         let sym = node.addVariable(name)
 
@@ -1269,10 +1273,8 @@ proc parseConstLiteral*(s: string, t: Con4mType): Box =
   try:
     let tree = s.parseLiteral()
 
-    if tree.isConstLit():
-      tree.checkNode(ConfigState())
-
-    if not tree.typeInfo.unify(t).isBottom():
+    tree.checkNode(ConfigState())
+    if tree.isConstLit() and tree.typeInfo.unify(t).isBottom():
       return tree.value
   except:
     discard

@@ -1,4 +1,20 @@
-import types, treecheck, options, tables, nimutils, eval, dollars
+import types, treecheck, options, tables, nimutils, eval, dollars, strutils
+
+
+proc validateParameter*(state: ConfigState, param: ParameterInfo):
+                      Option[string] =
+  if param.value.isNone():
+    return some("<red>error:</red> Must provide a valid value.")
+
+  if param.validator.isSome():
+    let
+      boxOpt = state.sCall(param.validator.get(), @[param.value.get()])
+      err    = unpack[string](boxOpt.get())
+
+    if err != "":
+      return some(err)
+
+  return none(string)
 
 
 proc basicConfigureOneParam(state:     ConfigState,
@@ -17,16 +33,23 @@ proc basicConfigureOneParam(state:     ConfigState,
 
   if boxOpt.isSome():
     default = param.defaultType.oneArgToString(boxOpt.get())
+    default = " <b><i>" & default & "</i></b>"
+    default = default.stylize().strip()
   let
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
+    intro   = "Configuring: <jazzberry>" & param.name & "</jazzberry> -- " &
+              "<i>" & short & "</i>\n" & long
 
-  print("### Configuring: " & param.name & " -- " & short & "\n" & long)
-
-  if boxOpt.isSome():
-    print("Press [enter] to accept default, or enter a value: ")
+  echo intro.stylize().strip()
 
   while true:
+    if boxOpt.isSome():
+      echo("Default is: ", default)
+      echo("Press [enter] to accept default, or enter a value: ")
+    else:
+      echo("Please enter a value: ")
+
     let line = stdin.readLine()
 
     if line != "":
@@ -34,22 +57,27 @@ proc basicConfigureOneParam(state:     ConfigState,
         boxOpt = some(line.parseConstLiteral(param.defaultType))
       except:
         print("<red>error:</red> " & getCurrentExceptionMsg())
-
-    if boxOpt.isNone():
-      print("<red>error:</red> Must enter a valid value.")
-      continue
-    elif line == "":
-      print("<atomiclime>success:</atomiclime> Accepting the default value.")
-    else:
-      print("<atomiclime>success:</atomiclime> Value accepted.")
+        continue
 
     param.value = boxOpt
-    break
+
+    let err = state.validateParameter(param)
+
+    if err.isNone():
+      break
+
+    print(err.get())
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,
                                componentList: seq[ComponentInfo]) =
-  print("# Congiguring Component: " & component.url)
+  print("# Configuring Component: " & component.url)
   for subcomp in componentList:
-    for _, param in subcomp.varParams:
+    for name, param in subcomp.varParams:
       state.basicConfigureOneParam(subcomp, param)
+
+    for name, param in subcomp.attrParams:
+      state.basicConfigureOneParam(subcomp, param)
+  print("# Finished configuration " & component.url)
+  echo("Press [enter] to continue.")
+  discard stdin.readLine()

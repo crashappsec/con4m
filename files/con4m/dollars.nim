@@ -323,7 +323,7 @@ proc oneArgToString*(t: Con4mType,
                      b: Box,
                      outType = vTDefault,
                      lit     = false): string =
-  case t.kind
+  case t.resolveTypeVars().kind
   of TypeString:
     if outType != vtNoLits and lit:
       return "\"" & unpack[string](b) & "\""

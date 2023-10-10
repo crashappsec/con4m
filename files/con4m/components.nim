@@ -10,17 +10,20 @@ proc checkTree(node: Con4mNode, s: ConfigState) {.importc, cdecl.}
 var defaultUrlStore = ""
 
 proc fullComponentSpec*(name, location: string): string =
+  var path: string
   if location == "":
     if defaultUrlStore != "":
-      result = defaultUrlStore
+      path = defaultUrlStore
     else:
-      result = getAppDir().resolvePath()
+      path = getAppDir().resolvePath()
 
   elif location.startsWith("https://"):
-    result = location
+    path = location
 
   else:
-    result = location.resolvePath()
+    path = location.resolvePath()
+
+  result = path.joinPath(name)
 
 proc setDefaultStoreUrl*(url: string) =
   once:
@@ -35,9 +38,10 @@ proc getComponentReference*(s: ConfigState, url: string): ComponentInfo =
 proc getComponentReference*(s: ConfigState, name, loc: string): ComponentInfo =
   return s.getComponentReference(fullComponentSpec(name, loc))
 
-proc fetchAttempt(url, extension: string): string =
+proc fetchAttempt(urlBase, extension: string): string =
   var
     finalExt = if extension.startsWith("."): extension else: "." & extension
+    url      = if urlBase.endsWith("/"): urlBase[0 ..< ^1] else: urlBase
     uri      = parseUri(url & finalExt)
     context  = newContext(verifyMode = CVerifyPeer)
     client   = newHttpClient(sslContext = context, timeout = 1000)
@@ -73,21 +77,22 @@ proc cacheComponent*(component: ComponentInfo, stream: Stream) =
   component.cacheComponent(stream.readAll())
 
 proc fetchComponent*(item: ComponentInfo, extension = ".c4m", force = false) =
+  let fullPath = item.url & extension
   var source: string
 
   if force or item.hash == "":
-    if item.url.startsWith("https://"):
-      source = item.url.fetchAttempt(extension)
+    if fullPath.startsWith("https://"):
+      source = fullPath.fetchAttempt(extension)
 
       if source == "":
         raise newException(IOError, "Could not retrieve needed source " &
-          "file: " & item.url)
+          "file: " & fullPath)
     else:
       try:
-        source = item.url.readFile()
+        source = fullPath.readFile()
       except:
         raise newException(IOError, "Could not retrieve needed source " &
-          "file: " & item.url)
+          "file: " & fullPath)
 
     item.cacheComponent(source, force)
 
@@ -102,7 +107,7 @@ proc fetchComponent*(s: ConfigState, name, loc: string, extension = ".c4m",
 
   result = s.getComponentReference(name, loc)
 
-  fetchComponent(result, extension, force)
+  result.fetchComponent(extension, force)
 
 proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
                       seq[ComponentInfo] =
@@ -110,6 +115,8 @@ proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
     allDependents: seq[ComponentInfo] = @[component]
 
   for sub in component.componentsUsed:
+    if sub notin result:
+      result.add(sub)
     let sublist = sub.getUsedComponents()
     for item in sublist:
       if item == component:
@@ -123,7 +130,8 @@ proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
   else:
     for item in allDependents:
       if item.varParams.len() != 0 or item.attrParams.len() != 0:
-        result.add(item)
+        if item notin result:
+          result.add(item)
 
 proc loadComponent*(s: ConfigState, component: ComponentInfo):
                   seq[ComponentInfo] {.discardable.} =
@@ -192,7 +200,12 @@ proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
 
   let
     (base, module, ext) = fullUrlToParts(url)
-    component = s.fetchComponent(module, base, ext)
+
+  if base.joinPath(module) notin s.components:
+    return none(ComponentInfo)
+
+  let
+    component = s.fetchComponent(module, base, ext, force = false)
 
   if component.source != "":
     return some(component)
@@ -206,6 +219,8 @@ template setParamValue*(s:          ConfigState,
                         value:      Box,
                         valueType:  Con4mType,
                         paramStore: untyped) =
+  discard s.loadComponent(component)
+
   if paramName notin component.paramStore:
     raise newException(ValueError, "Parameter not found: " & paramName)
 

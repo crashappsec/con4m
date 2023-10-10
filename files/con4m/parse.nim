@@ -860,7 +860,7 @@ proc useStmt(ctx: ParseCtx): Con4mNode =
   discard ctx.consume()
 
   if ctx.curTok().kind == TtStringLit:
-    result.children.add(newNode(NodeSimpLit, tok))
+    result.children.add(newNode(NodeSimpLit, ctx.consume()))
   else:
     parseError("Argument to 'from' must be a string literal consisting " &
       "of either a https URL, or a local file path to a directory with the " &

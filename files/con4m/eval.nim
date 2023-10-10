@@ -598,6 +598,9 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
       node.value = s.runtimeVarLookup(node.getTokenText())
 
 proc evalComponent*(s: ConfigState, component: ComponentInfo) =
+  if s.programRoot == nil:
+    s.programRoot = component
+
   let
     savedScopes     = s.frames
     savedComponent  = s.currentComponent
@@ -648,15 +651,40 @@ proc evalComponent*(s: ConfigState, component: ComponentInfo) =
       raise newException(ValueError, "Component not configured")
 
   for k, v in s.currentcomponent.attrParams:
-    if not s.attrs.attrExists(strutils.split(k, ".")):
+    # We'll first do a lookup of the scope the attr should be set in.
+    # If the scope needs to be created, vlSecDef will create it.
+    let
+      fqn       = strutils.split(k, ".")
+      scopeAOrE = s.attrs.attrLookup(fqn[0 ..< ^1], 0, vlSecDef)
+
+    if scopeAOrE.isA(AttrErr):
+      let err = scopeAOrE.get(AttrErr)
+      raise newException(ValueError, err.msg)
+
+    let aOrS = scopeAOrE.get(AttrOrSub)
+
+    if aOrS.isA(Attribute):
+      let msg = strutils.join(fqn[0 ..< ^1], ".") &
+           " is an attribute, not a section, so cannot contain an attribute."
+      raise newException(ValueError, msg)
+
+    let scope = aOrS.get(AttrScope)
+
+    if fqn[^1] notin scope.contents:
       if v.value.isSome():
-        s.attrs.attrSet(k, v.value.get(), v.defaultType)
+        scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
       elif v.default.isSome():
-        s.attrs.attrSet(k, v.default.get(), v.defaultType)
+        scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
       elif v.defaultCb.isSome():
-        s.attrs.attrSet(k, s.scall(v.defaultCb.get(), @[]).get(), v.defaultType)
+        scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
+                      v.defaultType)
       else:
         raise newException(ValueError, "Component not configured")
+    else:
+      discard
+      # TODO: should validate that the item is an attribute and that
+      # the type matches, even though it should generally be validated
+      # elsewhere.
 
   evalNode(s.currentComponent.entrypoint, s)
 
