@@ -41,11 +41,9 @@ proc getComponentReference*(s: ConfigState, url: string): ComponentInfo =
 proc getComponentReference*(s: ConfigState, name, loc: string): ComponentInfo =
   return s.getComponentReference(fullComponentSpec(name, loc))
 
-proc fetchAttempt(urlBase, extension: string): string =
+proc fetchAttempt(url: string): string =
   var
-    finalExt = if extension.startsWith("."): extension else: "." & extension
-    url      = if urlBase.endsWith("/"): urlBase[0 ..< ^1] else: urlBase
-    uri      = parseUri(url & finalExt)
+    uri      = parseUri(url)
     context  = newContext(verifyMode = CVerifyPeer)
     client   = newHttpClient(sslContext = context, timeout = 1000)
     response = client.safeRequest(url = uri, httpMethod = HttpGet)
@@ -85,7 +83,7 @@ proc fetchComponent*(item: ComponentInfo, extension = ".c4m", force = false) =
 
   if force or item.hash == "":
     if fullPath.startsWith("https://"):
-      source = fullPath.fetchAttempt(extension)
+      source = fullPath.fetchAttempt()
 
       if source == "":
         raise newException(IOError, "Could not retrieve needed source " &
