@@ -23,7 +23,10 @@ proc fullComponentSpec*(name, location: string): string =
   else:
     path = location.resolvePath()
 
-  result = path.joinPath(name)
+  if path.startsWith("https://"):
+    result = path & "/" & name
+  else:
+    result = path.joinPath(name)
 
 proc setDefaultStoreUrl*(url: string) =
   once:
