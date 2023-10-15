@@ -211,8 +211,8 @@ proc fillFromObj(obj: AttrScope, name: string,
 
 proc getAllFieldInfoForObj*(state: ConfigState, path: string,
                             docKind: CDocKind = CDocConsole):
-                        OrderedTable[string,
-                                     OrderedTableRef[string, string]] =
+                              OrderedTable[string,
+                                           OrderedTableRef[string, string]] =
   ## Returns all the field documentation for a specific
   ## 'object'.
 
@@ -1300,7 +1300,8 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
                          filterField = "", filterValue = "",
                          markdownFields: openarray[string] = [],
                          transformers: TransformTableRef = nil,
-                         table = true, docKind = CDocConsole): string =
+                         table = true, colwidths: openarray[int] = [],
+                         caption = "", docKind = CDocConsole): string =
   ## The filter is an exact-match only.
   ## If the fieldsToUse array is empty, we return all fields.
   ##
@@ -1308,7 +1309,13 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
   ## we generate a series of H2 / UL
 
   if table:
-    result = "<table><thead><tr>"
+    result = "<table>"
+    if len(colwidths) != 0:
+      result &= "<colgroup>"
+      for i, item in colwidths:
+        result &= "<col width=" & $(colwidths[i]) & " />"
+      result &= "</colgroup>"
+    result &= "<thead><tr>"
     if len(headings) != 0:
       for item in headings:
         result &= "<th>" & item & "</th>"
@@ -1362,7 +1369,10 @@ proc getAllInstanceDocs*(state: ConfigState, fqn: string,
     else:
       result &= "</ul>"
   if table:
-    result &= "</tbody></table>"
+    result &= "</tbody>"
+    if caption != "":
+      result &= "<caption>" & caption & "</caption>"
+    result &= "</table>"
 
   result = result.docFormat(docKind)
 
@@ -1371,6 +1381,7 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
                          searchFields: openarray[string],
                          searchTerms: openarray[string],
                          searchItemName: bool = true,
+                         colwidths: openarray[int] = [],
                          headings: openarray[string] = [],
                          markdownFields: openarray[string] = [],
                          transformers: TransformTableRef = nil,
@@ -1378,7 +1389,13 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
   var gotAnyMatch = false
 
   if table:
-    result = "<table><thead><tr>"
+    result = "<table>"
+    if len(colwidths) != 0:
+      result &= "<colgroup>"
+      for i, item in colwidths:
+        result &= "<col width=" & $(colwidths[i]) & " />"
+      result &= "</colgroup>"
+    result &= "<thead><tr>"
     if len(headings) != 0:
       for item in headings:
         result &= "<th>" & item & "</th>"
@@ -1392,8 +1409,6 @@ proc searchInstanceDocs*(state: ConfigState, fqn: string,
       if term.toLowerAscii() in name.toLowerAscii():
         found = true
         gotAnyMatch = true
-      echo term, " ", name
-
     for field in searchFields:
       if found: break
       if field notin fieldDocs:

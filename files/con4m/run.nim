@@ -4,6 +4,16 @@
 
 import types, options, st, streams, os, nimutils, json, strutils
 
+proc perLineWrap*(s: string,
+                  startingMaxLineWidth = -1,
+                  firstHangingIndent   = 2,
+                  remainingIndents     = 0,
+                  splitLongWords       = true,
+                  seps: set[char]      = Whitespace,
+                  newLine              = "\n"): string =
+  ## deprecated; no longer does what it says either.
+  return s.indentWrap(startingMaxLineWidth, firstHangingIndent, splitLongWords,
+                      seps, newLine)
 # This stuff comes before some imports because Nim sucks at forward referencing.
 var config: AttrScope = nil
 

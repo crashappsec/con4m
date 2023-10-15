@@ -8,8 +8,8 @@ srcDir        = "files"
 installExt    = @["nim", "c4m", "c42spec", "sh"]
 
 # Dependencies
-requires "nim >= 1.6.12"
-requires "https://github.com/crashappsec/nimutils#a2dc4216a571a99bf781b22beb3febfcb0776c20"
+requires "nim >= 2.0.0"
+requires "https://github.com/crashappsec/nimutils#f565d749026e7a7b6a9aeb20e00d2884e0c67a51"
 
 
 #before build:
