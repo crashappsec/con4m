@@ -174,7 +174,13 @@ proc fullUrlToParts*(url: string): (string, string, string) =
   if url.startswith("https://") or url.startswith("/"):
     fullPath = url
   else:
-    fullPath = url.resolvePath()
+    if '/' in url or defaultUrlStore == "":
+      fullPath = url.resolvePath()
+    else:
+      if defaultUrlStore.endswith("/"):
+        fullPath = defaultUrlStore & url
+      else:
+        fullPath = defaultUrlStore & "/" & url
 
   result = fullPath.splitFile()
 
