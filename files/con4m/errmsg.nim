@@ -31,11 +31,10 @@ proc setupTopStyle() =
 
   perClassStyles["plain"]  = s
   perClassStyles["woo"]    = r
-  styleMap["table"]        = s
+  styleMap["table"]        = newStyle(borders=[BorderNone])
   styleMap["thead"]        = s
   styleMap["tbody"]        = s
   styleMap["tfoot"]        = s
-  styleMap["tborder"]      = s
   styleMap["td"]           = s
   styleMap["tr"]           = s
   styleMap["tr.even"]      = s
@@ -51,7 +50,6 @@ proc setupBottomStyle() =
   styleMap["table"]        = newStyle(align = AlignC)
   styleMap["tbody"]        = s
   styleMap["tfoot"]        = s
-  styleMap["tborder"]      = s
   styleMap["td"]           = s
   styleMap["tr"]           = s
   styleMap["tr.even"]      = s
