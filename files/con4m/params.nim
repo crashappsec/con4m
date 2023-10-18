@@ -70,7 +70,9 @@ proc basicConfigureOneParam(state:     ConfigState,
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,
-                               componentList: seq[ComponentInfo]) =
+                               componentList: seq[ComponentInfo],
+                               nextPrompt: "Press [enter] to continue."
+                              ) =
   print("# Configuring Component: " & component.url)
   for subcomp in componentList:
     for name, param in subcomp.varParams:
@@ -78,6 +80,6 @@ proc basicConfigureParameters*(state:         ConfigState,
 
     for name, param in subcomp.attrParams:
       state.basicConfigureOneParam(subcomp, param)
-  print("# Finished configuration " & component.url)
-  echo("Press [enter] to continue.")
+  print("# Finished configuration for " & component.url)
+  print(nextPrompt)
   discard stdin.readLine()

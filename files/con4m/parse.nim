@@ -332,7 +332,7 @@ template exprProds(exprName: untyped,
 
   proc exprName(ctx: ParseCtx): Option[Con4mNode] =
     if ctx.curTok().kind == tokKind:
-      return some(newNode(nodeType,ctx.consume(), @[ctx.rhsName()]))
+      return some(newNode(nodeType, ctx.consume(), @[ctx.rhsName()]))
     return ctx.nextInChain()
 
 # These productions are straightforward translations of the grammar. If
@@ -665,7 +665,7 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
     while true:
       if tok.kind != TtIdentifier:
         parseError("Expect a valid identifier here")
-        n.children.add(newNode(NodeIdentifier, tok))
+      n.children.add(newNode(NodeIdentifier, tok))
       case ctx.consume().kind
       of TtComma:
         tok = ctx.consume() # set up the next identifier.
@@ -675,9 +675,9 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
       else:
         parseError("Expect either a ',' or ':' here")
     result.children.add(n)
-    let spec = ctx.typeSpec()
+    let spec = ctx.typeSpec().typeInfo
     for item in n.children:
-      item.children.add(spec)
+      item.typeInfo = spec
 
     if ctx.isValidEndOfStatement([TtComma]):
       discard ctx.consume()
@@ -1072,11 +1072,8 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
       try:
         ctx.nlWatch = true
         result.children.add(ctx.expression())
-        echo ctx.curTok()
         ctx.endOfStatement()
       except:
-        echo getCurrentExceptionMsg()
-        echo getStackTrace()
         parseError("Expected an assignment, unpack (no parens), block " &
                    "start, or expression", t)
 

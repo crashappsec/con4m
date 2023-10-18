@@ -24,6 +24,95 @@ var
   verbosity     = c4vShowLoc
   curFileName: string
 
+proc setupTopStyle() =
+
+  let s = newStyle(bgColor = "darkslategray", lpad=1)
+  let r = newStyle(align = AlignC)
+
+  perClassStyles["plain"]  = s
+  perClassStyles["woo"]    = r
+  styleMap["table"]        = s
+  styleMap["thead"]        = s
+  styleMap["tbody"]        = s
+  styleMap["tfoot"]        = s
+  styleMap["tborder"]      = s
+  styleMap["td"]           = s
+  styleMap["tr"]           = s
+  styleMap["tr.even"]      = s
+  styleMap["tr.odd"]       = s
+  styleMap["th"]           = s
+  styleMap["caption"] = mergeStyles(styleMap["caption"], newStyle(bmargin=2))
+
+
+proc setupBottomStyle() =
+  let s = newStyle(bgColor = "mediumpurple")
+  perClassStyles["plain"]  = s
+  styleMap["thead"]        = s
+  styleMap["table"]        = newStyle(align = AlignC)
+  styleMap["tbody"]        = s
+  styleMap["tfoot"]        = s
+  styleMap["tborder"]      = s
+  styleMap["td"]           = s
+  styleMap["tr"]           = s
+  styleMap["tr.even"]      = s
+  styleMap["tr.odd"]       = s
+  styleMap["th"]           = newStyle(fgColor = "atomiclime", tmargin=1)
+
+
+proc formatTb(tb, throwinfo: string): string =
+  var
+    nimbleDirs: OrderedTable[string, string]
+    row:        string
+
+
+  setupTopStyle()
+
+  let lines = strutils.split(tb, "\n")
+  for i, line in lines:
+    if i == 0:
+      result  = "<div class=woo><h2 class=woo>" & line & "</h2></div>\n"
+      result &= "<table><colgroup><col width=70><col width=30></colgroup>"
+      result &= "<tbody>"
+      continue
+    if len(line) == 0:
+      continue
+    let parts = line.split("/")
+    if line[0] == '/' and "/.nimble/pkgs2/" in line:
+      for j, item in parts:
+        if item == "pkgs2":
+          if parts[j+2] notin nimbleDirs:
+            nimbleDirs[parts[j+2]] = parts[0 .. j+1].join("/")
+          row = parts[j+2 ..< ^1].join("/") & "/<em>" & parts[^1] & "</em>"
+          break
+    else:
+      row = parts[0 ..< ^1].join("/") & "/<em>" & parts[^1] & "</em>"
+
+    let ix = row.find(' ')
+    result &= "<tr><td>" & row[0 ..< ix] & "</em></td><td><em>" &
+      row[ix + 1 .. ^1] & "</td></tr>"
+
+  result &= "</tbody>"
+
+  if throwinfo != "":
+    result &= "</table><h2 class=woo><bg-black>" & throwinfo &
+      "</bg-black></h2>"
+  else:
+    result &= "</table>"
+
+  result = result.stylize()
+
+  if len(nimbleDirs) > 0:
+    setupBottomStyle()
+    var t2 = "<p><center><table><colgroup><col width=20><col width=60>" &
+      "</colgroup><thead><tr>" &
+      "<th>Package</th><th>Location</th>" &
+      "</tr></thead><tbody>"
+    for k, v in nimbleDirs:
+      t2 &= "<tr><td>" & k &
+        "</td><td>" & v & "</td></tr>"
+    t2 &= "</tbody><table><caption>Nimble packages used</caption></table></center>"
+    result &= t2.stylize()
+
 proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
   var start = 0
 
@@ -53,12 +142,11 @@ proc formatCompilerError*(msg: string,
   let
     me = getAppFileName().splitPath().tail
 
-  result = stylize("<red>" & me & "</red>: " & curFileName & ": ")
-  result = unicode.strip(result)
+  result =  me & ": " & curFileName & ": "
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
-  result &= msg
+  result &= "\n" & msg
 
   if t != nil and verbosity in [c4vShowLoc, c4vMax]:
     let
@@ -68,16 +156,16 @@ proc formatCompilerError*(msg: string,
       lines  = src.split(Rune('\n'))
       pad    = repeat((' '), offset + 1)
 
-    result &= "\n  " & $(lines[line]) & "\n"
+    result &= "\n" & "  " & $(lines[line]) & "\n"
     result &= $(pad) & "^"
 
   if verbosity in [c4vTrace, c4vMax]:
     if tb != "":
-      result &= "\n"
-      result &= unicode.strip(stylize("<bold>" & tb & "</bold>"))
+      var throwinfo = ""
       if ii.line != 0:
-        result &= "Exception thrown at: "
-        result &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")\n"
+        throwinfo &= "Exception thrown at: "
+        throwinfo &= ii.filename & "(" & $(ii.line) & ":" & $(ii.column) & ")"
+      result &= "\n" & formatTb(tb, throwinfo)
 
 proc rawPublish(level: LogLevel, msg: string) {.inline.} =
   publishParams["loglevel"] = $(level)

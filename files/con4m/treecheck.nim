@@ -3,7 +3,7 @@
 ## 1) Type-checking the program, using the standard unifcation
 ##    algorithm, which itself lives in typecheck.nim
 ##
-## 2) Putting symbol tables into each node, inserting variables (and
+## 2) Puttixng symbol tables into each node, inserting variables (and
 ##    constants) into the proper symbol tables as it goes.
 ##
 ## 3) Setting values from simple literals.  Dict/list literals are
@@ -85,7 +85,7 @@ proc nodeToFloatLit(node: Con4mNode): Box =
     intPartI:     int
     floatPartS:   string
     expPartS:     string
-    expPartI:     int    = 1
+    expPartI:     int    = 0
     eSignIsMinus: bool
 
   if eLoc == -1:
@@ -477,6 +477,23 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     #         fmt"""{nameParts.join(".")}.""",
     #         node.children[0])
     node.attrRef = entry
+  of NodeVarDecl:
+    if not s.secondPass:
+      for symDeclNode in node.children:
+        for symNameNode in symDeclNode.children:
+          let
+            name  = symNameNode.getTokenText()
+            tinfo = symNameNode.getType()
+          node.nameConflictCheck(name, s, [ucVar, ucNone])
+          let entry = node.addVariable(name)
+          if tinfo.unify(entry.tInfo).isBottom():
+            fatal2Type(fmt"Declaration of {name} doesn't match previous " &
+              "use", symNameNode, tinfo, entry.tinfo)
+
+          if name == "result":
+            fatal("Cannot declare the special variable 'result'; " &
+              "If you want to declare the return type of a function, then " &
+              " use func fname(args) : returnType { ... ")
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for variables currently not supported.",

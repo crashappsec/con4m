@@ -30,9 +30,7 @@ proc getConf*[T](s: string): Option[T] =
 import st, stack
 
 template cmdLineErrorOutput(msg: string) =
-    let formatted = perLineWrap((withColor( "error: ", "red") & msg).strip() ,
-                                firstHangingIndent = len("error: con4m: "),
-                                remainingIndents = 0)
+    let formatted = withColor( "error: ", "red").strip() & msg
     stderr.writeLine(formatted)
     quit(1)
 
