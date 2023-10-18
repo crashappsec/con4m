@@ -584,7 +584,7 @@ proc findExeC4m*(args: seq[Box], s: ConfigState): Option[Box] =
     return some(pack(results[0]))
 
 proc c4mChdir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
   unprivileged:
     try:
       setCurrentDir(path)
@@ -618,7 +618,7 @@ proc c4mSetEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
       result = falseRet
 
 proc c4mIsDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -630,7 +630,7 @@ proc c4mIsDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
         result = falseRet
 
 proc c4mIsFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -645,7 +645,7 @@ proc c4mIsLink*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
       let
-        path = unpack[string](args[0])
+        path = resolvePath(unpack[string](args[0]))
         kind = getFileInfo(path, false).kind
 
       if kind == pcLinkToDir or kind == pcLinkToFile:
@@ -657,7 +657,7 @@ proc c4mIsLink*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mChmod*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
-    path = unpack[string](args[0])
+    path = resolvePath(unpack[string](args[0]))
     raw  = unpack[int](args[1])
     mode = cast[FilePermission](raw)
 
@@ -674,7 +674,7 @@ proc c4mGetPid*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(getCurrentProcessId()))
 
 proc c4mFileLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -2258,7 +2258,7 @@ Returns `true` if the given file name exists at the time of the call,  and is a 
 """,
    @["filesystem"]),
   ("is_link(string) -> bool",
-   BuiltInFn(c4mIsFile),
+   BuiltInFn(c4mIsLink),
    """
 Returns `true` if the given file name exists at the time of the call, and is a link.
 """,
