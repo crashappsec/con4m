@@ -71,7 +71,7 @@ proc basicConfigureOneParam(state:     ConfigState,
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,
                                componentList: seq[ComponentInfo],
-                               nextPrompt: "Press [enter] to continue."
+                               nextPrompt = "Press [enter] to continue."
                               ) =
   print("# Configuring Component: " & component.url)
   for subcomp in componentList:
