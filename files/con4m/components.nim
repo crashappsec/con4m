@@ -139,6 +139,10 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
   ## Recursively fetches any dependent components (if not cached) and
   ## checks them.
 
+  if component.cycle:
+    raise newException(ValueError, "Cyclical components are not allowed-- " &
+      "component " & component.url & " can import itself")
+
   if component.hash == "":
     component.fetchComponent()
 
@@ -157,7 +161,9 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
     s.currentComponent = savedComponent
 
   for subcomponent in component.componentsUsed:
+    component.cycle = true
     let recursiveUsedComponents = s.loadComponent(subcomponent)
+    component.cycle = false
     for item in recursiveUsedComponents:
       if item notin result:
         result.add(item)

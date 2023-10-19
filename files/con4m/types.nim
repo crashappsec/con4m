@@ -302,6 +302,7 @@ type
     hash*:            string
     source*:          string
     typed*:           bool
+    cycle*:           bool
     savedGlobals*:    RuntimeFrame
     varParams*:       Table[string, ParameterInfo]
     attrParams*:      Table[string, ParameterInfo]
