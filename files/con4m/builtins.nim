@@ -1294,6 +1294,9 @@ proc c4mUrlPost*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   result = some(pack(res))
 
+proc c4mExternalIp*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  result = some(pack(getMyIpV4Addr()))
+
 proc c4mUrlPostPinned*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     url     = unpack[string](args[0])
@@ -2684,6 +2687,11 @@ The parameters here are:
    will NOT assume one for you.
 
 Requests that take more than 5 seconds will be canceled.
+""",
+   @["network"]),
+  ("external_ip() -> string", BuiltInFn(c4mExternalIp),
+   """
+Returns the external IP address for the current machine.
 """,
    @["network"]),
   ("url_post_pinned(string, string, dict[string, string], string) -> string",
