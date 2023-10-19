@@ -88,6 +88,9 @@ proc fetchComponent*(item: ComponentInfo, extension = ".c4m", force = false) =
       if source == "":
         raise newException(IOError, "Could not retrieve needed source " &
           "file: " & fullPath)
+    elif fullPath.startsWith("http:"):
+      raise newException(IOError, "Insecure (http) loads are not allowed" &
+        "(file: " & fullPath & ")")
     else:
       try:
         source = fullPath.readFile()
@@ -223,7 +226,6 @@ proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
   if component.source != "":
     result = some(component)
   else:
-    echo ">>", component.source, "<<"
     result = none(ComponentInfo)
 
   component.fetchComponent(ext, force = false)

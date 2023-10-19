@@ -111,4 +111,4 @@ proc specGenRun*(files: seq[string]) =
   stack.addCodeGen(getConf[string]("language").get(),
                    getConf[string]("output_file").getOrElse(""))
   stack.safeRun(backtrace = true)
-  echo stylize("<atomiclime>Code generation successful.").strip()
+  echo withColor("Code generation successful.", "atomiclime")

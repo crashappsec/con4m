@@ -951,7 +951,7 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
 template heading(s: string): string =
-  ("<h1>" & s & "</h1>").stylize()
+  ("<h1>" & s & "</h1>").stylizeHtml()
 
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
@@ -1030,7 +1030,7 @@ proc getCommandList(cmd: CommandSpec): string =
     if twidth > width:
       result = "<center><div width=" & `$`(twidth) & ">" & result & "</div></center>"
 
-  result = result.stylize()
+  result = result.stylizeHtml()
 
 proc getAdditionalTopics(cmd: CommandSpec): string =
   var topics: seq[string]
@@ -1123,7 +1123,7 @@ proc getFlagHelp(cmd: CommandSpec): string =
   result = heading("Flags: ") & "\n" & outTbl
 
 proc getOneCmdHelp(cmd: CommandSpec): string =
-  result = getUsage(cmd) & cmd.doc.stylize()
+  result = getUsage(cmd) & cmd.doc.stylizeMd()
 
   if len(cmd.commands) != 0:
      result &= cmd.getCommandList()

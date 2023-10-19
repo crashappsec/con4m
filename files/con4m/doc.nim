@@ -112,7 +112,7 @@ proc docFormat*(s: string, kind = CDocConsole): string =
   of CDocRaw:
     return s
   of CDocConsole:
-    return stylize(s)
+    return stylizeMd(s)
 
 proc getOneFieldDocs*(state: ConfigState, path: string,
                    docKind = CDocConsole): (string, string) =

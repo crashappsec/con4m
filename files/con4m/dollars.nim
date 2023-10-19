@@ -34,20 +34,17 @@ else:
     else:
       result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
-proc htmlEscape(s: string): string =
-  s.replace("<", "&lt;").replace(">", "&gt;")
-
 template colorType(s: string): string =
-  stylize("<green>" & s.htmlEscape() & "</green>").strip()
+  s.withColor("green")
 
 template colorLit(s: string): string =
-  stylize("<red>" & s.htmlEscape() & "</red>").strip()
+  s.withColor("red")
 
 template colorNT(s: string): string =
-  stylize("<jazzberry>" & s.htmlEscape() & "</jazzberry>").strip()
+  s.withColor("jazzberry")
 
 template colorT(s: string): string =
-  stylize("<orange>" & s.htmlEscape() & "</orange>").strip()
+  s.withColor("orange")
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]
@@ -418,7 +415,7 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
   try:
     result &= rows.instantTableWithHeaders()
   except:
-    result &= "<h2>Empty table.</h2>".stylize()
+    result &= "<h2>Empty table.</h2>".stylizeHtml()
 
   for k, v in self.contents:
     if v.isA(AttrScope):

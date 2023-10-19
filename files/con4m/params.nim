@@ -1,4 +1,4 @@
-import types, treecheck, options, tables, nimutils, eval, dollars, strutils
+import types, treecheck, options, tables, nimutils, eval, dollars
 
 
 proc validateParameter*(state: ConfigState, param: ParameterInfo):
@@ -33,15 +33,15 @@ proc basicConfigureOneParam(state:     ConfigState,
 
   if boxOpt.isSome():
     default = param.defaultType.oneArgToString(boxOpt.get())
-    default = " <b><i>" & default & "</i></b>"
-    default = default.stylize().strip()
+    default = " <pre><code>" & default & "</code></pre>"
+    default = default.stylizeHtml()
   let
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
     intro   = "Configuring: <jazzberry>" & param.name & "</jazzberry> -- " &
               "<i>" & short & "</i>\n" & long
 
-  echo intro.stylize().strip()
+  echo intro.stylizeMd()
 
   while true:
     if boxOpt.isSome():
@@ -56,7 +56,7 @@ proc basicConfigureOneParam(state:     ConfigState,
       try:
         boxOpt = some(line.parseConstLiteral(param.defaultType))
       except:
-        print("<red>error:</red> " & getCurrentExceptionMsg())
+        echo(stylize(withColor("error: ", "red") & getCurrentExceptionMsg()))
         continue
 
     param.value = boxOpt
@@ -66,7 +66,7 @@ proc basicConfigureOneParam(state:     ConfigState,
     if err.isNone():
       break
 
-    print(err.get())
+    echo(stylize(err.get()))
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,

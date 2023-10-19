@@ -529,7 +529,7 @@ proc run*(stack: ConfigStack, backtrace = false):
   while stack.ix < len(stack.steps):
     let step = stack.steps[stack.ix]
     when false:
-      print("<jazzberry>" & step.stageName)
+      echo step.stageName.withColor("jazzberry")
     try:
       case step.kind
       of akInitState:       stack.doInit()

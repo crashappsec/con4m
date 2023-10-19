@@ -97,7 +97,7 @@ proc formatTb(tb, throwinfo: string): string =
   else:
     result &= "</table>"
 
-  result = result.stylize()
+  result = result.stylizeHtml()
 
   if len(nimbleDirs) > 0:
     setupBottomStyle()
@@ -109,7 +109,7 @@ proc formatTb(tb, throwinfo: string): string =
       t2 &= "<tr><td>" & k &
         "</td><td>" & v & "</td></tr>"
     t2 &= "</tbody><table><caption>Nimble packages used</caption></table></center>"
-    result &= t2.stylize()
+    result &= t2.stylizeHtml()
 
 proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
   var start = 0
@@ -140,11 +140,13 @@ proc formatCompilerError*(msg: string,
   let
     me = getAppFileName().splitPath().tail
 
-  result =  me & ": " & curFileName & ": "
+  result =  me.withColor("red") & ": " & curFileName.withColor("jazzberry") &
+    ": "
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
   result &= "\n" & msg
+  result &= result.stylize()
 
   if t != nil and verbosity in [c4vShowLoc, c4vMax]:
     let
