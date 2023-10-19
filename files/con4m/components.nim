@@ -217,11 +217,17 @@ proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
   if base.joinPath(module) notin s.components:
     return none(ComponentInfo)
 
-  let
-    component = s.fetchComponent(module, base, ext, force = false)
+  let component = s.getComponentReference(module, base)
+
 
   if component.source != "":
-    return some(component)
+    result = some(component)
+  else:
+    echo ">>", component.source, "<<"
+    result = none(ComponentInfo)
+
+  component.fetchComponent(ext, force = false)
+
 
 proc loadCurrentComponent*(s: ConfigState) =
   s.loadComponent(s.currentComponent)
