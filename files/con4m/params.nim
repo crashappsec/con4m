@@ -73,13 +73,17 @@ proc basicConfigureParameters*(state:         ConfigState,
                                componentList: seq[ComponentInfo],
                                nextPrompt = "Press [enter] to continue."
                               ) =
+  var shouldPause = false
   print("# Configuring Component: " & component.url)
   for subcomp in componentList:
     for name, param in subcomp.varParams:
       state.basicConfigureOneParam(subcomp, param)
+      shouldPause = true
 
     for name, param in subcomp.attrParams:
       state.basicConfigureOneParam(subcomp, param)
+      shouldPause = true
   print("# Finished configuration for " & component.url)
-  print(nextPrompt)
-  discard stdin.readLine()
+  if shouldPause:
+    print(nextPrompt)
+    discard stdin.readLine()
