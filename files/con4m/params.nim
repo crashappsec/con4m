@@ -33,8 +33,7 @@ proc basicConfigureOneParam(state:     ConfigState,
 
   if boxOpt.isSome():
     default = param.defaultType.oneArgToString(boxOpt.get())
-    default = " <pre><code>" & default & "</code></pre>"
-    default = default.stylizeHtml()
+    default = stylize("Default is: " & default, ensureNl = false)
   let
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
@@ -45,10 +44,10 @@ proc basicConfigureOneParam(state:     ConfigState,
 
   while true:
     if boxOpt.isSome():
-      echo("Default is: ", default)
-      echo("Press [enter] to accept default, or enter a value: ")
+      echo default
+      print("Press [enter] to accept default, or enter a value: ")
     else:
-      echo("Please enter a value: ")
+      print("Please enter a value: ", ensureNl = false)
 
     let line = stdin.readLine()
 

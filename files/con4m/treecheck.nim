@@ -997,10 +997,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # We do NOT recurse into the node here. The binding was set at
       # parse time, and if we descend into it, then that's going to
       # tell the NodeType object that it's a type literal.
-      node.typeInfo = typeInfo.unify(node.children[0].getType())
-      if node.typeInfo.isBottom():
-        fatal2Type("Declared type conflicts with existing type",
-                   node.children[0], node.children[0].getType(), typeInfo)
+      let
+        kidType = node.children[0].getType()
+
+      if kidType == nil:
+        node.typeInfo             = typeInfo
+        node.children[0].typeInfo = typeInfo
+      else:
+        node.typeInfo = typeInfo.unify(node.children[0].getType())
+        if node.typeInfo.isBottom():
+          fatal2Type("Declared type conflicts with existing type",
+                     node.children[0], node.children[0].getType(), typeInfo)
     else:
       node.typeInfo = typeInfo
   of NodeType:

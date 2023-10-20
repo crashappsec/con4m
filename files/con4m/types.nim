@@ -348,7 +348,24 @@ proc resolveTypeVars*(t: Con4mType): Con4mType =
       result  = t.link.get().resolveTypeVars()
       t.cycle = false
 
-proc getType*(n: Con4mNode):    Con4mType = n.typeInfo.resolveTypeVars()
+var tVarNum: int
+
+proc newTypeVar*(constraints: seq[Con4mType] = @[]): Con4mType =
+  tVarNum.inc()
+  return Con4mType(kind:        TypeTVar,
+                   varNum:      tVarNum,
+                   link:        none(Con4mType),
+                   linksin:     @[],
+                   cycle:       false,
+                   components:  constraints)
+
+proc getType*(n: Con4mNode): Con4mType =
+  if n.typeInfo != nil:
+    return n.typeInfo.resolveTypeVars()
+  else:
+    n.typeInfo = newTypeVar()
+    return n.typeInfo
+
 proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
 proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
 proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()

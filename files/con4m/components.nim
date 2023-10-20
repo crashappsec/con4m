@@ -137,6 +137,8 @@ proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
         if item notin result:
           result.add(item)
 
+import dollars
+
 proc loadComponent*(s: ConfigState, component: ComponentInfo):
                   seq[ComponentInfo] {.discardable.} =
   ## Recursively fetches any dependent components (if not cached) and
@@ -149,9 +151,13 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
   if component.hash == "":
     component.fetchComponent()
 
-  let savedComponent = s.currentComponent
+  let
+    savedComponent = s.currentComponent
+    savedPass      = s.secondPass
+
 
   if not component.typed:
+    s.secondPass                  = false
     s.currentComponent            = component
     component.entryPoint.varScope = VarScope(parent: none(VarScope))
 
@@ -162,6 +168,7 @@ proc loadComponent*(s: ConfigState, component: ComponentInfo):
       s.loadComponent(subcomponent)
 
     s.currentComponent = savedComponent
+    s.secondPass       = savedPass
 
   for subcomponent in component.componentsUsed:
     component.cycle = true
