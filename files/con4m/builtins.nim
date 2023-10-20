@@ -1671,7 +1671,7 @@ the first case.
    """
 Parses a `string` into an IP address. Both ipv4 and ipv6 addresses are allowed, but blocks of addresses are not; use the CIDR type for that.
 
-Generally, using this function to convert from a `string` is not necessary; you can write IPAddr literalls with 'special' literal quotes:
+Generally, using this function to convert from a `string` is not necessary; you can write IPAddr literals with 'special' literal quotes:
 ```x := << 2001:db8:1::ab9:C0A8:102 >>```
 is functionally equal to:
 ```x := IPAddr("2001:db8:1::ab9:C0A8:102")```
@@ -1684,7 +1684,7 @@ In the first case, con4m will catch syntax errors before the configuration start
    """
 Parses a `string` that specifies a block of IP addresses into a `CIDR` type. CIDR stands for Classless Inter-Domain Routing; it's the standard way to express subnets.
 
-Generally, using this function to convert from a `string` is not necessary; you can write `CIDR` literalls with 'special' literal quotes:
+Generally, using this function to convert from a `string` is not necessary; you can write `CIDR` literals with 'special' literal quotes:
 ```x := << 192.168.0.0/16 >>```
 is functionally equal to:
 ```x := CIDR("192.168.0.0/16")```

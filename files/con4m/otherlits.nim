@@ -228,7 +228,7 @@ proc otherLitToNativeDuration*(lit: string): Option[Con4mDuration] =
 # However, if the year is provided, we will instead turn omitted
 # numbers into 0's, because for M and D that makes no semantic sense
 # (whereas it does for Y), so should be unambiguous and could give the
-# right reuslts depending on the checking native libraries do when
+# right results depending on the checking native libraries do when
 # parsing.
 #
 # Note that we also go the ISO route and only accept 4-digit
