@@ -137,8 +137,6 @@ proc getUsedComponents*(component: ComponentInfo, paramOnly = false):
         if item notin result:
           result.add(item)
 
-import dollars
-
 proc loadComponent*(s: ConfigState, component: ComponentInfo):
                   seq[ComponentInfo] {.discardable.} =
   ## Recursively fetches any dependent components (if not cached) and

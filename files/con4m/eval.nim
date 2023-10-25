@@ -670,21 +670,15 @@ proc evalComponent*(s: ConfigState, component: ComponentInfo) =
 
     let scope = aOrS.get(AttrScope)
 
-    if fqn[^1] notin scope.contents:
-      if v.value.isSome():
-        scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
-      elif v.default.isSome():
-        scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
-      elif v.defaultCb.isSome():
-        scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
-                      v.defaultType)
-      else:
-        raise newException(ValueError, "Component not configured")
+    if v.value.isSome():
+      scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
+    elif v.default.isSome():
+      scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
+    elif v.defaultCb.isSome():
+      scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
+                    v.defaultType)
     else:
-      discard
-      # TODO: should validate that the item is an attribute and that
-      # the type matches, even though it should generally be validated
-      # elsewhere.
+      raise newException(ValueError, "Component not configured")
 
   evalNode(s.currentComponent.entrypoint, s)
 

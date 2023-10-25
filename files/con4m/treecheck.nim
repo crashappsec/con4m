@@ -1110,6 +1110,8 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       name = parts.join(".")
 
+    echo name
+    echo s.secondPass
     if not s.secondPass:
       # Force the second pass.  We'll validate that the types are
       # consistent in pass 2, and we'll make sure the local variables
@@ -1160,31 +1162,32 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
         else:
           unreachable
       if attr:
-          s.currentComponent.attrParams[name] = paramObj
+        s.currentComponent.attrParams[name] = paramObj
+        let
+          obj      = s.currentComponent.attrParams[name]
+          parts    = name.split(".")
+          entryOpt = node.attrScope.attrLookup(parts, 0, vlAttrDef)
+
+        if "result" in parts:
+          fatal("Cannot use special variable 'result' outside a function")
+
+        if entryOpt.isA(AttrErr):
+          fatal(entryOpt.get(AttrErr).msg, node)
+
+        let entry = entryOpt.get(AttrOrSub).get(Attribute)
+
+        if entry.tInfo == nil:
+            entry.tInfo = obj.defaultType
+        elif entry.tInfo.unify(obj.defaultType).isBottom():
+          fatal2Type("Attribute parameter's inferred type does not match " &
+            "the existing type for the attribute", node, obj.defaultType,
+            entry.tInfo)
       else:
         let sym = node.addVariable(name)
 
         s.currentcomponent.varParams[name]  = paramObj
     elif attr:
-      let
-        obj      = s.currentComponent.attrParams[name]
-        parts    = name.split(".")
-        entryOpt = s.attrs.attrLookup(parts, 0, vlAttrDef)
-
-      if "result" in parts:
-        fatal("Cannot use special variable 'result' outside a function")
-
-      if entryOpt.isA(AttrErr):
-        fatal(entryOpt.get(AttrErr).msg, node)
-
-      let entry = entryOpt.get(AttrOrSub).get(Attribute)
-
-      if entry.tInfo == nil:
-          entry.tInfo = obj.defaultType
-      elif entry.tInfo.unify(obj.defaultType).isBottom():
-        fatal2Type("Attribute parameter's inferred type does not match " &
-          "the existing type for the attribute", node, obj.defaultType,
-          entry.tInfo)
+      let obj = s.currentComponent.attrParams[name]
 
       if obj.defaultCb.isSome():
         s.ensureCallbackImplementationExists(obj.defaultCb.get())
@@ -1192,11 +1195,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if name == "result":
         fatal("Cannot use special variable 'result' outside a function")
 
-      let symbolOpt = node.varUse(name)
-
       let
-        obj = s.currentComponent.varParams[name]
-        sym = symbolOpt.get()
+        obj       = s.currentComponent.varParams[name]
+        sym       = node.varUse(name).get()
 
       if sym.defs.len() + sym.uses.len() == 1:
         fatal("Variable parameter '" & name & "' is not defined in the " &
