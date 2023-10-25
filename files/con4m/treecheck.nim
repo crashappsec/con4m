@@ -1110,8 +1110,6 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       name = parts.join(".")
 
-    echo name
-    echo s.secondPass
     if not s.secondPass:
       # Force the second pass.  We'll validate that the types are
       # consistent in pass 2, and we'll make sure the local variables
