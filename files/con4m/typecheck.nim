@@ -6,17 +6,8 @@
 
 import types, tables, options, nimutils, dollars
 
-var tVarNum: int
 
 proc copyType*(t: Con4mType): Con4mType
-proc newTypeVar*(constraints: seq[Con4mType] = @[]): Con4mType =
-  tVarNum.inc()
-  return Con4mType(kind:        TypeTVar,
-                   varNum:      tVarNum,
-                   link:        none(Con4mType),
-                   linksin:     @[],
-                   cycle:       false,
-                   components:  constraints)
 
 # This should only be called when we know that the type variable
 # is going to be unique for the context.  It's mainly meant

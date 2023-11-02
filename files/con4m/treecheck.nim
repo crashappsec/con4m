@@ -3,7 +3,7 @@
 ## 1) Type-checking the program, using the standard unifcation
 ##    algorithm, which itself lives in typecheck.nim
 ##
-## 2) Putting symbol tables into each node, inserting variables (and
+## 2) Puttixng symbol tables into each node, inserting variables (and
 ##    constants) into the proper symbol tables as it goes.
 ##
 ## 3) Setting values from simple literals.  Dict/list literals are
@@ -12,8 +12,27 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import math, options, strformat, strutils, tables
-import errmsg, types, st, parse, otherlits, typecheck, dollars, nimutils
+import math, options, strformat, strutils, tables, nimutils
+import errmsg, types, st, parse, otherlits, typecheck, dollars, components
+
+const allLiteralTypes = [ NodeSimpLit, NodeDictLit, NodeListLit, NodeTupleLit,
+                         NodeCallbackLit ]
+
+proc isConstLit(node: Con4mNode): bool =
+  if node.isConst:
+    return true
+  case node.kind
+  of NodeSimpLit, NodeType, NodeCallbackLit:
+    node.isConst = true
+    return true
+  of NodeListLit, NodeTupleLit, NodeDictLit, NodeKvPair:
+    for kid in node.children:
+      if not kid.isConstLit:
+        return false
+    node.isConst = true
+    return true
+  else:
+    return false
 
 proc addPlaceHolder(s: ConfigState, name: string) =
   let f = FuncTableEntry(kind:        FnUserDefined,
@@ -28,6 +47,130 @@ proc addPlaceHolder(s: ConfigState, name: string) =
   else:
     s.funcTable[name] = @[f]
   s.waitingForTypeInfo = true
+
+proc nodeToStringLit(node: Con4mNode): Box =
+  node.typeInfo = stringType
+  var s = node.getTokenText()
+  return pack(s)
+
+proc nodeToCharLit(node: Con4mNode): Box =
+  node.typeInfo = charType
+  return  pack(node.token.get().codepoint)
+
+proc nodeToIntLit(node: Con4mNode): Box =
+  node.typeInfo = intType
+  try:
+    result = pack(node.getTokenText().parseInt())
+  except:
+    fatal("Number too large for int type.", node)
+
+proc nodeToTrueLit(node: Con4mNode): Box =
+  node.typeInfo = boolType
+  result        = pack(true)
+
+proc nodeToFalseLit(node: Con4mNode): Box =
+  node.typeInfo = boolType
+  result        = pack(false)
+
+proc nodeToFloatLit(node: Con4mNode): Box =
+  node.typeInfo = floatType
+
+  let
+    txt = node.getTokenText()
+    dotLoc = txt.find('.')
+  var
+    eLoc = txt.find('e')
+    value:        float
+    intPartS:     string
+    intPartI:     int
+    floatPartS:   string
+    expPartS:     string
+    expPartI:     int    = 0
+    eSignIsMinus: bool
+
+  if eLoc == -1:
+    eLoc = txt.find('E')
+
+  if dotLoc != -1:
+    intPartS = txt[0 ..< dotLoc]
+    if eLoc != -1:
+      floatPartS = txt[dotLoc+1 ..< eLoc]
+    else:
+      floatPartS = txt[dotLoc+1 .. ^1]
+  else:
+    intPartS = txt[0 ..< eLoc]
+
+  if eLoc != -1:
+    eLoc = eLoc + 1
+    case txt[eLoc]
+    of '+':
+      eLoc = eLoc + 1
+    of '-':
+      eLoc = eLoc + 1
+      eSignIsMinus = true
+    else:
+      discard
+    expPartS = txt[eLoc .. ^1]
+
+  try:
+    intPartI = intPartS.parseInt()
+  except:
+    fatal("Integer piece is too large for an int; use 'e' notation.", node)
+
+  if expPartS != "":
+    try:
+      expPartI = expPartS.parseInt()
+    except:
+      fatal("Exponent piece of float overflows integer type", node)
+
+  # Fow now, we just truncate floating point digits if there are
+  # $(high(int)).len() digits or more.
+
+  if floatPartS != "":
+    const
+      maxAsString = $(high(int))
+      maxLen = maxAsString.len()
+
+    if floatPartS.len() >= maxLen:
+      floatPartS = floatPartS[0 ..< maxLen]
+
+    value = floatPartS.parseInt() / (10 ^ floatPartS.len())
+
+  value = value + float(intPartI)
+  value = value * pow(10.0, float(expPartI))
+
+  return pack(value)
+
+proc nodeToOtherLit(node: Con4mNode): Box =
+  var txt = node.getTokenText()
+  if len(txt) >= 4 and txt[0..1] == "<<":
+    txt = txt[2..^3]
+
+  var opt = txt.otherLitToValue()
+
+  if opt.isNone():
+    fatal("Invalid literal: <<" & txt & ">>")
+
+  (result, node.typeInfo) = opt.get()
+
+proc nodeToSimpLit(node: Con4mNode): Box =
+  case node.token.get().kind:
+    of TtStringLit:
+      return node.nodeToStringLit()
+    of TtCharLit:
+      return node.nodeToCharLit()
+    of TtOtherLit:
+      return node.nodeToOtherLit()
+    of TtIntLit:
+      return node.nodeToIntLit()
+    of TtFloatLit:
+      return node.nodeToFloatLit()
+    of TtTrue:
+      return node.nodeToTrueLit()
+    of TtFalse:
+      return node.nodeToFalseLit()
+    else:
+      unreachable
 
 proc findMatchingProcs*(s:          ConfigState,
                         name:       string,
@@ -46,6 +189,13 @@ proc findMatchingProcs*(s:          ConfigState,
 
   if len(s.funcTable[name]) == 0 and not s.secondpass:
     s.addPlaceHolder(name)
+
+proc ensureCallbackImplementationExists*(s: ConfigState, cbObj: CallbackObj) =
+  let
+    candidates = s.findMatchingProcs(cbObj.name, cbObj.tInfo)
+
+  if len(candidates) == 0:
+    fatal("Could not find an implementation of the callback:  " & $(cbobj))
 
 proc fatal2Type(err: string, n: Con4mNode, t1, t2: Con4mType) =
   let extra = fmt" ('{`$`(t1)}' vs '{`$`(t2)}')"
@@ -289,8 +439,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
   of NodeAttrAssign, NodeAttrSetLock:
     var nameParts: seq[string]
-    if s.funcOrigin:
-      fatal("Cannot assign to attributes within functions.", node)
+    # Deleted the restriction against assigning inside functions.
     if node.children[0].kind != NodeIdentifier:
       nameParts = @[]
       for child in node.children[0].children:
@@ -322,11 +471,29 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       else:
         entry.tInfo = t
 
-    if entry.locked:
-      fatal("You cannot assign to the (locked) attribute " &
-            fmt"""{nameParts.join(".")}.""",
-            node.children[0])
+    # This is now a runtime error.
+    # if entry.locked:
+    #   fatal("You cannot assign to the (locked) attribute " &
+    #         fmt"""{nameParts.join(".")}.""",
+    #         node.children[0])
     node.attrRef = entry
+  of NodeVarDecl:
+    if not s.secondPass:
+      for symDeclNode in node.children:
+        for symNameNode in symDeclNode.children:
+          let
+            name  = symNameNode.getTokenText()
+            tinfo = symNameNode.getType()
+          node.nameConflictCheck(name, s, [ucVar, ucNone])
+          let entry = node.addVariable(name)
+          if tinfo.unify(entry.tInfo).isBottom():
+            fatal2Type(fmt"Declaration of {name} doesn't match previous " &
+              "use", symNameNode, tinfo, entry.tinfo)
+
+          if name == "result":
+            fatal("Cannot declare the special variable 'result'; " &
+              "If you want to declare the return type of a function, then " &
+              " use func fname(args) : returnType { ... ")
   of NodeVarAssign:
     if node.children[0].kind != NodeIdentifier:
       fatal("Dot assignments for variables currently not supported.",
@@ -348,13 +515,12 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       entry = node.addVariable(name)
       t     = unify(tinfo, entry.tinfo)
 
-    if entry.locked:
-      # Could be a loop index or enum.
-        fatal(fmt"Cannot assign to the (locked) value {name}", node.children[0])
-
     if t.isBottom():
       fatal2Type(fmt"Assignment of {name} doesn't match its previous type",
                  node.children[1], tinfo, entry.tinfo)
+    # Locking is now a runtime check only, so we can allow multiple
+    # components to work together as long as they agree on the value
+    # once locked.
 
   of NodeUnpack:
     node.children[^1].checkNode(s)
@@ -402,108 +568,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
        node.children[2].getType().unify(intType).isBottom():
       fatal("For index ranges must be integers.")
   of NodeSimpLit:
-    if s.secondPass:
-      return
-    case node.getTokenType()
-    of TtStringLit:
-      node.typeInfo = stringType
-      var s = node.getTokenText()
-      node.value = pack(s)
-    of TtCharLit:
-      node.typeInfo = charType
-      node.value = pack(node.token.get().codepoint)
-    of TtOtherLit:
-      var txt = node.getTokenText()
-      if len(txt) >= 4 and txt[0..1] == "<<":
-        txt = txt[2..^3]
-      var opt = txt.otherLitToValue()
-
-      if opt.isNone():
-        fatal("Invalid literal: <<" & txt & ">>")
-
-      (node.value, node.typeInfo) = opt.get()
-    of TtIntLit:
-      node.typeInfo = intType
-      try:
-        node.value = pack(node.getTokenText().parseInt())
-      except:
-        fatal("Number too large for int type.", node)
-    of TtFloatLit:
-      node.typeInfo = floatType
-
-      let
-        txt = node.getTokenText()
-        dotLoc = txt.find('.')
-      var
-        eLoc = txt.find('e')
-        value:        float
-        intPartS:     string
-        intPartI:     int
-        floatPartS:   string
-        expPartS:     string
-        expPartI:     int    = 1
-        eSignIsMinus: bool
-
-      if eLoc == -1:
-        eLoc = txt.find('E')
-
-      if dotLoc != -1:
-        intPartS = txt[0 ..< dotLoc]
-        if eLoc != -1:
-          floatPartS = txt[dotLoc+1 ..< eLoc]
-        else:
-          floatPartS = txt[dotLoc+1 .. ^1]
-      else:
-        intPartS = txt[0 ..< eLoc]
-
-      if eLoc != -1:
-        eLoc = eLoc + 1
-        case txt[eLoc]
-        of '+':
-          eLoc = eLoc + 1
-        of '-':
-          eLoc = eLoc + 1
-          eSignIsMinus = true
-        else:
-          discard
-        expPartS = txt[eLoc .. ^1]
-
-      try:
-        intPartI = intPartS.parseInt()
-      except:
-        fatal("Integer piece is too large for an int; use 'e' notation.", node)
-
-      if expPartS != "":
-        try:
-          expPartI = expPartS.parseInt()
-        except:
-          fatal("Exponent piece of float overflows integer type", node)
-
-      # Fow now, we just truncate floating point digits if there are
-      # $(high(int)).len() digits or more.
-
-      if floatPartS != "":
-        const
-          maxAsString = $(high(int))
-          maxLen = maxAsString.len()
-
-        if floatPartS.len() >= maxLen:
-          floatPartS = floatPartS[0 ..< maxLen]
-
-        value = floatPartS.parseInt() / (10 ^ floatPartS.len())
-
-      value = value + float(intPartI)
-      value = value * pow(10.0, float(expPartI))
-
-      node.value = pack(value)
-    of TtTrue:
-      node.typeInfo = boolType
-      node.value = pack(true)
-    of TtFalse:
-      node.typeInfo = boolType
-      node.value = pack(false)
-    else:
-      unreachable
+    #if s.secondPass:
+    #  return
+    node.value = node.nodeToSimpLit()
   of NodeUnary:
     node.checkKids(s)
     let t = node.children[0].getType()
@@ -786,6 +853,16 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if ct.isBottom():
         fatal("Dict items must all be the same type.", node)
     node.typeInfo = ct
+
+    if node.isConstLit():
+      var dict = newCon4mDict[Box, Box]()
+
+      for pair in node.children:
+        let
+          boxedKey = pair.children[0].value
+          boxedVal = pair.children[1].value
+        dict[boxedKey] = boxedVal
+      node.value   = pack(dict)
   of NodeKVPair:
     node.checkKids(s)
     if node.children[0].isBottom() or node.children[1].isBottom():
@@ -800,6 +877,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       if ct.isBottom():
         fatal("List items must all be the same type", node)
     node.typeInfo = newListType(ct)
+
+    if node.isConstLit():
+      var l: seq[Box]
+      for item in node.children:
+        l.add(item.value)
+      node.value   = pack[seq[Box]](l)
+
   of NodeTupleLit:
     node.checkKids(s)
     var itemTypes: seq[Con4mType]
@@ -807,6 +891,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     for item in node.children:
       itemTypes.add(item.getType())
     node.typeInfo = Con4mType(kind: TypeTuple, itemTypes: itemTypes)
+
+    if node.isConstLit():
+      var l: seq[Box]
+      for item in node.children:
+        l.add(item.value)
+      node.value   = pack[seq[Box]](l)
+
   of NodeOr, NodeAnd:
     node.checkKids(s)
     if isBottom(node.children[0], boolType) or
@@ -865,6 +956,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
     let cbObj  = CallbackObj(name: node.getTokenText(), tInfo: node.typeInfo)
     node.value = pack(cbObj)
+
   of NodeIdentifier:
     # This gets used in cases where the symbol is looked up in the
     # current scope, not when it has to be in a specific scope (i.e.,
@@ -905,10 +997,17 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
       # We do NOT recurse into the node here. The binding was set at
       # parse time, and if we descend into it, then that's going to
       # tell the NodeType object that it's a type literal.
-      node.typeInfo = typeInfo.unify(node.children[0].getType())
-      if node.typeInfo.isBottom():
-        fatal2Type("Declared type conflicts with existing type",
-                   node.children[0], node.children[0].getType(), typeInfo)
+      let
+        kidType = node.children[0].getType()
+
+      if kidType == nil:
+        node.typeInfo             = typeInfo
+        node.children[0].typeInfo = typeInfo
+      else:
+        node.typeInfo = typeInfo.unify(node.children[0].getType())
+        if node.typeInfo.isBottom():
+          fatal2Type("Declared type conflicts with existing type",
+                     node.children[0], node.children[0].getType(), typeInfo)
     else:
       node.typeInfo = typeInfo
   of NodeType:
@@ -920,12 +1019,201 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     if not s.secondPass:
       node.typeInfo = Con4mType(kind: TypeTypeSpec, binding: node.typeInfo)
       node.value    = pack[Con4mType](node.typeInfo.binding)
+
+  of NodeUse:
+    # This pass does NOT go and retrieve the 'used' component. That happens
+    # after the second pass, but before we start any evaluation.
+    if not s.secondPass:
+      let
+        kids   = node.children
+        module = kids[0].getTokenText()
+        url    = if len(kids) > 1: kids[1].getTokenText() else: ""
+
+      let component = s.getComponentReference(module, url)
+      if component notin s.currentComponent.componentsUsed:
+        s.currentComponent.componentsUsed.add(component)
+
+  of NodeParamBody:
+    # We don't want to call checkkids() here because the assignments
+    # aren't going to be interpreted in the way they are in any other
+    # part of a program.
+    const
+      validParamProps = ["doc", "shortdoc", "validator", "default"]
+    var
+      foundProps: seq[string]
+
+    for kid in node.children:
+      # Since these 'assignments' do not show up in any program scope,
+      # we're leniant and accept any kind of assignment syntax so that
+      # people don't have to remember.
+      if kid.kind notin [NodeAttrAssign, NodeVarAssign]:
+        fatal("Parameter body must only contain parameter property " &
+          "assignments. Valid properties are: " & validParamProps.join(", "))
+      let
+        varNode  = kid.children[0]
+        propname = varNode.getTokenText()
+
+      if varnode.children.len() != 0 or propname notin validParamProps:
+        fatal("Parameter properties must be one of: " &
+          validParamProps.join(", "))
+
+      if propname in foundProps:
+        fatal("Dupliciate parameter property setting not allowed.")
+
+      foundProps.add(propname)
+      kid.children[1].checkNode(s)
+      case propname
+      of "doc", "shortdoc":
+        if kid.children[1].kind != NodeSimpLit or
+          kid.children[1].getTokenType() != TtStringLit:
+          fatal("Parameter's doc and shortdoc properties must be string " &
+            "literals")
+      of "default":
+        if kid.children[1].kind notin allLiteralTypes:
+          fatal("Parameter's 'default' property must be a literal value " &
+            "or a callback that will set the default when needed")
+        if kid.children[1].kind == NodeCallbackLit:
+          let allowedCallbackType = "() -> `x".toCon4mType()
+
+          if allowedCallbackType.unify(kid.children[1].typeInfo).isBottom():
+            fatal("Callback must be a function that takes no arguments and " &
+              "Returns a value of the proper type.")
+      of "validator":
+        let allowedValidatorType = "(`x) -> string".toCon4mType()
+        if kid.children[1].kind != NodeCallbackLit or
+           allowedValidatorType.unify(kid.children[1].typeInfo).isBottom:
+          fatal("Validator properties must point to a function taking " &
+            " a single argument to validate and returning either the " &
+            " empty string (on success), or an error message.")
+      else:
+        unreachable
+  of NodeParameter:
+    for item in node.children[1 .. ^1]:
+      item.checkNode(s)
+
+    var
+      name: string
+      attr: bool
+    case node.children[0].kind
+    of NodeIdentifier:
+      attr = true
+      name = node.children[0].getTokenText()
+    of NodeVarDecl:
+      attr = false
+      name = node.children[0].children[0].getTokenText()
+    else:
+      attr = true
+      var parts: seq[string]
+
+      for item in node.children[0].children:
+        parts.add item.getTokenText()
+
+      name = parts.join(".")
+
+    if not s.secondPass:
+      # Force the second pass.  We'll validate that the types are
+      # consistent in pass 2, and we'll make sure the local variables
+      # exist (the attributes do not have to exist).
+
+      s.waitingForTypeInfo = true
+      var
+        paramObj = ParameterInfo(name: name, defaultType: newTypeVar())
+        assnNodes: seq[Con4mNode]
+
+      if len(node.children) > 1:
+        assnNodes = node.children[1].children
+      for assignNode in assnNodes:
+        case assignNode.children[0].getTokenText()
+        of "doc":
+          paramObj.doc       = some(assignNode.children[1].getTokenText())
+        of "shortdoc":
+          paramObj.shortdoc  = some(assignNode.children[1].getTokenText())
+        of "validator":
+          let fnode    = assignNode.children[1]
+          let callback = unpack[CallbackObj](assignNode.children[1].value)
+
+          if len(callback.tinfo.params) == 0:
+            callback.tInfo = "(`x) -> string".toCon4mType()
+
+          paramObj.validator = some(callback)
+
+          if paramobj.defaultType.unify(callback.tInfo.params[0]).isBottom():
+            fatal2Type("Validator parameter does not match inferred type",
+                       assignNode, paramObj.defaultType, callback.tInfo)
+        of "default":
+          let defType = assignNode.children[1].typeInfo
+
+          if defType.kind == TypeFunc:
+            let
+              callback = unpack[CallbackObj](assignNode.children[1].value)
+
+            paramObj.defaultCb   = some(callback)
+            if paramObj.defaultType.unify(defType.retType).isBottom():
+              fatal2Type("Default value callback does not match inferred type",
+                         assignNode, paramObj.defaultType, defType.retType)
+          else:
+            paramObj.default = some(assignNode.children[1].value)
+            if paramObj.defaultType.unify(defType).isBottom():
+              fatal2Type("Default value provided does not match inferred type",
+                         assignNode, paramObj.defaultType, defType)
+
+        else:
+          unreachable
+      if attr:
+        s.currentComponent.attrParams[name] = paramObj
+        let
+          obj      = s.currentComponent.attrParams[name]
+          parts    = name.split(".")
+          entryOpt = node.attrScope.attrLookup(parts, 0, vlAttrDef)
+
+        if "result" in parts:
+          fatal("Cannot use special variable 'result' outside a function")
+
+        if entryOpt.isA(AttrErr):
+          fatal(entryOpt.get(AttrErr).msg, node)
+
+        let entry = entryOpt.get(AttrOrSub).get(Attribute)
+
+        if entry.tInfo == nil:
+            entry.tInfo = obj.defaultType
+        elif entry.tInfo.unify(obj.defaultType).isBottom():
+          fatal2Type("Attribute parameter's inferred type does not match " &
+            "the existing type for the attribute", node, obj.defaultType,
+            entry.tInfo)
+      else:
+        let sym = node.addVariable(name)
+
+        s.currentcomponent.varParams[name]  = paramObj
+    elif attr:
+      let obj = s.currentComponent.attrParams[name]
+
+      if obj.defaultCb.isSome():
+        s.ensureCallbackImplementationExists(obj.defaultCb.get())
+    else:
+      if name == "result":
+        fatal("Cannot use special variable 'result' outside a function")
+
+      let
+        obj       = s.currentComponent.varParams[name]
+        sym       = node.varUse(name).get()
+
+      if sym.defs.len() + sym.uses.len() == 1:
+        fatal("Variable parameter '" & name & "' is not defined in the " &
+          "top-level component scope.")
+
+      if sym.tInfo.unify(obj.defaultType).isBottom():
+          fatal2Type("Variable parameter's default value does not " &
+            "match its type as used in the module", node, obj.defaultType,
+            sym.tInfo)
+
+      if obj.defaultCb.isSome():
+        s.ensureCallbackImplementationExists(obj.defaultCb.get())
   else:
     # Many nodes need no semantic checking, just ask their children,
     # if any, to check.
     node.checkKids(s)
 
-proc checkTree*(node: Con4mNode, s: ConfigState) =
+proc checkTree*(node: Con4mNode, s: ConfigState) {.exportc, cdecl.} =
   ## Checks a parse tree rooted at `node` for static errors (i.e.,
   ## anything we can easily find before execution).  This version
   ## accepts a `ConfigState` object, so that you can keep an
@@ -998,3 +1286,20 @@ proc checkTree*(node: Con4mNode, s: ConfigState) =
     # are resolved.
     s.cycleCheck()
   ctrace(fmt"{getCurrentFileName()}: type checking completed.")
+
+proc parseConstLiteral*(s: string, t: Con4mType): Box =
+  var err = false
+
+  if not t.unify(stringType).isBottom():
+    return pack(s)
+
+  try:
+    let tree = s.parseLiteral()
+
+    tree.checkNode(ConfigState())
+    if tree.isConstLit() and tree.typeInfo.unify(t).isBottom():
+      return tree.value
+  except:
+    discard
+
+  raise newException(ValueError, "Not a valid Con4m constant of type " & $t)

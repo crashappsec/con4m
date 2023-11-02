@@ -5,29 +5,21 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import options, strformat, streams, tables, json, unicode, algorithm
-import nimutils, types
-from strutils import join, repeat, toHex, toLowerAscii
+import options, strformat, tables, json, unicode, algorithm, nimutils, types,
+       strcursor
+from strutils import join, repeat, toHex, toLowerAscii, replace
 
 
 # If you want to be able to reconstruct the original file, swap this
 # false to true.
 when false:
   proc `$`*(tok: Con4mToken): string =
-    let pos = tok.stream.getPosition()
+    result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
-    tok.stream.setPosition(tok.startPos)
-    result = tok.stream.readStr(tok.endPos - tok.startPos)
-    tok.stream.setPosition(pos)
 else:
   proc `$`*(tok: Con4mToken): string =
     case tok.kind
-    of TtStringLit: result = "\"" & tok.unescaped & "\""
-    of TtOtherLit:
-      let pos = tok.stream.getPosition()
-      tok.stream.setPosition(tok.startPos)
-      result = "<<" & tok.stream.readStr(tok.endPos - tok.startPos) &  ">>"
-      tok.stream.setPosition(pos)
+    of TtStringLit:       result = "\"" & tok.unescaped & "\""
     of TtWhiteSpace:     result = "~ws~"
     of TtNewLine:        result = "~nl~"
     of TtSof:            result = "~sof~"
@@ -37,23 +29,22 @@ else:
     of ErrorStringLit:   result = "~unterm string~"
     of ErrorCharLit:     result = "~bad char lit~"
     of ErrorOtherLit:    result =  "~unterm other lit~"
+    of TtOtherLit:
+      result = "<<" & $(tok.cursor.slice(tok.startPos, tok.endPos)) & ">>"
     else:
-      let pos = tok.stream.getPosition()
+      result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
-      tok.stream.setPosition(tok.startPos)
-      result = tok.stream.readStr(tok.endPos - tok.startPos)
-      tok.stream.setPosition(pos)
 template colorType(s: string): string =
-  stylize("<green>" & s & "</green>")
+  s.withColor("green")
 
 template colorLit(s: string): string =
-  stylize("<red>" & s & "</red>")
+  s.withColor("red")
 
 template colorNT(s: string): string =
-  stylize("<jazzberry>" & s & "</jazzberry>")
+  s.withColor("jazzberry")
 
 template colorT(s: string): string =
-  stylize("<orange>" & s & "</orange>")
+  s.withColor("orange")
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]
@@ -174,6 +165,7 @@ template fmtT(name: string) =
 proc `$`*(self: Con4mNode, i: int = 0): string =
   case self.kind
   of NodeBody:         fmtNt("Body")
+  of NodeParamBody:    fmtNt("ParamBody")
   of NodeAttrAssign:   fmtNt("AttrAssign")
   of NodeAttrSetLock:  fmtNt("AttrSetLock")
   of NodeVarAssign:    fmtNt("VarAssign")
@@ -205,6 +197,8 @@ proc `$`*(self: Con4mNode, i: int = 0): string =
   of NodeVarDecl:      fmtNt("VarDecl")
   of NodeExportDecl:   fmtNt("ExportDecl")
   of NodeVarSymNames:  fmtNt("VarSymNames")
+  of NodeUse:          fmtNt("Use")
+  of NodeParameter:    fmtNt("Parameter")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     fmtNt($(self.token.get()))
@@ -326,7 +320,7 @@ proc oneArgToString*(t: Con4mType,
                      b: Box,
                      outType = vTDefault,
                      lit     = false): string =
-  case t.kind
+  case t.resolveTypeVars().kind
   of TypeString:
     if outType != vtNoLits and lit:
       return "\"" & unpack[string](b) & "\""
@@ -418,7 +412,10 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
       row.add(@[sec.name, "section", "n/a"])
     rows.add(row)
 
-  result &= rows.instantTableWithHeaders()
+  try:
+    result &= rows.instantTableWithHeaders()
+  except:
+    result &= "<h2>Empty table.</h2>".stylizeHtml()
 
   for k, v in self.contents:
     if v.isA(AttrScope):

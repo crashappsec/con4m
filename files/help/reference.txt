@@ -10,7 +10,8 @@ Newlines are ignored in most expression contexts (they’re only used to separat
 top           ::= (sectBodyItems | enum | fnOrCallback) *
 body          ::= sectBodyItems *
 coreBodyItems ::= ifStmt | forStmt | continueStmt | breakStmt | returnStmt |
-                  exportStmt | varStmt | assignment expression (NL|";")+
+                  useStmt | fromStmt | parameterDecl | exportStmt | varStmt |
+                  assignment expression (NL|";")+
 assignment    ::= accessExpr ("," accessExpr)* eqOp expression (NL|";")+
 eqOp          ::= ("="|":"|":=")
 sectBodyItems ::= coreBodyItems | section
@@ -20,7 +21,14 @@ section       ::= ID (STR | ID)? "{" body "}"
 ifStmt        ::= "if" expression "{" body "}"
                   ("elif" expression "{" body "}")*
                   ("else" expression "{" body" "}")?
+paramDefault  ::= "default" ":" expr
+paramValidate ::= "validate" ":" expr
+paramBody     ::= (STR (STR?))? (paramDefault?|paramValidate?)|
+                                (paramValidate?|paramDefault?)
+parameterDecl ::= "parameter" (("var" ID) | ID ("." ID)*) "{" paramBody "}"
 forStmt       ::= "for" ID "from" expression "to" expression "{" body "}"
+useStmt       ::= "use" ID
+fromStmt      ::= "from" STR useStmt
 continueStmt  ::= "continue" (";")?
 breakStmt     ::= "break" (";")?
 returnStmt    ::= "return" expression? (";")?

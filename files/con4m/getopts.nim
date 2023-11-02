@@ -6,7 +6,7 @@
 ## results are undefined :)
 
 import unicode, options, tables, os, sequtils, types, nimutils, st, eval,
-       algorithm, typecheck
+       algorithm, typecheck, std/terminal
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"
@@ -951,7 +951,7 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
 template heading(s: string): string =
-  ("<h1>" & s & "</h1>").stylize()
+  ("<h1>" & s & "</h1>").stylizeHtml()
 
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
@@ -987,7 +987,11 @@ proc getUsage(cmd: CommandSpec): string =
   return heading(use)
 
 proc getCommandList(cmd: CommandSpec): string =
-  var cmds: seq[string]
+  result = "<h2><center>Available Commands</center></h2><table><thead><tr>"
+
+  var
+    cmds:       seq[string]
+    largestCmd = 0
 
   for k, sub in cmd.commands:
     if sub.reportingName notin cmds:
@@ -995,9 +999,38 @@ proc getCommandList(cmd: CommandSpec): string =
 
   cmds.sort()
 
-  return heading("Available Commands: ") & "\n" & instantTable(cmds) & "\n" &
-         heading("See additional help for info on individual commands.") & "\n"
+  for item in cmds:
+    if item.len() > largestCmd:
+      largestCmd = item.len()
 
+  var
+    maxColumns = terminalWidth() div (largestCmd + 6)
+    numColumns = if maxColumns > len(cmds): len(cmds) else: maxColumns
+
+
+  for i, item in cmds:
+    if i != 0 and (i mod numColumns == 0):
+      result &= "</tr><tr>"
+    result &= "<td>" & item & "</td>"
+
+  let n = (numColumns - (len(cmds) mod numColumns)) mod numColumns
+
+  for i in 0 ..< n:
+    result &= "<td></td>"
+
+  result &= "</tr></thead>"
+  result &= "<caption>See additional help for info on individual commands.</caption>"
+  result &= "</table>"
+
+  if numColumns < maxColumns:
+    var
+      twidth = terminalWidth() div 2
+      width  = numColumns * (largestCmd + 6)
+
+    if twidth > width:
+      result = "<center><div width=" & `$`(twidth) & ">" & result & "</div></center>"
+
+  result = result.stylizeHtml()
 
 proc getAdditionalTopics(cmd: CommandSpec): string =
   var topics: seq[string]
@@ -1090,7 +1123,7 @@ proc getFlagHelp(cmd: CommandSpec): string =
   result = heading("Flags: ") & "\n" & outTbl
 
 proc getOneCmdHelp(cmd: CommandSpec): string =
-  result = getUsage(cmd) & cmd.doc.stylize()
+  result = getUsage(cmd) & cmd.doc.stylizeMd()
 
   if len(cmd.commands) != 0:
      result &= cmd.getCommandList()
@@ -1159,7 +1192,7 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
       for (c, given, reporting) in legitCmds:
         if not c:
           stderr.writeLine(heading("Help for " & given))
-          stderr.writeLine(reporting.perLineWrap())
+          stderr.writeLine(reporting.indentWrap(hangingIndent = 0))
           continue
         if given != reporting:
           stderr.writeLine(heading("Note: '" & given & "' is an alias for '" &

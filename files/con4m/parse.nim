@@ -5,10 +5,13 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import tables, options, streams, types, nimutils
+import tables, options, streams, types, nimutils, strutils
 import errmsg, lex, typecheck, dollars, strformat
 export fatal, con4mTopic, defaultCon4mHook, Con4mError
 
+const typeTokens = ["bool", "int", "char", "float", "string", "void",
+                    "list", "dict", "tuple", "typespec", "Duration",
+                    "IPAddr", "CIDR", "Size", "Date", "Time", "DateTime"]
 
 proc getTokenText*(token: Con4mToken): string {.inline.} =
   if token.kind == TtStringLit: return token.unescaped
@@ -21,10 +24,10 @@ proc getTokenText*(node: Con4mNode): string {.inline.} =
 # See docs/grammar.md for the grammar.
 # This type lives here because it's never used outside this module.
 type ParseCtx* = ref object
-  tokens*:   seq[Con4mToken]
-  curTokIx*: int
-  nlWatch*:  bool
-  nesting*:  int
+  tokens*:     seq[Con4mToken]
+  curTokIx*:   int
+  nlWatch*:    bool
+  nesting*:    int
 
 var nodeId = 0
 proc nnbase(k, t: auto, c: seq[Con4mNode], ti: Con4mType): Con4mNode =
@@ -104,10 +107,48 @@ template parseError(msg: string, tok: Con4mToken) =
 
   fatal("Parse error: " & msg, tok, st, info)
 
-# These productions need to be forward referenced.
+proc consumeOrError(ctx: ParseCtx, kind: Con4mTokenKind):
+                   Con4mToken {.discardable.} =
+  result = ctx.consume()
+  if result.kind != kind:
+    parseError("Expected " & $(kind) & " here")
+
+proc isValidEndOfStatement(ctx: ParseCtx,
+                           valid: openarray[Con4mTokenKind]): bool =
+  ## True if we've reached the end of a statement. Advances us
+  ## past any semi colons if so.
+  ##
+  ## If we have not reached the end of the statement, and we don't
+  ## see a valid token, we go ahead and throw an error explaining.
+  let kind = ctx.curTok().kind
+
+  case kind
+  of TtSemi, TtNewLine, TtRBrace, TtRParen, TtEOF:
+    while ctx.curTok().kind == TtSemi: discard ctx.consume()
+    return true
+  else:
+    if kind in valid:
+      return false
+    case len(valid)
+    of 0:
+      parseError("Expected end of statement here.")
+    of 1:
+      parseError("Expected either end of statement or: " & $(valid[0]))
+    else:
+      var tokens: seq[string]
+      for item in valid:
+        tokens.add($(item))
+      parseError("Expected either end of statement or one of: " &
+        tokens.join(", "))
+
+proc endOfStatement(ctx: ParseCtx) =
+  discard ctx.isValidEndOfStatement([])
+
+    # These productions need to be forward referenced.
 # Other expression productions do as well, but that gets done
 # in the exprProds template below.
 proc body(ctx: ParseCtx): Con4mNode
+proc optionalBody(ctx: ParseCtx): Con4mNode
 proc exprStart(ctx: ParseCtx): Con4mNode
 proc accessExpr(ctx: ParseCtx): Con4mNode
 proc literal(ctx: ParseCtx): Con4mNode
@@ -118,19 +159,6 @@ proc oneTypeSpec(ctx:    ParseCtx,
                  state:  var Table[string, Con4mType]): Con4mType =
   let t = ctx.consume()
   case t.kind
-  of TtVoid:     result = bottomType
-  of TtBool:     result = boolType
-  of TtInt:      result = intType
-  of TtChar:     result = charType
-  of TtString:   result = stringType
-  of TtFloat:    result = floatType
-  of TtDuration: result = durationType
-  of TtIPAddr:   result = ipAddrType
-  of TtCidr:     result = cidrType
-  of TtSize:     result = sizeType
-  of TtDate:     result = dateType
-  of TtTime:     result = timeType
-  of TtDateTime: result = dateTimeType
   of TtBacktick:
     let varName = $(ctx.consume())
     if varName in state:
@@ -139,46 +167,63 @@ proc oneTypeSpec(ctx:    ParseCtx,
       result           = newTypeVar()
       result.localName = some(varName)
       state[varName]   = result
-  of TtTypeSpec:
-    result = Con4mType(kind: TypeTypeSpec)
-    if ctx.curTok().kind == TtLBracket:
-      discard ctx.consume()
-      if ctx.curTok().kind != TtBacktick:
-        parseError("Type parameter for typespecs must be a valid type variable")
-      result.binding =  ctx.typeSpec(state)
+  of TtIdentifier:
+    case t.getTokenText()
+    of "void":     result = bottomType
+    of "bool":     result = boolType
+    of "int":      result = intType
+    of "char":     result = charType
+    of "string":   result = stringType
+    of "float":    result = floatType
+    of "Duration": result = durationType
+    of "IPAddr":   result = ipAddrType
+    of "CIDR":     result = cidrType
+    of "Size":     result = sizeType
+    of "Date":     result = dateType
+    of "Time":     result = timeType
+    of "DateTime": result = dateTimeType
+    of "typespec":
+      result = Con4mType(kind: TypeTypeSpec)
+      if ctx.curTok().kind == TtLBracket:
+        discard ctx.consume()
+        if ctx.curTok().kind != TtBacktick:
+          parseError("Type param for typespecs must be a valid type variable")
+        result.binding =  ctx.typeSpec(state)
+        if ctx.consume().kind != TtRBracket:
+          parseError("Type parameter is missing closing bracket")
+      else:
+        result.binding = newTypeVar()
+    of "tuple":
+      result = Con4mType(kind: TypeTuple)
+      if ctx.consume().kind != TtLBracket:
+        parseError("Tuple type requires brackets [] to specify item types")
+      result.itemTypes.add(ctx.typeSpec(state))
+      if ctx.curTok().kind != TtComma:
+        parseError("Tuples must have more than one field.")
+      while true:
+        case ctx.consume().kind
+        of TtComma:    result.itemTypes.add(ctx.typeSpec(state))
+        of TtRBracket: break
+        else:          parseError("Expected a ',' or ']' after item type")
+    of "list":
+      result = Con4mType(kind: TypeList)
+      if ctx.consume().kind != TtLBracket:
+        parseError("List type requires brackets [] to specify item type")
+      result.itemType = ctx.typeSpec(state)
       if ctx.consume().kind != TtRBracket:
-        parseError("Type parameter is missing closing bracket")
+        parseError("List type expects ']' after its single parameter")
+    of "dict":
+      result = Con4mType(kind: TypeDict)
+      if ctx.consume().kind != TtLBracket:
+        parseError("Dict type requires brackets [] to specify key/value types")
+      result.keyType = ctx.typeSpec(state)
+      if ctx.consume().kind != TtComma:
+        parseError("Dict type requires two type parameters")
+      result.valType = ctx.typeSpec(state)
+      if ctx.consume().kind != TtRBracket:
+        parseError("Dict type expects ']' after its two parameters")
     else:
-      result.binding = newTypeVar()
-  of TtTuple:
-    result = Con4mType(kind: TypeTuple)
-    if ctx.consume().kind != TtLBracket:
-      parseError("Tuple type requires brackets [] to specify item types")
-    result.itemTypes.add(ctx.typeSpec(state))
-    if ctx.curTok().kind != TtComma:
-      parseError("Tuples must have more than one field.")
-    while true:
-      case ctx.consume().kind
-      of TtComma:    result.itemTypes.add(ctx.typeSpec(state))
-      of TtRBracket: break
-      else:          parseError("Expected a ',' or ']' after item type")
-  of TtList:
-    result = Con4mType(kind: TypeList)
-    if ctx.consume().kind != TtLBracket:
-      parseError("List type requires brackets [] to specify item type")
-    result.itemType = ctx.typeSpec(state)
-    if ctx.consume().kind != TtRBracket:
-      parseError("List type expects ']' after its single parameter")
-  of TtDict:
-    result = Con4mType(kind: TypeDict)
-    if ctx.consume().kind != TtLBracket:
-      parseError("Dict type requires brackets [] to specify key/value types")
-    result.keyType = ctx.typeSpec(state)
-    if ctx.consume().kind != TtComma:
-      parseError("Dict type requires two type parameters")
-    result.valType = ctx.typeSpec(state)
-    if ctx.consume().kind != TtRBracket:
-      parseError("Dict type expects ']' after its two parameters")
+      parseError("Invalid syntax for a type declaration.")
   of TtFunc, TtLParen:
     result = Con4mType(kind: TypeFunc)
     # Once we know we're parsing a type, we don't require the leading
@@ -201,7 +246,7 @@ proc oneTypeSpec(ctx:    ParseCtx,
           result.va = true
           result.params.add(ctx.typeSpec(state))
           if ctx.consume().kind != TtRParen:
-            parseError("Varargs indicator can only appear before the final arg")
+            parseError("Varargs star can only appear before the final arg")
           break
         else:
           result.params.add(ctx.typeSpec(state))
@@ -215,9 +260,9 @@ proc oneTypeSpec(ctx:    ParseCtx,
       discard ctx.consume()
       result.retType = ctx.typeSpec(state)
     else:
-      result.retType = bottomType
+        result.retType = bottomType
   else:
-    parseError("Invalid syntax for a type declaration.")
+      parseError("Invalid syntax for a type declaration.")
 
 proc typeSpec(ctx:    ParseCtx,
               state:  var Table[string, Con4mType]): Con4mType =
@@ -247,7 +292,7 @@ proc typeSpec(ctx: ParseCtx): Con4mNode =
 
 proc toCon4mType*(s: string): Con4mType =
   ## Converts a string to a Con4m type object.
-  let (valid, tokens) = s.newStringStream().lex()
+  let (valid, tokens) = s.lex()
 
   if not valid:
     raise newException(ValueError, "Invalid character found in type")
@@ -287,7 +332,7 @@ template exprProds(exprName: untyped,
 
   proc exprName(ctx: ParseCtx): Option[Con4mNode] =
     if ctx.curTok().kind == tokKind:
-      return some(newNode(nodeType,ctx.consume(), @[ctx.rhsName()]))
+      return some(newNode(nodeType, ctx.consume(), @[ctx.rhsName()]))
     return ctx.nextInChain()
 
 # These productions are straightforward translations of the grammar. If
@@ -365,7 +410,8 @@ proc callActuals(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
 
 proc memberExpr(ctx: ParseCtx, lhs: Con4mNode): Con4mNode =
   result = newNode(NodeMember, ctx.consume())
-  result.children.add(lhs)
+  if lhs != Con4mNode(nil):
+    result.children.add(lhs)
 
   while true:
     if ctx.curTok().kind != TtIdentifier:
@@ -536,9 +582,7 @@ proc callback(ctx: ParseCtx): Con4mNode =
 
 proc literal(ctx: ParseCtx): Con4mNode =
   case ctx.curTok().kind
-  of TtBool, TtInt, TtString, TtFloat, TtVoid, TtTypeSpec, TtList, TtDict,
-     TtTuple, TtBackTick, TtDuration, TtIPAddr, TtCidr, TtSize, TtDate,
-     TtTime, TtDateTime:
+  of TtBackTick, TtIdentifier:
        return ctx.typeSpec()
   of TtFunc:
     return ctx.callback()
@@ -581,11 +625,14 @@ proc exprStart(ctx: ParseCtx): Con4mNode =
   of TtNot:
     return ctx.notExpr()
   of TtintLit, TTFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TtLBrace,
-     TtLBracket, TtLParen, TtOtherLit, TtBool, TtInt, TtString, TtFloat,
-     TtVoid, TtTypeSpec, TtList, TtDict, TtTuple, TtFunc, TtBacktick,
-     TtDuration, TtIPAddr, TtCidr, TtSize, TtDate, TtTime, TtDateTime:
+     TtLBracket, TtLParen, TtOtherLit, TtFunc, TtBacktick:
     return ctx.literal()
-  of TtIdentifier: return ctx.accessExpr()
+  of TtIdentifier:
+    if ctx.curTok.getTokenText() in typeTokens and
+       ctx.lookahead().kind != TtLParen:
+      return ctx.literal()
+    else:
+      return ctx.accessExpr()
   else:
     parseError("Expected an expression", false)
 
@@ -604,12 +651,13 @@ proc exportStmt(ctx: ParseCtx): Con4mNode =
     if ctx.curTok().kind != TtComma: break
     discard ctx.consume()
 
+  ctx.endOfStatement()
+
 proc varStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeVarDecl, ctx.consume())
 
   while true:
-    ctx.nlWatch = false
-
+    ctx.nlWatch = true
     var
       tok = ctx.consume()
       n   = newNode(NodeVarSymNames, tok)
@@ -617,7 +665,7 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
     while true:
       if tok.kind != TtIdentifier:
         parseError("Expect a valid identifier here")
-        n.children.add(newNode(NodeIdentifier, tok))
+      n.children.add(newNode(NodeIdentifier, tok))
       case ctx.consume().kind
       of TtComma:
         tok = ctx.consume() # set up the next identifier.
@@ -627,17 +675,13 @@ proc varStmt(ctx: ParseCtx): Con4mNode =
       else:
         parseError("Expect either a ',' or ':' here")
     result.children.add(n)
-    let spec = ctx.typeSpec()
+    let spec = ctx.typeSpec().typeInfo
     for item in n.children:
-      item.children.add(spec)
-    ctx.nlWatch = true
-    case ctx.consume().kind
-    of TtSemi, TtNewLine:
-      while ctx.curTok().kind == TtSemi: discard ctx.consume()
-    of TtComma:
-      continue
-    else:
-      parseError("Expected a newline, or more vars")
+      item.typeInfo = spec
+
+    if ctx.isValidEndOfStatement([TtComma]):
+      discard ctx.consume()
+      break
 
 proc funcDecl(ctx: ParseCtx): Con4mNode =
   let
@@ -692,30 +736,26 @@ proc returnStmt(ctx: ParseCtx): Con4mNode =
   ctx.nlWatch = true
 
   case ctx.curTok().kind
-  of TtSemi, TtNewLine:
-    discard ctx.consume()
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
+  of TtSemi, TtNewLine, TtRBracket, TtRparen, TtEOF:
+    ctx.endOfStatement()
   else:
     try:
       result.children.add(ctx.expression())
     except:
       parseError("Expected valid expression after return")
-    case ctx.consume().kind
-    of TtSemi, TtNewLine, TtRBrace:
-      while ctx.curTok().kind == TtSemi: discard ctx.consume()
-    else:
-      parseError("Unexpected input after return")
-
+    ctx.endOfStatement()
 
 proc breakStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeBreak, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Break not allowed outside of a loop")
+  ctx.endOfStatement()
 
 proc continueStmt(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeContinue, ctx.consume(), ti = bottomType)
   if ctx.nesting == 0:
     parseError("Continue not allowed outside of a loop")
+  ctx.endOfStatement()
 
 #[
 proc whileStmt(ctx: ParseCtx): Con4mNode =
@@ -794,43 +834,98 @@ proc ifStmt(ctx: ParseCtx): Con4mNode =
       return
 
 proc section(ctx: ParseCtx): Con4mNode =
-  var i  = -1
   result = newNode(NodeSection, ctx.curTok(), ti = bottomType)
 
   result.children.add(newNode(NodeIdentifier, ctx.consume()))
 
-  i = i + 1
   let tok = ctx.consume()
   case tok.kind
   of TtStringLit, TtCharLit, TtOtherLit:
     result.children.add(newNode(NodeSimpLit, tok))
   of TtIdentifier:
     result.children.add(newNode(NodeIdentifier, tok))
-  of TtLBrace:
-    ctx.unconsume()
   else:
-    if i == 0:
-      ctx.unconsume()
-      parseError("Expected either a function call or a section start")
+    ctx.unconsume()
+
+  result.children.add(ctx.optionalBody())
+
+proc useStmt(ctx: ParseCtx): Con4mNode =
+  let startTok = ctx.consume()
+
+  result = newNode(NodeUse, startTok, ti = bottomType)
+
+  let tok = ctx.consume()
+  if tok.kind == TtIdentifier:
+    result.children.add(newNode(NodeIdentifier, tok))
+  else:
+    ctx.unconsume()
+    parseError("Expected a identifier for the module name to use")
+
+  if ctx.isValidEndOfStatement([TtFrom]):
+    return
+
+  discard ctx.consume()
+
+  if ctx.curTok().kind == TtStringLit:
+    result.children.add(newNode(NodeSimpLit, ctx.consume()))
+  else:
+    parseError("Argument to 'from' must be a string literal consisting " &
+      "of either a https URL, or a local file path to a directory with the " &
+      "component to use")
+
+  ctx.endOfStatement()
+
+proc parameterBlock(ctx: ParseCtx): Con4mNode =
+  let startTok = ctx.consume()
+
+  result = newNode(NodeParameter, startTok, ti = bottomType)
+
+  ctx.nlWatch = false
+  let tok = ctx.curTok()
+  case tok.kind
+  of TtIdentifier:
+    let
+      idTok  = ctx.consume()
+      idNode = newNode(NodeIdentifier, idTok)
+
+    if idTok.kind != TtIdentifier:
+      parseError("Expected an attribute here")
+
+    if ctx.curTok().kind != TtPeriod:
+      result.children.add(idNode)
     else:
-      ctx.unconsume()
-      parseError("Either need '(' before this, for func call, " &
-                 "or '{' after for section start")
+      result.children.add(ctx.memberExpr(idNode))
+  of TtVar:
+    var child = newNode(NodeVarDecl, ctx.consume())
+    let idTok = ctx.consume()
 
-  if ctx.consume().kind != TtLBrace:
-    parseError("Expected '{' to start section")
+    if idTok.kind != TtIdentifier:
+      parseError("Expected a variable name here")
 
-  result.children.add(ctx.body())
-  ctx.nlWatch = true
+    child.children.add(newNode(NodeIdentifier, idTok))
+    result.children.add(child)
+  else:
+    parseError("parameter keyword must be followed by an attribute " &
+      "(can be dotted) or `var` and a local variable name.")
 
-  if ctx.consume().kind != TtRBrace:
-    parseError("Expected }")
+  # Here we parse as body, but then swap out the top-level body node
+  # with a NodeParamBody node. The treecheck first pass will validate
+  # that the tree is the allowed subset of body for parameter blocks.
+  let
+    bodyParse = ctx.optionalBody()
+    paramBody = newNode(NodeParamBody, bodyParse.token.get())
+
+  for item in bodyParse.children:
+    parambody.children.add(item)
+
+  result.children.add(paramBody)
 
 proc varAssign(ctx: ParseCtx): Con4mNode =
   var
     t         = ctx.consume()
     ids: seq[Con4mNode] = @[]
 
+  ctx.nlWatch = true
   ids.add(newNode(NodeIdentifier, t))
 
   # Second token could be a comma, if we're unpacking a tuple.
@@ -839,12 +934,11 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
 
   while ctx.curTok().kind == TtComma:
     discard ctx.consume()
-    ctx.nlWatch = false
     let t = ctx.consume()
     if t.kind != TtIdentifier:
       parseError("Can only unpack into named variables")
     ids.add(newNode(NodeIdentifier, t))
-    ctx.nlWatch = true
+
 
   case ctx.consume().kind
   of TtAttrAssign:
@@ -863,13 +957,7 @@ proc varAssign(ctx: ParseCtx): Con4mNode =
   result.children = ids
   ctx.nlWatch = true
   result.children.add(ctx.expression())
-
-  case ctx.consume().kind
-  of TtSemi, TtNewLine, TtEOF:
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
-  else:
-    parseError("Newline needed after variable assignment")
-
+  ctx.endOfStatement()
 
 proc attrAssign(ctx: ParseCtx): Con4mNode =
   var
@@ -899,12 +987,7 @@ proc attrAssign(ctx: ParseCtx): Con4mNode =
   result.children.add(child)
   result.children.add(ctx.expression())
 
-  let tmp = ctx.consume()
-  case tmp.kind
-  of TtSemi, TtNewLine, TtEOF:
-    while ctx.curTok().kind == TtSemi: discard ctx.consume()
-  else:
-    parseError("Newline needed after attribute assignment")
+  ctx.endOfStatement()
 
 proc enumeration(ctx: ParseCtx): Con4mNode =
   result = newNode(NodeEnum, ctx.consume())
@@ -915,10 +998,9 @@ proc enumeration(ctx: ParseCtx): Con4mNode =
     let kid = newNode(NodeIdentifier, ctx.consume())
     result.children.add(kid)
     if ctx.curTok().kind != TtComma:
+      ctx.endOfStatement()
       return
-    ctx.nlWatch = false
     discard ctx.consume()
-    ctx.nlWatch = true
 
 proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
   result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
@@ -938,6 +1020,15 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
     of TtLockAttr:
       result.children.add(ctx.attrAssign())
     of TtIdentifier:
+      case ctx.curTok.getTokenText()
+      of "use":
+        result.children.add(ctx.useStmt())
+        continue
+      of "parameter":
+        result.children.add(ctx.parameterBlock())
+        continue
+      else:
+        discard
       case ctx.lookAhead().kind
       of TtAttrAssign, TtColon, TtPeriod:
         result.children.add(ctx.attrAssign())
@@ -979,21 +1070,32 @@ proc body(ctx: ParseCtx, toplevel: bool): Con4mNode =
     else:
       let t = ctx.curTok()
       try:
+        ctx.nlWatch = true
         result.children.add(ctx.expression())
-        case ctx.consume().kind
-        of TtSemi, TtNewLine:
-          ctx.nlWatch = false
-          while ctx.curTok().kind == TtSemi: discard ctx.consume()
-        else:
-          parseError("Expect a newline (or ;) at end of a body expression")
-
+        ctx.endOfStatement()
       except:
         parseError("Expected an assignment, unpack (no parens), block " &
                    "start, or expression", t)
 
-
 proc body(ctx: ParseCtx): Con4mNode =
   return ctx.body(false)
+
+proc optionalBody(ctx: ParseCtx): Con4mNode =
+  # If there is a body, great. If there is not, then enforce the
+  # newline or semicolon.
+  #
+  # Note that the body() production for whatever reason doesn't add
+  # the braces, it requires the caller to do it. (Yes, I know I wrote
+  # it, I'm sure I had a reason at the time)
+
+  ctx.nlWatch = true
+  if ctx.isValidEndOfStatement([TtLBrace]):
+    result = newNode(NodeBody, ctx.curTok(), ti = bottomType)
+  else:
+    discard ctx.consume()
+    result = ctx.body()
+    ctx.nlWatch = false
+    ctx.consumeOrError(TtRBrace)
 
 # Since we don't need to navigate the tree explicitly to parse, it's
 # far less error prone to just add parent info when the parsing is done.
@@ -1002,7 +1104,8 @@ proc addParents(node: Con4mNode) =
     kid.parent = some(node)
     kid.addParents()
 
-proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
+proc parse*(tokens: seq[Con4mToken], filename: string):
+          Con4mNode {.exportc, cdecl.}=
   ## This operates on tokens, as already produced by lex().  It simply
   ## kicks off the parser by entering the top-level production (body),
   ## and prints out any error message that happened during parsing.
@@ -1020,6 +1123,26 @@ proc parse*(tokens: seq[Con4mToken], filename: string): Con4mNode =
   ctrace(fmt"{filename}: {nodeId} parse tree nodes generated")
   result.addParents()
 
+proc parse*(s: string | StringCursor, filename: string = "<<unknown>>"):
+          Con4mNode =
+  let
+    (valid, tokens) = s.lex(filename)
+
+  if valid:
+    return tokens.parse(filename)
+  else:
+    let
+      tok = tokens[^1]
+      msg = case tok.kind:
+        of ErrorTok:         "Invalid character found"
+        of ErrorLongComment: "Unterminated comment"
+        of ErrorStringLit:   "Unterminated string"
+        of ErrorCharLit:     "Invalid char literal"
+        of ErrorOtherLit:    "Unterminated literal"
+        else:                "Unknown error"
+
+    fatal(msg, tok)
+
 proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
   ## This version converts a stream into tokens, then calls the parse
   ## implementation on tokens, which kicks off the actual parsing.
@@ -1030,20 +1153,31 @@ proc parse*(s: Stream, filename: string = "<<unknown>>"): Con4mNode =
     fatal(fmt"Unable to open file '{filename}' for reading")
   let
     toParse = s.readAll()
-    (valid, tokens) = toParse.newStringStream().lex()
 
-  if valid:
-    return tokens.parse(filename)
-  else:
+  result = toParse.parse(filename)
+  s.close()
+
+proc parseLiteral*(s: string): Con4mNode =
+  let
+    (valid, tokens) = s.lex()
+
+  if not valid:
     let
       tok = tokens[^1]
       msg = case tok.kind:
-        of ErrorTok: "Invalid character found"
+        of ErrorTok:         "Invalid character found"
         of ErrorLongComment: "Unterminated comment"
-        of ErrorStringLit: "Unterminated string"
-        of ErrorCharLit: "Invalid char literal"
-        of ErrorOtherLit: "Unterminated literal"
-        else: "Unknown error" # Shouldn't be possible w/o a lex bug
+        of ErrorStringLit:   "Unterminated string"
+        of ErrorCharLit:     "Invalid char literal"
+        of ErrorOtherLit:    "Unterminated literal"
+        else:                "Unknown error"
 
     fatal(msg, tok)
-    return
+    var ctx = ParseCtx(tokens:   tokens,
+                       curTokIx: 0,
+                       nesting:  0,
+                       nlWatch:  false)
+    setCurrentFileName("<<literal parser>>")
+    result = ctx.literal()
+    if ctx.curTok().kind != TtEof:
+      parseError("Invalid contents after literal")

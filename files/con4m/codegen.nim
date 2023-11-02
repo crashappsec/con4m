@@ -1,5 +1,5 @@
 import strutils, strformat, tables, nimutils, unicode, options
-import types, typecheck, st
+import types, st
 
 type VarDeclInfo = ref object
   name:         string       # The variable name someone asked for,

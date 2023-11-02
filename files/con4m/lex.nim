@@ -3,13 +3,13 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import streams, unicode, types, nimutils, errmsg
+import unicode, nimutils, types, strcursor, errmsg
 
 template lexFatal(msg: string, t: Con4mToken) =
   var st = when not defined(release): getStackTrace() else: ""
   fatal(msg, t, st, instantiationInfo())
 
-proc uEsc(s: string, numchars: int, t: Con4mToken): Rune =
+proc uEsc(s: seq[Rune], numchars: int, t: Con4mToken): Rune =
   var
     c = 0
     n = numchars
@@ -20,7 +20,7 @@ proc uEsc(s: string, numchars: int, t: Con4mToken): Rune =
     n = n + 1
     c = c shl 4
     let
-      r = s.runeAt(i)
+      r = s[i]
       o = ord(r)
     i = i + r.size()
 
@@ -34,10 +34,9 @@ proc uEsc(s: string, numchars: int, t: Con4mToken): Rune =
     else:
       lexFatal("Invalid unicode escape in literal", t)
 
-proc processEscape(s: string, t: Con4mToken): (Rune, int) =
+proc processEscape(s: seq[Rune], t: Con4mToken): (Rune, int) =
   # Returns the escaped character along with how many bytes were read.
-  let rune = s.runeAt(0)
-  case rune
+  case s[0]
   of Rune('n'):  return (Rune('\n'), 1)
   of Rune('r'):  return (Rune('\r'), 1)
   of Rune('a'):  return (Rune('\a'), 1)
@@ -45,28 +44,29 @@ proc processEscape(s: string, t: Con4mToken): (Rune, int) =
   of Rune('f'):  return (Rune('\f'), 1)
   of Rune('t'):  return (Rune('\t'), 1)
   of Rune('\\'): return (Rune('\\'), 1)
+  of Rune('x'):  return (uEsc(s[1 .. ^1], 2, t), 3)
   of Rune('u'):  return (uEsc(s[1 .. ^1], 4, t), 5)
   of Rune('U'):  return (uEsc(s[1 .. ^1], 8, t), 9)
-  else: return (rune, rune.size())
+  else: return (s[0], s[0].size())
 
 proc parseCodePoint(t: Con4mToken) =
   # Extract the actual codepoint from a char literal. The first
   # and last chars will be the tick marks.
-  t.stream.setPosition(t.startPos)
   let
-    raw = t.stream.readStr(t.endPos - t.startPos)[1 .. ^1]
-    r   = raw.runeAt(0)
+    raw = t.cursor.slice(t.startPos + 1, t.endPos - 1)
 
-  case r
-  of Rune('\''):
-    t.codepoint = 0
+  if len(raw) == 0:
+    t.codePoint = 0
+    return
+
+  case raw[0]
   of Rune('\\'):
     let (cp, n) = processEscape(raw[1 .. ^1], t)
     if (n + 2) != len(raw):
       lexFatal("Invalid escape in string literal", t)
     t.codepoint = int(cp)
   else:
-    t.codepoint = int(r)
+    t.codepoint = int(raw[0])
 
 proc unescape(token: Con4mToken) =
   # Turn a raw string into its intended representation.  Note that we
@@ -76,13 +76,10 @@ proc unescape(token: Con4mToken) =
     flag:      bool
     remaining: int
     codepoint: int
-    raw:       string = newStringOfCap(token.endPos - token.startPos)
-    res:       string = newStringOfCap(token.endPos - token.startPos)
+    raw:       seq[Rune] = token.cursor.slice(token.startPos, token.endPos)
+    res:       seq[Rune]
 
-  token.stream.setPosition(token.startPos)
-  raw = token.stream.readStr(token.endPos - token.startPos)
-
-  for r in raw.runes():
+  for r in raw:
     if remaining > 0:
       codepoint = codepoint shl 4
       let o = ord(r)
@@ -103,26 +100,29 @@ proc unescape(token: Con4mToken) =
     elif flag:
       case r
       of Rune('n'):
-        res.add('\n')
+        res.add(Rune('\n'))
         flag = false
       of Rune('r'):
-        res.add('\r')
+        res.add(Rune('\r'))
         flag = false
       of Rune('a'):
-        res.add('\a')
+        res.add(Rune('\a'))
         flag = false
       of Rune('b'):
-        res.add('\b')
+        res.add(Rune('\b'))
         flag = false
       of Rune('f'):
-        res.add('\f')
+        res.add(Rune('\f'))
         flag = false
       of Rune('t'):
-        res.add('\t')
+        res.add(Rune('\t'))
         flag = false
       of Rune('\\'):
-        res.add('\\')
+        res.add(Rune('\\'))
         flag = false
+      of Rune('x'):
+        flag = false
+        remaining = 2
       of Rune('u'):
         flag = false
         remaining = 4
@@ -142,15 +142,33 @@ proc unescape(token: Con4mToken) =
   if flag or (remaining != 0):
     lexFatal("Unterminated escape sequence in string literal", token)
 
-  token.unescaped = res
+  token.unescaped = $(res)
 
-template tok(k: Con4mTokenKind) =
+template atNewLine() =
+  lineNo.inc()
+  lineStart = s.getPosition()
+
+template tok(k: Con4mTokenKind, eatNewlines: static[bool] = false) =
   toks.add(Con4mToken(startPos:   startPos,
                       endPos:     s.getPosition(),
                       kind:       k,
-                      stream:     s,
+                      cursor:     s,
                       lineNo:     tokenLine,
                       lineOffset: tokenLineOffset))
+  when eatNewlines:
+    let wsStart = s.getPosition()
+    while s.peek() in [Rune(' '), Rune('\t')]:
+      s.advance()
+    if s.peek() == Rune('\n'):
+      atNewLine()
+      s.advance()
+      while s.peek() in [Rune(' '), Rune('\t')]:
+        s.advance()
+    let wsEnd = s.getPosition()
+    if wsEnd != wsStart:
+      toks.add(Con4mToken(startPos: wsStart, endPos: wsEnd,
+                          kind: TtWhiteSpace, cursor: s, lineNo: tokenLine,
+                          lineOffSet: tokenLineOffset + wsStart - startPos))
 
 # The adjustment is to chop off start/end delimiters for
 # literals... strings, tristrings, and 'other' literals: << >>
@@ -158,29 +176,23 @@ template tok(k: Con4mTokenKind, adjustment: int) =
   toks.add(Con4mToken(startPos:   startPos + adjustment,
                       endPos:     s.getPosition() - adjustment,
                       kind:       k,
-                      stream:     s,
+                      cursor:     s,
                       lineNo:     tokenLine,
                       lineOffset: tokenLineOffset))
 
-template atNewLine() =
-  lineNo.inc()
-  lineStart = s.getPosition()
-
 proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
-    i      = 0
+    i                  = 0
     newtok: Con4mToken = nil
 
-  result = @[]
+  if len(inToks) == 0:
+    return
 
-  if len(inToks) != 0:
-    let savedPos = inToks[0].stream.getPosition()
-    for tok in inToks:
-      case tok.kind
-      of TtStringLit: tok.unescape()
-      of TtCharLit:   tok.parseCodePoint()
-      else: discard
-    inToks[0].stream.setPosition(savedPos)
+  for tok in inToks:
+    case tok.kind
+    of TtStringLit: tok.unescape()
+    of TtCharLit:   tok.parseCodePoint()
+    else: discard
 
   while i < len(inToks):
    block outer:
@@ -213,7 +225,7 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
                                       endPos:     t3.endPos,
                                       lineNo:     t.lineNo,
                                       lineOffset: t.lineOffset,
-                                      stream:     t.stream)
+                                      cursor:     t.cursor)
                 else:
                   newTok.unescaped &= t3.unescaped
                   newTok.endpos = t3.endpos
@@ -242,14 +254,14 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
       result.add(t)
     i += 1
 
-proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
+proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
   if filename != "": setCurrentFileName(filename)
 
   ## Lexical analysis. Doesn't need to be exported.
   var
     lineNo: int = 1
     lineStart: int = s.getPosition()
-    toks = @[Con4mToken(startPos: -1, endPos: -1, kind: TtSof, stream: s,
+    toks = @[Con4mToken(startPos: -1, endPos: -1, kind: TtSof, cursor: s,
                        lineNo: -1, lineOffSet: -1)]
 
   while true:
@@ -257,215 +269,215 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
       startPos = s.getPosition()
       tokenLine = lineNo
       tokenLineOffset = startPos - lineStart
-      c = s.readChar()
+      c = s.read()
     case c
-    of ' ', '\t':
+    of Rune(' '), Rune('\t'):
       while true:
-        let c = s.peekChar()
+        let c = s.peek()
         case c
-        of ' ', '\t':
-          discard s.readChar()
+        of Rune(' '), Rune('\t'):
+          s.advance()
         else:
           break
       tok(TtWhiteSpace)
       continue
-    of '\r':
-      let c = s.readChar()
-      if c != '\n':
+    of Rune('\r'):
+      let c = s.read()
+      if c != Rune('\n'):
         tok(ErrorTok)
         return (false, toks)
       tok(TtNewLine)
       atNewLine()
-    of '\n':
+    of Rune('\n'):
       tok(TtNewLine)
       atNewLine()
-    of '#':
+    of Rune('#'):
       while true:
-        case s.peekChar()
-        of '\n', '\x00':
+        case s.peek()
+        of Rune('\n'), Rune('\x00'):
           break # The newline should be a separate token.
         else:
-          discard s.readChar()
+          s.advance()
       tok(TtLineComment)
-    of '~':
+    of Rune('~'):
       tok(TtLockAttr)
-    of '`':
+    of Rune('`'):
       tok(TtBacktick)
-    of '+':
-      tok(TtPlus)
-    of '-':
-      case s.peekChar()
-      of '>':
-        discard s.readChar()
-        tok(TtArrow)
+    of Rune('+'):
+      tok(TtPlus, true)
+    of Rune('-'):
+      case s.peek()
+      of Rune('>'):
+        s.advance()
+        tok(TtArrow, true)
       else:
-        tok(TtMinus)
-    of '*':
-      tok(TtMul)
-    of '/':
-      case s.peekChar()
-      of '/':
+        tok(TtMinus, true)
+    of Rune('*'):
+      tok(TtMul, true)
+    of Rune('/'):
+      case s.peek()
+      of Rune('/'):
         while true:
-          case s.peekChar()
-          of '\n', '\x00':
+          case s.peek()
+          of Rune('\n'), Rune('\x00'):
             break
           else:
-            discard s.readChar()
+            s.advance()
         tok(TtLineComment)
-      of '*':
-        discard s.readChar()
+      of Rune('*'):
+        s.advance()
         while true:
-          case s.readChar()
-          of '\n':
+          case s.read()
+          of Rune('\n'):
             atNewLine()
-          of '*':
-            if s.peekChar() == '/':
+          of Rune('*'):
+            if s.peek() == Rune('/'):
               tok(TtLongComment)
-              discard s.readChar()
+              s.advance()
               break
-          of '\x00':
+          of Rune('\x00'):
             tok(ErrorLongComment)
             return (false, toks)
           else:
             discard
       else:
-        tok(TtDiv)
-    of '%':
-      tok(TtMod)
-    of '<':
-      if s.peekChar() == '<':
+        tok(TtDiv, true)
+    of Rune('%'):
+      tok(TtMod, true)
+    of Rune('<'):
+      if s.peek() == Rune('<'):
         while true:
-          case s.readChar()
-          of '\x00':
+          case s.read()
+          of Rune('\x00'):
             tok(ErrorOtherLit)
             return (false, toks)
-          of '>':
-            if s.readChar() != '>': continue
+          of Rune('>'):
+            if s.read() != Rune('>'): continue
             tok(TtOtherLit, 2)
             break
           else:
             continue
-      elif s.peekChar() == '=':
-        discard s.readChar()
-        tok(TtLte)
+      elif s.peek() == Rune('='):
+        s.advance()
+        tok(TtLte, true)
       else:
-        tok(TtLt)
-    of '>':
-      if s.peekChar() == '=':
-        discard s.readChar()
-        tok(TtGte)
+        tok(TtLt, true)
+    of Rune('>'):
+      if s.peek() == Rune('='):
+        s.advance()
+        tok(TtGte, true)
       else:
-        tok(TtGt)
-    of '!':
-      if s.peekChar() == '=':
-        discard s.readChar()
-        tok(TtNeq)
+        tok(TtGt, true)
+    of Rune('!'):
+      if s.peek() == Rune('='):
+        s.advance()
+        tok(TtNeq, true)
       else:
-        tok(TtNot)
-    of ';':
-      tok(TtSemi)
-    of ':':
-      if s.peekChar() == '=':
-        discard s.readChar()
-        tok(TtLocalAssign)
+        tok(TtNot, true)
+    of Rune(';'):
+      tok(TtSemi, true)
+    of Rune(':'):
+      if s.peek() == Rune('='):
+        s.advance()
+        tok(TtLocalAssign, true)
       else:
-        tok(TtColon)
-    of '=':
-      case s.peekChar()
-      of '=':
-        discard s.readChar()
-        tok(TtCmp)
+        tok(TtColon, true)
+    of Rune('='):
+      case s.peek()
+      of Rune('='):
+        s.advance()
+        tok(TtCmp, true)
       else:
-        tok(TtAttrAssign)
-    of ',':
-      tok(TtComma)
-    of '.':
-      tok(TtPeriod)
-    of '{':
-      tok(TtLBrace)
-    of '}':
+        tok(TtAttrAssign, true)
+    of Rune(','):
+      tok(TtComma, true)
+    of Rune('.'):
+      tok(TtPeriod, true)
+    of Rune('{'):
+      tok(TtLBrace, true)
+    of Rune('}'):
       tok(TtRBrace)
-    of '[':
-      tok(TtLBracket)
-    of ']':
+    of Rune('['):
+      tok(TtLBracket, true)
+    of Rune(']'):
       tok(TtRBracket)
-    of '(':
-      tok(TtLParen)
-    of ')':
+    of Rune('('):
+      tok(TtLParen, true)
+    of Rune(')'):
       tok(TtRParen)
-    of '&':
-      if s.readChar() != '&':
+    of Rune('&'):
+      if s.read() != Rune('&'):
         tok(ErrorTok)
         return (false, toks)
       else:
-        tok(TtAnd)
-    of '|':
-      if s.readChar() != '|':
+        tok(TtAnd, true)
+    of Rune('|'):
+      if s.read() != Rune('|'):
         tok(ErrorTok)
         return (false, toks)
       else:
-        tok(TtOr)
-    of '0' .. '9':
+        tok(TtOr, true)
+    of Rune('0') .. Rune('9'):
       block numLit:
         var isFloat: bool
 
         while true:
-          case s.peekChar()
-          of '0' .. '9':
-            discard s.readChar()
+          case s.peek()
+          of Rune('0') .. Rune('9'):
+            s.advance()
           else:
             break
 
-        if s.peekChar() == '.':
-          discard s.readChar()
+        if s.peek() == Rune('.'):
+          s.advance()
           isFloat = true
-          case s.readChar()
-          of '0' .. '9':
+          case s.read()
+          of Rune('0') .. Rune('9'):
             while true:
-              case s.peekChar()
-              of '0' .. '9':
-                discard s.readChar()
-              of '.':
-                discard s.readChar()
+              case s.peek()
+              of Rune('0') .. Rune('9'):
+                s.advance()
+              of Rune('.'):
+                s.advance()
                 while true:
-                  case s.peekChar()
-                  of ' ', '\n', '\x00':
+                  case s.peek()
+                  of Rune(' '), Rune('\n'), Rune('\x00'):
                     tok(TtOtherLit)
                     break numLit
                   else:
-                    discard s.readChar()
+                    s.advance()
               else:
                 break
           else:
             tok(ErrorTok)
             return (false, toks) # Grammar doesn't allow no digits after dot.
-        case s.peekChar():
-          of 'e', 'E':
-            discard s.readChar()
+        case s.peek():
+          of Rune('e'), Rune('E'):
+            s.advance()
             isFloat = true
-            case s.peekChar()
-            of '+', '-', '0' .. '9':
-              discard s.readChar()
+            case s.peek()
+            of Rune('+'), Rune('-'), Rune('0') .. Rune('9'):
+              s.advance()
             else:
               tok(ErrorTok)
               return (false, toks) # e or E without numbers after it
             while true:
-              case s.peekChar()
-              of '0' .. '9':
-                discard s.readChar()
+              case s.peek()
+              of Rune('0') .. Rune('9'):
+                s.advance()
               else:
                 break
-          of ':':
+          of Rune(':'):
             var
               savedPosition = s.getPosition()
               flag          = false
 
-            discard s.readChar()
+            s.advance()
             while true:
-              case s.peekChar()
-              of ':':
+              case s.peek()
+              of Rune(':'):
                 flag = true
-              of ' ', '\n', '\x00':
+              of Rune(' '), Rune('\n'), Rune('\x00'):
                 if flag:
                   tok(TtOtherLit)
                 else:
@@ -473,59 +485,59 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
                   tok(TtIntLit)
                 break numLit
               else:
-                discard s.readChar()
+                s.advance()
           else:
             discard
         if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
-    of '\'':
-     case s.readRune()
-     of Rune('\''):
-       tok(TtCharLit)
-     of Rune('\\'): # Skip next rune, then till we find ' (We will parse later)
-       discard s.readRune()
-       while true:
-         case s.readRune()
-         of Rune('\x00'):
-           tok(ErrorCharLit)
-           s.setPosition(startPos)
-           return (false, toks)
-         # of Rune('\\'):  Never valid in a char literal.
-         of Rune('\''):
-           tok(TtCharLit)
-           break
-         else: continue
-     else:
-       if s.readRune() != Rune('\''):
-         tok(ErrorCharLit)
-         s.setPosition(startPos)
-         return (false, toks)
-       tok(TtCharLit)
-    of '"':
+    of Rune('\''):
+      case s.read()
+      of Rune('\''):
+        tok(TtCharLit)
+      of Rune('\\'): # Skip next rune, then till we find ' (We will parse later)
+        discard s.read()
+        while true:
+          case s.read()
+          of Rune('\x00'):
+            tok(ErrorCharLit)
+            s.setPosition(startPos)
+            return (false, toks)
+          # of Rune('\\'):  Never valid in a char literal.
+          of Rune('\''):
+            tok(TtCharLit)
+            break
+          else: continue
+      else:
+        if s.read() != Rune('\''):
+          tok(ErrorCharLit)
+          s.setPosition(startPos)
+          return (false, toks)
+        tok(TtCharLit)
+    of Rune('"'):
       var tristring = false
 
-      if s.peekChar() == '"':
-        discard s.readChar()
-        if s.peekChar() == '"':
-          discard s.readChar()
+      if s.peek() == Rune('"'):
+        s.advance()
+        if s.peek() == Rune('"'):
+          s.advance()
           tristring = true
         else:
           tok(TtStringLit, 1)
           continue # Back to the top
       while true:
-        let r = s.readRune()
+        let r = s.read()
         case r
         of Rune('\\'):
-          discard s.readRune()
+          discard s.read()
         of Rune('"'):
           if not tristring:
             tok(TtStringLit, 1)
             break
-          if s.peekChar() != '"':
+          if s.peek() != Rune('"'):
             continue
-          discard s.readChar()
-          if s.peekChar() != '"':
+          s.advance()
+          if s.peek() != Rune('"'):
             continue
-          discard s.readChar()
+          s.advance()
           tok(TtStringLit, 3)
           tristring = false
           break
@@ -542,7 +554,7 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
           return (false, toks)
         else:
           continue
-    of '\x00':
+    of Rune('\x00'):
       tok(TtEOF)
       return (true, processStrings(toks))
     else:
@@ -551,23 +563,18 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
         r = Rune(c)
       else:
         s.setPosition(s.getPosition() - 1)
-        r = s.readRune()
+        r = s.read()
       if not r.isIdStart() and r != Rune('$'):
         tok(ErrorTok)
         return (false, toks)
       while true:
-        r = s.peekRune()
+        r = s.peek()
         if r.isIdContinue() or r == Rune('$'):
-          discard s.readRune()
+          discard s.read()
         else:
           break
 
-      let pos = s.getPosition()
-      s.setPosition(startPos)
-      let txt = s.readStr(pos - startPos)
-      s.setPosition(pos)
-
-      case txt
+      case $(s.slice(startPos, s.getPosition()))
       of "var":            tok(TtVar)
       of "True", "true":   tok(TtTrue)
       of "False", "false": tok(TtFalse)
@@ -587,23 +594,26 @@ proc lex*(s: Stream, filename: string = ""): (bool, seq[Con4mToken]) =
       of "enum":           tok(TtEnum)
       of "func":           tok(TtFunc)
       of "export":         tok(TtExportVar)
-      of "bool":           tok(TtBool)
-      of "int":            tok(TtInt)
-      of "char":           tok(TtChar)
-      of "float":          tok(TtFloat)
-      of "string":         tok(TtString)
-      of "void":           tok(TtVoid)
-      of "list":           tok(TtList)
-      of "dict":           tok(TtDict)
-      of "tuple":          tok(TtTuple)
-      of "typespec":       tok(TtTypeSpec)
-      of "Duration":       tok(TtDuration)
-      of "IPAddr":         tok(TtIPAddr)
-      of "CIDR":           tok(TtCIDR)
-      of "Size":           tok(TtSize)
-      of "Date":           tok(TtDate)
-      of "Time":           tok(TtTime)
-      of "DateTime":       tok(TtDateTime)
+      # of "bool":           tok(TtBool)
+      # of "int":            tok(TtInt)
+      # of "char":           tok(TtChar)
+      # of "float":          tok(TtFloat)
+      # of "string":         tok(TtString)
+      # of "void":           tok(TtVoid)
+      # of "list":           tok(TtList)
+      # of "dict":           tok(TtDict)
+      # of "tuple":          tok(TtTuple)
+      # of "typespec":       tok(TtTypeSpec)
+      # of "Duration":       tok(TtDuration)
+      # of "IPAddr":         tok(TtIPAddr)
+      # of "CIDR":           tok(TtCIDR)
+      # of "Size":           tok(TtSize)
+      # of "Date":           tok(TtDate)
+      # of "Time":           tok(TtTime)
+      # of "DateTime":       tok(TtDateTime)
       else:                tok(TtIdentifier)
 
   unreachable
+
+proc lex*(s: string, filename: string = ""): (bool, seq[Con4mToken]) =
+  return s.newStringCursor().lex(filename)

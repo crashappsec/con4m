@@ -189,6 +189,7 @@ proc attrLookup*(scope: AttrScope,
 
     return newScope.attrLookup(parts, ix + 1, op)
 
+
 proc attrExists*(scope: AttrScope, parts: openarray[string]): bool =
   return scope.attrLookup(parts, 0, vlExists).isA(AttrOrSub)
 
@@ -347,9 +348,15 @@ proc attrSet*(attr:  Attribute,
     n         = nameparts.join(".")
 
   if `over?`.isSome():
-    return AttrErr(code: errCantSet,
-                   msg:  fmt"{n} attr can't be set due to user override")
+    when defined(errOnOverride):
+      return AttrErr(code: errCantSet,
+                     msg:  fmt"{n} attr can't be set due to user override")
+    else:
+      return AttrErr(code: errOk)
   if attr.locked:
+    # If it's locked, setting to an equal value is OK.
+    if attr.value.getOrElse(value) == value:
+      return AttrErr(code: errOk)
     return AttrErr(code: errCantSet,
                    msg:  fmt"{n}: attribute is locked and can't be set")
   if hook != nil:
@@ -458,6 +465,7 @@ proc runtimeVarSet*(state: ConfigState, name: string, val: Box) =
       frame[name] = some(val)
       return
 
+  echo name
   unreachable
 
 proc lockAttribute*(attrs: AttrScope, fqn: string): bool =

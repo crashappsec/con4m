@@ -5,7 +5,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import streams, tables, options, sugar, macros, nimutils
+import unicode, tables, options, sugar, macros, nimutils
 
 type
   ## Enumeration of all possible lexical tokens. Should not be exposed
@@ -18,10 +18,12 @@ type
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtBool, TtInt, TtChar, TtString, TtFloat, TtVoid, TtTypespec, TtList,
-    TtDict, TtTuple, TtDuration, TtIpAddr, TtCIDR, TtSize, TtDate, TtTime,
-    TtDateTime, TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit,
-    ErrorCharLit, ErrorOtherLit
+    TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorCharLit,
+    ErrorOtherLit
+
+  StringCursor* = ref object
+    runes*: seq[Rune]
+    i*:     int
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -31,7 +33,7 @@ type
     of TtCharLit:
       codepoint*: int
     else:  nil
-    stream*:      Stream
+    cursor*:      StringCursor
     startPos*:    int
     endPos*:      int
     lineNo*:      int
@@ -49,7 +51,8 @@ type
     NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames
+    NodeVarDecl, NodeExportDecl, NodeVarSymNames, NodeUse, NodeParameter,
+    NodeParamBody
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -81,7 +84,6 @@ type
       cycle*:       bool
       components*:  seq[Con4mType]
     else: discard
-
 
   Con4mDuration* = uint64
   Con4mSize*     = uint64
@@ -175,6 +177,7 @@ type
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
     id*:           int
+    isConst*:      bool
     kind*:         Con4mNodeKind
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
@@ -280,12 +283,43 @@ type
     moduleFuncDefs*:     seq[FuncTableEntry] # Typed.
     moduleFuncImpls*:    seq[Con4mNode] # Passed from the parser.
     secondPass*:         bool
+    lockAllAttrWrites*:  bool
     nodeStash*:          Con4mNode # Tracked during builtin func calls, for
                                    # now, just for the benefit of format()
+    currentComponent*:   ComponentInfo
+    programRoot*:        ComponentInfo
+    components*:         Table[string, ComponentInfo]
 
   Con4mPhase*   = enum phTokenize, phParse, phCheck, phEval, phValidate
   FieldColType* = enum
     fcName, fcFullName, fcType, fcDefault, fcValue, fcShort, fcLong, fcProps
+
+  ComponentInfo* = ref object
+    url*:             string
+    version*:         (int, int, int)
+    desc*:            string
+    doc*:             string
+    hash*:            string
+    source*:          string
+    typed*:           bool
+    cycle*:           bool
+    savedGlobals*:    RuntimeFrame
+    varParams*:       Table[string, ParameterInfo]
+    attrParams*:      Table[string, ParameterInfo]
+    componentsUsed*:  seq[ComponentInfo]
+    beenChecked*:     seq[ConfigState] # Which contexts have we been checked in
+    alreadyRunning*:  bool # Breaks cycles at runtime.
+    entrypoint*:      Con4mNode
+
+  ParameterInfo* = ref object
+    name*:          string
+    shortdoc*:      Option[string] # Short description
+    doc*:           Option[string] # Long description
+    validator*:     Option[CallbackObj]
+    default*:       Option[Box]
+    defaultType*:   Con4mType
+    defaultCb*:     Option[CallbackObj]
+    value*:         Option[Box]
 
 let
   # These are just shared instances for types that aren't
@@ -314,7 +348,24 @@ proc resolveTypeVars*(t: Con4mType): Con4mType =
       result  = t.link.get().resolveTypeVars()
       t.cycle = false
 
-proc getType*(n: Con4mNode):    Con4mType = n.typeInfo.resolveTypeVars()
+var tVarNum: int
+
+proc newTypeVar*(constraints: seq[Con4mType] = @[]): Con4mType =
+  tVarNum.inc()
+  return Con4mType(kind:        TypeTVar,
+                   varNum:      tVarNum,
+                   link:        none(Con4mType),
+                   linksin:     @[],
+                   cycle:       false,
+                   components:  constraints)
+
+proc getType*(n: Con4mNode): Con4mType =
+  if n.typeInfo != nil:
+    return n.typeInfo.resolveTypeVars()
+  else:
+    n.typeInfo = newTypeVar()
+    return n.typeInfo
+
 proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
 proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
 proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()

@@ -6,7 +6,9 @@
 ## :Copyright: 2022
 
 import options, tables, strformat, unicode, nimutils, types, st, parse,
-       treecheck, typecheck, dollars, errmsg
+       treecheck, typecheck, dollars, errmsg, components
+
+from strutils import nil
 
 when (NimMajor, NimMinor) >= (1, 7):
   {.warning[CastSizes]: off.}
@@ -200,6 +202,8 @@ template binaryOpWork(typeWeAreOping: typedesc,
 
   node.value = pack(ret)
 
+proc evalComponent*(s: ConfigState, module: string, loc: string = "")
+
 proc evalNode*(node: Con4mNode, s: ConfigState) =
   ## This does the bulk of the work.  Typically, it will descend into
   ## the tree to evaluate, and then take whatever action is
@@ -208,8 +212,24 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
   # These are explicit just to make sure I don't end up w/ implementation
   # errors that baffle me.
   of NodeFuncDef, NodeType, NodeVarDecl, NodeExportDecl, NodeVarSymNames,
-       NodeCallbackLit:
+       NodeCallbackLit, NodeParameter, NodeParamBody:
     return # Nothing to do, everything was done in the check phase.
+  of NodeUse:
+    let
+      kids      = node.children
+      module    = kids[0].getTokenText()
+      savedLock = s.lockAllAttrWrites
+
+    s.lockAllAttrWrites = true
+
+    if len(kids) == 1:
+      s.evalComponent(module)
+    else:
+      s.evalComponent(module, kids[1].getTokenText())
+
+    if not savedLock:
+      s.lockAllAttrWrites = false
+
   of NodeReturn:
     if node.children.len() != 0:
       node.children[0].evalNode(s)
@@ -256,21 +276,17 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
 
     case err.code
     of errCantSet:
-      when defined(errOnOverride):
-        fatal(err.msg, node)
+      fatal(err.msg, node)
     of errOk:
-      if node.kind == NodeAttrSetLock:
+      if node.kind == NodeAttrSetLock or s.lockAllAttrWrites:
         node.attrRef.locked = true
     else:
       unreachable
-
   of NodeVarAssign:
     node.children[1].evalNode(s)
 
-    let name  = node.children[0].getTokenText()
-
+    let name = node.children[0].getTokenText()
     s.runtimeVarSet(name, node.children[1].value)
-
   of NodeUnpack:
     node.children[^1].evalNode(s)
     let
@@ -281,7 +297,6 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
     for i, item in tup:
       let name = node.children[i].getTokenText()
       s.runtimeVarSet(name, item)
-
   of NodeIfStmt:
     # This is the "top-level" node in an IF statement.  The nodes
     # below it will all be of kind NodeConditional NodeElse.  We march
@@ -581,3 +596,106 @@ proc evalNode*(node: Con4mNode, s: ConfigState) =
         node.value = node.attrRef.value.get()
     else:
       node.value = s.runtimeVarLookup(node.getTokenText())
+
+proc evalComponent*(s: ConfigState, component: ComponentInfo) =
+  if s.programRoot == nil:
+    s.programRoot = component
+
+  let
+    savedScopes     = s.frames
+    savedComponent  = s.currentComponent
+    savedFuncOrigin = s.funcOrigin
+
+  s.currentComponent = component
+  s.funcOrigin       = false
+
+  s.loadCurrentComponent()
+  # When we parsed and checked the component, we did not fetch any
+  # of its dependencies.
+
+  if component.alreadyRunning:
+    # This shouldn't be possible due to the static check, but hey.
+    raise newException(ValueError, "Recursive call of module " & component.url)
+
+  component.alreadyRunning = true
+
+  if len(savedScopes) != 0:
+    for k, v in savedScopes[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
+
+  var globalScope: RuntimeFrame
+
+  if component.savedGlobals == nil:
+    component.savedGlobals = RuntimeFrame()
+    let varScope = component.entryPoint.varScope
+
+    for k, v in varScope.contents:
+      component.savedGlobals[k] = v.value
+
+  globalScope = component.savedGlobals
+
+  for k, v in s.keptGlobals:
+    globalScope[k] = v.value
+
+  s.frames = @[globalScope]
+
+  for k, v in s.currentComponent.varParams:
+    if v.value.isSome() and k notin globalScope:
+      globalScope[k] = v.value
+    elif v.default.isSome():
+      globalScope[k] = v.default
+    elif v.defaultCb.isSome():
+      globalScope[k] = s.sCall(v.defaultCb.get(), @[])
+    else:
+      raise newException(ValueError, "Component not configured")
+
+  for k, v in s.currentcomponent.attrParams:
+    # We'll first do a lookup of the scope the attr should be set in.
+    # If the scope needs to be created, vlSecDef will create it.
+    let
+      fqn       = strutils.split(k, ".")
+      scopeAOrE = s.attrs.attrLookup(fqn[0 ..< ^1], 0, vlSecDef)
+
+    if scopeAOrE.isA(AttrErr):
+      let err = scopeAOrE.get(AttrErr)
+      raise newException(ValueError, err.msg)
+
+    let aOrS = scopeAOrE.get(AttrOrSub)
+
+    if aOrS.isA(Attribute):
+      let msg = strutils.join(fqn[0 ..< ^1], ".") &
+           " is an attribute, not a section, so cannot contain an attribute."
+      raise newException(ValueError, msg)
+
+    let scope = aOrS.get(AttrScope)
+
+    if v.value.isSome():
+      scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
+    elif v.default.isSome():
+      scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
+    elif v.defaultCb.isSome():
+      scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
+                    v.defaultType)
+    else:
+      raise newException(ValueError, "Component not configured")
+
+  evalNode(s.currentComponent.entrypoint, s)
+
+  component.alreadyRunning = false
+
+  for k, v in s.keptGlobals:
+    v.value = globalScope[k]
+
+  if len(savedScopes) != 0:
+    for k, v in savedScopes[0]:
+      if k in s.keptGlobals:
+        s.keptGlobals[k].value = v
+
+  s.funcOrigin        = savedFuncOrigin
+  s.currentComponent  = savedComponent
+  s.frames            = savedScopes
+
+
+proc evalComponent*(s: ConfigState, module: string, loc: string = "") =
+  s.evalComponent(s.getComponentReference(module, loc))

@@ -2,8 +2,18 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023, Crash Override, Inc.
 
-import types, options, st, streams, os, nimutils, json
+import types, options, st, streams, os, nimutils, json, strutils
 
+proc perLineWrap*(s: string,
+                  startingMaxLineWidth = -1,
+                  firstHangingIndent   = 2,
+                  remainingIndents     = 0,
+                  splitLongWords       = true,
+                  seps: set[char]      = Whitespace,
+                  newLine              = "\n"): string =
+  ## deprecated; no longer does what it says either.
+  return s.indentWrap(startingMaxLineWidth, firstHangingIndent, splitLongWords,
+                      seps, newLine)
 # This stuff comes before some imports because Nim sucks at forward referencing.
 var config: AttrScope = nil
 
@@ -20,9 +30,7 @@ proc getConf*[T](s: string): Option[T] =
 import st, stack
 
 template cmdLineErrorOutput(msg: string) =
-    let formatted = perLineWrap(withColor( "error: ", "red") & msg ,
-                                firstHangingIndent = len("error: con4m: "),
-                                remainingIndents = 0)
+    let formatted = withColor( "error: ", "red").strip() & msg
     stderr.writeLine(formatted)
     quit(1)
 
@@ -43,14 +51,14 @@ proc outputResults*(ctx: ConfigState) =
   of "json":
     let raw = ctx.attrs.scopeToJson()
     stderr.writeLine(withColor("Results:", "red"))
-    stderr.writeLine(parseJson(ctx.attrs.scopeToJson()).pretty())
+    stderr.writeLine(parseJson(raw).pretty())
 
   else: discard
 
-template safeRun(stack: ConfigStack) =
+template safeRun(stack: ConfigStack, backtrace = false) =
   try:
     stack.errored = false
-    discard stack.run()
+    discard stack.run(backtrace)
   except:
     stack.errored = true
     getCurrentExceptionMsg().cmdLineErrorOutput()
@@ -85,14 +93,13 @@ proc con4mRun*(files, specs: seq[string]) =
     if addOut:
       stack.addCallback(outputResults)
 
-  stack.safeRun()
+  stack.safeRun(backtrace = true)
 
 proc specGenRun*(files: seq[string]) =
   let
     stubs = (getConf[seq[string]]("stubs")).getOrElse(@[])
     stack = newConfigStack().addSystemBuiltins(which=srsValidation).
             addGetoptSpecLoad()
-
 
   for item in files:
     let
@@ -103,5 +110,5 @@ proc specGenRun*(files: seq[string]) =
 
   stack.addCodeGen(getConf[string]("language").get(),
                    getConf[string]("output_file").getOrElse(""))
-
-  stack.safeRun()
+  stack.safeRun(backtrace = true)
+  echo withColor("Code generation successful.", "atomiclime")

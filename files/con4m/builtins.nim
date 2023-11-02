@@ -584,7 +584,7 @@ proc findExeC4m*(args: seq[Box], s: ConfigState): Option[Box] =
     return some(pack(results[0]))
 
 proc c4mChdir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
   unprivileged:
     try:
       setCurrentDir(path)
@@ -618,7 +618,7 @@ proc c4mSetEnv*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
       result = falseRet
 
 proc c4mIsDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -630,7 +630,7 @@ proc c4mIsDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
         result = falseRet
 
 proc c4mIsFile*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -645,7 +645,7 @@ proc c4mIsLink*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   unprivileged:
     try:
       let
-        path = unpack[string](args[0])
+        path = resolvePath(unpack[string](args[0]))
         kind = getFileInfo(path, false).kind
 
       if kind == pcLinkToDir or kind == pcLinkToFile:
@@ -657,7 +657,7 @@ proc c4mIsLink*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
 proc c4mChmod*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
-    path = unpack[string](args[0])
+    path = resolvePath(unpack[string](args[0]))
     raw  = unpack[int](args[1])
     mode = cast[FilePermission](raw)
 
@@ -674,7 +674,7 @@ proc c4mGetPid*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   return some(pack(getCurrentProcessId()))
 
 proc c4mFileLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
-  let path = unpack[string](args[0])
+  let path = resolvePath(unpack[string](args[0]))
 
   unprivileged:
     try:
@@ -1294,6 +1294,9 @@ proc c4mUrlPost*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   result = some(pack(res))
 
+proc c4mExternalIp*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  result = some(pack(getMyIpV4Addr()))
+
 proc c4mUrlPostPinned*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
     url     = unpack[string](args[0])
@@ -1668,7 +1671,7 @@ the first case.
    """
 Parses a `string` into an IP address. Both ipv4 and ipv6 addresses are allowed, but blocks of addresses are not; use the CIDR type for that.
 
-Generally, using this function to convert from a `string` is not necessary; you can write IPAddr literalls with 'special' literal quotes:
+Generally, using this function to convert from a `string` is not necessary; you can write IPAddr literals with 'special' literal quotes:
 ```x := << 2001:db8:1::ab9:C0A8:102 >>```
 is functionally equal to:
 ```x := IPAddr("2001:db8:1::ab9:C0A8:102")```
@@ -1681,7 +1684,7 @@ In the first case, con4m will catch syntax errors before the configuration start
    """
 Parses a `string` that specifies a block of IP addresses into a `CIDR` type. CIDR stands for Classless Inter-Domain Routing; it's the standard way to express subnets.
 
-Generally, using this function to convert from a `string` is not necessary; you can write `CIDR` literalls with 'special' literal quotes:
+Generally, using this function to convert from a `string` is not necessary; you can write `CIDR` literals with 'special' literal quotes:
 ```x := << 192.168.0.0/16 >>```
 is functionally equal to:
 ```x := CIDR("192.168.0.0/16")```
@@ -2258,7 +2261,7 @@ Returns `true` if the given file name exists at the time of the call,  and is a 
 """,
    @["filesystem"]),
   ("is_link(string) -> bool",
-   BuiltInFn(c4mIsFile),
+   BuiltInFn(c4mIsLink),
    """
 Returns `true` if the given file name exists at the time of the call, and is a link.
 """,
@@ -2684,6 +2687,11 @@ The parameters here are:
    will NOT assume one for you.
 
 Requests that take more than 5 seconds will be canceled.
+""",
+   @["network"]),
+  ("external_ip() -> string", BuiltInFn(c4mExternalIp),
+   """
+Returns the external IP address for the current machine.
 """,
    @["network"]),
   ("url_post_pinned(string, string, dict[string, string], string) -> string",
