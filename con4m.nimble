@@ -1,5 +1,5 @@
 # Package
-version       = "0.1.5"
+version       = "0.2.0"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
@@ -9,7 +9,7 @@ installExt    = @["nim", "c4m", "c42spec", "sh"]
 
 # Dependencies
 requires "nim >= 2.0.0"
-requires "https://github.com/crashappsec/nimutils#aa09b3e90ef6e1381fa0db965a5c79105e77963c"
+requires "https://github.com/crashappsec/nimutils#a7ec24b27453342157cefe947e5730af5f5c05af"
 
 
 #before build:
