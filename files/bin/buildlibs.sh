@@ -114,6 +114,7 @@ function copy_from_package {
                 return 1
             else
                 cp ${PKG_LIBS}/${item} ${MY_LIBS}
+                echo $(color GREEN Installed ${item} to:) ${MY_LIBS}
             fi
         fi
     done
@@ -260,6 +261,21 @@ EOL
     fi
 }
 
+function ensure_hatrack {
+    if ! copy_from_package libhatrack.a ; then
+        get_src hatrack https://github.com/viega/hatrack
+        aclocal
+        autoheader
+        autoconf
+        automake
+        ./configure
+        make libhatrack.a
+        if [[ -f ${MY_LIBS}/libhatrack.a ]] ; then
+            echo $(color GREEN Installed libhatrack to:) ${MY_LIBS}/libhatrack.a
+        fi
+    fi
+}
+
 function remove_src {
   # Don't nuke the src if CON4M_DEV is on.
   if [[ -d ${SRC_DIR} ]] ; then
@@ -276,6 +292,7 @@ ensure_musl
 ensure_openssl
 ensure_pcre
 ensure_gumbo
+ensure_hatrack
 
 colorln GREEN All dependencies satisfied.
 remove_src

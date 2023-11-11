@@ -84,7 +84,7 @@ var
   default  = getEnvDir("HOME") & ".local/c0"
   localDir = getEnvDir("LOCAL_INSTALL_DIR", default)
   libDir   = localdir & "libs"
-  libs     = ["pcre", "ssl", "crypto", "gumbo"]
+  libs     = ["pcre", "ssl", "crypto", "gumbo", "hatrack"]
 
 when defined(linux):
   var
