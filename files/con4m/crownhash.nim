@@ -48,13 +48,13 @@
 ## from Nim, and currently ignore otherwise.
 
 
-import sugar, os, macros
+import sugar, os, macros, options
 
 {.pragma: hatc, cdecl, importc.}
 
 type
-  DictObj*[T, V] {. importc: "hatrack_dict_t", header: splitPath(currentSourcePath()).head & "/crownhash.h", nodecl.} = object
-  Dict*[T, V] = ref DictObj[T, V]
+  Dict*[T, V] {. importc: "hatrack_dict_t", header: splitPath(currentSourcePath()).head & "/crownhash.h", nodecl.} = object
+  DictRef*[T, V] = ref Dict[T, V]
   DictKeyType = enum
     KTInt, KTFloat, KtCStr, KtPtr, KtObjInt, KtObjReal, KtObjCstr,
     KtObjPtr, KtObjCustom, KtForce32Bits = 0x0fffffff
@@ -113,38 +113,38 @@ template ejectStackBox[T](s: StackBox[T]) =
   if s.ownedByNim:
     GC_unref(s)
 
-proc hatrack_dict_init(ctx: var DictObj, key_type: DictKeyType) {.hatc.}
-proc hatrack_dict_delete(ctx: ptr DictObj) {.hatc.}
-proc hatrack_dict_set_consistent_views(ctx: var DictObj, yes: bool) {.hatc.}
-proc hatrack_dict_get_consistent_views(ctx: var DictObj): bool {.hatc.}
-proc hatrack_dict_set_hash_offset(ctx: var DictObj, offset: cint) {.hatc.}
-proc hatrack_dict_get(ctx: var DictObj, key: pointer, found: var bool):
+proc hatrack_dict_init(ctx: var Dict, key_type: DictKeyType) {.hatc.}
+proc hatrack_dict_delete(ctx: ptr Dict) {.hatc.}
+proc hatrack_dict_set_consistent_views(ctx: var Dict, yes: bool) {.hatc.}
+proc hatrack_dict_get_consistent_views(ctx: var Dict): bool {.hatc.}
+proc hatrack_dict_set_hash_offset(ctx: var Dict, offset: cint) {.hatc.}
+proc hatrack_dict_get(ctx: var Dict, key: pointer, found: var bool):
                      pointer {.hatc.}
-proc hatrack_dict_put(ctx: var DictObj, key: pointer,
+proc hatrack_dict_put(ctx: var Dict, key: pointer,
                             value: pointer) {.
   hatc.}
-proc hatrack_dict_replace(ctx: var DictObj, key: pointer, value: pointer):
+proc hatrack_dict_replace(ctx: var Dict, key: pointer, value: pointer):
                      bool {.hatc.}
-proc hatrack_dict_add(ctx: var DictObj, key: pointer, value: pointer):
+proc hatrack_dict_add(ctx: var Dict, key: pointer, value: pointer):
                      bool {.hatc.}
-proc hatrack_dict_remove(ctx: var DictObj, key: pointer): bool {.hatc.}
-proc hatrack_dict_keys_sort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_remove(ctx: var Dict, key: pointer): bool {.hatc.}
+proc hatrack_dict_keys_sort(ctx: var Dict, n: ptr uint64):
                            pointer {.hatc.}
-proc hatrack_dict_values_sort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_values_sort(ctx: var Dict, n: ptr uint64):
                              pointer {.hatc.}
-proc hatrack_dict_items_sort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_items_sort(ctx: var Dict, n: ptr uint64):
                             pointer {.hatc.}
-proc hatrack_dict_keys_nosort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_keys_nosort(ctx: var Dict, n: ptr uint64):
                              pointer {.hatc.}
-proc hatrack_dict_values_nosort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_values_nosort(ctx: var Dict, n: ptr uint64):
                                pointer {.hatc.}
-proc hatrack_dict_items_nosort(ctx: var DictObj, n: ptr uint64):
+proc hatrack_dict_items_nosort(ctx: var Dict, n: ptr uint64):
                               pointer {.hatc.}
-proc hatrack_dict_set_free_handler[T, V](ctx: var DictObj[T, V],
-                       cb: (var DictObj[T, V], ptr RawItem) -> void) {.hatc.}
+proc hatrack_dict_set_free_handler[T, V](ctx: var Dict[T, V],
+                       cb: (var Dict[T, V], ptr RawItem) -> void) {.hatc.}
 proc register_thread() {.cdecl, importc: "mmm_register_thread" .}
 
-proc decrefDictItems[T, V](dict: var DictObj[T, V], p: ptr RawItem) =
+proc decrefDictItems[T, V](dict: var Dict[T, V], p: ptr RawItem) =
   when T is SomeString:
     ejectStrBox(cast[StrBox](p[].key))
   elif T is ref:
@@ -161,7 +161,8 @@ once:
   # Auto-register the main thread.
   registerThread()
 
-proc initDict*[T, V](dict: var DictObj[T, V]) =
+proc initDict*[T, V](dict: var Dict[T, V]) =
+  ## Initialize a Dict.
   when T is SomeOrdinal:
     hatrack_dict_init(dict, KtInt)
   elif T is SomeFloat:
@@ -179,10 +180,14 @@ proc initDict*[T, V](dict: var DictObj[T, V]) =
   when not (T is SomeNumber and V is SomeNumber):
     dict.hatrack_dict_set_free_handler(decrefDictItems)
 
-proc `=destroy`*[T, V](x: DictObj[T, V]) =
+proc `=destroy`*[T, V](x: Dict[T, V]) =
+  ## Calls the underlying C cleanup routine to deallocate everything
+  ## specifically allocated in C.
   hatrack_dict_delete(addr x)
 
-proc `[]=`*[T, V](dict: var DictObj[T, V], key: T, value: sink V) =
+proc `[]=`*[T, V](dict: var Dict[T, V], key: T, value: sink V) =
+  ## This assigns, whether or not there was a previous value
+  ## associated with the passed key.
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
   var p: pointer
@@ -205,10 +210,13 @@ proc `[]=`*[T, V](dict: var DictObj[T, V], key: T, value: sink V) =
   else:
     dict.hatrack_dict_put(p, cast[pointer](value.toStackBox()))
 
-template `[]=`*[T, V](dict: Dict[T, V], key: T, value: sink V) =
+template `[]=`*[T, V](dict: DictRef[T, V], key: T, value: sink V) =
   `[]=`(dict[], key, value)
 
-proc replace*[T, V](dict: var DictObj[T, V], key: T, value: sink V): bool =
+proc replace*[T, V](dict: var Dict[T, V], key: T, value: sink V): bool =
+  ## This replaces the value associated with a given key.  If the key
+  ## has not yet been set, then `false` is returned and no value is
+  ## set.
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -232,10 +240,14 @@ proc replace*[T, V](dict: var DictObj[T, V], key: T, value: sink V): bool =
   else:
     return dict.hatrack_dict_replace(p, cast[pointer](value.toStackBox()))
 
-template replace*[T, V](dict: Dict[T, V], key: T, value: sink V): bool =
+template replace*[T, V](dict: DictRef[T, V], key: T, value: sink V): bool =
   replace(dict[], key, value)
 
-proc add*[T, V](dict: var DictObj[T, V], key: T, value: sink V): bool =
+proc add*[T, V](dict: var Dict[T, V], key: T, value: sink V): bool =
+  ## This sets a value associated with a given key, but only if the
+  ## key does not exist in the hash table at the time of the
+  ## operation.
+
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -259,10 +271,16 @@ proc add*[T, V](dict: var DictObj[T, V], key: T, value: sink V): bool =
   else:
     return dict.hatrack_dict_replace(p, cast[pointer](value.toStackBox()))
 
-template add*[T, V](dict: Dict[T, V], key: T, value: sink V): bool =
+template add*[T, V](dict: DictRef[T, V], key: T, value: sink V): bool =
   add(dict[], key, value)
 
-proc `[]`*[T, V](dict: var DictObj[T, V], key: T) : V =
+proc lookup*[T, V](dict: var Dict[T, V], key: T): Option[V] =
+  ## Retrieve the value associated with a key, wrapping it in
+  ## an option. If the key isn't present, then returns `none`.
+  ##
+  ## See the [] operator for a version that throws an exception
+  ## if the key is not present in the table.
+
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -280,42 +298,69 @@ proc `[]`*[T, V](dict: var DictObj[T, V], key: T) : V =
   if found:
     when V is SomeOrdinal:
       var x: int64 = cast[int64](retp)
-      result = V(x)
+      result = some(V(x))
     elif V is SomeFloat:
       var x: float = cast[float](retp)
-      result = V(x)
+      result = some(V(x))
     elif V is string:
       var box = cast[StrBox](retp)
-      result = box.unboxStr()
+      result = some(box.unboxStr())
     elif V is cstring:
       var
         box = cast[StrBox](retp)
         str = box.unboxStr()
-      result = cstring(str)
+      result = some(cstring(str))
     elif V is SomeRef:
       # No need to worry about possible incref; the type will cause
       # the right thing to happen here.
-      result = cast[V](retp)
+      result = some(cast[V](retp))
     else:
       var box = cast[StackBox[V]](retp)
-      result = box.contents
+      result = some(box.contents)
+
+proc contains*[T, V](dict: var Dict[T, V], key: T): bool =
+  ## In a multi-threaded environment, this shouldn't be used when
+  ## there might be any sort of race condition.  Use lookup() instead.
+  return dict.lookup(key).isSome()
+
+template contains*[T, V](dict: DictRef[T, V], key: T): bool =
+  contains(dict[], key)
+
+proc `[]`*[T, V](dict: var Dict[T, V], key: T) : V =
+  ## Retrieve the value associated with a key, or else throws an erro
+  ## if it's not present.
+  ##
+  ## See `lookup` for a version that returns an Option, and thus
+  ## will not throw an error when the item is not found.
+
+  var optRet: Option[V] = dict.lookup(key)
+
+  if optRet.isSome():
+    return optRet.get()
   else:
     raise newException(KeyError, "Dictionary key was not found.")
 
-template `[]`*[T, V](dict: Dict[T, V], key: T) : V =
+template `[]`*[T, V](dict: DictRef[T, V], key: T) : V =
  `[]`(dict[], key)
 
-proc toDict*[T, V](pairs: openarray[(T, V)]): Dict[T, V] =
-  result = Dict[T, V]()
+proc toDict*[T, V](pairs: openarray[(T, V)]): DictRef[T, V] =
+  ## Use this to convert a nim {} literal to a Dict.
+  result = DictRef[T, V]()
   initDict(result[])
   for (k, v) in pairs:
     result[k] = v
 
-proc newDict*[T, V](): Dict[T, V] =
-  result = Dict[T, V]()
+proc newDict*[T, V](): DictRef[T, V] =
+  ## Heap-allocate a DictRef
+  result = DictRef[T, V]()
   initDict[T, V](result[])
 
-proc delete*[T, V](dict: var DictObj[T, V], key: T) =
+proc del*[T, V](dict: var Dict[T, V], key: T): bool {.discardable.} =
+  ## Deletes any value associated with a given key.
+  ##
+  ## Note that this does *not* throw an exception if the item is not present,
+  ## as multiple threads might be attempting parallel deletes. Instead,
+  ## if you care about the op succeeding, check the return value.
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -327,13 +372,28 @@ proc delete*[T, V](dict: var DictObj[T, V], key: T) =
   else:
     p = cast[pointer](key)
 
-  if not dict.hatrack_dict_remove(p):
-    raise newException(KeyError, "Item was not in dictionary.")
+  return dict.hatrack_dict_remove(p)
 
-template delete*[T, V](dict: Dict[T, V], key: T) =
-  delete[T, V](dict[], key)
+template delete*[T, V](dict: var Dict[T, V], key: T): bool =
+  del[T, V](dict, key)
 
-proc keys*[T, V](dict: var DictObj[T, V], sort = false): seq[T] =
+template del*[T, V](dict: DictRef[T, V], key: T): bool =
+  del[T, V](dict[], key)
+
+template delete*[T, V](dict: DictRef[T, V], key: T): bool =
+  del[T, V](dict[], key)
+
+proc keys*[T, V](dict: var Dict[T, V], sort = false): seq[T] =
+  ## Returns a consistent view of all keys in a dictionary at some
+  ## moment in time during the execution of the function.
+  ##
+  ## Note that this is *not* an iterator. This is intentional. The
+  ## only way to get a consistent view in a parallel environment is to
+  ## create a consistent copy; we already have the copy, so having an
+  ## extra layer of cursor state is definitely not needed.
+  ##
+  ## Memory is cheap and plentyful; you'll survive.
+
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -362,10 +422,20 @@ proc keys*[T, V](dict: var DictObj[T, V], sort = false): seq[T] =
     else:
       result.add(T(p[i]))
 
-template keys*[T, V](dict: var Dict[T, V], sort = false): seq[T] =
+template keys*[T, V](dict: DictRef[T, V], sort = false): seq[T] =
   keys[T, V](dict[], sort)
 
-proc values*[T, V](dict: var DictObj[T, V], sort = false): seq[V] =
+proc values*[T, V](dict: var Dict[T, V], sort = false): seq[V] =
+  ## Returns a consistent view of all values in a dictionary at some
+  ## moment in time during the execution of the function.
+  ##
+  ## Note that this is *not* an iterator. This is intentional. The
+  ## only way to get a consistent view in a parallel environment is to
+  ## create a consistent copy; we already have the copy, so having an
+  ## extra layer of cursor state is definitely not needed.
+  ##
+  ## Memory is cheap and plentyful; you'll survive.
+
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -402,10 +472,20 @@ proc values*[T, V](dict: var DictObj[T, V], sort = false): seq[V] =
     else:
       result.add(unboxStackObj[V](p[i]))
 
-template values*[T, V](dict: var Dict[T, V], sort = false): seq[V] =
+template values*[T, V](dict: DictRef[T, V], sort = false): seq[V] =
   values[T, V](dict[], sort)
 
-proc items*[T, V](dict: var DictObj[T, V], sort = false): seq[(T, V)] =
+proc items*[T, V](dict: var Dict[T, V], sort = false): seq[(T, V)] =
+  ## Returns a consistent view of all key, value pairs in a dictionary
+  ## at some moment in time during the execution of the function.
+  ##
+  ## Note that this is *not* an iterator. This is intentional. The
+  ## only way to get a consistent view in a parallel environment is to
+  ## create a consistent copy; we already have the copy, so having an
+  ## extra layer of cursor state is definitely not needed.
+  ##
+  ## Memory is cheap and plentyful; you'll survive.
+
   if not dict.hatrack_dict_get_consistent_views():
     initDict[T, V](dict)
 
@@ -448,12 +528,59 @@ proc items*[T, V](dict: var DictObj[T, V], sort = false): seq[(T, V)] =
 
     result.add(item)
 
-template items*[T, V](dict: var Dict[T, V], sort = false): seq[(T, V)] =
+template items*[T, V](dict: DictRef[T, V], sort = false): seq[(T, V)] =
   items[T, V](dict[], sort)
 
+proc `$`*[T, V](dict: var Dict[T, V]): string =
+  let view = dict.items()
+  result = "{ "
+  for i, (k, v) in view:
+    if i != 0:
+      result &= ", "
+    when T is SomeString:
+      result &= "\"" & $(k) & "\" : "
+    else:
+      result &= $(k) & " : "
+    when V is SomeString:
+      result &= "\"" & $(v) & "\""
+    else:
+      result &= $(v)
+  result &= " }"
+
+template `$`*[T, V](dict: DictRef[T, V]): string =
+  `$`[T, V](dict[])
+
+proc deepEquals*[T, V](dict1: var Dict[T, V], dict2: var Dict[T, V]): bool =
+  ## This operation doesn't make too much sense in most cases; we'll
+  ## leave == to default to a pointer comparison (for dictrefs).
+  let
+    view1 = dict1.items[T, V](sort = true)
+    view2 = dict2.items[T, V](sort = true)
+
+  if view1.len() != view2.len():
+    return false
+
+  for i in 0 ..< view1.len():
+    let
+      (k1, v1) = view1[i]
+      (k2, v2) = view2[i]
+    if k1 != k2 or v1 != v2:
+      return false
+
+  return true
+
+template deepEquals*[T, V](dict1: var Dict[T, V], dict2: DictRef[T, V]): bool =
+  deepEquals[T, V](dict1, dict2[])
+
+template deepEquals*[T, V](dict1: DictRef[T, V], dict2: var Dict[T, V]): bool =
+  deepEquals[T, V](dict1[], dict2)
+
+template deepEquals*[T, V](dict1: DictRef[T, V], dict2: DictRef[T, V]): bool =
+  deepEquals[T, V](dict1[], dict2[])
+
 when true:
-  var x: Dict[int, string]
-  var y: DictObj[int, string]
+  var x: DictRef[int, string]
+  var y: Dict[int, string]
   x = {42: "bar", 1000 : "zork", 17 : "foo", 500: "boz"}.toDict()
 
   y[500]  = "boz"
@@ -471,8 +598,8 @@ when true:
     y[17] = x[17]
     echo y[17]
     if i mod 2 == 1:
-      x.delete(17)
-      y.delete(17)
+      x.del(17)
+      y.del(17)
 
   echo x.keys()
   echo x.values()
@@ -481,8 +608,8 @@ when true:
   echo y.keys()
   echo y.values()
   echo y.items()
-  var d2: Dict[string, int] = newDict[string, int]()
-  var seqstr = @["ay", "bee", "cee", "dee", "e", "eff", "gee", "h", "i", "j"]
+  var d2: DictRef[string, int] = newDict[string, int]()
+  var seqstr = ["ay", "bee", "cee", "dee", "e", "eff", "gee", "h", "i", "j"]
 
   for i, item in seqstr:
     d2[item] = i
@@ -495,10 +622,14 @@ when true:
   echo d2.values(sort = true)
   echo d2.items(sort = true)
 
-  var d3: Dict[string, seq[string]] = newDict[string, seq[string]]()
+  var d3 = newDict[string, array[10, string]]()
   for item in seqstr:
     d3[item] = seqstr
 
   echo d3[seqstr[0]]
 
+  echo x
+  echo y
+  echo d2
+  echo d3
   quit()
