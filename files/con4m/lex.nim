@@ -255,9 +255,11 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
     i += 1
 
 proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
-  if filename != "": setCurrentFileName(filename)
-
   ## Lexical analysis. Doesn't need to be exported.
+
+  if filename != "":
+    setCurrentFileName(filename)
+
   var
     lineNo: int = 1
     lineStart: int = s.getPosition()

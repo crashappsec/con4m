@@ -950,8 +950,8 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
 
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
-template heading(s: string): string =
-  ("<h1>" & s & "</h1>").stylizeHtml()
+template heading(s: string): Rope =
+  h1(s)
 
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
@@ -984,7 +984,7 @@ proc getUsage(cmd: CommandSpec): string =
     else:               subs = "COMMAND"
 
   let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
-  return heading(use)
+  return $(heading(use))
 
 proc getCommandList(cmd: CommandSpec): string =
   result = "<h2><center>Available Commands</center></h2><table><thead><tr>"
@@ -1040,7 +1040,7 @@ proc getAdditionalTopics(cmd: CommandSpec): string =
     topics.add(k)
 
   topics.sort()
-  result = heading("Additional Topics: ") & "\n" & instantTable(topics) & "\n"
+  result = $(h2("Additional Topics: ") & instantTable(topics))
 
 proc getFlagHelp(cmd: CommandSpec): string =
   var
@@ -1118,9 +1118,9 @@ proc getFlagHelp(cmd: CommandSpec): string =
         fstr &= "\nor: " & aliases.join(", ")
       rows.add(@[fstr, spec.doc])
 
-  var outTbl = instantTableWithHeaders(rows)
+  var outTbl = instantTable(rows)
 
-  result = heading("Flags: ") & "\n" & outTbl
+  result = $(heading("Flags: ") + outTbl)
 
 proc getOneCmdHelp(cmd: CommandSpec): string =
   result = getUsage(cmd) & cmd.doc.stylizeMd()
@@ -1136,7 +1136,9 @@ proc getOneCmdHelp(cmd: CommandSpec): string =
 type Corpus = OrderedFileTable
 
 proc getHelp(corpus: Corpus, inargs: seq[string]): string =
-  var args  = inargs
+  var
+    args  = inargs
+    r: Rope
 
   if len(args) == 0:
     args = @["main"]
@@ -1144,7 +1146,7 @@ proc getHelp(corpus: Corpus, inargs: seq[string]): string =
   for arg in args:
     if arg notin corpus:
       if arg != "topics":
-        result.add("<h2>" & "No such topic: <em>" & arg & "</em></h2>")
+        r += h2(textRope("No such topic: ") + em(arg))
         continue
 
       var topics: seq[string] = @[]
@@ -1152,9 +1154,9 @@ proc getHelp(corpus: Corpus, inargs: seq[string]): string =
 
       for key, _ in corpus: topics.add(key)
 
-      result.add("<h1> Available Help Topics</h1>")
+      r += h1("Available Help Topics")
 
-      result.add(topics.instantTable(html = true))
+      r += (topics.instantTable())
 
     else:
       var processed = arg.replace('_', ' ')
@@ -1191,12 +1193,12 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
-          stderr.writeLine(heading("Help for " & given))
+          print(heading("Help for " & given), file = stderr)
           stderr.writeLine(reporting.indentWrap(hangingIndent = 0))
           continue
         if given != reporting:
-          stderr.writeLine(heading("Note: '" & given & "' is an alias for '" &
-            reporting & "'"))
+          print(heading("Note: '" & given & "' is an alias for '" &
+            reporting & "'"), stderr)
 
         result &= getOneCmdHelp(cmd.commands[reporting])
 
