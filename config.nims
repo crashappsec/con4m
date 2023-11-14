@@ -4,8 +4,8 @@ switch("define", "testCases")
 switch("debugger", "native")
 
 when not defined(debug):
-    switch("d", "release")
-    switch("opt", "speed")
+  switch("d", "release")
+  switch("opt", "speed")
 
 
 applyCommonLinkOptions()
