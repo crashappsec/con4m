@@ -33,14 +33,14 @@ proc basicConfigureOneParam(state:     ConfigState,
 
   if boxOpt.isSome():
     default = param.defaultType.oneArgToString(boxOpt.get())
-    default = stylize("Default is: " & default, ensureNl = false)
+    default = `$`(text("Default is: " & default), ensureNl = false)
   let
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
     intro   = "Configuring: <jazzberry>" & param.name & "</jazzberry> -- " &
               "<i>" & short & "</i>\n" & long
 
-  echo intro.stylizeMd()
+  print intro
 
   while true:
     if boxOpt.isSome():
@@ -55,7 +55,7 @@ proc basicConfigureOneParam(state:     ConfigState,
       try:
         boxOpt = some(line.parseConstLiteral(param.defaultType))
       except:
-        echo(stylize(withColor("error: ", "red") & getCurrentExceptionMsg()))
+        print (color("error: ", "red") + text(getCurrentExceptionMsg()))
         continue
 
     param.value = boxOpt
@@ -65,7 +65,7 @@ proc basicConfigureOneParam(state:     ConfigState,
     if err.isNone():
       break
 
-    echo(stylize(err.get()))
+    print(err.get())
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,

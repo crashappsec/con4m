@@ -950,14 +950,11 @@ proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
 
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
-template heading(s: string): Rope =
-  h1(s)
-
 proc addDash(s: string): string =
   if len(s) == 1: return "-" & s
   else:            return "--" & s
 
-proc getUsage(cmd: CommandSpec): string =
+proc getUsage(cmd: CommandSpec): Rope =
   var cmdName, flags, argName, subs: string
 
   if cmd.reportingName == "":
@@ -983,56 +980,21 @@ proc getUsage(cmd: CommandSpec): string =
     if cmd.subOptional: subs = "[COMMANDS]"
     else:               subs = "COMMAND"
 
-  let use = "Usage: " & cmdname & " " & flags & " " & argName & subs
-  return $(heading(use))
+  return h1(strong("Usage:") + atom(" " & cmdname & " " & flags & " " &
+    argName & subs))
 
-proc getCommandList(cmd: CommandSpec): string =
-  result = "<h2><center>Available Commands</center></h2><table><thead><tr>"
-
+proc getCommandList(cmd: CommandSpec): Rope =
   var
-    cmds:       seq[string]
-    largestCmd = 0
-
+    caption = "Available commands"
+    cmds: seq[string]
+  
   for k, sub in cmd.commands:
-    if sub.reportingName notin cmds:
+    if sub.reportingName notin cmds and sub.reportingName != "":
       cmds.add(sub.reportingName)
 
-  cmds.sort()
+  result = paragraph(center(cmds.instantTable(width = 40, caption = caption)))
 
-  for item in cmds:
-    if item.len() > largestCmd:
-      largestCmd = item.len()
-
-  var
-    maxColumns = terminalWidth() div (largestCmd + 6)
-    numColumns = if maxColumns > len(cmds): len(cmds) else: maxColumns
-
-
-  for i, item in cmds:
-    if i != 0 and (i mod numColumns == 0):
-      result &= "</tr><tr>"
-    result &= "<td>" & item & "</td>"
-
-  let n = (numColumns - (len(cmds) mod numColumns)) mod numColumns
-
-  for i in 0 ..< n:
-    result &= "<td></td>"
-
-  result &= "</tr></thead>"
-  result &= "<caption>See additional help for info on individual commands.</caption>"
-  result &= "</table>"
-
-  if numColumns < maxColumns:
-    var
-      twidth = terminalWidth() div 2
-      width  = numColumns * (largestCmd + 6)
-
-    if twidth > width:
-      result = "<center><div width=" & `$`(twidth) & ">" & result & "</div></center>"
-
-  result = result.stylizeHtml()
-
-proc getAdditionalTopics(cmd: CommandSpec): string =
+proc getAdditionalTopics(cmd: CommandSpec): Rope =
   var topics: seq[string]
 
   if cmd.extraHelpTopics.len() == 0: return
@@ -1040,9 +1002,10 @@ proc getAdditionalTopics(cmd: CommandSpec): string =
     topics.add(k)
 
   topics.sort()
-  result = $(h2("Additional Topics: ") & instantTable(topics))
+  if topics.len() != 0:
+    result = topics.instantTable("Available topics")
 
-proc getFlagHelp(cmd: CommandSpec): string =
+proc getFlagHelp(cmd: CommandSpec): Rope =
   var
     flagList: seq[string]
     rows:     seq[seq[string]] = @[@["Flag", "Description"]]
@@ -1118,20 +1081,20 @@ proc getFlagHelp(cmd: CommandSpec): string =
         fstr &= "\nor: " & aliases.join(", ")
       rows.add(@[fstr, spec.doc])
 
-  var outTbl = instantTable(rows)
+  if len(rows) != 0:
+    result = quickTable(rows, "Command Flags")
 
-  result = $(heading("Flags: ") + outTbl)
-
-proc getOneCmdHelp(cmd: CommandSpec): string =
-  result = getUsage(cmd) & cmd.doc.stylizeMd()
+proc getOneCmdHelp(cmd: CommandSpec): Rope =
+  result = getUsage(cmd) + pre(markdown(cmd.doc))
 
   if len(cmd.commands) != 0:
-     result &= cmd.getCommandList()
+     result += cmd.getCommandList()
 
-  result &= cmd.getFlagHelp()
+  var f = cmd.getFlagHelp()
+  result += f  
 
   if len(cmd.extraHelpTopics) != 0:
-    result &= cmd.getAdditionalTopics()
+    result += cmd.getAdditionalTopics()
 
 type Corpus = OrderedFileTable
 
@@ -1162,12 +1125,18 @@ proc getHelp(corpus: Corpus, inargs: seq[string]): string =
       var processed = arg.replace('_', ' ')
       processed = $(Rune(processed[0]).toUpper()) & processed[1 .. ^1]
 
-      result.add(unicode.strip(corpus[arg]).markdownToHtml())
+      r += markdown(unicode.strip(corpus[arg]))
 
+  result = $(r)
+
+  print(result)
+  
 proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
 
+  var rope: Rope
+  
   if len(args) == 0:
-    result = getOneCmdHelp(cmd)
+    rope = getOneCmdHelp(cmd)
   else:
     var legitCmds: seq[(bool, string, string)] = @[]
 
@@ -1189,18 +1158,20 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
             stderr.writeLine("No such command: " & item)
 
     if len(legitCmds) == 0:
-      result &= getOneCmdHelp(cmd)
+      rope += getOneCmdHelp(cmd)
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
-          print(heading("Help for " & given), file = stderr)
+          print(h1("Help for " & given), file = stderr)
           stderr.writeLine(reporting.indentWrap(hangingIndent = 0))
           continue
         if given != reporting:
-          print(heading("Note: '" & given & "' is an alias for '" &
+          print(h1("Note: '" & given & "' is an alias for '" &
             reporting & "'"), stderr)
 
-        result &= getOneCmdHelp(cmd.commands[reporting])
+        rope += getOneCmdHelp(cmd.commands[reporting])
+
+  print rope
 
 proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
   result = ""

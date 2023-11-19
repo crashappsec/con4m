@@ -30,7 +30,7 @@ proc getConf*[T](s: string): Option[T] =
 import st, stack
 
 template cmdLineErrorOutput(msg: string) =
-    let formatted = withColor( "error: ", "red").strip() & msg
+    let formatted = `$`(color( "error: ", "red")).strip() & msg
     stderr.writeLine(formatted)
     quit(1)
 
@@ -50,7 +50,7 @@ proc outputResults*(ctx: ConfigState) =
   of "raw": echo ctx.attrs.scopeToJson()
   of "json":
     let raw = ctx.attrs.scopeToJson()
-    stderr.writeLine(withColor("Results:", "red"))
+    stderr.writeLine($color("Results:", "red"))
     stderr.writeLine(parseJson(raw).pretty())
 
   else: discard
@@ -111,4 +111,4 @@ proc specGenRun*(files: seq[string]) =
   stack.addCodeGen(getConf[string]("language").get(),
                    getConf[string]("output_file").getOrElse(""))
   stack.safeRun(backtrace = true)
-  echo withColor("Code generation successful.", "atomiclime")
+  echo $color("Code generation successful.", "atomiclime")

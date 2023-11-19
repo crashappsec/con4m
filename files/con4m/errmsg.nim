@@ -40,7 +40,7 @@ proc setupTopStyle() =
   styleMap["tr.even"]      = s
   styleMap["tr.odd"]       = s
   styleMap["th"]           = s
-  styleMap["caption"] = mergeStyles(styleMap["caption"], newStyle(bmargin=2))
+  styleMap["caption"] = mergeStyles(styleMap["caption"], newStyle(bpad=2))
 
 
 proc setupBottomStyle() =
@@ -54,7 +54,7 @@ proc setupBottomStyle() =
   styleMap["tr"]           = s
   styleMap["tr.even"]      = s
   styleMap["tr.odd"]       = s
-  styleMap["th"]           = newStyle(fgColor = "atomiclime", tmargin=1)
+  styleMap["th"]           = newStyle(fgColor = "atomiclime", tpad=1)
 
 
 proc formatTb(tb, throwinfo: string): string =
@@ -97,7 +97,7 @@ proc formatTb(tb, throwinfo: string): string =
   else:
     result &= "</table>"
 
-  result = result.stylizeHtml()
+  result = $(html(result))
 
   if len(nimbleDirs) > 0:
     setupBottomStyle()
@@ -109,7 +109,7 @@ proc formatTb(tb, throwinfo: string): string =
       t2 &= "<tr><td>" & k &
         "</td><td>" & v & "</td></tr>"
     t2 &= "</tbody><table><caption>Nimble packages used</caption></table></center>"
-    result &= t2.stylizeHtml()
+    result &= $(html(t2))
 
 proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
   var start = 0
@@ -140,13 +140,11 @@ proc formatCompilerError*(msg: string,
   let
     me = getAppFileName().splitPath().tail
 
-  result =  me.withColor("red") & ": " & curFileName.withColor("jazzberry") &
-    ": "
+  result =  $color(me, "red") & ": " & $color(curFileName, "jazzberry") & ": "
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
-  result &= "\n" & msg
-  result &= result.stylize()
+  result &= "\n" & $(text(msg))
 
   if t != nil and verbosity in [c4vShowLoc, c4vMax]:
     let

@@ -1,7 +1,7 @@
 import nimutils/nimscript, os
 
-switch("define", "testCases")
-switch("debugger", "native")
+#switch("define", "testCases")
+#switch("debugger", "native")
 
 when not defined(debug):
   switch("d", "release")

@@ -49,14 +49,14 @@ proc runBase(state: ConfigState, tree: Con4mNode, evalCtx: ConfigState): bool =
   state.secondPass = false
   tree.checkTree(state)
   if showChecked:
-    stderr.write(withColor("Entry point:\n", "cyan"))
+    stderr.write($color("Entry point:\n", "cyan"))
     stderr.writeLine($tree)
     for item in state.moduleFuncDefs:
       if item.kind == FnBuiltIn: unreachable
       elif item.impl.isNone(): unreachable
       else:
         let typeStr = `$`(item.tInfo)
-        stderr.writeLine(withColor(fmt"Function: {item.name}{typeStr}", "cyan"))
+        stderr.writeLine($color(fmt"Function: {item.name}{typeStr}", "cyan"))
         stderr.writeLine($item.impl.get())
 
   if state.spec.isSome():
