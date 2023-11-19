@@ -985,14 +985,14 @@ proc getUsage(cmd: CommandSpec): Rope =
 
 proc getCommandList(cmd: CommandSpec): Rope =
   var
-    caption = "Available commands"
+    title = "Available commands"
     cmds: seq[string]
   
   for k, sub in cmd.commands:
     if sub.reportingName notin cmds and sub.reportingName != "":
       cmds.add(sub.reportingName)
 
-  result = paragraph(center(cmds.instantTable(width = 40, caption = caption)))
+  result = paragraph(center(cmds.instantTable(width = 40, title = title)))
 
 proc getAdditionalTopics(cmd: CommandSpec): Rope =
   var topics: seq[string]
