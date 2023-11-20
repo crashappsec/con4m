@@ -414,7 +414,7 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): Rope =
     rows.add(row)
 
   try:
-   result += rows.quickTable()
+    result += rows.quickTable()
   except:
     result += h2("Empty table.")
 
