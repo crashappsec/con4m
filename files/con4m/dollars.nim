@@ -345,7 +345,10 @@ proc oneArgToString*(t: Con4mType,
       result = "'" & result & "'"
 
   of TypeFloat:
-    return $(unpack[float](b))
+    if b.kind == MkInt:
+      return $(unpack[int](b)) & ".0"
+    else:
+      return $(unpack[float](b))
   of TypeBool:
     return $(unpack[bool](b))
   of TypeDuration:

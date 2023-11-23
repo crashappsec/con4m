@@ -1288,8 +1288,6 @@ proc checkTree*(node: Con4mNode, s: ConfigState) {.exportc, cdecl.} =
   ctrace(fmt"{getCurrentFileName()}: type checking completed.")
 
 proc parseConstLiteral*(s: string, t: Con4mType): Box =
-  var err = false
-
   if not t.unify(stringType).isBottom():
     return pack(s)
 
@@ -1297,8 +1295,13 @@ proc parseConstLiteral*(s: string, t: Con4mType): Box =
     let tree = s.parseLiteral()
 
     tree.checkNode(ConfigState())
-    if tree.isConstLit() and tree.typeInfo.unify(t).isBottom():
-      return tree.value
+    if tree.isConstLit() and not tree.typeInfo.unify(t).isBottom():
+      if t == floatType and tree.value.kind == MkInt:
+        return pack(float(unpack[int](tree.value)))        
+      else:
+        return tree.value
+    elif tree.typeInfo == intType and t == floatType:
+      return pack(float(unpack[int](tree.value)))
   except:
     discard
 

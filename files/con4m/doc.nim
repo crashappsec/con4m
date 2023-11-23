@@ -799,8 +799,9 @@ proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
 
 proc getMatchingConfigOptions*(state: ConfigState,
                                section                        = "",
-                               heading                        = "",
+                               title                          = "",
                                showHiddenFields               = false,
+                               headings: openarray[string]    = [],
                                filterTerms: openarray[string] = [],
                                cols: openarray[ConfigCols]    = 
                                      [CcVarName, CcType, CcDefault, CcLong],
@@ -812,6 +813,12 @@ proc getMatchingConfigOptions*(state: ConfigState,
   var 
     sec:   Con4mSectionType
     cells: seq[seq[Rope]]
+
+  if headings.len() != 0:
+    var row: seq[Rope]
+    for item in headings:
+      row.add(th(item))
+    cells.add(row)
 
   if section == "":
     sec = state.spec.get().rootSpec
@@ -886,7 +893,9 @@ proc getMatchingConfigOptions*(state: ConfigState,
       cells.add(thisRow)
 
   if len(cells) != 0:
-    result = quickTable(cells, title = heading, noheaders = true, 
+    var noheaders = if headings.len() == 0: false else: true
+    
+    result = quickTable(cells, title = title, noheaders = noheaders,
                                        class = "help")
 
 proc getConfigOptionDocs*(state: ConfigState,
@@ -943,6 +952,7 @@ proc getConfigOptionDocs*(state: ConfigState,
   if sec.doc.isSome():
     if expandDocField:
       result += markdown(sec.doc.get())
+    else:
       result += text(sec.doc.get(), pre = false)
   else:
     result += text("There is no documentation for the section: ") +
@@ -1160,7 +1170,7 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
                              asLit = true, filter: openarray[string] = [],
                              colsToMatch: openarray[string] = [],
                              transformers: TransformTableRef = nil):
-                               seq[seq[string]] =
+                               seq[seq[Rope]] =
   let objOpt = state.attrs.getObjectOpt(fqn)
   var
     combinedCols: seq[string]
@@ -1169,15 +1179,14 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
     
   for item in fieldsToUse:
     combinedCols.add(item)
+
   if len(filter) != 0:
     doFilter = true
-    var n = fieldsToUse.len()
 
     for i, item in colsToMatch:
       if item notin fieldsToUse:
+        searchIx.add(combinedCols.len())
         combinedCols.add(item)
-        searchIx.add(n)
-        n += 1
       else:
         searchIx.add(i)
         
@@ -1187,28 +1196,32 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
 
   let obj = objOpt.get()
   for k, v in obj.contents:
+
     if v.isA(Attribute):
       continue
-    var thisRow = @[k]
+    var thisRow = @[atom(k)]
 
-    let rest = state.getObjectValuesAsArray(fqn & "." & k, fieldsToUse, asLit,
+    let rest = state.getObjectValuesAsArray(fqn & "." & k, combinedCols, asLit,
                                                         transformers)
-    
     if doFilter:
       var addedRow = false
 
       for ix in searchIx:
         if ix < rest.len():
-          for i, item in filter:
-            if item in rest[i]:
-              thisRow &= rest
-              result.add(thisRow[0 ..< fieldsToUse.len()])
+          for item in filter:
+            if item in rest[ix]:
+              for n in rest:
+                thisRow.add(text(n))
+              # .. instead of ..< b/c we also added name to front
+              result.add(thisRow[0 .. fieldsToUse.len()])
               addedRow = true
               break
         if addedRow:
           break
           
     else:
+      for item in rest:
+        thisRow.add(text(item))
       result.add(thisRow)
 
 proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
@@ -1248,9 +1261,9 @@ proc cellsToItems(cells: seq[seq[Rope]]): Rope =
 
     for item in row:
       if cur == nil:
-        cur = item.contained
+        cur = item
       else:
-        cur = cur.link(item.contained)
+        cur = cur.link(item)
     if cur != nil:
       listItems.add(cur)
 
@@ -1262,7 +1275,6 @@ proc getInstanceDocs*(state:          ConfigState,
                       headings:       openarray[string]  = [],
                       searchFields:   openarray[string]  = [],
                       searchTerms:    openarray[string]  = [],
-                      asList                             = false,
                       title                              = Rope(nil),
                       caption                            = Rope(nil),
                       transformers:   TransformTableRef  = nil): Rope =
@@ -1317,11 +1329,8 @@ proc getInstanceDocs*(state:          ConfigState,
         row.add(em("None"))
     cells.add(row)
 
-  if asList:
-    result = cellsToItems(cells)
-
   var noHeaders = if headings.len() == 0: true else: false
 
-  return quickTable(cells, noHeaders = noHeaders, title = title,
-                    caption = caption, class = "help")
+  result = quickTable(cells, noHeaders = noHeaders, title = title,
+                                         caption = caption, class = "help")
           
