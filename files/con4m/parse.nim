@@ -153,6 +153,20 @@ proc inLoop(ctx: var ParseCtx): bool {.inline.} =
 
 proc curTok(ctx: var ParseCtx): Con4mToken
 
+proc addParentInfo(kid, parent: Con4mNode) =
+  kid.parent = parent
+
+  for item in kid.children:
+    item.addParentInfo(kid)
+
+proc addParentInfo(node: Con4mNode) =
+  ## We do this after finishing the parse; since we do a tiny bit of
+  ## inline tree altering around expressions, it's easier to just come
+  ## back and do it when everything's done then to special case those
+  ## bits.
+  for item in node.children:
+    item.addParentInfo(node)
+
 proc newNode(ctx: var ParseCtx, kind: Con4mNodeKind): Con4mNode =
   ctx.curNodeId += 1
 
@@ -214,6 +228,8 @@ template production(prodName: untyped,
 
       try:
         result = ctx.`prodName`()
+        result.addParentInfo()
+
       finally:
         errs = ctx.errors
 

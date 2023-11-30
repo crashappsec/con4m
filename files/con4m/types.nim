@@ -52,16 +52,18 @@ type
     ## user.
     NodeModule, NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, 
     NodeUnpack, NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, 
-    NodeForStmt, NodeWhileStmt, NodeBreakStmt,
-    NodeContinueStmt, NodeReturnStmt, NodeStringLit, NodeIntLit, NodeFloatLit, NodeBoolLit, NodeNot,
-    NodeMember, NodeLiteral,
-    NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit,
-    NodeTupleLit, NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
+    NodeForStmt, NodeWhileStmt, NodeBreakStmt,  NodeContinueStmt,
+    NodeReturnStmt, NodeStringLit, NodeIntLit, NodeFloatLit, NodeBoolLit,
+    NodeNot, NodeMember, NodeLiteral, NodeIndex, NodeActuals, NodeCall,
+    NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit, NodeTupleLit, 
+    NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnumStmt, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeSpec,
     NodeType, NodeTypeVar, NodeTypeFunc, NodeTypeTuple, NodeTypeList,
-    NodeTypeDict, NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg, NodeParenExpr,
-    NodeVarStmt, NodeExportStmt, NodeVarSymNames, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeNoCallbackName
+    NodeTypeDict, NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec, NodeTypeBuiltin, 
+    NodeReturnType, NodeTypeVararg, NodeParenExpr, NodeVarStmt, NodeExportStmt,
+    NodeVarSymNames, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal,
+    NodeNoCallbackName
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -192,6 +194,7 @@ type
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
     allTokens*:    TokenBox
+    parent*:       Con4mNode
 
   BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.

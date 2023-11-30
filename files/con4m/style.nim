@@ -25,6 +25,7 @@ type
     padCallArgs*:      bool   = false
     breaksAfterSec*:   int    = 1 # EXTRA breaks, not total breaks.
     breaksAfterFunc*:  int    = 1
+    breaksBe4Comment*: int    = 1 # Not for inline comments.
     breaksAfterBlock*: int    = 0
     spaceB4CallArgs*:  bool   = false
     comma*:            Rope
