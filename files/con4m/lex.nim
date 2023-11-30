@@ -149,12 +149,14 @@ template atNewLine() =
   lineStart = s.getPosition()
 
 template tok(k: Con4mTokenKind, eatNewlines: static[bool] = false) =
-  toks.add(Con4mToken(startPos:   startPos,
-                      endPos:     s.getPosition(),
-                      kind:       k,
-                      cursor:     s,
-                      lineNo:     tokenLine,
-                      lineOffset: tokenLineOffset))
+  toks.tokens.add(Con4mToken(startPos:   startPos,
+                             id:         nextId,
+                             endPos:     s.getPosition(),
+                             kind:       k,
+                             cursor:     s,
+                             lineNo:     tokenLine,
+                             lineOffset: tokenLineOffset))
+  nextId += 1
   when eatNewlines:
     let wsStart = s.getPosition()
     while s.peek() in [Rune(' '), Rune('\t')]:
@@ -166,19 +168,36 @@ template tok(k: Con4mTokenKind, eatNewlines: static[bool] = false) =
         s.advance()
     let wsEnd = s.getPosition()
     if wsEnd != wsStart:
-      toks.add(Con4mToken(startPos: wsStart, endPos: wsEnd,
-                          kind: TtWhiteSpace, cursor: s, lineNo: tokenLine,
-                          lineOffSet: tokenLineOffset + wsStart - startPos))
+      let wsTok = Con4mToken(startPos: wsStart, endPos: wsEnd, id: nextId,
+                             kind: TtWhiteSpace, cursor: s, lineNo: tokenLine,
+                             lineOffSet: tokenLineOffset + wsStart - startPos)
+      toks.tokens.add(wsTok)
+      nextId += 1
 
 # The adjustment is to chop off start/end delimiters for
 # literals... strings, tristrings, and 'other' literals: << >>
-template tok(k: Con4mTokenKind, adjustment: int) =
-  toks.add(Con4mToken(startPos:   startPos + adjustment,
-                      endPos:     s.getPosition() - adjustment,
-                      kind:       k,
-                      cursor:     s,
-                      lineNo:     tokenLine,
-                      lineOffset: tokenLineOffset))
+template tok(k: Con4mTokenKind, adjustValue: static[int], 
+             frontOnly: static[bool] = false) =
+
+  when frontOnly:
+    toks.tokens.add(Con4mToken(startPos:   startPos + adjustValue,
+                               endPos:     s.getPosition(),
+                               kind:       k,
+                               id:         nextId,
+                               cursor:     s,
+                               lineNo:     tokenLine,
+                               adjustment: adjustValue,
+                               lineOffset: tokenLineOffset))
+  else:
+    toks.tokens.add(Con4mToken(startPos:   startPos + adjustValue,
+                               endPos:     s.getPosition() - adjustValue,
+                               kind:       k,
+                               id:         nextId,
+                               cursor:     s,
+                               lineNo:     tokenLine,
+                               adjustment: adjustValue,
+                               lineOffset: tokenLineOffset))
+  nextId += 1
 
 proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
   var
@@ -254,17 +273,40 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
       result.add(t)
     i += 1
 
-proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
+template handleLitMod() =
+  if s.peek() == Rune('\''):
+    s.advance()
+  
+    var 
+      r:        Rune = s.read()
+      modifier: seq[Rune]
+
+    if not r.isIdStart():
+      tok(ErrorLitMod)
+    else:
+      modifier.add(r)
+
+      while true:
+        let r = s.peek()
+
+        if not r.isIdContinue():
+          break
+
+        modifier.add(r)
+        s.advance()
+
+      toks.tokens[^1].litType = $(modifier)
+
+proc lex*(s: StringCursor): (bool, TokenBox) =
   ## Lexical analysis. Doesn't need to be exported.
 
-  if filename != "":
-    setCurrentFileName(filename)
-
   var
+    nextId: int = 1
     lineNo: int = 1
     lineStart: int = s.getPosition()
-    toks = @[Con4mToken(startPos: -1, endPos: -1, kind: TtSof, cursor: s,
-                       lineNo: -1, lineOffSet: -1)]
+    toks = TokenBox(tokens: @[Con4mToken(startPos: -1, endPos: -1,
+                              kind: TtSof, cursor: s, lineNo: -1,
+                              lineOffSet: -1)])
 
   while true:
     let
@@ -300,7 +342,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           break # The newline should be a separate token.
         else:
           s.advance()
-      tok(TtLineComment)
+      tok(TtLineComment, 1, frontOnly = true)
     of Rune('~'):
       tok(TtLockAttr)
     of Rune('`'):
@@ -325,7 +367,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
             break
           else:
             s.advance()
-        tok(TtLineComment)
+        tok(TtLineComment, 2, frontOnly = true)
       of Rune('*'):
         s.advance()
         while true:
@@ -334,7 +376,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
             atNewLine()
           of Rune('*'):
             if s.peek() == Rune('/'):
-              tok(TtLongComment)
+              tok(TtLongComment, 2)
               s.advance()
               break
           of Rune('\x00'):
@@ -354,8 +396,10 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
             tok(ErrorOtherLit)
             return (false, toks)
           of Rune('>'):
-            if s.read() != Rune('>'): continue
+            if s.read() != Rune('>'): 
+              continue
             tok(TtOtherLit, 2)
+            handleLitMod()
             break
           else:
             continue
@@ -445,6 +489,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
                   case s.peek()
                   of Rune(' '), Rune('\n'), Rune('\x00'):
                     tok(TtOtherLit)
+                    handleLitMod()
                     break numLit
                   else:
                     s.advance()
@@ -482,19 +527,23 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
               of Rune(' '), Rune('\n'), Rune('\x00'):
                 if flag:
                   tok(TtOtherLit)
+                  handleLitMod()
                 else:
                   s.setPosition(savedPosition)
                   tok(TtIntLit)
+                  handleLitMod()
                 break numLit
               else:
                 s.advance()
           else:
             discard
         if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
+        handleLitMod()
     of Rune('\''):
       case s.read()
       of Rune('\''):
         tok(TtCharLit)
+        handleLitMod()
       of Rune('\\'): # Skip next rune, then till we find ' (We will parse later)
         discard s.read()
         while true:
@@ -506,6 +555,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           # of Rune('\\'):  Never valid in a char literal.
           of Rune('\''):
             tok(TtCharLit)
+            handleLitMod()
             break
           else: continue
       else:
@@ -514,6 +564,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           s.setPosition(startPos)
           return (false, toks)
         tok(TtCharLit)
+        handleLitMod()
     of Rune('"'):
       var tristring = false
       
@@ -524,6 +575,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           tristring = true
         else:
           tok(TtStringLit, 1)
+          handleLitMod()
           continue
       while true:
         let r = s.read()
@@ -533,6 +585,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
         of Rune('"'):
           if not tristring:
             tok(TtStringLit, 1)
+            handleLitMod()
             break
           if s.peek() != Rune('"'):
             continue
@@ -541,6 +594,7 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
             continue
           s.advance()
           tok(TtStringLit, 3)
+          handleLitMod()
           break
         of Rune('\x00'):
           tok(ErrorStringLit)
@@ -557,11 +611,11 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
           continue
     of Rune('\x00'):
       tok(TtEOF)
-      return (true, processStrings(toks))
+      toks.tokens = processStrings(toks.tokens)
+      return (true, toks)
     else:
       var 
         r: Rune
-        litmod = false
 
       if uint(c) < 128:
         r = c
@@ -579,54 +633,48 @@ proc lex*(s: StringCursor, filename: string = ""): (bool, seq[Con4mToken]) =
         of Rune('?'):
           discard s.read()
           break
-        of Rune('"'), Rune('\''):
-          tok(TtLitMod)
-          litmod = true
-          break
-        of Rune('<'):
-          if s.peek(1) == Rune('<'):
-            tok(TtLitMod)
-            litmod = true
-          break
         else:
           if r.isIdContinue():
             discard s.read()
           else:
             break
           
-      if not litmod:
-        case $(s.slice(startPos, s.getPosition()))
-        of "var":            tok(TtVar)
-        of "True", "true":   tok(TtTrue)
-        of "False", "false": tok(TtFalse)
-        of "is":             tok(TtCmp)
-        of "and":            tok(TtAnd)
-        of "or":             tok(TtOr)
-        of "not":            tok(TtNot)
-        of "if":             tok(TtIf)
-        of "elif":           tok(TtElIf)
-        of "else":           tok(TtElse)
-        of "for":            tok(TtFor)
-        of "from":           tok(TtFrom)
-        of "to":             tok(TtTo)
-        of "break":          tok(TtBreak)
-        of "continue":       tok(TtContinue)
-        of "return":         tok(TtReturn)
-        of "enum":           tok(TtEnum)
-        of "func":           tok(TtFunc)
-        of "export":         tok(TtExportVar)
-        of "object":         tok(TtObject)
-        of "ref":            tok(TtRef)
-        else:                tok(TtIdentifier)
+      case $(s.slice(startPos, s.getPosition()))
+      of "var":            tok(TtVar)
+      of "True", "true":   tok(TtTrue)
+      of "False", "false": tok(TtFalse)
+      of "is":             tok(TtCmp)
+      of "and":            tok(TtAnd)
+      of "or":             tok(TtOr)
+      of "not":            tok(TtNot)
+      of "if":             tok(TtIf)
+      of "elif":           tok(TtElIf)
+      of "else":           tok(TtElse)
+      of "for":            tok(TtFor)
+      of "while":          tok(TtWhile)
+      of "from":           tok(TtFrom)
+      of "to":             tok(TtTo)
+      of "break":          tok(TtBreak)
+      of "continue":       tok(TtContinue)
+      of "return":         tok(TtReturn)
+      of "enum":           tok(TtEnum)
+      of "func":           tok(TtFunc)
+      of "export":         tok(TtExportVar)
+      of "struct":         tok(TtObject)
+      else:                tok(TtIdentifier)
 
   unreachable
 
-proc lex*(s: string, filename: string = ""): (bool, seq[Con4mToken]) =
-  return s.newStringCursor().lex(filename)
+proc lex*(str: string): (bool, TokenBox) =
+  return str.newStringCursor().lex()
 
 proc `$`*(tok: Con4mToken): string =
   case tok.kind
-  of TtStringLit:      result = "\"" & tok.unescaped & "\""
+  of TtStringLit:   
+    if tok.adjustment == 1:
+      result = "\"" & tok.unescaped & "\""
+    else:
+      result = "\"\"\"" & tok.unescaped & "\"\"\""
   of TtCharLit:        result = "'" & $(tok.cursor.slice(tok.startPos, 
                                                          tok.endPos)) & "'"
   of TtSof:            result = "~sof~"
@@ -637,15 +685,12 @@ proc `$`*(tok: Con4mToken): string =
   of ErrorCharLit:     result = "~bad char lit~"
   of ErrorOtherLit:    result =  "~unterm other lit~"
   of TtOtherLit:
-    result = "<<" & $(tok.cursor.slice(tok.startPos, tok.endPos)) & ">>"
+    result = "<< " & $(tok.cursor.slice(tok.startPos, tok.endPos)) & " >>"
   else:
     if tok.cursor == nil:
       return ""
-    echo "Start: ", tok.startPos
-    echo "End: ", tok.endPos
-    echo "cursor: ", tok.cursor
-    echo "Processing token.", tok.startPos, " ", tok.endPos, " ", tok.cursor.runes.len()
-    result = $(tok.cursor.slice(tok.startPos, tok.endPos))
+    else:
+      result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
   if tok.litType != "":
     result = tok.litType & result
@@ -664,8 +709,6 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().boolLitColor)
   of TtOtherLit:
     result.fgColor(getCurrentCodeStyle().otherLitColor)
-  of TtLitMod:
-    result.fgColor(getCurrentCodeStyle().litModColor)
   of TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte, TtGt, TtCmp, TtNeq, TtPlus,
      TtLocalAssign, TtAttrAssign, TtComma, TtPeriod, TtSemi, TtMinus, 
      TtLockAttr, TtBacktick, TtArrow, TtColon:
@@ -676,19 +719,19 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().otherDelimColor)
   of TtExportVar, TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
-     TtRef:
+     TtWhile:
     result.fgColor(getCurrentCodeStyle().keywordColor)
   of TtIdentifier:
     result.fgColor(getCurrentCodeStyle().identColor)
   of TtWhiteSpace, TtNewLine, TtSof, TtEof, ErrorTok, ErrorLongComment,
-       ErrorStringLit, ErrorCharLit, ErrorOtherLit:
+       ErrorStringLit, ErrorCharLit, ErrorOtherLit, ErrorLitMod:
     discard
 
-proc toRope*(tokens: seq[Con4mToken]): Rope =
+proc toRope*(tokenBox: TokenBox): Rope =
   var cells: seq[seq[Rope]] = @[@[atom("Number"), atom("Type"), atom("Line"), 
                                 atom("Col"), atom("Value")]]
 
-  for i, item in tokens:
+  for i, item in tokenBox.tokens:
     var row: seq[Rope] = @[]
     row.add(atom($(i + 1)))
     row.add(atom($(item.kind)))
@@ -698,6 +741,117 @@ proc toRope*(tokens: seq[Con4mToken]): Rope =
     cells.add(row)
     
   return quickTable(cells)
+
+proc `$`*(kind: Con4mTokenKind): string =
+  case kind 
+    of TtSemi:
+      return ";"
+    of TtNewLine:
+       return "a newline"
+    of TtLockAttr:
+       return "~"
+    of TtExportVar:
+      return "export"
+    of TtPlus:
+      return "+"
+    of TtMinus:
+      return "-"
+    of TtMul:
+      return "*"
+    of TtDiv:
+      return "/"
+    of TtMod:
+      return "%"
+    of TtLte:
+      return "<="
+    of TtLt:
+      return "<"
+    of TtGte:
+      return ">="
+    of TtGt:
+      return ">"
+    of TtNeq:
+      return "!="
+    of TtNot:
+      return "not"
+    of TtLocalAssign:
+      return ":="
+    of TtColon:
+      return ":"
+    of TtAttrAssign:
+      return "= or :"
+    of TtCmp:
+      return "=="
+    of TtComma:
+      return ","
+    of TtPeriod:
+      return "."
+    of TtLBrace:
+      return "{"
+    of TtRBrace:
+      return "}"
+    of TtLBracket:
+      return "["
+    of TtRBracket:
+      return "]"
+    of TtLParen:
+      return "("
+    of TtRParen:
+      return ")"
+    of TtAnd:
+      return "and"
+    of TtOr:
+      return "or"
+    of TtIntLit:
+      return "an integer"
+    of TtFloatLit:
+      return "a float"
+    of TtStringLit:
+      return "a string"
+    of TtCharLit:
+      return "a character"
+    of TtTrue:
+      return "true"
+    of TtFalse:
+      return "false"
+    of TtIf:
+      return "if"
+    of TtElif:
+      return "elif"
+    of TtElse:
+      return "else"
+    of TtFor:
+      return "for"
+    of TtBreak:
+      return "break"
+    of TtContinue:
+      return "continue"
+    of TtReturn:
+      return "return"
+    of TtEnum:
+      return "enum"
+    of TtIdentifier:
+      return "an identifier"
+    of TtFunc:
+      return "func"
+    of TtVar:
+      return "var"
+    of TtOtherLit:
+      return "a << literal >>"
+    of TtBacktick:
+      return "`"
+    of TtArrow:
+      return "->"
+    of TtObject:
+      return "object"
+    else:
+      return "other (id = " & $(int(kind)) & ")"
+
+template tokAt*(box: var TokenBox, i: int): Con4mToken =
+  if i >= box.tokens.len():
+    box.tokens[^1]
+  else:
+    box.tokens[i]
 
 when isMainModule:
   useCrashTheme()

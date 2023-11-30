@@ -3,23 +3,23 @@
 # resumption.
 #
 # Plus, I'd prefer to keep UTF32 instead of UTF8.
-import unicode, types
+import unicode, nimutils, types
 
 proc newStringCursor*(s: string): StringCursor =
   result = StringCursor(runes: s.toRunes(), i: 0)
 
-template peek*(cursor: StringCursor): Rune =
-  if cursor.i >= cursor.runes.len():
+template peek*(cursor: StringCursor, skip = 0): Rune =
+  if cursor.i + skip >= cursor.runes.len():
     Rune(0)
   else:
-    cursor.runes[cursor.i]
+    cursor.runes[cursor.i + skip]
 
 proc read*(cursor: StringCursor): Rune =
   if cursor.i >= cursor.runes.len():
     return Rune(0)
   else:
     result = cursor.runes[cursor.i]
-    cursor.i += result.size()
+    cursor.i += 1
 
 template advance*(cursor: StringCursor) =
   cursor.i += 1
@@ -31,3 +31,13 @@ proc setPosition*(cursor: StringCursor, i: int) =
 
 template slice*(cursor: StringCursor, startIx, endIx: int): seq[Rune] =
   cursor.runes[startIx ..< endIx]
+
+proc `$`*(s: StringCursor): string =
+  echo s.i
+  echo s.runes.len()
+  echo s.runes
+  result = $(s.runes)
+
+proc toRope*(s: StringCursor): Rope =
+  return paragraph(Rope(kind: RopeAtom, length: s.runes.len(), text: s.runes))
+

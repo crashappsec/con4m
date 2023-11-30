@@ -5,9 +5,13 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import unicode, tables, options, sugar, macros, nimutils
+import unicode, tables, options, sugar, nimutils
 
 type
+  StringCursor* = ref object
+    runes*: seq[Rune]
+    i*:     int
+
   ## Enumeration of all possible lexical tokens. Should not be exposed
   ## outside the package.
   Con4mTokenKind* = enum
@@ -18,12 +22,8 @@ type
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtSof, TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorCharLit,
-    ErrorOtherLit
-
-  StringCursor* = ref object
-    runes*: seq[Rune]
-    i*:     int
+    TtObject, TtWhile, TtSof, TtEof, ErrorTok,
+    ErrorLongComment, ErrorStringLit, ErrorCharLit, ErrorOtherLit, ErrorLitMod
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -34,25 +34,34 @@ type
       codepoint*: int
     else:  nil
     cursor*:      StringCursor
+    id*:          int
     startPos*:    int
     endPos*:      int
     lineNo*:      int
     lineOffset*:  int
+    litType*:     string
+    adjustment*:  int
+
+  TokenBox* = ref object
+    tokens*: seq[Con4mToken]
 
   Con4mNodeKind* = enum
     ## Parse tree nodes types. Really no reason for these to be
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, NodeUnpack,
-    NodeSection, NodeIfStmt, NodeConditional, NodeElse, NodeFor, NodeBreak,
-    NodeContinue, NodeReturn, NodeSimpLit, NodeUnary, NodeNot, NodeMember,
-    NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit,
-    NodeTupleLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
+    NodeModule, NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign, 
+    NodeUnpack, NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, 
+    NodeForStmt, NodeWhileStmt, NodeBreakStmt,
+    NodeContinueStmt, NodeReturnStmt, NodeStringLit, NodeIntLit, NodeFloatLit, NodeBoolLit, NodeNot,
+    NodeMember, NodeLiteral,
+    NodeIndex, NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit,
+    NodeTupleLit, NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
-    NodeEnum, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeType,
-    NodeVarDecl, NodeExportDecl, NodeVarSymNames, NodeUse, NodeParameter,
-    NodeParamBody
+    NodeEnumStmt, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeSpec,
+    NodeType, NodeTypeVar, NodeTypeFunc, NodeTypeTuple, NodeTypeList,
+    NodeTypeDict, NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg, NodeParenExpr,
+    NodeVarStmt, NodeExportStmt, NodeVarSymNames, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeNoCallbackName
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -177,17 +186,12 @@ type
   Con4mNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
     id*:           int
-    isConst*:      bool
+    prevTokenIx*:  int
+    depth*:        int
     kind*:         Con4mNodeKind
     token*:        Option[Con4mToken] # Set on terminals, and some non-terminals
     children*:     seq[Con4mNode]
-    parent*:       Option[Con4mNode] # Root is nil
-    typeInfo*:     Con4mType
-    varScope*:     VarScope
-    attrScope*:    AttrScope
-    value*:        Box
-    attrRef*:      Attribute
-    procRef*:      FuncTableEntry
+    allTokens*:    TokenBox
 
   BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
@@ -358,100 +362,3 @@ proc newTypeVar*(constraints: seq[Con4mType] = @[]): Con4mType =
                    linksin:     @[],
                    cycle:       false,
                    components:  constraints)
-
-proc getType*(n: Con4mNode): Con4mType =
-  if n.typeInfo != nil:
-    return n.typeInfo.resolveTypeVars()
-  else:
-    n.typeInfo = newTypeVar()
-    return n.typeInfo
-
-proc getType*(a: Attribute):    Con4mType = a.tInfo.resolveTypeVars()
-proc getType*(v: VarSym):       Con4mType = v.tInfo.resolveTypeVars()
-proc getType*(c: CallbackObj):  Con4mType = c.tInfo.resolveTypeVars()
-
-proc newCon4mDict*[K, V](): Con4mDict[K, V] {.inline.} =
-  return Con4mDict[K, V]()
-proc customPack*(t: Con4mType): Box = Box(kind: MkObj, o: t)
-proc customUnpack*(b: Box, res: var Con4mType) =
-  res = Con4mType(b.o)
-proc customPack*(cb: CallbackObj): Box = Box(kind: MkObj, o: cb)
-proc customUnpack*(b: Box, res: var CallbackObj) =
-  res = CallbackObj(b.o)
-type
-  LookupErr* = enum
-    errBadSubscope, errNotFound, errBadSpec, errAlreadyExists
-  LookupKind* = enum
-    # luMask is only for variables; luExpectAttr
-    # luDeclareOnly is only for attrs.
-    luExpect, luFindOrDeclare, luMask, luDeclareOnly
-
-template isA*(aos: AttrOrSub, t: typedesc): bool =
-  when t is Attribute:
-    aos.kind
-  elif t is AttrScope:
-    not aos.kind
-  else:
-    static:
-      error("isA(AttrOrSub, t): t must be an Attribute or AttrScope")
-    false
-
-template get*(aos: AttrOrSub, t: typedesc): untyped =
-  when t is Attribute:
-    aos.attr
-  elif t is AttrScope:
-    aos.scope
-  else:
-    static:
-      error("get(AttrOrSub, t): t must be an Attribute or AttrScope")
-    nil
-
-template isA*(aoe: AttrOrErr, t: typedesc): bool =
-  when t is AttrOrSub:
-    aoe.kind
-  elif t is AttrErr:
-    not aoe.kind
-  else:
-    static:
-      error("isA(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
-    false
-
-template get*(aoe: AttrOrErr, t: typedesc): untyped =
-  when t is AttrOrSub:
-    aoe.aos
-  elif t is AttrErr:
-    aoe.err
-  else:
-    static:
-      error("get(AttrOrErr, t): t must be an AttrOrSub or AttrErr")
-    nil
-
-proc either*(attr: Attribute): AttrOrSub =
-  result = AttrOrSub(kind: true, attr: attr)
-
-proc either*(sub: AttrScope): AttrOrSub =
-  result = AttrOrSub(kind: false, scope: sub)
-
-proc either*(aos: AttrOrSub): AttrOrErr =
-  return AttrOrErr(kind: true, aos: aos)
-
-proc either*(err: AttrErr): AttrOrErr =
-  return AttrOrErr(kind: false, err: err)
-
-converter attrToAttrOrSub*(attr: Attribute): AttrOrSub =
-  either(attr)
-
-converter subToAttrOrSub*(sub: AttrScope): AttrOrSub =
-  either(sub)
-
-converter attrToAttrOrErr*(aos: AttrOrSub): AttrOrErr =
-  either(aos)
-
-converter errToAttrOrErr*(err: AttrErr): AttrOrErr =
-  either(err)
-
-converter secToExt*(sec: Con4mSectionType): ExtendedType =
-  return ExtendedType(kind: TypeSection, sinfo: sec)
-
-converter c4mToExt*(tinfo: Con4mType): ExtendedType =
-  return ExtendedType(kind: TypePrimitive, tinfo: tinfo)

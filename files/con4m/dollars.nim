@@ -6,33 +6,9 @@
 ## :Copyright: 2022
 
 import options, strformat, tables, json, unicode, algorithm, nimutils, types,
-       strcursor
+       strcursor, lex
 from strutils import join, repeat, toHex, toLowerAscii, replace
 
-
-# If you want to be able to reconstruct the original file, swap this
-# false to true.
-when false:
-  proc `$`*(tok: Con4mToken): string =
-    result = $(tok.cursor.slice(tok.startPos, tok.endPos))
-
-else:
-  proc `$`*(tok: Con4mToken): string =
-    case tok.kind
-    of TtStringLit:       result = "\"" & tok.unescaped & "\""
-    of TtWhiteSpace:     result = "~ws~"
-    of TtNewLine:        result = "~nl~"
-    of TtSof:            result = "~sof~"
-    of TtEof:            result = "~eof~"
-    of ErrorTok:         result = "~err~"
-    of ErrorLongComment: result = "~unterm comment~"
-    of ErrorStringLit:   result = "~unterm string~"
-    of ErrorCharLit:     result = "~bad char lit~"
-    of ErrorOtherLit:    result =  "~unterm other lit~"
-    of TtOtherLit:
-      result = "<<" & $(tok.cursor.slice(tok.startPos, tok.endPos)) & ">>"
-    else:
-      result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
 template colorType(s: string): string =
   $color(s, "green")
