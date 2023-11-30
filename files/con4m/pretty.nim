@@ -1,11 +1,256 @@
-import types, lex, parse, nimutils, style, unicode, strutils
+import types, lex, parse, nimutils, style, unicode, strutils, options
 
 type PrettyState = object
-  lastIx:       int
-  r:            Rope
-  style:        CodeStyle
-  pad:          string
-  printingType: int
+  r:                Rope
+  style:            CodeStyle
+  pad:              string
+  printingType:     int
+  ## State only used for processing comments
+  lastIx:           int
+  curComments:      seq[seq[string]]
+  lineComments:     seq[bool]
+  noPreBreak:       bool
+  noPostBreak:      bool
+  longForm:         bool
+  commentStartRope: Rope
+
+template prettyColor(rope: Rope, field: untyped): Rope =
+  if state.style.field != "":
+    rope.fgColor(state.style.field)
+  else:
+    rope
+
+## Our approach with comments is to mostly just preserve them right
+## now.  If there are connected comments, we lump them into one
+## comment.  If there are newlines between them, we limit it to one
+## newline.
+##
+## We combine # or // comments; /* */ comments we leave alone.
+##
+## We could try to move inline comments above, but that's a bit more
+## work; we'd have to do more tracking.
+template noCommentsYet(state: var PrettyState): bool =
+  if state.curComments.len() > 1:
+    false
+  elif state.curComments[0].len() != 0:
+    false
+  else:
+    true
+
+template currentSetIsEmpty(state: var PrettyState): bool =
+  if state.curComments[^1].len() == 0:
+    true
+  else:
+    false
+
+template endCurComments(state: var PrettyState) =
+  state.curComments.add(@[])
+  state.lineComments.add(true) # Assume it's a line comment
+
+template addToComment(state: var PrettyState, s: string, multiline = false) =
+  if multiline:
+    if not state.currentSetIsEmpty():
+      state.endCurComments()
+
+    state.lineComments[^1] = false
+    state.curComments[^1].add(strutils.split(s, "\n"))
+    state.endCurComments()
+  else:
+    state.curComments[^1].add(s)
+
+proc buildCommentGroups(node: Con4mNode, state: var PrettyState): bool =
+  # Returns true if there are comments.
+  let curTok    = node.token.get()
+  var prevWasNl = false
+
+  if curTok.id <= state.lastIx:
+    return
+    
+  state.curComments  = @[@[]]
+  state.lineComments = @[true]
+  state.noPreBreak   = true
+
+  for i in state.lastIx .. curTok.id:
+    let tok = node.allTokens.tokAt(i)
+
+    case tok.kind:
+      of TtNewLine, TtSof:
+        if state.noCommentsYet():
+          state.noPreBreak = false
+        elif prevWasNl and not state.currentSetIsEmpty():
+          state.endCurComments()
+        prevWasNl = true
+      of TtLineComment:
+        prevWasNl = false
+        state.addToComment($tok)
+      of TtLongComment:
+        prevWasNl = false
+        state.addToComment(`$`(tok), multiline = true)
+
+      else:
+        continue
+
+  state.lastIx      = curTok.id
+  state.noPostBreak = not prevWasNl
+
+  if state.noCommentsYet():
+    return false
+
+  if state.curComments[^1].len() == 0:
+    state.curComments = state.curComments[0 ..< ^1]
+
+  return true
+
+proc removeLeadingPadding(state: var PrettyState) =
+  ## This treats a leading "#", "# " or " * " as pad and removes,
+  ## in case we need to wrap.
+  ##
+  ## For now, when we put this back together, we do not remember what
+  ## style was used, we just use "# " wherever appropriate, and /* */
+  ## if not.
+
+  for n, comment in state.curComments:
+    var newComment: seq[string]
+    let isLineComment = state.lineComments[n]
+
+    for i, line in comment:
+      var edited = line
+
+      if isLineComment:
+        if edited.startswith("#"):
+          edited = edited[1 .. ^1]
+
+        if edited.startswith(" "):
+          edited = edited[1 .. ^1]
+      else:
+        if edited.startswith(" "):
+          edited = edited[1 .. ^1]
+          if edited.startswith("* "):
+            edited = edited[2 .. ^1]
+
+      newComment.add(edited)
+
+    state.curComments[n] = newComment
+
+proc wrapComments(state: var PrettyState, width: int) =
+  ## For multi-line comments, all lines that have now been de-padded should
+  ## be merged into one line and re-wrapped.
+  ##
+  ## For single line comments, we assume that each line is distinct; we'll
+  ## wrap individual lines, but not merge lines.
+  for n, comment in state.curComments:
+
+    if state.lineComments[n]:
+      var newLines: seq[string] = @[]
+      for line in comment:
+         newLines &= line.indentWrap(width, hangingIndent = 0)
+
+      state.curComments[n] = newLines
+
+    else:
+      let
+        oneLine = comment.join("\n")
+        wrapped = oneLine.indentWrap(width, hangingIndent = 0)
+
+      state.curComments[n] = wrapped.split("\n")
+      
+proc addBackPaddingAndHash(state: var PrettyState) =
+  for n, comment in state.curComments:
+    var newLines: seq[string] = @[]
+
+    for line in comment:
+      newLines.add("# " & line)
+
+    state.curComments[n] = newLines
+
+proc addBackPaddingLong(state: var PrettyState) =
+  for n, comment in state.curComments:
+    var newLines: seq[string] = @[]
+
+    if len(comment) == 1:
+      newlines = @[ "/* " & comment[0] & " */"]
+    else:
+      newlines = @["/*"]
+      for line in comment:
+        newlines.add(" * " & line)
+      newlines.add(" */")
+
+    state.curComments[n] = newLines
+      
+proc indentComments(state: var PrettyState) =
+  for n, comment in state.curComments:
+    var newLines: seq[string] = @[]
+    for i, line in comment:
+      if i == 0 and n == 0 and state.noPreBreak:
+        newLines.add(" " & line)
+      else:
+        newLines.add(state.pad & line)
+
+    state.curComments[n] = newLines
+
+proc outputFormattedComments(state: var PrettyState) =
+  if state.longForm:
+    var finalLines: seq[string]
+    for comment in state.curComments:
+      finalLines.add(comment.join("\n"))
+
+    let toOut = prettyColor(text(finalLines.join(" ")), commentColor)
+    state.commentStartRope += toOut
+
+  else:
+    var finalLines: seq[string]
+    for i, comment in state.curComments:
+      finalLines &= comment
+      if i != state.curComments.len() - 1:
+        finalLines.add("")
+
+    let toOut = prettyColor(text(finalLines.join("\n")), commentColor)
+    state.commentStartRope += toOut
+
+  if not state.noPostBreak:
+    state.commentStartRope += newBreak()
+
+proc undoLineBreakIfNeeded(state: var PrettyState) =
+  state.commentStartRope = state.r
+
+  if state.noPreBreak:
+    var textAtoms = state.r.allAtoms()
+    
+    while textAtoms.len() != 0 and textAtoms[^1].text.len() == 0:
+      textAtoms = textAtoms[0 ..< ^1]
+
+    if textAtoms.len() == 0:
+      return
+
+    state.commentStartRope = textAtoms[^1]
+
+proc handleComments(node: Con4mNode, state: var PrettyState) =
+  if not node.buildCommentGroups(state):
+    return
+
+  echo "after bcg: ", state.curComments
+  # We loop through comments multiple times to make the code 
+  # more clear.
+  state.removeLeadingPadding()
+  echo "after pad rm: ", state.curComments
+  let width = state.style.prefWidth - state.pad.len() - 6
+  state.wrapComments(width)
+  echo "after wrap: ", state.curComments
+
+  state.undoLineBreakIfNeeded()
+
+  if state.noPreBreak and state.noPostBreak:
+    state.longForm = true
+    state.addBackPaddingLong() # Add /* */ style padding.
+  else:
+    state.undoLineBreakIfNeeded()
+    state.longForm = false
+    state.addBackPaddingAndHash()
+
+  echo "after +pad: ", state.curComments
+  state.indentComments()
+  echo "after indent: ", state.curComments
+  state.outputFormattedComments()
 
 proc pretty(n: Con4mNode, state: var PrettyState)
 
@@ -33,12 +278,6 @@ template indentDown() =
 
   state.pad = savedPad
   state.r += text(state.pad)
-
-template prettyColor(rope: Rope, field: untyped): Rope =
-  if state.style.field != "":
-    rope.fgColor(state.style.field)
-  else:
-    rope
 
 template prettySimpleLiteral(field: untyped) =
   var 
@@ -121,136 +360,6 @@ proc containerLiteral(n:              Con4mNode,
 
 template keyword(n: Con4mNode): Rope =
   prettyColor(text(n.getTokenText() & " "), keywordColor)
-
-proc handleComments(n: Con4mNode, state: var PrettyState) =
-  let curTok = n.token.get()
-
-  var 
-    commentSet: seq[seq[Con4mToken]] = @[@[]]
-    asString:   seq[string]
-    asLines:    seq[seq[string]]
-    nlBefore    = false
-    prevWasNl   = false
-
-  if curTok.id <= state.lastIx:
-    return
-
-  for i in state.lastIx .. curTok.id:
-    let tok = n.allTokens.tokAt(i)
-
-    case tok.kind:
-      of TtNewLine:
-        if commentSet.len() == 1 and commentSet[0].len() == 0:
-          nlBefore = true
-        else:
-          if prevWasNl and commentSet[^1].len() != 0:
-            commentSet.add(@[])
-        prevWasNl = true
-      of TtLineComment:
-        prevWasNl   = false
-        commentSet[^1].add(tok)
-      of TtLongComment:
-        prevWasNl = false
-        if commentSet[^1].len() == 0:
-          commentSet[^1].add(tok)
-        else:
-          commentSet.add(@[tok])
-        commentSet.add(@[])
-      else:
-        discard
-
-  state.lastIx = curTok.id
-
-  if commentSet.len() == 1 and commentSet[0].len() == 0:
-    return
-
-  for num, cset in commentSet:
-    # The comment delimiters are gone. If it's a line comment and the
-    # first character past the delimiter, there might be another #,
-    # and we'd like to remove it.
-    #
-    # After we look for that, whether we find it or not, if there is
-    # a leading space, we'll remove ONE space.
-    var oneComment: seq[string]
-
-    for i, item in cset:
-      var edited = $item
-
-      if edited.startswith("#"):
-        edited = edited[1 .. ^1]
-      if edited.startswith(" "):
-        edited = edited[1 .. ^1]
-      oneComment.add(edited)
-
-    asString.add(oneComment.join("\n"))
-  
-  let width = state.style.prefWidth - state.pad.len() - 6
-
-  if asString.len() == 0:
-    return
-
-  echo asString
-
-  for i in 0 ..< asString.len():
-    for line in asString[i].split("\n"):
-      asLines.add(line.indentWrap(width, hangingIndent = 0).split("\n"))
-  
-  echo asLines
-
-  if asString.len() == 1 and not nlBefore and not prevWasNl:
-    var newlines: seq[string] = @[]
-
-    if asLines[0].len() == 1:
-      newlines.add("/* " & aslines[0]  & " */")
-    else:
-      for i, line in asLines[0]:
-        if i == 0:
-          newlines.add("/*")
-          newlines.add(" * " & line)
-        elif i == asLines[0].len() - 1:
-          newlines.add(" * " & line)
-          newlines.add(" */")
-        else:
-          newlines.add(" * ")
-    asLines = @[newLines]
-  else:
-    for i, comment in asLines:
-      var newLines: seq[string]
-      for line in comment:
-        newLines.add("# " & line)
-      asLines[i] = newLines
-    
-  # I'm not combining these loops to keep the code more understandable.
-  for i, comment in asLines:
-    var newLines: seq[string]
-
-    for j, line in comment:
-      if i == 0 and j == 0 and not nlBefore and curTok.id > 1:
-        newLines.add(" " & line)
-      else:
-        newLines.add(state.pad & line)
-
-    asLines[i] = newLines
-    
-  for i, comment in asLines:
-    if i == 0:
-      if not prevWasNl:
-        let atoms = state.r.allAtoms
-
-        # If this comment was at the end of a line, we might have
-        # added a newline we shouldn't have.
-        if len(atoms) != 0:
-          var i = len(atoms) - 1
-          if atoms[i].text.len() != 0 and atoms[i].text[^1] == Rune('\n'):
-              atoms[i].text = atoms[i].text[0 ..< ^1]
-          
-        state.r += text(comment.join("\n"))
-      else:
-        state.r += text(comment.join("\n"))
-    else:
-      state.r += text(comment.join("\n"))
-    if i != asLines.len() - 1 or prevWasNl:
-      state.r += text("\n")
 
 proc pretty(n: Con4mNode, state: var PrettyState) =
   if n.token.isSome():
