@@ -641,6 +641,7 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
           
       case $(s.slice(startPos, s.getPosition()))
       of "var":            tok(TtVar)
+      of "global"          tok(TtGlobal)
       of "True", "true":   tok(TtTrue)
       of "False", "false": tok(TtFalse)
       of "is":             tok(TtCmp)
@@ -719,7 +720,7 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().otherDelimColor)
   of TtExportVar, TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
-     TtWhile:
+     TtWhile, TtGlobal:
     result.fgColor(getCurrentCodeStyle().keywordColor)
   of TtIdentifier:
     result.fgColor(getCurrentCodeStyle().identColor)
@@ -836,6 +837,8 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "func"
     of TtVar:
       return "var"
+    of TtGlobal:
+      return "global"
     of TtOtherLit:
       return "a << literal >>"
     of TtBacktick:

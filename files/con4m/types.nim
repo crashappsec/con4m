@@ -21,8 +21,8 @@ type
     TtPeriod, TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
     TtAnd, TtOr, TtIntLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
     TTIf, TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtOtherLit, TtBacktick, TtArrow,
-    TtObject, TtWhile, TtSof, TtEof, ErrorTok,
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtOtherLit, TtBacktick,
+    TtArrow, TtObject, TtWhile, TtIn, TtSof, TtEof, ErrorTok,
     ErrorLongComment, ErrorStringLit, ErrorCharLit, ErrorOtherLit, ErrorLitMod
 
   Con4mToken* = ref object
@@ -58,12 +58,12 @@ type
     NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit, NodeTupleLit, 
     NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
-    NodeEnumStmt, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeSpec,
-    NodeType, NodeTypeVar, NodeTypeFunc, NodeTypeTuple, NodeTypeList,
+    NodeEnumStmt, NodeIdentifier, NodeFuncDef, NodeFormalList, NodeTypeOneOf,
+    NodeTypeMaybe, NodeTypeVar, NodeTypeFunc, NodeTypeTuple, NodeTypeList,
     NodeTypeDict, NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec, NodeTypeBuiltin, 
-    NodeReturnType, NodeTypeVararg, NodeParenExpr, NodeVarStmt, NodeExportStmt,
-    NodeVarSymNames, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal,
-    NodeNoCallbackName
+    NodeReturnType, NodeTypeVararg, NodeType, NodeParenExpr, NodeVarStmt,
+    NodeExportStmt, NodeVarSymNames, NodeUseStmt, NodeParamBlock,
+    NodeExpression, NodeFormal, NodeNoCallbackName, NodeLabel
 
   Con4mTypeKind* = enum
     ## The enumeration of possible top-level types in Con4m
@@ -195,6 +195,7 @@ type
     children*:     seq[Con4mNode]
     allTokens*:    TokenBox
     parent*:       Con4mNode
+    commentLocs*:  seq[int]
 
   BuiltInFn* = ((seq[Box], ConfigState) -> Option[Box])
   ## The Nim type signature for builtins that can be called from Con4m.
