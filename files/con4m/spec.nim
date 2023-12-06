@@ -9,13 +9,13 @@ import builtins, types, typecheck, eval, st, dollars
 
 proc specErr*(scope: AttrScope, msg: string) =
   let
-    name = withColor(scope.fullNameAsStr(), "cyan")
+    name = $color(scope.fullNameAsStr(), "cyan")
     full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
   raise newException(ValueError, full)
 
 proc specErr*(attr: Attribute, msg: string) =
   let
-    name = withColor(attr.fullNameAsStr(), "cyan")
+    name = $color(attr.fullNameAsStr(), "cyan")
     full = if len(name) == 0: msg else: fmt"When checking {name}: {msg}"
   raise newException(ValueError, full)
 
@@ -24,12 +24,12 @@ proc specErr*(msg: string) =
                      fmt"In post execution check, at top-level: {msg}")
 
 proc defErr*(scope: AttrScope, msg: string) =
-  let name = withColor(scope.fullNameAsStr(), "cyan")
+  let name = $color(scope.fullNameAsStr(), "cyan")
   raise newException(ValueError,
                      fmt"When defining section {name}: {msg}")
 
 proc defErr*(scope: Con4mSectionType, msg: string) =
-  let name = withColor(scope.typeName, "cyan")
+  let name = $color(scope.typeName, "cyan")
   raise newException(ValueError,
                      fmt"When defining section {name}: {msg}")
 
@@ -471,8 +471,8 @@ proc validateOneAttrFieldPass2(attrs:        AttrScope,
         attrType = $(attr.tInfo)
 
       specErr(attr, fmt"Wrong type for '{name}' (spec said " &
-        withColor(fmt"{specType} ", "green") &
-        "but value is a: " & withColor(fmt"{attrType}", "green") & ")")
+        $color(fmt"{specType} ", "green") &
+        "but value is a: " & $color(fmt"{attrType}", "green") & ")")
 
 
     var attrVal = attr.attrToVal()

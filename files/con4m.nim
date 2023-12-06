@@ -22,11 +22,13 @@ const compilerConfigFName = "con4m/c4m/c4m-cmdline.c4m"
 const c4mc42Contents      = staticRead(compilerC42FileName)
 const c4mconfigContents   = staticRead(compilerConfigFName)
 
+
 when defined(CAPI):
   import con4m/capi
   export capi
 
 elif isMainModule:
+  useCrashTheme()
   let
     specf    = newStringStream(c4mc42Contents)
     cfgf     = newStringStream(c4mconfigContents)
@@ -67,4 +69,4 @@ elif isMainModule:
   elif command == "gen":
     specgenRun(args)
   else:
-    echo "Unknown command: ", command
+    print "Unknown command: " & command

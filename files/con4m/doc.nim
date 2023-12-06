@@ -1,33 +1,10 @@
-import options, tables, strutils, strformat, nimutils, macros, unicode, sugar
-import types, st, dollars, os
+import options, tables, strutils, strformat, nimutils, sugar, types, st, os,
+       dollars
 
 type
-  CDocKind* = enum
-    CDocHtml, CDocRaw, CDocConsole
-
   CObjDocs* = object
     sectionDocs: OrderedTable[string, string]
     fieldInfo:   OrderedTable[string, OrderedTableRef[string, string]]
-
-  # Note, we're currently not supporting all these options.
-  CmdLineDocOpts* = object
-    userPropsFunc*:    (string) -> seq[(string, string)]
-    showShort*:         bool        = true
-    showDefaultProps*:  bool        = true
-    showLong*:          bool        = true
-    showSubs*:          bool        = true
-    noteEmptySubs*:     bool        = false
-    addDescHeader*:     bool        = true
-    commandHeadingStr*: string      = "\n\n# "
-    descrHeadingStr*:   string      = "\n\n### "
-    subsecHeadingStr*:  string      = "\n\n## "
-    recursiveSubPaths*: seq[string] = @["help"]
-    showFlags*:         bool        = true
-    showNumFlags*:      bool        = true
-    subCmdLinks*:       bool        = true
-    inlineSubCmds*:     bool        = true
-    docKind*:           CDocKind    = CDocConsole
-    attrStart*:         string      = "getopts"
 
   FieldPropDocs*   = OrderedTableRef[string, string]
   ObjectFieldDocs* = OrderedTable[string, FieldPropDocs] # field name -> props
@@ -41,15 +18,6 @@ type
   ## FieldTransformer takes a field name and value, and returns a new value
   FieldTransformer*  = (string, string) -> string
   TransformTableRef* = TableRef[string, FieldTransformer]
-
-
-
-const
-  defaultCmdLineDocOpts = CmdLineDocOpts()
-
-template ensureNewline() =
-  if result[^1] != '\n':
-    result.add('\n')
 
 template noSpec() =
   raise newException(ValueError, "No spec found for field: " & path)
@@ -105,32 +73,7 @@ proc getFieldSpec*(state: ConfigState, path: string): FieldSpec =
 
   result = spec.fields[name]
 
-proc docFormat*(s: string, kind = CDocConsole): string =
-  case kind
-  of CDocHtml:
-    return s.markdownToHtml()
-  of CDocRaw:
-    return s
-  of CDocConsole:
-    return stylizeMd(s)
-
-proc getOneFieldDocs*(state: ConfigState, path: string,
-                   docKind = CDocConsole): (string, string) =
-  ## For a given field referenced by its path, this looks up the
-  ## associated spec object and returns "doc" and "shortdoc" from
-  ## those specs, if they exist.
-  ##
-  ## If the field exists, but the documentation doesn't, we return
-  ## empty strings. Errors are only thrown for bad fields.
-
-  let
-    spec  = state.getFieldSpec(path)
-    long  = spec.doc.getOrElse("").docFormat(docKind)
-    short = spec.shortdoc.getOrElse("").docFormat(docKind)
-  return
-
-proc extractFieldInfo*(finfo: FieldSpec, docKind: CDocKind):
-                     OrderedTableRef[string, string] =
+proc extractFieldInfo*(finfo: FieldSpec): OrderedTableRef[string, string] =
   result = newOrderedTable[string, string]()
 
   let eType = finfo.extType
@@ -163,9 +106,8 @@ proc extractFieldInfo*(finfo: FieldSpec, docKind: CDocKind):
   # result["write_lock"] = $(finfo.lock)
   result["default"]    = $(finfo.default.getOrElse(pack("<none>")))
   result["exclusions"] = finfo.exclusions.join(", ")
-  result["longdoc"]    = finfo.doc.getOrElse("").docFormat(docKind)
-  result["shortdoc"]   = finfo.shortdoc.getOrElse("").
-                              docFormat(docKind)
+  result["longdoc"]    = finfo.doc.getOrElse("")
+  result["shortdoc"]   = finfo.shortdoc.getOrElse("")
   result["hidden"]     = $(finfo.hidden)
 
   if finfo.minRequired == 0:
@@ -209,10 +151,9 @@ proc fillFromObj(obj: AttrScope, name: string,
   info["locked"]             = $(attr.locked)
   info["lock_on_next_write"] = $(attr.lockOnWrite)
 
-proc getAllFieldInfoForObj*(state: ConfigState, path: string,
-                            docKind: CDocKind = CDocConsole):
-                              OrderedTable[string,
-                                           OrderedTableRef[string, string]] =
+proc getAllFieldInfoForObj*(state: ConfigState, path: string):
+                          OrderedTable[string,
+                                       OrderedTableRef[string, string]] =
   ## Returns all the field documentation for a specific
   ## 'object'.
 
@@ -234,17 +175,14 @@ proc getAllFieldInfoForObj*(state: ConfigState, path: string,
     if v.extType.kind == TypeSection:
       continue
 
-    var fieldInfo = v.extractFieldInfo(docKind)
+    var fieldInfo = v.extractFieldInfo()
 
     obj.fillFromObj(k, fieldInfo)
 
     result[k] = fieldInfo
 
-template dbug(a, b) = print("<jazzberry>" & a & ": </jazzberry>" & b)
-
-proc getObjectLevelDocs*(state: ConfigState, path: string,
-                           docKind = CDocConsole):
-                   OrderedTable[string, string] =
+proc getObjectLevelDocs*(state: ConfigState, path: string): 
+                       OrderedTable[string, string] =
   ## This returns the sections docs for a particular fully dotted
   ## section (meaning, a fully dotted object).
 
@@ -256,18 +194,16 @@ proc getObjectLevelDocs*(state: ConfigState, path: string,
 
   let
     obj   = state.attrs.getObject(path)
-    doc   = getOpt[string](obj, "doc").getOrElse("")
-    short = getOpt[string](obj, "shortdoc").getOrElse("")
     parts = path.split(".")
     specs = state.spec.get()
 
-  result["longdoc"]  = doc.docFormat(docKind)
-  result["shortdoc"] = short.docFormat(docKind)
+  result["longdoc"]  = getOpt[string](obj, "doc").getOrElse("")
+  result["shortdoc"] = getOpt[string](obj, "shortdoc").getOrElse("")
 
   if path == "":
     return
 
-  if (doc == "" and short == "") or len(parts) == 1:
+  if (result["longdoc"] == "" and result["shortdoc"] == "") or len(parts) == 1:
     if parts[^1] in specs.secSpecs:
       secSpec = specs.secSpecs[parts[^1]]
     if not secSpec.singleton:
@@ -284,17 +220,18 @@ proc getObjectLevelDocs*(state: ConfigState, path: string,
     result["metashort"] = ""
   else:
     let
-      mlong  = secSpec.doc.getOrElse("").docFormat(docKind)
-      mshort = secSpec.shortdoc.getOrElse("").docFormat(docKind)
+      mlong  = secSpec.doc.getOrElse("")
+      mshort = secSpec.shortdoc.getOrElse("")
 
     result["metashort"] = mshort
     result["metalong"]  = mlong
 
 
-proc getSectionDocs*(state: ConfigState, section: string,
-                     docKind = CDocConsole): (string, string) =
-
-  var sec: Con4mSectionType
+proc getSectionDocs*(state: ConfigState, section: string): (Rope, Rope) =
+  var 
+    sec:    Con4mSectionType
+    mshort: Rope
+    mlong:  Rope
 
   let specs = state.spec.get()
 
@@ -303,9 +240,11 @@ proc getSectionDocs*(state: ConfigState, section: string,
   else:
     sec = specs.secSpecs[section]
 
-  let
-    mshort = sec.shortdoc.getOrElse("").docFormat(docKind)
-    mlong  = sec.doc.getOrElse("").docFormat(docKind)
+  if sec.shortDoc.isSome:
+    mshort = text(sec.shortDoc.get(), pre = false)
+  if sec.doc.isSome:
+    mlong = markdown(sec.doc.get())
+
   return (mshort, mlong)
 
 proc getAllSubScopes*(scope: AttrScope): OrderedTable[string, AttrScope] =
@@ -314,50 +253,40 @@ proc getAllSubScopes*(scope: AttrScope): OrderedTable[string, AttrScope] =
       continue
     result[k] = v.get(AttrScope)
 
-proc getAllObjectDocs*(state: ConfigState, path: string,
-                       docKind = CDocConsole): CObjDocs =
-  result.sectionDocs = state.getObjectLevelDocs(path, docKind)
-  result.fieldInfo   = state.getAllFieldInfoForObj(path, docKind)
+proc getAllObjectDocs*(state: ConfigState, path: string): CObjDocs =
+  result.sectionDocs = state.getObjectLevelDocs(path)
+  result.fieldInfo   = state.getAllFieldInfoForObj(path)
 
-proc formatCommandTable(obj:  AttrScope,
-                        cmd:  string,
-                        opts: CmdLineDocOpts): string =
-  result = """
-<table>
-<tr>
-  <th>Command Name</th>
-  <th>Description</th>
-</tr>
-"""
+proc formatCommandTable(obj:  AttrScope): Rope =
+  var cells: seq[seq[Rope]] = @[@[atom("Command Name"), atom("Description")]]
+
   for k, v in obj.contents:
-    let scope = v.get(AttrScope)
+    var row: seq[Rope] = @[]
 
-    result &= "<tr>\n"
-    # TODO: wrap this in an <a href=> element ...
-    result &= "  <td>" & k & "</td>\n"
+    let scope = v.get(AttrScope)
+    row.add(atom(k))
+
     if "shortdoc" in scope.contents:
       let shortDoc = get[string](scope, "shortdoc")
-      # TODO: should get a markdownToHtml applied, but needs to
-      # have an 'inline' version.
-      result &= "  <td>" & unicode.strip(shortdoc) & "</td>\n"
+      row.add(text(shortdoc, pre = false))
     else:
-      result &= "  <td>None</td>\n"
-    result &= "</tr>\n"
+      row.add(em("None"))
+    cells.add(row)
 
-  result &= "</table>\n"
+  result = quickTable(cells, class = "help")
 
-proc formatFlag(flagname: string): string =
+proc formatFlag(flagname: string): Rope =
   if len(flagname) == 1:
-    result = "<code>-" & flagname & "</code>"
+    result = inlineCode("-" & flagname)
   else:
-    result = "<code>--" & flagname & "</code>"
+    result = inlineCode("--" & flagname)
 
 proc formatAliases(scope: AttrScope, flagname: string,
-                   defYes, defNo: seq[string]): string =
+                   defYes, defNo: seq[string]): Rope =
   var
     aliases:   seq[string]
     negators:  seq[string]
-    formatted: seq[string]
+    formatted: seq[Rope]
 
   if "aliases" in scope.contents:
     aliases = get[seq[string]](scope, "aliases")
@@ -378,230 +307,227 @@ proc formatAliases(scope: AttrScope, flagname: string,
   if len(aliases) != 0:
     for item in aliases:
       formatted.add(item.formatFlag())
-    result &= "<em>Aliases: </em> " & formatted.join(", ") & "\n<br>\n"
+    result += paragraph(em("Aliases:") + text(" ") + 
+                        formatted.join(atom(", ")))
     formatted = @[]
 
   if len(negators) != 0:
     for item in negators:
       formatted.add(item.formatFlag())
-    result &= "<em>Negated by: </em> " & formatted.join(", ") & "\n<br>\n"
+    result += paragraph(em("Negated by:") + text(" ") + 
+                        formatted.join(atom(", ")))
 
-proc baseFlag(flagname: string, scope: AttrScope, opts: CmdLineDocOpts,
-              extraCol1, extraCol2: string, defYes: seq[string] = @[],
-              defNo: seq[string] = @[]): string =
-    result &= "<tr>\n  <td>\n"
-    result &= "    " & flagName.formatFlag() & "\n    <br>\n    <br>\n"
-    result &= scope.formatAliases(flagname, defYes, defNo)
-    if extraCol1 != "":
-      result &= "    <br>\n" & extraCol1
-      ensureNewLine()
-    result &= "  </td>\n  <td>\n"
+proc baseFlag(flagname: string, scope: AttrScope, extraCol1, extraCol2: Rope,
+              defYes: seq[string] = @[], defNo: seq[string] = @[]):
+                                                      (Rope, Rope) =
+  var
+    left:  Rope
+    right: Rope
 
-    if "doc" in scope.contents:
-      result &= markdownToHtml(get[string](scope, "doc"))
-    else:
-      result &= "No description available."
-    ensureNewLine()
-    result &= "<br>"
-    if "field_to_set" in scope.contents:
-      result &= "    <em>Sets config field: <code>"
-      result &= get[string](scope, "field_to_set") & "</code></em>\n"
-    if extraCol2 != "":
-      result &= "<br>\n" & extraCol2
-      ensureNewLine()
-    result &= "  </td>\n</tr>\n"
+  left += flagName.formatFlag()
+  left += scope.formatAliases(flagname, defYes, defNo)
+  if extraCol1 != nil:
+    left += paragraph(extraCol1)
 
-proc formatYnFlags(scope: AttrScope, opts: CmdLineDocOpts,
-                   defaultYes, defaultNo: seq[string]): string =
+  if "doc" in scope.contents:
+    right = paragraph(markdown(get[string](scope, "doc")))
+  else:
+    right = paragraph(atom("No description available."))
+
+  if "field_to_set" in scope.contents:
+    right += paragraph(em("Sets config field:") + 
+                         inlineCode(" " & get[string](scope, "field_to_set")))
+  if extraCol2 != nil:
+    right += paragraph(extraCol2)
+
+  return (paragraph(left), right)
+
+proc formatYnFlags(scope: AttrScope,
+                   defaultYes, defaultNo: seq[string]): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let subscope = v.get(AttrScope)
-    result &= k.baseFlag(subscope, opts, "", "", defaultYes, defaultNo)
+    let 
+      subscope = v.get(AttrScope)
+      (l, r)   = k.baseFlag(subscope, nil, nil, defaultYes, defaultNo)
+    result.add(@[l, r])
 
 const
   reqArg      = "Flag requires an argument"
   reqArgMulti = "Flag can be a comma-separated list, or provided multiple times"
 
-proc formatArgFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
+proc formatArgFlags(scope: AttrScope): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let subscope = v.get(AttrScope)
-    result &= k.baseFlag(subscope, opts, "", reqArg)
+    let 
+      subscope = v.get(AttrScope)
+      (l, r)   =  k.baseFlag(subscope, nil, atom(reqArg))
+    result.add(@[l, r])
 
-proc formatMultiArgFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
+proc formatMultiArgFlags(scope: AttrScope): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let subscope = v.get(AttrScope)
-    result &= k.baseFlag(subscope, opts, "", reqArgMulti)
+    let 
+      subscope = v.get(AttrScope)
+      (l, r)   = k.baseFlag(subscope, nil, atom(reqArgMulti))
+    result.add(@[l, r])
 
-proc formatChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts,
-                            multi = false): string =
+proc formatChoiceFlags(scope: AttrScope, multi = false): seq[seq[Rope]] =
   var
-    choiceText: string
-    formatted:  seq[string]
     choices:    seq[string]
+    rchoices:   seq[Rope]
     flag:       bool # flag for adding per-choice flags.
+    left:       Rope
+    right:      Rope
 
   for k, v in scope.contents:
     let subscope = v.get(AttrScope)
     choices    = get[seq[string]](subscope, "choices")
     flag       = getOpt[bool](subscope, "add_choice_flags").getOrElse(false)
-    choicetext = ""
+    rchoices   = @[]
 
-    formatted = @[]
     if flag:
       for item in choices:
-        formatted.add(item.formatFlag())
-      choiceText &= "Per-choice alias flags: <ul><li>" & formatted.join("</li><li>") & "</li></ul>\n"
-      formatted = @[]
+        rchoices.add(item.formatFlag())
+      left = paragraph(strong("Per-choice alias flags:") +  atom(" ") +
+                       rchoices.join(atom(", ")))
+
+    rchoices = @[]
 
     for item in choices:
-      formatted.add("<em>" & item & "</em>")
-    choiceText &= "Value choices: <ul><li>" & formatted.join("</li><li>") & "</li></ul>\n"
+      rchoices.add(em(item))
+    left += paragraph(strong("Value choices:") + atom(" ") + 
+                      rchoices.join(atom(", ")))
 
     if multi:
-      choiceText &= "<em> Multiple arguments may be provided. </em><br>\n"
+      right += paragraph(em("Multiple arguments may be provided."))
 
     if flag:
-      choiceText &= "<em>Flag requires an argument (does not apply to " &
-                    "per-choice aliases)</em><br>\n"
+      right += paragraph(em("Flag requires an argument") + 
+                         atom(" (does not apply to per-choice aliases)"))
     elif not multi:
-      choiceText &= "<em>Flag requires an argument.</em><br>\n"
+      right += paragraph(em("Flag requires an argument."))
 
-    result &= k.baseFlag(subscope, opts, "", choiceText)
+    let (l, r) = k.baseFlag(subscope, nil, nil)
 
-proc formatMultiChoiceFlags(scope: AttrScope, opts: CmdLineDocOpts): string =
-   return scope.formatChoiceFlags(opts, true)
+    result.add(@[@[l + left, r + right]])
 
-proc formatAutoHelpFlag(opts: CmdLineDocOpts): string =
-  return """
-<tr>
-  <td><code>--help</code>
-    <br>
-    <br>
-    <em>Aliases:</em> <code>-h</code>
-  </td>
-  <td>
-    Shows help for this command.
-  </td>
-</tr>
-"""
+proc formatMultiChoiceFlags(scope: AttrScope): seq[seq[Rope]] =
+   return scope.formatChoiceFlags(true)
+
+proc formatAutoHelpFlag(): seq[Rope] =
+  result.add(paragraph(formatFlag("help") + paragraph(
+                        strong("Aliases:") + atom(" ") + formatFlag("h"))))
+  result.add(atom("Shows help for this command."))
 
 proc formatFlags(obj: AttrScope, subsects: OrderedTable[string, AttrScope],
-                 opts: CmdLineDocOpts, defaultYes: seq[string],
-                 defaultNo: seq[string]): string =
-  var foundFlags = false
-  result &= """
-<table>
-<tr>
-  <th>Flag Name</th>
-  <th>Description</th>
-</tr>
-"""
+                 defaultYes: seq[string], defaultNo: seq[string]): Rope =
+  var
+    cells: seq[seq[Rope]] = @[@[th("Flag Name"), th("Description")]]
+
   if "flag_yn" in subsects:
-    foundFlags = true
-    result &= subsects["flag_yn"].formatYnFlags(opts, defaultYes, defaultNo)
+    cells &= subsects["flag_yn"].formatYnFlags(defaultYes, defaultNo)
   if "flag_arg" in subsects:
-    foundFlags = true
-    result &= subsects["flag_arg"].formatArgFlags(opts)
-    foundFlags = true
+    cells &= subsects["flag_arg"].formatArgFlags()
   if "flag_multi_arg" in subsects:
-    foundFlags = true
-    result &= subsects["flag_multi_arg"].formatMultiArgFlags(opts)
+    cells &= subsects["flag_multi_arg"].formatMultiArgFlags()
   if "flag_choice" in subsects:
-    foundFlags = true
-    result &= subsects["flag_choice"].formatChoiceFlags(opts)
+    cells &= subsects["flag_choice"].formatChoiceFlags()
   if "flag_multi_choice" in subsects:
-    foundFlags = true
-    result &= subsects["flag_multi_choice"].formatMultiChoiceFlags(opts)
+    cells &= subsects["flag_multi_choice"].formatMultiChoiceFlags()
   if "flag_help" in subsects:
-    result &= formatAutoHelpFlag(opts)
+    cells.add(formatAutoHelpFlag())
 
-  if not foundFlags:
-    return ""
+  if len(cells) > 1:
+    result = quicktable(cells, title = atom("Flags"), class = "help")
+    let 
+      table = result.searchOne(@["table"]).get()
+      even  = styleMap["tr.even"]
+      odd   = styleMap["tr.odd"]
 
-proc formatProps(obj: AttrScope, cmd: string, opts: CmdLineDocOpts,
-                 table = false): string =
-  var props: seq[(string, string)]
-
-  if opts.showDefaultProps:
-    let
-      aliasOpts = getOpt[seq[string]](obj, "aliases")
-      argOpts   = getOpt[seq[Box]](obj, "args")
-
-    if aliasOpts.isSome() and aliasOpts.get().len() != 0:
-      var fmtAliases: seq[string]
-
-      for item in aliasOpts.get():
-        fmtAliases.add("<em>" & item & "</em>")
-
-      props.add(("aliases  ", fmtAliases.join(", ")))
-    else:
-      props.add(("aliases  ", "none"))
-
-    if argOpts.isNone():
-      props.add(("arguments", "none"))
-    else:
-      let
-        vals = argOpts.get() # Will contain 2 items.
-        vmin = unpack[int](vals[0])
-        vmax = unpack[int](vals[1])
-
-      if vmin == vmax:
-        if vmin == 0:
-          props.add(("arguments", "none"))
-        else:
-          props.add(("arguments", $(vmin) & " (exactly)"))
-      elif vmax > (1 shl 32):
-        case vmin
-        of 0:
-          props.add(("arguments", "not required; any number okay"))
-        else:
-          props.add(("arguments", $(vmin) & " required; more allowed"))
+    for i, item in table.tbody.cells:
+      if i == 0:
+        continue
+      if i mod 2 == 0:
+        for tr in item.search(@["tr"]):
+          tr.ropeStyle(even, recurse=true)
       else:
-        props.add(("arguments", $(vmin) & " to " & $(vmax)))
+        for tr in item.search(@["tr"]):
+          tr.ropeStyle(odd, recurse=true)
 
-  if opts.userPropsFunc != nil:
-    props &= opts.userPropsFunc(cmd)
+proc formatProps(obj: AttrScope, cmd: string, table: bool): Rope =
+  var cells: seq[seq[Rope]]
 
-  if len(props) != 0:
-    if table:
-      result &= "<table>"
-      for (k, v) in props:
-        result &= "<tr>\n  <td>" & k & "</td>\n  <td>" & v & "</td>\n</tr>"
-        result &= "</table>"
+  let
+    aliasOpts = getOpt[seq[string]](obj, "aliases")
+    argOpts   = getOpt[seq[Box]](obj, "args")
+
+  if aliasOpts.isSome() and aliasOpts.get().len() != 0:
+    var aliases = aliasOpts.get()
+    var fmtAliases: Rope
+
+    for i, item in aliasOpts.get():
+      if i != 0:
+        fmtAliases = fmtAliases.link(atom(", ") + em(item))
+      else:
+        fmtAliases = em(item)
+
+    cells.add(@[text("Aliases"), fmtAliases])
+  else:
+    cells.add(@[text("Aliases"), em("None")])
+
+
+  if argOpts.isNone():
+    cells.add(@[text("Arguments"), em("None")])
+  else:
+    let
+      vals = argOpts.get() # Will contain 2 items.
+      vmin = unpack[int](vals[0])
+      vmax = unpack[int](vals[1])
+
+    if vmin == vmax:
+      if vmin == 0:
+        cells.add(@[text("Arguments"), em("None")])
+      else:
+        cells.add(@[text("Arguments"), text(`$`(vmin) & " (exactly)")])
+    elif vmax > (1 shl 32):
+      case vmin
+      of 0:
+        cells.add(@[text("Arguments"), text("Not required; any number okay")])
+      else:
+        cells.add(@[text("Arguments"), text(`$`(vmin) & 
+                                                 " required; more allowed")])
     else:
-      result &= "<ul>"
-      for (k, v) in props:
-        result &= "<li><b><underline>"
-        result &= k
-        result &= "</underline></b>: "
-        result &= v
-        result &= "</li>"
-      result &= "</ul><p>"
+      cells.add(@[text("Arguments"), text(`$`(vmin) & " to " & `$`(vmax))])
 
+  if len(cells) != 0:
+    if table:
+      result = quickTable(cells, noheaders = true, class = "help")
+    else:
+      var listItems: seq[Rope]
+      for item in cells:
+        listItems.add(li(strong(item[0]) + atom(": ") + item[1]))
+      result = ul(listItems)
 
-proc getHelpOverview*(state: ConfigState, kind = CDocConsole): string =
+proc getHelpOverview*(state: ConfigState): Rope =
   try:
     let
       attrPath = "getopts.command.help"
       obj      = state.attrs.getObject(attrPath)
-      objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
+      objDocs  = state.getAllObjectDocs(attrPath)
       short    = objDocs.sectionDocs["shortdoc"]
       long     = objDocs.sectionDocs["longdoc"]
 
 
-    result = "<h1>" & getMyAppPath().splitPath().tail & "</h1>"
+    result = h1(getMyAppPath().splitPath().tail)
     if short != "":
-      result &= "<h2>" & short & "</h2>"
+      result += h2(short)
 
-    result &= long.markdownToHtml()
-    result  = result.docFormat(kind)
-
-
+    result += markdown(long)
   except:
-    return "<h1>Please provide a 'help' command to get this to work.</h1>"
+    return h1("Please provide a 'help' command to get this to work.")
 
 proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
                            filterTerms: openarray[string] = [],
-                           baseGetoptPath = "getopts"): seq[seq[string]] =
+                           baseGetoptPath = "getopts"): Rope =
+
+  var cells: seq[seq[Rope]]
 
   for commandPath in commandList:
     var attrPath = baseGetoptPath
@@ -612,7 +538,7 @@ proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
 
     let
       obj      = state.attrs.getObject(attrPath)
-      objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
+      objDocs  = state.getAllObjectDocs(attrPath)
       short    = objDocs.sectionDocs["shortdoc"]
       long     = objDocs.sectionDocs["longdoc"]
 
@@ -626,16 +552,17 @@ proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
       if not includeMe:
         continue
 
-    var thisRow   = @[commandPath, short, long]
+    var thisRow = @[atom(commandPath), text(short, pre = false), 
+                    markdown(long)]
     let
       aliasOpts = getOpt[seq[string]](obj, "aliases")
       aliases   = aliasOpts.getOrElse(@[])
       argOpts   = getOpt[seq[Box]](obj, "args")
 
-    thisRow.add(aliases.join(", "))
+    thisRow.add(atom(aliases.join(", ")))
 
     if argOpts.isNone():
-      thisRow.add("")
+      thisRow.add(atom(""))
 
     else:
       let
@@ -645,19 +572,22 @@ proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
 
       if vmin == vmax:
         if vmin == 0:
-          thisRow.add("none")
+          thisRow.add(em("None"))
         else:
-          thisRow.add($(vmin) & " (exactly)")
+          thisRow.add(atom($(vmin) & " (exactly)"))
       elif vmax > (1 shl 32):
         case vmin
         of 0:
-          thisRow.add("not required; any number okay")
+          thisRow.add(atom("not required; any number okay"))
         else:
-          thisRow.add($(vmin) & " required; more allowed")
+          thisRow.add(atom($(vmin) & " required; more allowed"))
       else:
-        thisRow.add($(vmin) & " to " & $(vmax))
+        thisRow.add(atom($(vmin) & " to " & $(vmax)))
 
-    result.add(thisRow)
+    cells.add(thisRow)
+
+  if len(cells) != 0:
+    result = quickTable(cells, noheaders = true, class = "help")
 
 type
   FlagDoc* = object
@@ -718,8 +648,8 @@ proc getOneFlagInfo(scope: AttrScope, flagname: string,
     result.autoFlags = getOpt[bool](scope, "add_choice_flags").
                             getOrElse(false)
 
-proc getAllCommandFlagInfo*(state: ConfigState, command: string,
-                            baseGetoptPath = "getopts"): seq[FlagDoc] =
+proc getAllCommandFlagInfo(state: ConfigState, command: string,
+                           baseGetoptPath = "getopts"): seq[FlagDoc] =
   var attrPath = baseGetoptPath
   for item in command.split("."):
     if item != "":
@@ -785,98 +715,65 @@ proc getCommandFlagInfo*(state: ConfigState, command: string,
       result.add(item)
       break
 
-proc getCommandDocsInternal(state: ConfigState, cmd: string,
-                            opts: CmdLineDocOpts): string =
+proc getCommandDocs*(state: ConfigState, cmd: string, table = true,
+                     noteEmptySubs = false): Rope =
   # This should explicitly test for the section existing.  Right now it'll
   # throw an error when it doesn't.
   var
-    attrPath: string = opts.attrStart
+    attrPath: string = "getopts"
+    cells:    seq[seq[Rope]]
 
   if cmd != "":
     for item in cmd.split("."):
       attrPath &= ".command." & item
+
   let
     obj      = state.attrs.getObject(attrPath)
-    objDocs  = state.getAllObjectDocs(attrPath, CDocRaw)
+    objDocs  = state.getAllObjectDocs(attrPath)
     subsects = obj.getAllSubScopes()
     short    = objDocs.sectionDocs["shortdoc"]
-    long     = objDocs.sectionDocs["longdoc"].markdownToHtml()
+    long     = objDocs.sectionDocs["longdoc"]
     subCmd   = if '.' in cmd: true else: false
 
-  result = opts.commandHeadingStr
+  if cmd != "":
+    if subCmd:
+      result = h1(cmd & " subcommand")
+    else:
+      result = h1(cmd & " command")
+  else:
+    result = h1(getMyAppPath().splitPath().tail)
+
+  if short != "":
+    result += h2(short)
 
   if cmd != "":
-    result &= cmd
-    if subCmd:
-      result &= " subcommand"
-    else:
-      result &= " command"
+    result += obj.formatProps(cmd, table = table)
+
+  result += h3("Description")
+  if long != "":
+    result += markdown(long)
   else:
-    result &= getMyAppPath().splitPath().tail
-
-  result &= "\n\n"
-
-  if opts.showShort:
-    result &= opts.descrHeadingStr
-    if short != "":
-       result &= short
-    else:
-      result &= "Top-level command documentation"
-
-  result &= "\n\n"
-
-  result &= obj.formatProps(cmd, opts)
-
-  result &= "\n\n"
-
-  if opts.showSubs:
-    if "command" notin subsects:
-      if opts.noteEmptySubs:
-        result &= "\n\n" & opts.subsecHeadingStr & "\n\n Subcommands\nNone\n"
-    else:
-      result &= subsects["command"].formatCommandTable(cmd, opts)
-
-  result &= "\n\n"
-
-  result &= "\n\n"
-
-  if opts.showLong:
-    if opts.addDescHeader:
-      result &= opts.subsecHeadingStr & "Description" & "\n"
-    if long != "":
-      result &= strutils.strip(long)
-    else:
-      result &= """
+    result += atom("""
 This is the default documentation for your command. If you'd like to
 change it, set the 'shortdoc' field to set the title, and the 'doc'
 field to edit this description.  You can use Markdown with embedded
 HTML, and it will get rendered appropriately, whether at the command
 line, or in generated HTML docs.
-"""
+""")
 
-  result &= "\n\n"
+  if "command" notin subsects:
+    if noteEmptySubs:
+        result += h3(atom("Subcommands: ") + em("None"))
+  else:
+    result += subsects["command"].formatCommandTable()
 
-  if opts.showflags:
-    let
-      yesAttr    = opts.attrStart & ".default_yes_prefixes"
-      noAttr     = opts.attrStart & ".default_no_prefixes"
-      defaultYes = getOpt[seq[string]](state.attrs, yesAttr).getOrElse(@[])
-      defaultNo  = getOpt[seq[string]](state.attrs, noAttr).getOrElse(@[])
+  let
+    yesAttr    = "getopts.default_yes_prefixes"
+    noAttr     = "getopts.default_no_prefixes"
+    defaultYes = getOpt[seq[string]](state.attrs, yesAttr).getOrElse(@[])
+    defaultNo  = getOpt[seq[string]](state.attrs, noAttr).getOrElse(@[])
 
-    let flagFmt = obj.formatFlags(subsects, opts, defaultYes, defaultNo)
-
-    if flagFmt != "":
-      result &= opts.subsecHeadingStr & "Flags" & "\n"
-      result &= flagFmt
-
-  return result.docFormat(opts.docKind)
-
-proc getCommandDocs*(state: ConfigState, cmd = "",
-                     opts = defaultCmdLineDocOpts): string =
-  try:
-    result = state.getCommandDocsInternal(cmd, opts)
-  except:
-    return ""
+  result += obj.formatFlags(subsects, defaultYes, defaultNo)
 
 proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
                           skipTypeSpecs = false, skipTypePtrs = false):
@@ -900,22 +797,28 @@ proc extractSectionFields(sec: Con4mSectionType, showHidden = false,
 
     result[n] = spec
 
-
-# proc getSectionRefDoc*(state: ConfigState, section: string,
-#                       docKind = CDocConsole,
-
 proc getMatchingConfigOptions*(state: ConfigState,
-            section = "",
-            showHiddenFields = false,
-            filterTerms: openarray[string] = [],
-            cols: openarray[ConfigCols] = [CcVarName, CcType,
-                                           CcDefault, CcLong],
-            sectionPath = ""): seq[seq[string]] =
+                               section                        = "",
+                               title                          = "",
+                               showHiddenFields               = false,
+                               headings: openarray[string]    = [],
+                               filterTerms: openarray[string] = [],
+                               cols: openarray[ConfigCols]    = 
+                                     [CcVarName, CcType, CcDefault, CcLong],
+                               sectionPath = ""): Rope =
   # SectionPath is only needed if you request CcCurValue
   if state.spec.isNone():
     return
 
-  var sec: Con4mSectionType
+  var 
+    sec:   Con4mSectionType
+    cells: seq[seq[Rope]]
+
+  if headings.len() != 0:
+    var row: seq[Rope]
+    for item in headings:
+      row.add(th(item))
+    cells.add(row)
 
   if section == "":
     sec = state.spec.get().rootSpec
@@ -933,13 +836,13 @@ proc getMatchingConfigOptions*(state: ConfigState,
 
   for n, f in fieldsToShow:
     var
-      thisRow: seq[string] = @[]
+      thisRow: seq[Rope] = @[]
       showRow: bool = false
 
     for item in cols:
       case item
       of CcVarName:
-        thisRow.add(n)
+        thisRow.add(atom(n))
       of CcCurValue:
         var path: string
         if sectionPath == "":
@@ -949,60 +852,62 @@ proc getMatchingConfigOptions*(state: ConfigState,
 
         let objOpt = getOpt[Box](state.attrs, path)
         if objOpt.isNone():
-          thisRow.add("<em>None</em>")
+          thisRow.add(em("None"))
         else:
-          let obj = objOpt.get()
-          thisRow.add("<code>" &
-              f.extType.tInfo.oneArgToString(obj, lit = true) & "</code>")
+          let 
+            obj = objOpt.get()
+            s   = f.extType.tInfo.oneArgToString(obj, lit = true)
+          thisRow.add(inlineCode(s))
       of CcShort:
-        thisRow.add(f.shortDoc.getOrElse("No description available."))
+        thisRow.add(text(f.shortDoc.getOrElse("No description available."),
+                         pre = false))
       of CcLong:
-        thisRow.add(f.doc.getOrElse(
-          "There is no documentation for this option."))
+        thisRow.add(markdown(f.doc.getOrElse(
+                  "There is no documentation for this option.")))
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            thisRow.add("Type set by field <code>" &
-              f.extType.fieldRef &
-              "</code>")
+            thisRow.add(atom("Type set by field ") + em(f.extType.fieldRef))
           of TypeC4TypeSpec:
-            thisRow.add("A type specification")
+            thisRow.add(atom("A type specification"))
           of TypePrimitive:
-            thisRow.add($(f.extType.tInfo))
+            thisRow.add(atom($(f.extType.tInfo)))
           else:
             discard
       of CcDefault:
         if f.default.isSome():
-          thisRow.add("<code>" &
-            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "</code>>")
+          thisRow.add(inlineCode(
+            f.extType.tInfo.oneArgToString(f.default.get(), lit = true)))
         else:
-          thisRow.add("<em>None</em>")
+          thisRow.add(em("None"))
 
     if len(filterTerms) == 0:
       showRow = true
-    else:
-      for term in filterTerms:
-        if showRow:
+    elif not showRow and filterTerms.len() > 0:
+      for item in thisRow:
+        if item.search(text = filterTerms).len() > 0:
+          showRow = true
           break
-        for item in thisRow:
-          if term in item:
-            showRow = true
-            break
 
     if showRow:
-      result.add(thisRow)
+      cells.add(thisRow)
+
+  if len(cells) != 0:
+    var noheaders = if headings.len() == 0: false else: true
+    
+    result = quickTable(cells, title = title, noheaders = noheaders,
+                                       class = "help")
 
 proc getConfigOptionDocs*(state: ConfigState,
-            secName = "", docKind = CDocConsole,
-            showHiddenSections = false,
-            showHiddenFields = false,
-            expandDocField = true,
+            secName                     = "",
+            showHiddenSections          = false,
+            showHiddenFields            = false,
+            expandDocField              = true,
             cols: openarray[ConfigCols] = [CcVarName, CcType,
                                            CcDefault, CcLong],
             colNames: openarray[string] = ["Variable", "Type",
                                            "Default Value", "Description"],
-            secVarHeader = "<h2>Section configuration variables</h2>"): string =
+            secVarHeader = "Section configuration variables"): Rope =
   ## This returns a document with a single 'section' of configuration
   ## variables.
   ##
@@ -1014,11 +919,12 @@ proc getConfigOptionDocs*(state: ConfigState,
   ## the various sections, and we do ensure that it's a singleton.
 
   if state.spec.isNone():
-    return ""
+    return nil
 
   var
     sec: Con4mSectionType
     section = secName
+    nohdr   = false
 
   if section == "":
     sec = state.spec.get().rootSpec
@@ -1026,79 +932,84 @@ proc getConfigOptionDocs*(state: ConfigState,
     let secspecs = state.spec.get().secSpecs
 
     if section notin secspecs:
-      return ""
+      return nil
 
     sec = secspecs[section]
 
     if sec.hidden and not showHiddenSections:
-      return ""
+      return nil
 
   if sec.shortdoc.isSome():
-    result = "\n\n# " & sec.shortdoc.get() & "\n\n"
+    result = atom(sec.shortdoc.get())
   else:
     let txt = if section == "":
-                "the command"
+                atom("command")
               else:
-                "the *" & section & "* section"
-    result = "\n\n# Configuration for " & txt & "\n\n"
+                em(section) + atom(" section")
+
+    result = atom("Configuration for the ") + txt
 
   if sec.doc.isSome():
     if expandDocField:
-      result &= sec.doc.get().markdownToHtml()
+      result += markdown(sec.doc.get())
     else:
-      result &= sec.doc.get()
+      result += text(sec.doc.get(), pre = false)
   else:
-    result &= "There is no documentation for the section: " & section & """
+    result += text("There is no documentation for the section: ") +
+          em(section) + text("""
 Document this section by adding a 'doc' field to its definition
 in your configuration file.
-"""
+""")
+
   let fieldsToShow = sec.extractSectionFields(showHidden = showHiddenFields)
   if len(fieldsToShow) == 0:
+    result = h1(result)
     return
 
-  result &= "<table>"
-  if len(colNames) != 0:
-    result &= "<thead><tr>"
-    for item in colNames:
-      result &= "<th>" & item & "</th>"
-    result &= "</tr></thead>"
+  var 
+    cells: seq[seq[Rope]]
+    row:   seq[Rope]
 
-  result &= "<tbody>"
+  if len(colNames) != 0:
+    for item in colNames:
+      row.add(th(item))
+    cells.add(row)
+  else:
+    nohdr = true
+
   for n, f in fieldsToShow:
-    result &= "<tr>"
+    row = @[]
+
     for item in cols:
-      result &= "<td>"
       case item
       of CcVarName:
-        result &= n
+        row.add(text(n))
       of CcCurValue:
-        result &= "not implemented here"
+        row.add(text("not implemented here"))
       of CcShort:
-        result &= f.shortDoc.getOrElse("No description available.")
+        row.add(atom(f.shortDoc.get("No description available.")))
       of CcLong:
-        result &= f.doc.getOrElse("There is no documentation for this option.")
+        row.add(markdown(f.doc.get("No documentation for this option.")))
       of CcType:
         case f.extType.kind:
           of TypeC4TypePtr:
-            result &= "Type set by field `" & f.extType.fieldRef & "`"
+            row.add(atom("Type set by field ") + em(f.extType.fieldRef))
           of TypeC4TypeSpec:
-            result &= "A type specification"
+            row.add(atom("A type specification"))
           of TypePrimitive:
-            result &= $(f.extType.tInfo)
+            row.add(atom($(f.extType.tInfo)))
           else:
             discard
       of CcDefault:
         if f.default.isSome():
-          result &= "<em>" &
-            f.extType.tInfo.oneArgToString(f.default.get(), lit = true) &
-            "</em>"
+          row.add(em(f.extType.tInfo.oneArgToString(f.default.get(),
+                                                    lit = true)))
         else:
-          result &= "<i>None</i>"
+          row.add(em("None"))
           # TODO: constraints.
-      result &= "</td>"
-    result &= "</tr>"
-  result &= "</tbody></table>"
-  result = result.docFormat(docKind)
+    cells.add(row)
+
+  result = quickTable(cells, title = result, noheaders = nohdr, class ="help")
 
 proc buildEntryList(state: ConfigState, categories: openarray[string],
                     skipcategories: bool, groupByCategory: bool):
@@ -1137,57 +1048,65 @@ proc buildEntryList(state: ConfigState, categories: openarray[string],
         else:
           result[""].add(entry)
 
-const defaultPreamble = "\n\n# Builtin Functions for Configuration Files\n"
+const defaultTitle = "Builtin Functions for Configuration Files"
 
 proc getBuiltinsTableDoc*(state: ConfigState,
                           categories: openarray[string] = ["introspection"],
                           skipcategories = true,
-                          columns    = [BiSig, BiLong],
-                          byCategory = true,
-                          expandDoc  = true,
-                          colnames   = ["Signature", "Description"],
-                          preamble   = defaultPreamble,
-                          docKind    = CDocConsole): string =
+                          columns        = [BiSig, BiLong],
+                          byCategory     = true,
+                          expandDoc      = true,
+                          colnames       = ["Signature", "Description"],
+                          title          = atom(defaultTitle)): Rope =
   ## If skipcategories is true, we skip funcs with category names
   ## matching an item in the list. However, when it is false,
   ## we ONLY include funcs with matching categories.
-  result  = preamble
+  var
+    cells: seq[seq[Rope]]
+    row:   seq[Rope]
+    nohdrs = if len(colnames) == 0: true else: false
 
   if not byCategory:
-    result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
-    result &= "</tr></thead><tbody>"
+    if len(colnames) != 0:
+      for item in colnames:
+        row.add(th(item))
+      cells.add(row)
+
+  elif title != nil:
+    result = h2(title)
+
   for category, funcs in state.buildEntryList(categories, skipCategories,
                                               byCategory):
     if byCategory:
-      result &= "\n\n## Builtins in category:"
-      result &= "*" & category & "*\n\n"
-      result &= "<table><thead><tr><th>" & colnames.join("</th><th>")
-      result &= "</tr></thead><tbody>"
+      cells = @[]
+      row   = @[]
+      if len(colnames) != 0:
+        for item in colnames:
+          row.add(th(item))
+        cells.add(row)
+
     for entry in funcs:
-      result &= "<tr>"
+      row = @[]
+
       for col in columns:
-        result &= "<td>"
         case col
         of BiSig:
-          result &= "```" & entry.name & $(entry.tInfo) &
-            "```"
+          row.add(em(entry.name & $(entry.tInfo)))
         of BiCategories:
-          result &= entry.tags.join(", ")
+          row.add(atom(entry.tags.join(", ")))
         of BiLong:
-          let docstr = entry.doc.getOrElse("No description available.")
-          if expandDoc:
-            result &= docstr.markdownToHtml()
-          else:
-            result &= docstr
-        result &= "</td>"
-      result &= "</tr>"
+          row.add(markdown(entry.doc.getOrElse("No description available.")))
+
+      cells.add(row)
+
     if byCategory:
-      result &= "</tbody></table>"
+      var title = atom("Builtins in category: ") + em(category)
+      result += quickTable(cells, title = title, noheaders = nohdrs, 
+                                          class = "help")
 
   if not byCategory:
-    result &= "</tbody></table>"
-
-  result = result.docFormat(docKind)
+    result = quickTable(cells, title = title, noheaders = nohdrs, 
+                                       class = "help")
 
 proc getOneInstanceForDocs*(state: ConfigState, obj: AttrScope):
                           ObjectFieldDocs =
@@ -1248,23 +1167,62 @@ proc getObjectValuesAsArray*(state: ConfigState, fqn: string,
 
 proc getValuesForAllObjects*(state: ConfigState, fqn: string,
                              fieldsToUse: openarray[string],
-                             asLit = true,
+                             asLit = true, filter: openarray[string] = [],
+                             colsToMatch: openarray[string] = [],
                              transformers: TransformTableRef = nil):
-                               seq[seq[string]] =
+                               seq[seq[Rope]] =
   let objOpt = state.attrs.getObjectOpt(fqn)
+  var
+    combinedCols: seq[string]
+    searchIx:     seq[int]
+    doFilter = false
+    
+  for item in fieldsToUse:
+    combinedCols.add(item)
 
+  if len(filter) != 0:
+    doFilter = true
+
+    for i, item in colsToMatch:
+      if item notin fieldsToUse:
+        searchIx.add(combinedCols.len())
+        combinedCols.add(item)
+      else:
+        searchIx.add(i)
+        
+    
   if objOpt.isNone():
     raise newException(ValueError, "No object found: " & fqn)
 
   let obj = objOpt.get()
   for k, v in obj.contents:
+
     if v.isA(Attribute):
       continue
-    var thisRow = @[k]
+    var thisRow = @[atom(k)]
 
-    thisRow &= state.getObjectValuesAsArray(fqn & "." & k, fieldsToUse, asLit,
+    let rest = state.getObjectValuesAsArray(fqn & "." & k, combinedCols, asLit,
                                                         transformers)
-    result.add(thisRow)
+    if doFilter:
+      var addedRow = false
+
+      for ix in searchIx:
+        if ix < rest.len():
+          for item in filter:
+            if item in rest[ix]:
+              for n in rest:
+                thisRow.add(text(n))
+              # .. instead of ..< b/c we also added name to front
+              result.add(thisRow[0 .. fieldsToUse.len()])
+              addedRow = true
+              break
+        if addedRow:
+          break
+          
+    else:
+      for item in rest:
+        thisRow.add(text(item))
+      result.add(thisRow)
 
 proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
                                 fieldsToUse: openarray[string],
@@ -1294,180 +1252,85 @@ proc getAllInstanceDocsAsArray*(state: ConfigState, fqn: string,
 
     result.add(curResult)
 
-proc getAllInstanceDocs*(state: ConfigState, fqn: string,
-                         fieldsToUse: openarray[string],
-                         headings: openarray[string] = [],
-                         filterField = "", filterValue = "",
-                         markdownFields: openarray[string] = [],
-                         transformers: TransformTableRef = nil,
-                         table = true, colwidths: openarray[int] = [],
-                         caption = "", docKind = CDocConsole): string =
-  ## The filter is an exact-match only.
-  ## If the fieldsToUse array is empty, we return all fields.
-  ##
-  ## If you ask for table format, we generate an HTML table, otherwise
-  ## we generate a series of H2 / UL
 
-  if table:
-    result = "<table>"
-    if len(colwidths) != 0:
-      result &= "<colgroup>"
-      for i, item in colwidths:
-        result &= "<col width=" & $(colwidths[i]) & " />"
-      result &= "</colgroup>"
-    result &= "<thead><tr>"
-    if len(headings) != 0:
-      for item in headings:
-        result &= "<th>" & item & "</th>"
-    result &= "</tr></thead><tbody>"
+proc cellsToItems(cells: seq[seq[Rope]]): Rope =
+  var listItems: seq[Rope]
 
-  let allInfo = state.getAllInstanceRawDocs(fqn)
+  for row in cells:
+    var cur = Rope(nil)
 
-  for name, fieldDocs in allInfo:
-    if filterField != "" and filterValue != "":
-      if fieldDocs[filterfield]["value"] != filterValue:
-        continue
-
-    if table:
-      result &= "<tr><td>" & name & "</td>"
-    elif docKind == CDocRaw:
-      result &= "\n\n## " & name
-    else:
-      result &= "<h2>" & name & "</h2><ul>"
-
-    for i, field in fieldsToUse:
-      let propDocs = if field in fieldDocs:
-                       fieldDocs[field]
-                     else: nil
-
-      var oneValue = if propDocs == nil:
-                       "*None*"
-                     else:
-                       propDocs["value"]
-
-      if field in markdownFields:
-        oneValue = oneValue.markdownToHtml()
-
-      if transformers != nil and field in transformers:
-        oneValue = transformers[field](field, oneValue)
-
-      if table:
-        result &= "<td>" & oneValue & "</td>"
+    for item in row:
+      if cur == nil:
+        cur = item
       else:
-        var toShow = field
-        if len(headings) != 0:
-          toShow = headings[i]
-        if docKind == CDocRaw:
-          result &= "\n- *" & toShow & "*\n" & onevalue
-        else:
-          result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
+        cur = cur.link(item)
+    if cur != nil:
+      listItems.add(cur)
 
-    if table:
-      result &= "</tr>"
-    elif docKind == CDocRaw:
-      result &= "\n"
-    else:
-      result &= "</ul>"
-  if table:
-    result &= "</tbody>"
-    if caption != "":
-      result &= "<caption>" & caption & "</caption>"
-    result &= "</table>"
+  return ul(listItems)
 
-  result = result.docFormat(docKind)
+proc getInstanceDocs*(state:          ConfigState, 
+                      fqn:            string,
+                      fieldsToUse:    openarray[string],
+                      headings:       openarray[string]  = [],
+                      searchFields:   openarray[string]  = [],
+                      searchTerms:    openarray[string]  = [],
+                      title                              = Rope(nil),
+                      caption                            = Rope(nil),
+                      transformers:   TransformTableRef  = nil): Rope =
+  var 
+    gotAnyMatch = false
+    cells: seq[seq[Rope]]
+    row:   seq[Rope]
+    found: bool
 
-proc searchInstanceDocs*(state: ConfigState, fqn: string,
-                         fieldsToUse: openarray[string],
-                         searchFields: openarray[string],
-                         searchTerms: openarray[string],
-                         searchItemName: bool = true,
-                         colwidths: openarray[int] = [],
-                         headings: openarray[string] = [],
-                         markdownFields: openarray[string] = [],
-                         transformers: TransformTableRef = nil,
-                         table = true, docKind = CDocConsole): string =
-  var gotAnyMatch = false
+  if headings.len() != 0:
+    row = @[]
 
-  if table:
-    result = "<table>"
-    if len(colwidths) != 0:
-      result &= "<colgroup>"
-      for i, item in colwidths:
-        result &= "<col width=" & $(colwidths[i]) & " />"
-      result &= "</colgroup>"
-    result &= "<thead><tr>"
-    if len(headings) != 0:
-      for item in headings:
-        result &= "<th>" & item & "</th>"
-    result &= "</tr></thead><tbody>"
+    for item in headings:
+      row.add(th(item))
+    cells.add(row)
 
   let allInfo = state.getAllInstanceRawDocs(fqn)
 
   for name, fieldDocs in allInfo:
-    var found =  false
-    for term in searchTerms:
-      if term.toLowerAscii() in name.toLowerAscii():
-        found = true
-        gotAnyMatch = true
-    for field in searchFields:
-      if found: break
-      if field notin fieldDocs:
-        continue
+
+    if searchTerms.len() != 0:
+      found = false
       for term in searchTerms:
-        if term.toLowerAscii() in fieldDocs[field]["value"].toLowerAscii():
+        if term.toLowerAscii() in name.toLowerAscii():
           found       = true
           gotAnyMatch = true
-          break
-
+      for field in searchFields:
+        if found: break
+        if field notin fieldDocs:
+          continue
+        for term in searchTerms:
+          if term.toLowerAscii() in fieldDocs[field]["value"].toLowerAscii():
+            found       = true
+            gotAnyMatch = true
+            break
+    else:
+      found       = true
+      gotAnyMatch = true
+  
     if not found:
       continue
 
-    if table:
-      result &= "<tr><td>" & name & "</td>"
-    else:
-      if docKind == CDocRaw:
-        result &= "\n\n## " & name
-      else:
-        result &= "<h2>" & name & "</h2><ul>"
-
+    row = @[atom(name)]
     for i, field in fieldsToUse:
-      let propDocs = if field in fieldDocs:
-                       fieldDocs[field]
-                     else: nil
-
-      var oneValue = if propDocs == nil:
-                       "<i>None</i>"
-                     else:
-                       propDocs["value"]
-
-      if field in markdownFields:
-        oneValue = oneValue.markdownToHtml()
-
-      if transformers != nil and field in transformers:
-        oneValue = transformers[field](field, oneValue)
-
-      if table:
-        result &= "<td>" & oneValue & "</td>"
+      if field in fieldDocs:
+        let propDocs = fieldDocs[field]
+        if transformers != nil and field in transformers:
+          row.add(atom(transformers[field](field, propDocs["value"])))
+        else:
+          row.add(markdown(propDocs["value"]))
       else:
-        var toShow = field
-        if len(headings) != 0:
-          toShow = headings[i]
-          if docKind == CDocRaw:
-            result &= "\n- *" & toShow & "*" & "\n  " & onevalue & "\n"
-          else:
-            result &= "<li><em>" & toShow & "</em><br>" & onevalue & "</li>"
+        row.add(em("None"))
+    cells.add(row)
 
-    if table:
-      result &= "</tr>"
-    else:
-      if docKind == CDocRaw:
-        result &= "\n\n"
-      else:
-        result &= "</ul>"
-  if table:
-    result &= "</tbody></table>"
+  var noHeaders = if headings.len() == 0: true else: false
 
-  if not gotAnyMatch:
-    result = "<h1>No match found.</h1>"
-
-  result = result.docFormat(docKind)
+  result = quickTable(cells, noHeaders = noHeaders, title = title,
+                                         caption = caption, class = "help")
+          

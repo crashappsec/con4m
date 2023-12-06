@@ -24,53 +24,20 @@ var
   verbosity     = c4vShowLoc
   curFileName: string
 
-proc setupTopStyle() =
-
-  let s = newStyle(bgColor = "darkslategray", lpad=1)
-  let r = newStyle(align = AlignC)
-
-  perClassStyles["plain"]  = s
-  perClassStyles["woo"]    = r
-  styleMap["table"]        = newStyle(borders=[BorderNone])
-  styleMap["thead"]        = s
-  styleMap["tbody"]        = s
-  styleMap["tfoot"]        = s
-  styleMap["td"]           = s
-  styleMap["tr"]           = s
-  styleMap["tr.even"]      = s
-  styleMap["tr.odd"]       = s
-  styleMap["th"]           = s
-  styleMap["caption"] = mergeStyles(styleMap["caption"], newStyle(bmargin=2))
-
-
-proc setupBottomStyle() =
-  let s = newStyle(bgColor = "mediumpurple")
-  perClassStyles["plain"]  = s
-  styleMap["thead"]        = s
-  styleMap["table"]        = newStyle(align = AlignC)
-  styleMap["tbody"]        = s
-  styleMap["tfoot"]        = s
-  styleMap["td"]           = s
-  styleMap["tr"]           = s
-  styleMap["tr.even"]      = s
-  styleMap["tr.odd"]       = s
-  styleMap["th"]           = newStyle(fgColor = "atomiclime", tmargin=1)
-
-
 proc formatTb(tb, throwinfo: string): string =
   var
     nimbleDirs: OrderedTable[string, string]
-    row:        string
-
-
-  setupTopStyle()
+    cells:      seq[seq[Rope]]
+    title:      Rope
+    caption:    Rope = atom(getCurrentExceptionMsg())
+    pathInfo:   Rope
+    row:        seq[Rope]
 
   let lines = strutils.split(tb, "\n")
   for i, line in lines:
+    row = @[]
     if i == 0:
-      result  = "<div class=woo><h2 class=woo>" & line & "</h2></div>\n"
-      result &= "<table><colgroup><col width=70><col width=30></colgroup>"
-      result &= "<tbody>"
+      title = atom(line)
       continue
     if len(line) == 0:
       continue
@@ -80,37 +47,41 @@ proc formatTb(tb, throwinfo: string): string =
         if item == "pkgs2":
           if parts[j+2] notin nimbleDirs:
             nimbleDirs[parts[j+2]] = parts[0 .. j+1].join("/")
-          row = parts[j+2 ..< ^1].join("/") & "/<em>" & parts[^1] & "</em>"
+            pathInfo = atom(parts[j+2 ..< ^1].join("/") & "/")
           break
     else:
-      row = parts[0 ..< ^1].join("/") & "/<em>" & parts[^1] & "</em>"
+      pathInfo = atom(parts[0 ..< ^1].join("/") & "/")
 
-    let ix = row.find(' ')
-    result &= "<tr><td>" & row[0 ..< ix] & "</em></td><td><em>" &
-      row[ix + 1 .. ^1] & "</td></tr>"
+    let toEmph = parts[^1].split(' ')
+    row.add(pathInfo + em(toEmph[0]))
+    row.add(em(toEmph[1 .. ^1].join(" ")))
 
-  result &= "</tbody>"
+    cells.add(row)
 
-  if throwinfo != "":
-    result &= "</table><h2 class=woo><bg-black>" & throwinfo &
-      "</bg-black></h2>"
-  else:
-    result &= "</table>"
+  var table = cells.quickTable(title = title, noheaders = true, 
+                               borders = BorderNone, caption = caption)
 
-  result = result.stylizeHtml()
+  table.searchOne(@["table"]).get().defaultBg(false).bpad(0)
+  for item in table.search(@["tr"]):
+    item.bgColor("darkslategray")
+
+  result = $table
 
   if len(nimbleDirs) > 0:
-    setupBottomStyle()
-    var t2 = "<p><center><table><colgroup><col width=20><col width=60>" &
-      "</colgroup><thead><tr>" &
-      "<th>Package</th><th>Location</th>" &
-      "</tr></thead><tbody>"
+    cells = @[@[atom("Package"), atom("Location")]]
+              
     for k, v in nimbleDirs:
-      t2 &= "<tr><td>" & k &
-        "</td><td>" & v & "</td></tr>"
-    t2 &= "</tbody><table><caption>Nimble packages used</caption></table></center>"
-    result &= t2.stylizeHtml()
+      cells.add(@[atom(k), atom(v)])
 
+    table = cells.quickTable(title = "Nimble packages used",
+                             borders = BorderNone)
+    table.searchOne(@["table"]).get().defaultBg(false)
+    for item in table.search(@["tr"]):
+      item.bgColor("darkslategray")
+
+    result &= $table
+
+    
 proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
   var start = 0
 
@@ -140,13 +111,11 @@ proc formatCompilerError*(msg: string,
   let
     me = getAppFileName().splitPath().tail
 
-  result =  me.withColor("red") & ": " & curFileName.withColor("jazzberry") &
-    ": "
+  result =  $color(me, "red") & ": " & $color(curFileName, "jazzberry") & ": "
 
   if t != nil:
     result &= fmt"{t.lineNo}:{t.lineOffset+1}: "
-  result &= "\n" & msg
-  result &= result.stylize()
+  result &= "\n" & $(text(msg))
 
   if t != nil and verbosity in [c4vShowLoc, c4vMax]:
     let

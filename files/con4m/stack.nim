@@ -272,9 +272,9 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
     echo conf.attrs
 
   if step.showJson:
-    print("<h1>Results:</h1><code><pre>" &
-      parseJson(conf.attrs.scopeToJson()).pretty() &
-       "</pre></code>")
+    print(h1("Results") +
+          code(pre(parseJson(conf.attrs.scopeToJson()).pretty())))
+ 
 
 proc oneInit(s: ConfigState, step: ConfigStep) =
   if step.addBuiltins:

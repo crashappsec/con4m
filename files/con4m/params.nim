@@ -1,10 +1,10 @@
-import types, treecheck, options, tables, nimutils, eval, dollars
+import types, treecheck, typecheck, options, tables, nimutils, eval, dollars
 
 
 proc validateParameter*(state: ConfigState, param: ParameterInfo):
-                      Option[string] =
+                      Option[Rope] =
   if param.value.isNone():
-    return some("<red>error:</red> Must provide a valid value.")
+    return some(color("error: ", "red") + text("Must provide a valid value."))
 
   if param.validator.isSome():
     let
@@ -12,9 +12,9 @@ proc validateParameter*(state: ConfigState, param: ParameterInfo):
       err    = unpack[string](boxOpt.get())
 
     if err != "":
-      return some(err)
+      return some(text(err))
 
-  return none(string)
+  return none(Rope)
 
 
 proc basicConfigureOneParam(state:     ConfigState,
@@ -22,7 +22,7 @@ proc basicConfigureOneParam(state:     ConfigState,
                             param:     ParameterInfo) =
   var
     boxOpt:  Option[Box]
-    default = "<<no default>>"
+    default = text("<<no default>>")
 
   if param.value.isSome():
     boxOpt = param.value
@@ -32,20 +32,21 @@ proc basicConfigureOneParam(state:     ConfigState,
     boxOpt = state.sCall(param.defaultCb.get(), @[])
 
   if boxOpt.isSome():
-    default = param.defaultType.oneArgToString(boxOpt.get())
-    default = stylize("Default is: " & default, ensureNl = false)
+    default = h2(atom("Default is: ") +
+                  fgColor(param.defaultType.oneArgToString(boxOpt.get()),
+                           c0Text))
   let
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
-    intro   = "Configuring: <jazzberry>" & param.name & "</jazzberry> -- " &
-              "<i>" & short & "</i>\n" & long
 
-  echo intro.stylizeMd()
+  print(h2(atom("Configuring variable: ") + em(param.name) + 
+           text(" -- ") + italic(short)) + markdown(long))
 
   while true:
     if boxOpt.isSome():
-      echo default
-      print("Press [enter] to accept default, or enter a value: ")
+      print(default)
+      print("Press [enter] to accept default, or enter a value: ", 
+            ensureNl = false)
     else:
       print("Please enter a value: ", ensureNl = false)
 
@@ -55,8 +56,14 @@ proc basicConfigureOneParam(state:     ConfigState,
       try:
         boxOpt = some(line.parseConstLiteral(param.defaultType))
       except:
-        echo(stylize(withColor("error: ", "red") & getCurrentExceptionMsg()))
+        print (color("error: ", "red") + text(getCurrentExceptionMsg()))
         continue
+
+    let box = boxOpt.get()
+
+    if not param.defaultType.unify(floatType).isBottom() and box.kind == MkInt:
+      let f = float(unpack[int](box))
+      boxOpt = some(pack(f))
 
     param.value = boxOpt
 
@@ -65,15 +72,14 @@ proc basicConfigureOneParam(state:     ConfigState,
     if err.isNone():
       break
 
-    echo(stylize(err.get()))
+    print(err.get())
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,
                                componentList: seq[ComponentInfo],
-                               nextPrompt = "Press [enter] to continue."
-                              ) =
+                               nextPrompt = "Press [enter] to continue.") =
   var shouldPause = false
-  print("# Configuring Component: " & component.url)
+  print(h1("Configuring Component: " & component.url))
   for subcomp in componentList:
     for name, param in subcomp.varParams:
       state.basicConfigureOneParam(subcomp, param)
@@ -82,7 +88,7 @@ proc basicConfigureParameters*(state:         ConfigState,
     for name, param in subcomp.attrParams:
       state.basicConfigureOneParam(subcomp, param)
       shouldPause = true
-  print("# Finished configuration for " & component.url)
+  print(h2("Finished configuration for " & component.url))
   if shouldPause:
     print(nextPrompt)
     discard stdin.readLine()

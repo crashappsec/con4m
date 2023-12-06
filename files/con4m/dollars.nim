@@ -35,16 +35,16 @@ else:
       result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
 template colorType(s: string): string =
-  s.withColor("green")
+  $color(s, "green")
 
 template colorLit(s: string): string =
-  s.withColor("red")
+  $color(s, "red")
 
 template colorNT(s: string): string =
-  s.withColor("jazzberry")
+  $color(s, "jazzberry")
 
 template colorT(s: string): string =
-  s.withColor("orange")
+  $color(s, "orange")
 
 type ReverseTVInfo = ref object
     takenNames: seq[string]
@@ -345,7 +345,10 @@ proc oneArgToString*(t: Con4mType,
       result = "'" & result & "'"
 
   of TypeFloat:
-    return $(unpack[float](b))
+    if b.kind == MkInt:
+      return $(unpack[int](b)) & ".0"
+    else:
+      return $(unpack[float](b))
   of TypeBool:
     return $(unpack[bool](b))
   of TypeDuration:
@@ -390,10 +393,11 @@ proc oneArgToString*(t: Con4mType,
   else:
     return "<??>"
 
-proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
+proc reprOneLevel(self: AttrScope, inpath: seq[string]): Rope =
   var path = inpath & @[self.name]
 
-  result = path.join(".") & "\n"
+  result = h3(path.join("."))
+  
   var rows = @[@["Name", "Type", "Value"]]
 
 
@@ -413,18 +417,18 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): string =
     rows.add(row)
 
   try:
-    result &= rows.instantTableWithHeaders()
+    result += rows.quickTable()
   except:
-    result &= "<h2>Empty table.</h2>".stylizeHtml()
+    result += h2("Empty table.")
 
   for k, v in self.contents:
     if v.isA(AttrScope):
       var scope = v.get(AttrScope)
-      result &= scope.reprOneLevel(path)
+      result += scope.reprOneLevel(path)
 
 proc `$`*(self: AttrScope): string =
   var parts: seq[string] = @[]
-  return reprOneLevel(self, parts)
+  return $(reprOneLevel(self, parts))
 
 proc `$`*(self: VarScope): string =
   result = ""
@@ -436,7 +440,7 @@ proc `$`*(self: VarScope): string =
   for k, v in self.contents:
     rows.add(@[k, $(v.tInfo)])
 
-  result &= rows.instantTableWithHeaders()
+  result &= $(rows.quickTable())
 
 proc `<`(x, y: seq[string]): bool =
   if x[0] == y[0]:
@@ -455,4 +459,4 @@ proc `$`*(funcTable: Table[string, seq[FuncTableEntry]]): string =
   rows.sort()
   rows = @[@["Name", "Type", "Kind"]] & rows
 
-  result &= rows.instantTableWithHeaders()
+  result = $(rows.quickTable())
