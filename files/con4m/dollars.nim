@@ -397,7 +397,7 @@ proc reprOneLevel(self: AttrScope, inpath: seq[string]): Rope =
   var path = inpath & @[self.name]
 
   result = h3(path.join("."))
-  
+
   var rows = @[@["Name", "Type", "Value"]]
 
 
