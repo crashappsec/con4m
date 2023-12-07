@@ -4,12 +4,12 @@ author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
 bin           = @["con4m"]
-srcDir        = "files"
+srcDir        = "src"
 installExt    = @["nim", "c4m", "c42spec", "sh"]
 
 # Dependencies
 requires "nim >= 2.0.0"
-requires "https://github.com/crashappsec/nimutils#1b65cfe33db2e22c6980f998be61996e452738d3"
+requires "https://github.com/crashappsec/nimutils#0d7ecf350038f8f57c74981302cc90ede2df26e7"
 
 #before build:
 #  let script = "files/bin/devmode.sh"
