@@ -3,7 +3,13 @@
 # resumption.
 #
 # Plus, I'd prefer to keep UTF32 instead of UTF8.
-import unicode, nimutils, types
+import unicode, nimutils
+
+type
+  StringCursor* = ref object
+    runes*: seq[Rune]
+    i*:     int
+
 
 proc newStringCursor*(s: string): StringCursor =
   result = StringCursor(runes: s.toRunes(), i: 0)
@@ -40,4 +46,3 @@ proc `$`*(s: StringCursor): string =
 
 proc toRope*(s: StringCursor): Rope =
   return paragraph(Rope(kind: RopeAtom, length: s.runes.len(), text: s.runes))
-

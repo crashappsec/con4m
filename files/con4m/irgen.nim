@@ -7,7 +7,8 @@ import parse, typesystem, types, typeinfo, options, strutils, typebuiltins
 type 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrSectionScope, IrConditional,
-    IrJump, IrRet, IrLit
+    IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUnary, IrBinary,
+    IrEnum, IrEnumItem
 
   IrNode* = ref object
     parseNode*: Con4mNode
@@ -46,13 +47,82 @@ type
     of IrRet:
       retVal*: IrNode
     of IrLit:
-      litVal*: Any
-      
+      syntax*: SyntaxType
+      litmod*: string # Only for containers.
+      items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
+    of IrMember:
+      name*: string
+    of IrIndex:
+      indexStart*: IrNode
+      indexEnd*:   IrNode
+    of IrCall:
+      module*:  string   # For explicit module specifier
+      fname*:   string
+      actuals*: seq[IrNode]
+    of IrUse:
+      targetModule*: string
+      targetLoc*: string
+    of IrUnary:
+      uOp*: string
+      uRhs*: IrNode
+    of IrBinary:
+      bOp*:  string
+      bLhs*: IrNode
+      bRhs*: IrNode
+    of IrEnumItem:
+      enumItemName*: string
+      customValue*:  IrNode
+    of IrEnum:
+      enumItems*: seq[IrNode]
+
+  SymbolKind* = enum SymVar, SymAttr, SymFunc, SymParam, SymEnum
+
+  SymbolInfo* = ref object
+    name*:       string
+    kind*:       SymbolKind
+    tid*:        TypeId
+    uses*:       seq[IrNode]
+    defs*:       seq[IrNode]
+    exportIt*:   bool
+    fimpl*:      FuncDecl
+    pInfo*:      ParamInfo
+    shortdoc*:   Option[string]
+    doc*:        Option[string]
+    validator*:  Option[Callback]
+    startValue*: Option[Any]
+
+  IrErrInfo = object
+    msg*:     Rope
+    err*:     bool
+    node*:    Con4mNode
+    prevLoc*: IrNode
+
   IrGenCtx = object
-    pt:     Con4mNode
-    parent: IrNode
-    errors: seq[string]
+    pt*:          Con4mNode
+    parent*:      IrNode
+    curFunc*:     SymbolInfo
+    params*:      Dict[string, ParamInfo]
+    errors*:      seq[IrErrInfo]
+    moduleScope*: Dict[string, SymbolInfo]
+    enums*:       seq[IrNode]
+    lhsContext*:  bool
+
+  # After pass 1, check to see if declared variables are used, and
+  # warn if not.
+
     
+template irError*(ctx: var IrGenCtx, msg: string, prevLoc: IrNode = nil) =
+  ctx.errors.add(IrrErrInfo(msg: msg.text(), err: true, node: ctx.pt))
+
+template irWarn*(ctx: var IrGenCtx, msg: string, prevLoc: IrNode = nil) =
+  ctx.errors.add(IrrErrInfo(msg: msg.text(), err: false, node: ctx.pt))
+
+template irError*(ctx: var IrGenCtx, msg: Rope, prevLoc: IrNode = nil) =
+  ctx.errors.add(IrrErrInfo(msg: msg, err: true, node: ctx.pt))
+
+template irWarn*(ctx: var IrGenCtx, msg: Rope, prevLoc: IrNode = nil) =
+  ctx.errors.add(IrrErrInfo(msg: msg, err: false, node: ctx.pt))
+
 proc getLitMod(ctx: var IrGenCtx): string =
   return ctx.pt.token.get().litType
 
@@ -68,6 +138,14 @@ proc downNode(ctx: var IrGenCtx, which: int): IrNode =
   result          = ctx.parseTreeToIr()
   ctx.pt          = ctx.parent
   ctx.parent      = savedParent
+
+proc downNode(ctx: var IrGenCtx, kid, grandkid: int): IrNode =
+  var savedParent = ctx.parent
+  ctx.parent = ctx.pt.children[kid]
+  ctx.pt     = ctx.parent[grandkid]
+  result     = ctx.parseTreeToIr()
+  ctx.pt     = ctx.parent.parent
+  ctx.parent = savedParent
 
 template getText(ctx: var IrGenCtx): string =
   ctx.pt.getTokenText()
@@ -108,6 +186,88 @@ proc checkLabelDupe(ctx: var IrGen, label: string) =
       result.irWarn("Nested loops have the same label (" & label & ")", n)
       return
     n = n.parent
+
+proc ensureEnumValueUniqueness*(ctx: var IrGen, enumNode: IrNode): bool =
+  let symOpt = ctx.moduleScope[enumNode.enumItemName]
+
+    if symOpt.isSome():
+      let sym = symOpt.get()
+      case sym.kind
+      of SymEnum:
+        if sym.defs[0] != enumNode:
+          result.irError("Enum value '" & name & "' has already been defined" &
+                       " in an enum.", sym.defs[0])
+          return false
+      of SymFunc:
+        result.irError("Enum value '" & name & "' conflicts with a function " &
+          " definition.", sym.defs[0])
+        return false
+      of SymParam:
+        result.irError("Enum value '" & name & "' shares a name with a " &
+          "parameter; parameters must be variable; enums must be immutable.",
+        sym.defs[0])
+        return false
+      of SymVar:
+        if sym.defs.len() > 0 or (sym.defs.len() == 1 and 
+                                  sym.defs[0] != enumNode):
+          result.irError("Enum value '" & name & "' must be immutable, but " &
+            "has been mutated elsewhere.", sym.defs[0])
+          return false
+      else:
+        discard
+    return true
+ 
+proc convertEnum*(ctx: var IrGen) =
+  # We skip adding the actual values to the symbol table here, because
+  # we're not propogating type information in this pass, at least
+  # not yet.
+  var stmtNode = ctx.irNode(IrEnum)
+
+  for i in 0 ..< ctx.numKids():
+    
+    var itemNode = IrNode(kind: rEnumItem, tid: tInt(), 
+                          parseNode: ctx.pt.children[i],
+                          enumItemName: ctx.getText(i, 0),
+                          parent: stmtNode)
+    
+    if ctx.numKids(i) == 2:
+      itemNode.customValue = itemNode.ctx.downNode(i, 1)
+
+    stmtNode.enumItems.add(itemNode)
+    if not ctx.ensureEnumValueUniqueness(itemNode):
+      return
+
+    let symOpt = ctx.moduleScope[itemNode.enumItemName]
+    var sym: SymbolInfo
+
+    if symOpt.isSome():
+      sym = symOpt.get()
+      sym.kind = SymEnum
+      sym.defs.add(itemNode)
+      sym.exportIt = true
+      sym.tid = tInt()
+    else:
+      sym = SymbolInfo(name:     itemNode.enumItemName,
+                       kind:     SymEnum,
+                       tid:      tInt(),
+                       defs:     @[itemNode],
+                       exportIt: true)
+      ctx.moduleScope[itemNode.enumItemName] = sym
+
+proc convertFuncDefinition*(ctx: var IrGen) =
+  discard
+
+proc convertVarStmt*(ctx: var IrGen) =
+  discard
+
+proc convertGlobalStmt*(ctx: var IrGen) =
+  discard
+
+proc convertExportStmt*(ctx: var IrGen) =
+  discard
+
+proc convertParamBlock*(ctx: var IrGen) =
+  discard
 
 proc statementsToIr(ctx: var IrGenCtx): IrNode =
   result = ctx.irNode(IrBlock)
@@ -150,6 +310,21 @@ proc statementsToIr(ctx: var IrGenCtx): IrNode =
       ctx.irError("'else' statement must follow an 'if' block or another " &
                   "'elif' block.")
       continue
+    of NodeEnumStmt:
+      ctx.convertEnum()
+      continue
+    of NodeFuncDef:
+      ctx.convertFuncDefinition()
+      continue
+    of NodeVarStmt:
+      ctx.convertVarStmt()
+      continue
+    of NodeGlobalStmt:
+      ctx.convertGlobalStmt()
+    of NodeExportStmt:
+      ctx.convertExportStmt()
+    of NodeParamBlock:
+      ctx.convertParamBlock()
     else:
       discard
 
@@ -227,7 +402,7 @@ proc loopExit(ctx: var IrGenCtx, loopExit: bool): IrNode =
           result.targetNode = n
           return
       n = n.parent
-    result.irError(ctx.getText() & " to label '" & label & 
+    ctx.irError(ctx.getText() & " to label '" & label & 
       "' is invalid, because it is not contained inside a loop that was " &
       "given that label.")
 
@@ -244,17 +419,129 @@ proc convertReturn(ctx: var IrGenCtx): IrNode =
     result.retVal = ctx.downNode(0)
 
 proc convertTypeLit(ctx: var IrGenCtx): IrNode =
-  var tvars: Dict[string, TypeId]
+  var 
+    tvars: Dict[string, TypeId]
+    tinfo: TypeId
 
   result        = ctx.irNode(IrLit)
   result.tid    = some(tTypeSpec().typeId)
-  result.litVal = ctx.pt.buildType(tvars).toAny()
+  tinfo         = ctx.pt.buildType(tvars)
+  result.litVal = tinfo.toAny()
 
-proc convertStrLit(ctx: var IrGenCtx): IrNode =
-  result     = ctx.irNode(IrLit)
-  result.tid = some(ctx.getStringTypeFromLitMod(ctx.getLitMod())
+proc convertCharLit(ctx: var IrGenCtx): IrNode =
+  let 
+    err: string
+    tid: int
+    lmod = ctx.getLitMod()
 
-proc convertIntLit(ctx: var IrGenCtx): IrNode
+  result = ctx.irNode(IrLit)
+
+  if litMod != "":
+    tid = getTypeIdFromSyntax(tid, lmod, STChrQuotes)
+    if err != "":
+      ctx.irError(err)
+    else:
+      let 
+        codepoint = ctx.pt.token.get().codepoint
+        val       = initializeCharLiteral(tid, codepoint, err)
+      if err != "":
+        ctx.irError(err)
+      else:
+        result.value = some(val)
+
+proc convertLit(ctx: var IrGenCtx, st: SyntaxType): IrNode =
+  var 
+    err: string
+    tid: int
+    lmod = ctx.getLitMod()
+
+  result = ctx.irNode(IrLit)
+
+  result.syntax = st
+
+  if lmod != "":
+    tid = getTypeIdFromSyntax(st, lmod, err)
+    if err != "":
+      ctx.irError(err)
+    else:
+      let val = parseLiteral(tid, ctx.getText(), err, st)
+      if err != "":
+        ctx.irError(err)
+      else:
+        result.value = some(val)
+
+proc convertListLit(ctx: var IrGenCtx): IrNode =
+  result        = ctx.irNode(IrLit)
+  result.syntax = STList
+  result.litmod = ctx.getLitMod()
+  for i in 0 ..< ctx.numKids:
+    result.items.add(ctx.downNode(i))
+
+proc convertDictLit(ctx: var IrGenCtx): IrNode =
+  result        = ctx.irNode(IrLit)
+  result.syntax = STDict
+  result.litmod = ctx.getLitMod()
+  for i in 0 ..< ctx.numKids():
+    result.items.add(ctx.downNode(i, 0))
+    result.items.add(ctx.downNode(i, 1))
+
+proc convertTupleLit(ctx: var IrGenCtx): IrNode =
+  result        = ctx.irNode(IrLit)
+  result.syntax = STTuple
+  result.litmod = ctx.getLitMod()
+  for i in 0 ..< ctx.numKids():
+    result.items.add(ctx.downNode(i))
+
+proc convertCallbackLit(ctx: var IrGenCtx): IrNode =
+  var
+    cb: Callback
+  result = ctx.irNode(IrLit)
+  if ctx.pt.children[0].kind != NodeNoCallbackName:
+    cb.name = getText(0, 0)
+  if ctx.numKids() == 2:
+    var
+      tvars: Dict[string, TypeId]
+    cb.tid = ctx.pt.children[1].buildType(tvars)
+    result.tid = tref(cb.tid)
+  else:
+    result.tid = tref(newFuncType(@[])
+
+proc convertMember(ctx: var IrGenCtx): IrNode =
+  result = ctx.irNode(IrMember)
+  var parts: seq[string]
+  for i in 0 ..< ctx.numKids():
+    parts.add(ctx.getText(i))
+  result.name = parts.join(".")
+
+proc convertIndex(ctx: var IrGenCtx): IrNode =
+  result = ctx.irNode(IrIndex)
+  result.indexStart = ctx.downNode(0)
+  if ctx.numKids() == 2:
+    result.indexEnd = ctx.downNode(1)
+
+proc convertCall(ctx: var IrGenCtx): IrNode =
+  result       = ctx.irNode(IrCall)
+  result.fname = ctx.getText(0)
+
+  for i in 0 ..< ctx.numKids(1):
+    result.actuals.add(ctx.downNode(1, i))
+
+proc convertUseStmt(ctx: var IrGenCtx): IrNode =
+  result              = ctx.irNode(IrUse)
+  result.targetModule = ctx.getText(0)
+  if ctx.numKids() == 2:
+    result.targetLoc = ctx.getText(1)
+
+proc convertUnaryOp(ctx: var IrGenCtx): IrNode =
+  result      = ctx.irNode(IrUnary)
+  result.uOp  = ctx.getText()
+  result.uRhs = ctx.downNode(0)
+
+proc convertBinaryOp(ctx: var IrGenCtx): IrNode =
+  result      = ctx.irNode(IrBinary)
+  result.bOp  = ctx.getText()
+  result.bLhs = ctx.downNode(0)
+  result.bRhs = ctx.downNode(1)
 
 proc parseTreeToIr(ctx: var IrGenCtx): IrNode =
   case ctx.pt.kind
@@ -286,30 +573,35 @@ proc parseTreeToIr(ctx: var IrGenCtx): IrNode =
   of NodeType:
     result = ctx.convertTypeLit()
   of NodeStringLit:
-    result = ctx.convertStrLit()
+    result = ctx.convertLit(StStrQuotes)
   of NodeIntLit:
-    result = ctx.convetIntLit()
+    result = ctx.convertLit(STBase10)
+  of NodeHexLit:
+    result = ctx.convertLit(StHex)
   of NodeFloatLit:
-    result = ctx.convertFloatLit()
+    result = ctx.convertLit(STFloat)
   of NodeBoolLit:
-    result = ctx.convertBoolLit()
+    result = ctx.convertLit(StBoolLit)
+  of NodeOtherLit:
+    result = ctx.convertLit(StOther)
+  of NodeCharLit:
+    result = ctx.convertCharLit()
   of NodeDictLit:
     result = ctx.convertDictLit()
   of NodeListLit:
     result = ctx.convertListLit()
-  of NodeOtherLit:
-    result = ctx.convertOtherLit()
   of NodeTupleLit:
     result = ctx.convertTupleLit()
-  of NodeCharLit:
-    result = ctx.convertCharLit()
   of NodeCallbackLit:
     result = ctx.convertCallbackLit()
-  of NodeNoCallbackName:
-    result = ctx.convertEmptyCallbackLit()
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
-     NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
+     NodeMod, NodeMul, NodeDiv:
     result = ctx.convertBinaryOp()
+  of NodePlus, NodeMinus:
+    if ctx.numKids == 2:
+      result = ctx.convertBinaryOp()
+    else:
+      result = ctx.convertUnaryOp()
   of NodeNot:
     result = ctx.convertUnaryOp()
   of NodeMember:
@@ -318,24 +610,10 @@ proc parseTreeToIr(ctx: var IrGenCtx): IrNode =
     result = ctx.downNode(0)
   of NodeIndex:
     result = ctx.convertIndex()
-  of NodeActuals:
-    result = ctx.convertActuals()
   of NodeCall:
     result = ctx.convertCall()
-  of NodeEnumStmt:
-    result = ctx.convertEnum()
-  of NodeFuncDef:
-    result = ctx.convertFuncDefinition()
-  of NodeVarStmt:
-    result = ctx.convertVarStmt()
-  of NodeGlobalStmt:
-    result = ctx.convertGlobalStmt()
-  of NodeExportStmt:
-    result = ctx.convertExportStmt()
   of NodeUseStmt:
     result = ctx.convertUseStmt()
-  of NodeParamBlock:
-    result = ctx.convertParamBlock()
   else:
     unreachable
 

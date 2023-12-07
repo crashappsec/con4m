@@ -3,12 +3,52 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import unicode, nimutils, types, errmsg, strcursor, style
+import unicode, nimutils, strcursor, style, err
 
-template lexFatal(msg: string, t: Con4mToken) =
-  var st = when not defined(release): getStackTrace() else: ""
-  fatal(msg, t, st, instantiationInfo())
-    
+type
+  ## Enumeration of all possible lexical tokens. Should not be exposed
+  ## outside the package.
+  Con4mTokenKind* = enum
+    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtLockAttr, TtExportVar,
+    TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
+    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
+    TtPeriod, TtLBrace, TtRBrace, TtRBraceMod, TtLBracket, TtRBracket,
+    TtRBracketMod, TtLParen, TtRParen, TtRParenMod, TtAnd, TtOr, TtIntLit,
+    TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTIf,
+    TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtOtherLit, TtBacktick,
+    TtArrow, TtObject, TtWhile, TtIn, TtSof, TtEof, ErrorTok,
+    ErrorLongComment, ErrorStringLit, ErrorCharLit, ErrorOtherLit,
+    ErrorLitMod
+
+  Con4mToken* = ref object
+    ## Lexical tokens. Should not be exposed outside the package.
+    case kind*:   Con4mTokenKind
+    of TtStringLit:
+      unescaped*: string
+    of TtCharLit:
+      codepoint*: uint
+    else:  nil
+    cursor*:      StringCursor
+    id*:          int
+    startPos*:    int
+    endPos*:      int
+    lineNo*:      int
+    lineOffset*:  int
+    litType*:     string
+    adjustment*:  int
+
+  TokenBox* = ref object
+    tokens*: seq[Con4mToken]
+
+template lexFatal(basemsg: string, t: Con4mToken) =
+  var err = Con4mError(kind: ErrLex, msg: basemsg.text(),
+                       token: cast[pointer](t))
+
+  GC_ref(t)
+
+  raise newCon4mException(err)
+
 proc uEsc(s: seq[Rune], numchars: int, t: Con4mToken): Rune =
   var
     c = 0
@@ -64,9 +104,9 @@ proc parseCodePoint(t: Con4mToken) =
     let (cp, n) = processEscape(raw[1 .. ^1], t)
     if (n + 2) != len(raw):
       lexFatal("Invalid escape in string literal", t)
-    t.codepoint = int(cp)
+    t.codepoint = uint(cp)
   else:
-    t.codepoint = int(raw[0])
+    t.codepoint = uint(raw[0])
 
 proc unescape(token: Con4mToken) =
   # Turn a raw string into its intended representation.  Note that we
@@ -176,7 +216,7 @@ template tok(k: Con4mTokenKind, eatNewlines: static[bool] = false) =
 
 # The adjustment is to chop off start/end delimiters for
 # literals... strings, tristrings, and 'other' literals: << >>
-template tok(k: Con4mTokenKind, adjustValue: static[int], 
+template tok(k: Con4mTokenKind, adjustValue: static[int],
              frontOnly: static[bool] = false) =
 
   when frontOnly:
@@ -276,8 +316,8 @@ proc processStrings(inToks: seq[Con4mToken]): seq[Con4mToken] =
 template handleLitMod() =
   if s.peek() == Rune('\''):
     s.advance()
-  
-    var 
+
+    var
       r:        Rune = s.read()
       modifier: seq[Rune]
 
@@ -396,7 +436,7 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
             tok(ErrorOtherLit)
             return (false, toks)
           of Rune('>'):
-            if s.read() != Rune('>'): 
+            if s.read() != Rune('>'):
               continue
             tok(TtOtherLit, 2)
             handleLitMod()
@@ -443,14 +483,50 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
       tok(TtLBrace, true)
     of Rune('}'):
       tok(TtRBrace)
+      handleLitMod()
+      if toks.tokens[^1].litType != "":
+        var
+          oldTok = toks.tokens[^1]
+          newTok = Con4mToken(kind:       TtRBraceMod,
+                              id:         oldTok.id,
+                              startPos:   oldTok.startPos,
+                              endPos:     oldTok.endPos,
+                              lineNo:     oldTok.lineNo,
+                              lineOffset: oldTok.lineOffset,
+                              litType:    oldTok.litType)
+        toks.tokens[^1] = newTok
     of Rune('['):
       tok(TtLBracket, true)
     of Rune(']'):
       tok(TtRBracket)
+      handleLitMod()
+      if toks.tokens[^1].litType != "":
+        var
+          oldTok = toks.tokens[^1]
+          newTok = Con4mToken(kind:       TtRBracketMod,
+                              id:         oldTok.id,
+                              startPos:   oldTok.startPos,
+                              endPos:     oldTok.endPos,
+                              lineNo:     oldTok.lineNo,
+                              lineOffset: oldTok.lineOffset,
+                              litType:    oldTok.litType)
+        toks.tokens[^1] = newTok
     of Rune('('):
       tok(TtLParen, true)
     of Rune(')'):
       tok(TtRParen)
+      handleLitMod()
+      if toks.tokens[^1].litType != "":
+        var
+          oldTok = toks.tokens[^1]
+          newTok = Con4mToken(kind:       TtRParenMod,
+                              id:         oldTok.id,
+                              startPos:   oldTok.startPos,
+                              endPos:     oldTok.endPos,
+                              lineNo:     oldTok.lineNo,
+                              lineOffset: oldTok.lineOffset,
+                              litType:    oldTok.litType)
+        toks.tokens[^1] = newTok
     of Rune('&'):
       if s.read() != Rune('&'):
         tok(ErrorTok)
@@ -464,80 +540,92 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
       else:
         tok(TtOr, true)
     of Rune('0') .. Rune('9'):
-      block numLit:
-        var isFloat: bool
-
+      if c == Rune('0') and s.peek() == Rune('x'):
+        s.advance()
         while true:
-          case s.peek()
-          of Rune('0') .. Rune('9'):
-            s.advance()
+          case s.read()
+          of Rune('0') .. Rune('9'),
+             Rune('a') .. Rune('f'),
+             Rune('A') .. Rune('F'):
+               continue
           else:
             break
+        tok(TtHexLit)
+      else:
+        block numLit:
+          var isFloat: bool
 
-        if s.peek() == Rune('.'):
-          s.advance()
-          isFloat = true
-          case s.read()
-          of Rune('0') .. Rune('9'):
-            while true:
-              case s.peek()
-              of Rune('0') .. Rune('9'):
-                s.advance()
-              of Rune('.'):
-                s.advance()
-                while true:
-                  case s.peek()
-                  of Rune(' '), Rune('\n'), Rune('\x00'):
-                    tok(TtOtherLit)
-                    handleLitMod()
-                    break numLit
-                  else:
-                    s.advance()
-              else:
-                break
-          else:
-            tok(ErrorTok)
-            return (false, toks) # Grammar doesn't allow no digits after dot.
-        case s.peek():
-          of Rune('e'), Rune('E'):
-            s.advance()
-            isFloat = true
+          while true:
             case s.peek()
-            of Rune('+'), Rune('-'), Rune('0') .. Rune('9'):
+            of Rune('0') .. Rune('9'):
               s.advance()
             else:
-              tok(ErrorTok)
-              return (false, toks) # e or E without numbers after it
-            while true:
-              case s.peek()
-              of Rune('0') .. Rune('9'):
-                s.advance()
-              else:
-                break
-          of Rune(':'):
-            var
-              savedPosition = s.getPosition()
-              flag          = false
+              break
 
+          if s.peek() == Rune('.'):
             s.advance()
-            while true:
-              case s.peek()
-              of Rune(':'):
-                flag = true
-              of Rune(' '), Rune('\n'), Rune('\x00'):
-                if flag:
-                  tok(TtOtherLit)
-                  handleLitMod()
+            isFloat = true
+            case s.read()
+            of Rune('0') .. Rune('9'):
+              while true:
+                case s.peek()
+                of Rune('0') .. Rune('9'):
+                  s.advance()
+                of Rune('.'):
+                  s.advance()
+                  while true:
+                    case s.peek()
+                    of Rune(' '), Rune('\n'), Rune('\x00'):
+                      tok(TtOtherLit)
+                      handleLitMod()
+                      break numLit
+                    else:
+                      s.advance()
                 else:
-                  s.setPosition(savedPosition)
-                  tok(TtIntLit)
-                  handleLitMod()
-                break numLit
-              else:
+                  break
+            else:
+              tok(ErrorTok)
+              return (false, toks) # Grammar doesn't allow no digits after dot.
+          case s.peek():
+            of Rune('e'), Rune('E'):
+              s.advance()
+              isFloat = true
+              case s.peek()
+              of Rune('+'), Rune('-'), Rune('0') .. Rune('9'):
                 s.advance()
-          else:
-            discard
-        if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
+              else:
+                tok(ErrorTok)
+                return (false, toks) # e or E without numbers after it
+              while true:
+                case s.peek()
+                of Rune('0') .. Rune('9'):
+                  s.advance()
+                else:
+                  break
+            of Rune(':'):
+              var
+                savedPosition = s.getPosition()
+                flag          = false
+
+              s.advance()
+              while true:
+                case s.peek()
+                of Rune(':'):
+                  flag = true
+                of Rune(' '), Rune('\n'), Rune('\x00'):
+                  if flag:
+                    tok(TtOtherLit)
+                    handleLitMod()
+                  else:
+                    s.setPosition(savedPosition)
+                    tok(TtIntLit)
+                    handleLitMod()
+                  break numLit
+                else:
+                  s.advance()
+            else:
+              discard
+          if isFloat: tok(TtFloatLit) else: tok(TtIntLit)
         handleLitMod()
     of Rune('\''):
       case s.read()
@@ -567,7 +655,7 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
         handleLitMod()
     of Rune('"'):
       var tristring = false
-      
+
       if s.peek() == Rune('"'):
         s.advance()
         if s.peek() == Rune('"'):
@@ -614,7 +702,7 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
       toks.tokens = processStrings(toks.tokens)
       return (true, toks)
     else:
-      var 
+      var
         r: Rune
 
       if uint(c) < 128:
@@ -638,12 +726,16 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
             discard s.read()
           else:
             break
-          
+
       case $(s.slice(startPos, s.getPosition()))
+      of "True", "true":
+        tok(TtTrue)
+        handleLitMod()
+      of "False", "false":
+        tok(TtFalse)
+        handleLitMod()
       of "var":            tok(TtVar)
-      of "global"          tok(TtGlobal)
-      of "True", "true":   tok(TtTrue)
-      of "False", "false": tok(TtFalse)
+      of "global":         tok(TtGlobal)
       of "is":             tok(TtCmp)
       of "and":            tok(TtAnd)
       of "or":             tok(TtOr)
@@ -666,17 +758,21 @@ proc lex*(s: StringCursor): (bool, TokenBox) =
 
   unreachable
 
-proc lex*(str: string): (bool, TokenBox) =
-  return str.newStringCursor().lex()
+proc lex*(str: string, err: var string): (bool, TokenBox) =
+  try:
+    return str.newStringCursor().lex()
+  except:
+    err = getCurrentException().msg
+    return (false, nil)
 
 proc `$`*(tok: Con4mToken): string =
   case tok.kind
-  of TtStringLit:   
+  of TtStringLit:
     if tok.adjustment == 1:
       result = "\"" & tok.unescaped & "\""
     else:
       result = "\"\"\"" & tok.unescaped & "\"\"\""
-  of TtCharLit:        result = "'" & $(tok.cursor.slice(tok.startPos, 
+  of TtCharLit:        result = "'" & $(tok.cursor.slice(tok.startPos,
                                                          tok.endPos)) & "'"
   of TtSof:            result = "~sof~"
   of TtEof:            result = "~eof~"
@@ -703,20 +799,21 @@ proc toRope*(tok: Con4mToken): Rope =
   of TtStringLit:
     result.fgColor(getCurrentCodeStyle().stringLitColor)
   of TtCharLit:
-    result.fgColor(getCurrentCodeStyle().charLitColor)    
-  of TtIntLit, TtFloatLit:
+    result.fgColor(getCurrentCodeStyle().charLitColor)
+  of TtIntLit, TtFloatLit, TtHexLit:
     result.fgColor(getCurrentCodeStyle().numericLitColor)
   of TtTrue, TtFalse:
     result.fgColor(getCurrentCodeStyle().boolLitColor)
   of TtOtherLit:
     result.fgColor(getCurrentCodeStyle().otherLitColor)
   of TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte, TtGt, TtCmp, TtNeq, TtPlus,
-     TtLocalAssign, TtAttrAssign, TtComma, TtPeriod, TtSemi, TtMinus, 
-     TtLockAttr, TtBacktick, TtArrow, TtColon:
+     TtLocalAssign, TtAttrAssign, TtComma, TtPeriod, TtSemi, TtMinus,
+     TtLockAttr, TtBacktick, TtArrow, TtColon, TtIn:
     result.fgColor(getCurrentCodeStyle().operatorColor)
   of TtLineComment, TtLongComment:
     result.fgColor(getCurrentCodeStyle().commentColor)
-  of TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen:
+  of TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
+       TtRBraceMod, TtRBracketMod, TtRParenMod:
     result.fgColor(getCurrentCodeStyle().otherDelimColor)
   of TtExportVar, TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
@@ -729,7 +826,7 @@ proc toRope*(tok: Con4mToken): Rope =
     discard
 
 proc toRope*(tokenBox: TokenBox): Rope =
-  var cells: seq[seq[Rope]] = @[@[atom("Number"), atom("Type"), atom("Line"), 
+  var cells: seq[seq[Rope]] = @[@[atom("Number"), atom("Type"), atom("Line"),
                                 atom("Col"), atom("Value")]]
 
   for i, item in tokenBox.tokens:
@@ -740,11 +837,11 @@ proc toRope*(tokenBox: TokenBox): Rope =
     row.add(atom($(item.lineOffset)))
     row.add(item.toRope())
     cells.add(row)
-    
+
   return quickTable(cells)
 
 proc `$`*(kind: Con4mTokenKind): string =
-  case kind 
+  case kind
     of TtSemi:
       return ";"
     of TtNewLine:
