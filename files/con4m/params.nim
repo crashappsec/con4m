@@ -39,13 +39,13 @@ proc basicConfigureOneParam(state:     ConfigState,
     short   = param.shortDoc.getOrElse("No description provided")
     long    = param.doc.getOrElse("")
 
-  print(h2(atom("Configuring variable: ") + em(param.name) + 
+  print(h2(atom("Configuring variable: ") + em(param.name) +
            text(" -- ") + italic(short)) + markdown(long))
 
   while true:
     if boxOpt.isSome():
       print(default)
-      print("Press [enter] to accept default, or enter a value: ", 
+      print("Press [enter] to accept default, or enter a value: ",
             ensureNl = false)
     else:
       print("Please enter a value: ", ensureNl = false)

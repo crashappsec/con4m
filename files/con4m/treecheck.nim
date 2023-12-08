@@ -1297,7 +1297,7 @@ proc parseConstLiteral*(s: string, t: Con4mType): Box =
     tree.checkNode(ConfigState())
     if tree.isConstLit() and not tree.typeInfo.unify(t).isBottom():
       if t == floatType and tree.value.kind == MkInt:
-        return pack(float(unpack[int](tree.value)))        
+        return pack(float(unpack[int](tree.value)))
       else:
         return tree.value
     elif tree.typeInfo == intType and t == floatType:

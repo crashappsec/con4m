@@ -58,7 +58,7 @@ proc formatTb(tb, throwinfo: string): string =
 
     cells.add(row)
 
-  var table = cells.quickTable(title = title, noheaders = true, 
+  var table = cells.quickTable(title = title, noheaders = true,
                                borders = BorderNone, caption = caption)
 
   table.searchOne(@["table"]).get().defaultBg(false).bpad(0)
@@ -69,7 +69,7 @@ proc formatTb(tb, throwinfo: string): string =
 
   if len(nimbleDirs) > 0:
     cells = @[@[atom("Package"), atom("Location")]]
-              
+
     for k, v in nimbleDirs:
       cells.add(@[atom(k), atom(v)])
 
@@ -81,7 +81,7 @@ proc formatTb(tb, throwinfo: string): string =
 
     result &= $table
 
-    
+
 proc split*(str: seq[Rune], ch: Rune): seq[seq[Rune]] =
   var start = 0
 

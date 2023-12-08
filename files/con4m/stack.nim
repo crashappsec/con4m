@@ -274,7 +274,7 @@ proc runOneConf(stack: ConfigStack, conf, spec: ConfigState) =
   if step.showJson:
     print(h1("Results") +
           code(pre(parseJson(conf.attrs.scopeToJson()).pretty())))
- 
+
 
 proc oneInit(s: ConfigState, step: ConfigStep) =
   if step.addBuiltins:

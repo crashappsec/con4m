@@ -181,7 +181,7 @@ proc getAllFieldInfoForObj*(state: ConfigState, path: string):
 
     result[k] = fieldInfo
 
-proc getObjectLevelDocs*(state: ConfigState, path: string): 
+proc getObjectLevelDocs*(state: ConfigState, path: string):
                        OrderedTable[string, string] =
   ## This returns the sections docs for a particular fully dotted
   ## section (meaning, a fully dotted object).
@@ -228,7 +228,7 @@ proc getObjectLevelDocs*(state: ConfigState, path: string):
 
 
 proc getSectionDocs*(state: ConfigState, section: string): (Rope, Rope) =
-  var 
+  var
     sec:    Con4mSectionType
     mshort: Rope
     mlong:  Rope
@@ -307,14 +307,14 @@ proc formatAliases(scope: AttrScope, flagname: string,
   if len(aliases) != 0:
     for item in aliases:
       formatted.add(item.formatFlag())
-    result += paragraph(em("Aliases:") + text(" ") + 
+    result += paragraph(em("Aliases:") + text(" ") +
                         formatted.join(atom(", ")))
     formatted = @[]
 
   if len(negators) != 0:
     for item in negators:
       formatted.add(item.formatFlag())
-    result += paragraph(em("Negated by:") + text(" ") + 
+    result += paragraph(em("Negated by:") + text(" ") +
                         formatted.join(atom(", ")))
 
 proc baseFlag(flagname: string, scope: AttrScope, extraCol1, extraCol2: Rope,
@@ -335,7 +335,7 @@ proc baseFlag(flagname: string, scope: AttrScope, extraCol1, extraCol2: Rope,
     right = paragraph(atom("No description available."))
 
   if "field_to_set" in scope.contents:
-    right += paragraph(em("Sets config field:") + 
+    right += paragraph(em("Sets config field:") +
                          inlineCode(" " & get[string](scope, "field_to_set")))
   if extraCol2 != nil:
     right += paragraph(extraCol2)
@@ -345,7 +345,7 @@ proc baseFlag(flagname: string, scope: AttrScope, extraCol1, extraCol2: Rope,
 proc formatYnFlags(scope: AttrScope,
                    defaultYes, defaultNo: seq[string]): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let 
+    let
       subscope = v.get(AttrScope)
       (l, r)   = k.baseFlag(subscope, nil, nil, defaultYes, defaultNo)
     result.add(@[l, r])
@@ -356,14 +356,14 @@ const
 
 proc formatArgFlags(scope: AttrScope): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let 
+    let
       subscope = v.get(AttrScope)
       (l, r)   =  k.baseFlag(subscope, nil, atom(reqArg))
     result.add(@[l, r])
 
 proc formatMultiArgFlags(scope: AttrScope): seq[seq[Rope]] =
   for k, v in scope.contents:
-    let 
+    let
       subscope = v.get(AttrScope)
       (l, r)   = k.baseFlag(subscope, nil, atom(reqArgMulti))
     result.add(@[l, r])
@@ -392,14 +392,14 @@ proc formatChoiceFlags(scope: AttrScope, multi = false): seq[seq[Rope]] =
 
     for item in choices:
       rchoices.add(em(item))
-    left += paragraph(strong("Value choices:") + atom(" ") + 
+    left += paragraph(strong("Value choices:") + atom(" ") +
                       rchoices.join(atom(", ")))
 
     if multi:
       right += paragraph(em("Multiple arguments may be provided."))
 
     if flag:
-      right += paragraph(em("Flag requires an argument") + 
+      right += paragraph(em("Flag requires an argument") +
                          atom(" (does not apply to per-choice aliases)"))
     elif not multi:
       right += paragraph(em("Flag requires an argument."))
@@ -436,7 +436,7 @@ proc formatFlags(obj: AttrScope, subsects: OrderedTable[string, AttrScope],
 
   if len(cells) > 1:
     result = quicktable(cells, title = atom("Flags"), class = "help")
-    let 
+    let
       table = result.searchOne(@["table"]).get()
       even  = styleMap["tr.even"]
       odd   = styleMap["tr.odd"]
@@ -491,7 +491,7 @@ proc formatProps(obj: AttrScope, cmd: string, table: bool): Rope =
       of 0:
         cells.add(@[text("Arguments"), text("Not required; any number okay")])
       else:
-        cells.add(@[text("Arguments"), text(`$`(vmin) & 
+        cells.add(@[text("Arguments"), text(`$`(vmin) &
                                                  " required; more allowed")])
     else:
       cells.add(@[text("Arguments"), text(`$`(vmin) & " to " & `$`(vmax))])
@@ -552,7 +552,7 @@ proc getCommandNonFlagData*(state: ConfigState, commandList: openarray[string],
       if not includeMe:
         continue
 
-    var thisRow = @[atom(commandPath), text(short, pre = false), 
+    var thisRow = @[atom(commandPath), text(short, pre = false),
                     markdown(long)]
     let
       aliasOpts = getOpt[seq[string]](obj, "aliases")
@@ -803,14 +803,14 @@ proc getMatchingConfigOptions*(state: ConfigState,
                                showHiddenFields               = false,
                                headings: openarray[string]    = [],
                                filterTerms: openarray[string] = [],
-                               cols: openarray[ConfigCols]    = 
+                               cols: openarray[ConfigCols]    =
                                      [CcVarName, CcType, CcDefault, CcLong],
                                sectionPath = ""): Rope =
   # SectionPath is only needed if you request CcCurValue
   if state.spec.isNone():
     return
 
-  var 
+  var
     sec:   Con4mSectionType
     cells: seq[seq[Rope]]
 
@@ -854,7 +854,7 @@ proc getMatchingConfigOptions*(state: ConfigState,
         if objOpt.isNone():
           thisRow.add(em("None"))
         else:
-          let 
+          let
             obj = objOpt.get()
             s   = f.extType.tInfo.oneArgToString(obj, lit = true)
           thisRow.add(inlineCode(s))
@@ -894,7 +894,7 @@ proc getMatchingConfigOptions*(state: ConfigState,
 
   if len(cells) != 0:
     var noheaders = if headings.len() == 0: false else: true
-    
+
     result = quickTable(cells, title = title, noheaders = noheaders,
                                        class = "help")
 
@@ -966,7 +966,7 @@ in your configuration file.
     result = h1(result)
     return
 
-  var 
+  var
     cells: seq[seq[Rope]]
     row:   seq[Rope]
 
@@ -1101,11 +1101,11 @@ proc getBuiltinsTableDoc*(state: ConfigState,
 
     if byCategory:
       var title = atom("Builtins in category: ") + em(category)
-      result += quickTable(cells, title = title, noheaders = nohdrs, 
+      result += quickTable(cells, title = title, noheaders = nohdrs,
                                           class = "help")
 
   if not byCategory:
-    result = quickTable(cells, title = title, noheaders = nohdrs, 
+    result = quickTable(cells, title = title, noheaders = nohdrs,
                                        class = "help")
 
 proc getOneInstanceForDocs*(state: ConfigState, obj: AttrScope):
@@ -1176,7 +1176,7 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
     combinedCols: seq[string]
     searchIx:     seq[int]
     doFilter = false
-    
+
   for item in fieldsToUse:
     combinedCols.add(item)
 
@@ -1189,8 +1189,8 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
         combinedCols.add(item)
       else:
         searchIx.add(i)
-        
-    
+
+
   if objOpt.isNone():
     raise newException(ValueError, "No object found: " & fqn)
 
@@ -1218,7 +1218,7 @@ proc getValuesForAllObjects*(state: ConfigState, fqn: string,
               break
         if addedRow:
           break
-          
+
     else:
       for item in rest:
         thisRow.add(text(item))
@@ -1269,7 +1269,7 @@ proc cellsToItems(cells: seq[seq[Rope]]): Rope =
 
   return ul(listItems)
 
-proc getInstanceDocs*(state:          ConfigState, 
+proc getInstanceDocs*(state:          ConfigState,
                       fqn:            string,
                       fieldsToUse:    openarray[string],
                       headings:       openarray[string]  = [],
@@ -1278,7 +1278,7 @@ proc getInstanceDocs*(state:          ConfigState,
                       title                              = Rope(nil),
                       caption                            = Rope(nil),
                       transformers:   TransformTableRef  = nil): Rope =
-  var 
+  var
     gotAnyMatch = false
     cells: seq[seq[Rope]]
     row:   seq[Rope]
@@ -1313,7 +1313,7 @@ proc getInstanceDocs*(state:          ConfigState,
     else:
       found       = true
       gotAnyMatch = true
-  
+
     if not found:
       continue
 
@@ -1333,4 +1333,3 @@ proc getInstanceDocs*(state:          ConfigState,
 
   result = quickTable(cells, noHeaders = noHeaders, title = title,
                                          caption = caption, class = "help")
-          
