@@ -2,7 +2,7 @@ import strutils, parseutils, common
 
 type   Size* = uint64
 
-proc constructSize(s: string, outObj: var Any, st: SyntaxType):
+proc constructSize(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var
     letterix = 0
@@ -44,7 +44,7 @@ proc constructSize(s: string, outObj: var Any, st: SyntaxType):
       sz: int
     discard intpart.parseInt(sz, 0)
     var value: Size = uint64(sz) * multiple
-    outObj = value.toAny()
+    outObj = value.toMixed()
   except:
     return "Invalid value for Size data type."
 

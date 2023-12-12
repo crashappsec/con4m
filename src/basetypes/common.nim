@@ -3,8 +3,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import nimutils, typeinfo
-export nimutils, typeinfo
+import nimutils, ../mixed
+export nimutils, mixed
 
 const
   noRepr*       = 0
@@ -67,12 +67,12 @@ type
     name*: string
     tid*:  TypeId
 
-  TypeConstructor* = proc (i0: string, i1: var Any, i2: SyntaxType):
+  TypeConstructor* = proc (i0: string, i1: var Mixed, i2: SyntaxType):
                          string {.cdecl.}
   # i0 -> the starting type; modifiable.
   # i1 -> the literal to update.
-  ContainerConstructor* = proc (i0: var TypeId, i1: var Any): string {.cdecl.}
-  CharInitFn*           = proc (i0: uint, i1: var Any): string
+  ContainerConstructor* = proc (i0: var TypeId, i1: var Mixed): string {.cdecl.}
+  CharInitFn*           = proc (i0: uint, i1: var Mixed): string
   TypeId*               = uint64
   TypeInfo* = ref object
     name*:        string
@@ -81,19 +81,32 @@ type
     typeId*:      TypeId
     fromRawLit*:  TypeConstructor
     fromCharLit*: CharInitFn
+    intBits*:     int
+    signed*:      bool
+    signVariant*: TypeId
+    isLocked*:    bool
 
 var
   basicTypes*: seq[TypeInfo]
   tiMap*:      Dict[TypeId, TypeInfo]
   nameMap*:    Dict[string, TypeInfo]
 
+proc lockType*(tid: TypeId) =
+  tiMap[tid].isLocked = true
+
+proc unlockType*(tid: TypeId) =
+  tiMap[tid].isLocked = false
+
 proc addBasicType*(name:        string,
                    kind:        uint,
                    litmods:     seq[string] = @[],
+                   intBits:     int = 0,
+                   signed:      bool = false,
                    fromRawLit:  TypeConstructor = nil,
                    fromCharLit: CharInitFn = nil): TypeId  =
 
   var tInfo = TypeInfo(name: name, kind: kind, litMods: litMods,
+                       intBits: intBits, signed: signed,
                        fromRawLit: fromRawLit, fromCharLit: fromCharLit)
 
   result        = TypeId(basicTypes.len())
@@ -171,13 +184,13 @@ proc dictModExists*(name: string): bool =
 proc tupModExists*(name: string): bool =
   return tupMods.lookup(name).isSome()
 
-proc applyListMod*(name: string, tinfo: var TypeId, val: var Any): string =
+proc applyListMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
   return listMods[name](tinfo, val)
 
-proc applyDictMod*(name: string, tinfo: var TypeId, val: var Any): string =
+proc applyDictMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
   return dictMods[name](tinfo, val)
 
-proc applyTupMod*(name: string, tinfo: var TypeId, val: var Any): string =
+proc applyTupMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
   return tupMods[name](tinfo, val)
 
 let
@@ -187,8 +200,8 @@ let
                           kind = noRepr)
 
 proc parseLiteral*(typeId: int, raw: string, err: var string,
-                  st: SyntaxType): Any =
-  ## Returns the parsed literal wrapped in an `Any`.
+                  st: SyntaxType): Mixed =
+  ## Returns the parsed literal wrapped in an `Mixed`.
   ## Assumes you know your typeId definitively by now.
   ##
   ## If `err` is not empty, then ignore the return value.
@@ -196,8 +209,8 @@ proc parseLiteral*(typeId: int, raw: string, err: var string,
 
   err = ti.fromRawLit(raw, result, st)
 
-proc initializeCharLiteral*(typeId: int, cp: uint, err: var string): Any =
-  ## Returns the initialized, error-checked literal wrapped in an `Any`.
+proc initializeCharLiteral*(typeId: int, cp: uint, err: var string): Mixed =
+  ## Returns the initialized, error-checked literal wrapped in an `Mixed`.
   ## Assumes you know your typeId definitively by now.
   ##
   ## If `err` is not empty, then ignore the return value.
@@ -237,3 +250,6 @@ proc getAllTypeIdentifiers*(): seq[string] =
 
 proc numBuiltinTypes*(): int =
   return biTypeNames.len()
+
+proc getTypeInfoObject*(id: TypeId): TypeInfo =
+  return basicTypes[int(id)]

@@ -1,6 +1,6 @@
 import math, common, t_ints
 
-proc constructFloat(s: string, outObj: var Any, st: SyntaxType):
+proc constructFloat(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var
     dotLoc = s.find('.')
@@ -68,10 +68,10 @@ proc constructFloat(s: string, outObj: var Any, st: SyntaxType):
   value = value + float(uint64(intPartI))
   value = value * pow(10.0, float(u128toU64(expPartI)))
 
-  outObj = value.toAny()
+  outObj = value.toMixed()
 
 let
-  Float* = addBasicType(name        = "float",
-                        kind        = stdFloatKind,
-                        litMods     = @["f", "float"],
-                        fromRawLit  = constructFloat)
+  TFloat* = addBasicType(name        = "float",
+                         kind        = stdFloatKind,
+                         litMods     = @["f", "float"],
+                         fromRawLit  = constructFloat)

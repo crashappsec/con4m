@@ -4,7 +4,7 @@ type
   IPv4*     = Sockaddr_in
   IPv6*     = Sockaddr_in6
 
-proc constructIPv4(s: string, outObj: var Any, st: SyntaxType):
+proc constructIPv4(s: string, outObj: var Mixed, st: SyntaxType):
                    string {.cdecl.} =
   var
     s = s
@@ -31,9 +31,9 @@ proc constructIPv4(s: string, outObj: var Any, st: SyntaxType):
 
     address.sin_port = uint16(val)
 
-  outObj = address.toAny()
+  outObj = address.toMixed()
 
-proc constructIPV6(s: string, outObj: var Any, st: SyntaxType):
+proc constructIPV6(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var address: IPv6
 
@@ -42,7 +42,7 @@ proc constructIPV6(s: string, outObj: var Any, st: SyntaxType):
   if res != 1:
     return "Invalid IPv6 address."
 
-  outObj = address.toAny()
+  outObj = address.toMixed()
 
 let
   TIPv4* = addBasicType(name        = "ipv4",

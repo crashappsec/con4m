@@ -1,4 +1,4 @@
-## This is a simple recursive descent parser.  Note that I've explicitly
+## This is a recursive simple descent parser.  Note that I've explicitly
 ## factored the grammar for right recursion, so in the expression grammar
 ## there is a bit of tree jockeying to get the tree to look natural.
 ##
@@ -34,11 +34,11 @@ type
     NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
     NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnumStmt, NodeEnumItem, NodeIdentifier, NodeFuncDef, NodeFormalList,
-    NodeTypeOneOf, NodeTypeMaybe, NodeTypeVar, NodeTypeFunc, NodeTypeTuple,
-    NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec,
-    NodeTypeBuiltin, NodeReturnType, NodeTypeVararg, NodeType, NodeParenExpr,
-    NodeVarStmt, NodeExportStmt, NodeVarSymNames, NodeUseStmt, NodeParamBlock,
-    NodeExpression, NodeFormal, NodeNoCallbackName, NodeLabelStmt
+    NodeVarargsFormal, NodeTypeOneOf, NodeTypeMaybe, NodeTypeVar, NodeTypeFunc,
+    NodeTypeTuple, NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeRef,
+    NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg,
+    NodeType, NodeParenExpr, NodeGlobalStmt, NodeVarStmt, NodeVarSymInfo,
+    NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeLabelStmt
 
 
 proc tokenId(n: Con4mNode): Rope =
@@ -46,7 +46,6 @@ proc tokenId(n: Con4mNode): Rope =
 
 proc ropeNt(n: Con4mNode, name: string): Rope =
   result = atom(name).italic().fgColor("atomiclime") + n.tokenId()
-
 
 proc ropeT(n: Con4mNode, name: string): Rope =
   result = atom(name).fgColor("fandango") + n.tokenId()
@@ -72,8 +71,6 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeElifStmt:       toPrint = n.ropeNt("Elif")
   of NodeElseStmt:       toPrint = n.ropeNt("Else")
   of NodeForStmt:        toPrint = n.ropeNt("For")
-  of NodeBreakStmt:      toPrint = n.ropeT("Break")
-  of NodeContinueStmt:   toPrint = n.ropeT("Continue")
   of NodeReturnStmt:     toPrint = n.ropeNt("Return")
   of NodeNot:            toPrint = n.ropeNt("Not")
   of NodeMember:         toPrint = n.ropeNt("Member")
@@ -85,19 +82,11 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeKVPair:         toPrint = n.ropeNt("KVPair")
   of NodeListLit:        toPrint = n.ropeNt("ListLit")
   of NodeTupleLit:       toPrint = n.ropeNt("TupleLit")
-  of NodeCallbackLit:    toPrint = n.ropeNtNamed("CallbackLit")
-  of NodeNoCallbackName: toPrint = n.ropeNtNamed("NoCallbackName")
-  of NodeStringLit:      toPrint = n.ropeNtNamed("String")
-  of NodeIntLit:         toPrint = n.ropeNtNamed("Int")
-  of NodeHexLit:         toPrint = n.ropeNtNamed("Hex")
-  of NodeFloatLit:       toPrint = n.ropeNtNamed("Float")
-  of NodeBoolLit:        toPrint = n.ropeNtNamed("Bool")
   of NodeOtherLit:       toPrint = n.ropeNt("Other")
   of NodeCharLit:        toPrint = n.ropeNt("Char")
   of NodeLiteral:        toPrint = n.ropeNt("Literal")
   of NodeEnumStmt:       toPrint = n.ropeNt("Enum")
   of NodeEnumItem:       toPrint = n.ropeNt("EnumItem")
-  of NodeFuncDef:        toPrint = n.ropeNtNamed("Def")
   of NodeFormalList:     toPrint = n.ropeNt("Formals")
   of NodeType:           toPrint = n.ropeNt("Type")
   of NodeTypeVar:        toPrint = n.ropeNt("TypeVar")
@@ -113,13 +102,24 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeTypeVararg:     toPrint = n.ropeNt("TypeVararg")
   of NodeFormal:         toPrint = n.ropeNt("TypeFormal")
   of NodeVarStmt:        toPrint = n.ropeNt("VarStmt")
-  of NodeExportStmt:     toPrint = n.ropeNt("ExportStmt")
-  of NodeVarSymNames:    toPrint = n.ropeNt("VarSymNames")
+  of NodeGlobalStmt:     toPrint = n.ropeNt("GlobalStmt")
+  of NodeVarSymInfo:     toPrint = n.ropeNt("VarSymInfo")
   of NodeUseStmt:        toPrint = n.ropeNt("UseStmt")
   of NodeLabelStmt:      toPrint = n.ropeNt("LabelStmt")
   of NodeExpression:     toPrint = n.ropeNt("Expression")
   of NodeTypeOneOf:      toPrint = n.ropeNt("OneOf")
   of NodeTypeMaybe:      toPrint = n.ropeNt("Maybe")
+  of NodeBreakStmt:      toPrint = n.ropeT("Break")
+  of NodeContinueStmt:   toPrint = n.ropeT("Continue")
+  of NodeVarargsFormal:  toPrint = n.ropeNt("Varargs")
+  of NodeCallbackLit:    toPrint = n.ropeNtNamed("CallbackLit")
+  of NodeStringLit:      toPrint = n.ropeNtNamed("String")
+  of NodeIntLit:         toPrint = n.ropeNtNamed("Int")
+  of NodeHexLit:         toPrint = n.ropeNtNamed("Hex")
+  of NodeFloatLit:       toPrint = n.ropeNtNamed("Float")
+  of NodeBoolLit:        toPrint = n.ropeNtNamed("Bool")
+  of NodeFuncDef:        toPrint = n.ropeNtNamed("Def")
+
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
     toPrint = n.ropeNt($(n.token.get()))
@@ -141,8 +141,81 @@ proc getTokenText*(node: Con4mNode, adjust: static[bool] = false): string =
   ## This returns the raw string associated with a token.  Internal.
   return node.token.get().getTokenText(adjust)
 
-template addKid*(parent: Con4mNode, kid: Con4mNode) =
+
+proc `$`(n: Con4mNode): string =
+  case n.kind
+  of NodeModule:         "a module"
+  of NodeBody:           "a block of statements"
+  of NodeParamBlock:     "a parameter block"
+  of NodeAttrAssign:     "an assignment"
+  of NodeAttrSetLock:    "a lock operation"
+  of NodeVarAssign:      "a variable assignment"
+  of NodeUnpack:         "an unpack operation"
+  of NodeSection:        "a section declaration"
+  of NodeIfStmt:         "an if block"
+  of NodeWhileStmt:      "a while loop"
+  of NodeElifStmt:       "an elif block"
+  of NodeElseStmt:       "an else block"
+  of NodeForStmt:        "a for loop"
+  of NodeReturnStmt:     "a return statement"
+  of NodeNot:            "a not statement"
+  of NodeMember:         "a member access"
+  of NodeIndex:          "an indexing operation"
+  of NodeCall:           "a function call"
+  of NodeActuals:        "function parameters"
+  of NodeParenExpr:      "a parenthesized expression"
+  of NodeDictLit:        "a dict literal"
+  of NodeKVPair:         "a key / value pair"
+  of NodeListLit:        "a list literal"
+  of NodeTupleLit:       "a tuple literal"
+  of NodeOtherLit:       "a con4m special literal"
+  of NodeCharLit:        "a character literal"
+  of NodeLiteral:        "a literal"
+  of NodeEnumStmt:       "an enum statement"
+  of NodeEnumItem:       "an enum item"
+  of NodeFormalList:     "func declaration formals"
+  of NodeType:           "a type literal"
+  of NodeTypeVar:        "a type variable"
+  of NodeTypeFunc:       "a function type"
+  of NodeTypeTuple:      "a tuple type"
+  of NodeTypeList:       "a list type"
+  of NodeTypeDict:       "a dict type"
+  of NodeTypeObj:        "an object type"
+  of NodeTypeRef:        "a ref type"
+  of NodeTypeTypeSpec:   "a typespec type"
+  of NodeTypeBuiltin:    ("a builtin type (" & n.getTokenText() & ")")
+  of NodeReturnType:     "a return type"
+  of NodeTypeVararg:     "a vararg indicator"
+  of NodeFormal:         "a formal parameter"
+  of NodeVarStmt:        "a var statement"
+  of NodeGlobalStmt:     "a global statement"
+  of NodeVarSymInfo:     "var statement symbol info"
+  of NodeUseStmt:        "a use statement"
+  of NodeLabelStmt:      "a label statement"
+  of NodeExpression:     "an expression"
+  of NodeTypeOneOf:      "a 'oneof' type"
+  of NodeTypeMaybe:      "a 'maybe' type"
+  of NodeBreakStmt:      "a break statement"
+  of NodeContinueStmt:   "a continue statement"
+  of NodeVarargsFormal:  "a varargs specifier"
+  of NodeCallbackLit:    "a callback literal"
+  of NodeStringLit:      "a string literal"
+  of NodeIntLit:         "an integer literal"
+  of NodeHexLit:         "a hex literal"
+  of NodeFloatLit:       "a float literal"
+  of NodeBoolLit:        "a boolean literal"
+  of NodeFuncDef:        "a function declaration"
+
+  of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
+     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
+    ("the " & $(n.getTokenText()) & " operator")
+
+  of NodeIdentifier:
+    "an identifier (" & $(n.getTokenText()) & ")"
+
+proc addKid*(parent: Con4mNode, kid: Con4mNode) =
   parent.children.add(kid)
+  kid.parent = parent
 
 type
   ParseCtx* = object
@@ -158,6 +231,7 @@ type
     loopDepth*:      int
     cachedComments*: seq[int]
     prevNode*:       Con4mNode
+    module*:         string
 
 template tokAt*(ctx: var ParseCtx, i: int): Con4mToken =
   ctx.tokenBox.tokAt(i)
@@ -168,6 +242,7 @@ proc optionalBody(ctx: var ParseCtx): Con4mNode
 proc typeSpec(ctx: var ParseCtx): Con4mNode
 proc expressionStart(ctx: var ParseCtx): Con4mNode
 proc notExpr(ctx: var ParseCtx): Option[Con4mNode]
+proc accessExpr(ctx: var ParseCtx): Con4mNode
 
 proc inFunction(ctx: var ParseCtx): bool {.inline.} =
   return ctx.inFunc
@@ -176,20 +251,6 @@ proc inLoop(ctx: var ParseCtx): bool {.inline.} =
   return ctx.loopDepth != 0
 
 proc curTok(ctx: var ParseCtx): Con4mToken
-
-proc addParentInfo(kid, parent: Con4mNode) =
-  kid.parent = parent
-
-  for item in kid.children:
-    item.addParentInfo(kid)
-
-proc addParentInfo(node: Con4mNode) =
-  ## We do this after finishing the parse; since we do a tiny bit of
-  ## inline tree altering around expressions, it's easier to just come
-  ## back and do it when everything's done then to special case those
-  ## bits.
-  for item in node.children:
-    item.addParentInfo(node)
 
 const stmtStartList = [NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
                        NodeUnpack, NodeSection, NodeIfStmt, NodeElifStmt,
@@ -222,34 +283,47 @@ proc unconsume(ctx: var ParseCtx) =
     if not alwaysSkip.contains(ctx.curTok().kind):
       return
 
-proc storeParseError(ctx: var ParseCtx, msg: Rope, backup: bool,
-                     ii: tuple[filename: string, line: int, column: int],
-                     st: string) =
-  var err = Con4mError(kind: ErrParse, msg: msg)
+template baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
+                    module: string, phase: Con4mErrPhase, severity = LlErr,
+                    extra = seq[string](@[]), trace = "",
+                    ii = none(InstantiationInfo)) =
+  list.baseError(code, node.token.get(), module, phase, severity, extra,
+                 trace, ii)
 
-  when not defined(release):
-    err.ii = ii
-    err.st = st
-
+proc parseBaseError(ctx: var ParseCtx, code: string, backup: bool, warn: bool,
+                    subs: seq[string], st: string,
+                    ii: Option[InstantiationInfo]) =
   if backup:
     ctx.unconsume()
 
   let tok = ctx.curTok()
-  err.token = cast[pointer](tok)
-  GC_ref(tok)
-  ctx.errors.add(err)
-  if backup:
-    ctx.curTokIx += 1
+  let sev = if warn: LlWarn else: LlErr
 
-template parseError(ctx: var ParseCtx, msg: Rope, backup: bool = true) =
-  ctx.storeParseError(msg, backup, instantiationInfo(), getStackTrace())
+  ctx.errors.baseError(code, tok, ctx.module, ErrParse, sev, subs, st, ii)
 
-template parseError(ctx: var ParseCtx, msg: string, backup: bool = true) =
-  ctx.storeParseError(atom(msg), backup, instantiationInfo(), getStackTrace())
+template parseError(ctx: var ParseCtx, msg: string, extra: seq[string] = @[]) =
+  when defined(debug):
+    ctx.parseBaseError(msg, true, false, extra, getStackTrace(),
+                       some(instantiationInfo()))
+  else:
+    ctx.parseBaseError(msg, true, false, extra, "", none(InstantiationInfo))
 
-template errSkipStmt(ctx: var ParseCtx, msg: string | Rope, backup = true) =
-  ctx.parseError(msg, backup)
-  raise newException(ValueError, "STMT")
+template parseErrorNoBackup(ctx: var ParseCtx, msg: string,
+                            extra: seq[string] = @[]) =
+  when defined(debug):
+    ctx.parseBaseError(msg, false, false, extra, getStackTrace(),
+                       some(instantiationInfo()))
+  else:
+    ctx.parseBaseError(msg, false, false, extra, "", none(InstantiationInfo))
+
+template errSkipStmt(ctx: var ParseCtx, msg: string, extra: seq[string] = @[]) =
+  ctx.parseError(msg, extra)
+  con4mLongJmp()
+
+template errSkipStmtNoBackup(ctx: var ParseCtx, msg: string,
+                             extra: seq[string] = @[]) =
+  ctx.parseErrorNoBackup(msg, extra)
+  con4mLongJmp()
 
 template production(prodName: untyped,
                     nodeType: Con4mNodeKind, prodImpl: untyped) {.dirty.} =
@@ -258,30 +332,27 @@ template production(prodName: untyped,
     prodImpl
 
   proc `parse prodName`*(toks: var TokenBox,
-                         errs: var seq[Con4mError]): Con4mNode =
+                         errs: var seq[Con4mError],
+                         module = ""): Con4mNode =
     for tok in toks.tokens:
-      if tok.kind in [ErrorTok, ErrorLongComment, ErrorStringLit,
-                      ErrorCharLit, ErrorOtherLit]:
+      if tok.kind == ErrorTok:
         raise newException(ValueError, "Cannot parse; tokenization failed.")
 
-    var ctx = ParseCtx(tokenBox: toks)
+    var ctx = ParseCtx(tokenBox: toks, module: module)
 
     try:
       result = ctx.`prodName`()
       if ctx.prevNode != nil:
         ctx.prevNode.commentLocs &= ctx.cachedComments
 
-      result.addParentInfo()
-
     finally:
       errs = ctx.errors
-  proc `parse prodName`*(s: string, errs: var seq[Con4mError]): Con4mNode =
-    var oneError: string
-    var (success, tokens) = s.lex(oneError)
-    if not success:
-      errs.add(Con4mError(kind: ErrLex, msg: oneError.text()))
+  proc `parse prodName`*(s: string, errs: var seq[Con4mError],
+                         module = ""): Con4mNode =
+    var tokens = s.lex(errs)
+    if not errs.canProceed():
       return
-    return `parse prodName`(tokens, errs)
+    return `parse prodName`(tokens, errs, module)
 
 
 template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
@@ -294,16 +365,15 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
       if optExpr.isSome():
         var r = optExpr.get()
         if len(r.children) == 0:
-          ctx.errSkipStmt("Invalid expression start")
+          ctx.errSkipStmt("ExprStart", @[$(r.token.get())])
         case len(n.children)
         of 0:
           if r.kind notin [NodePlus, NodeMinus, NodeNot]:
-            ctx.errSkipStmt("Invalid expression")
+            ctx.errSkipStmt("ExprStart", @[$(r.token.get())])
           n = r
         else:
           if r.kind == NodeNot:
-            ctx.errSkipStmt(em("not") + atom(" does not take a left-hand " &
-              "operand."))
+            ctx.errSkipStmt("BinaryNot")
           r.children = @[n, r.children[0]]
           n = r
       else:
@@ -319,11 +389,11 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
     else:
       result = ctx.chainNext()
 
-template errBail(ctx: var ParseCtx, msg: string | Rope, backup = false) =
+template errBail(ctx: var ParseCtx, msg: string) =
   ## When re-syncing is too likely to be error-prone, we bail from
   ## the rest of the parse.
-  ctx.parseError(msg, backup)
-  raise newException(ValueError, "BAIL")
+  ctx.parseErrorNoBackup(msg)
+  con4mLongJmp("BAIL")
 
 # When it comes to whitespace in Con4m, we always skip whitespace
 # tokens. There's no white space token sensitivity after the lexing
@@ -415,7 +485,6 @@ proc doNewlineSkipping(ctx: var ParseCtx) =
     else:
       return
 
-
 template skipNextNewline(ctx: var ParseCtx) =
   ctx.skipOneNewline = true
 
@@ -487,9 +556,18 @@ proc atEndOfLine(ctx: var ParseCtx): bool =
   if kind in [TtSemi, TtNewLine, TtRBrace, TtRParen, TtEOF]:
     return true
 
+proc describeLastNode(ctx: var ParseCtx): string =
+  var n = ctx.prevNode
+  if n.kind == NodeIdentifier and
+     n.parent.kind in [NodeLiteral, NodeTypeBuiltin, NodeTypeVar,
+                       NodeTypeMaybe, NodeTypeOneOf]:
+    n = n.parent
+
+  return $(n)
+
 proc endOfStatement(ctx: var ParseCtx, errIfNotThere = true) =
   if errIfNotThere and not ctx.atEndOfLine():
-    ctx.errSkipStmt("Expected end of statement here.", false)
+    ctx.errSkipStmtNoBackup("StmtEnd", @[ctx.describeLastNode()])
   else:
     while not ctx.atEndOfLine():
       ctx.advance() # Skip errors.
@@ -502,19 +580,19 @@ proc expectOrErrConsuming(ctx: var ParseCtx, kind: Con4mTokenKind) =
     case kind
     of TtRBrace:
       if tok.kind == TtRBraceMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     of TtRBracket:
       if tok.kind == TtRBracketMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     of TtRParen:
       if tok.kind == TtRParenMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     else:
       discard
-    ctx.errSkipStmt("Expected " & $(kind) & " here") # Error backs us up one.
+    ctx.errSkipStmt("MissingTok", @[$(kind)])
 
 proc expectOrErr(ctx: var ParseCtx, kind: Con4mTokenKind) =
   let foundKind = ctx.curKind()
@@ -522,19 +600,19 @@ proc expectOrErr(ctx: var ParseCtx, kind: Con4mTokenKind) =
     case kind
     of TtRBrace:
       if foundKind == TtRBraceMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     of TtRBracket:
       if foundKind == TtRBracketMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     of TtRParen:
       if ctx.curKind() == TtRParenMod:
-        ctx.parseError("Literal modifier not allowed here.")
+        ctx.parseError("NotALit")
         return
     else:
       discard
-    ctx.errSkipStmt("Expected " & $(kind) & " here", false)
+    ctx.errSkipStmtNoBackup("MissingTok", @[$(kind)])
 
 template expect(ctx: var ParseCtx, kind: Con4mTokenKind, consume = false) =
   if consume:
@@ -551,19 +629,19 @@ template adtLiteral(literalProduction: untyped) =
     ctx.literalDepth -= 1
     ctx.nesting      -= 1
 
-exprProd(divExpr,   divExprRHS,   notExpr,   TtDiv,   NodeDiv)
-exprProd(mulExpr,   mulExprRHS,   divExpr,   TtMul,   NodeMul)
-exprProd(modExpr,   modExprRHS,   mulExpr,   TtMod,   NodeMod)
-exprProd(minusExpr, minusExprRHS, modExpr,   TtMinus, NodeMinus)
-exprProd(plusExpr,  plusExprRHS,  minusExpr, TtPlus,  NodePlus)
-exprProd(ltExpr,    ltExprRHS,    plusExpr , TtLt,    NodeLt)
-exprProd(gtExpr,    gtExprRHS,    ltExpr,    TtGt,    NodeGt)
-exprProd(lteExpr,   lteExprRHS,   gtExpr,    TtLte,   NodeLte)
-exprProd(gteExpr,   gteExprRHS,   lteExpr,   TtGte,   NodeGte)
-exprProd(eqExpr,    eqExprRHS,    gteExpr,   TtCmp,   NodeCmp)
-exprProd(neExpr,    neExprRHS,    eqExpr,    TtNeq,   NodeNe)
-exprProd(andExpr,   andExprRHS,   neExpr,    TtAnd,   NodeAnd)
-exprProd(orExpr,    expression,   andExpr,   TtOr,    NodeOr)
+exprProd(divExpr,   divExprRHS,     notExpr,   TtDiv,   NodeDiv)
+exprProd(mulExpr,   mulExprRHS,     divExpr,   TtMul,   NodeMul)
+exprProd(modExpr,   modExprRHS,     mulExpr,   TtMod,   NodeMod)
+exprProd(minusExpr, minusExprRHS,   modExpr,   TtMinus, NodeMinus)
+exprProd(plusExpr,  plusExprRHS,    minusExpr, TtPlus,  NodePlus)
+exprProd(ltExpr,    ltExprRHS,      plusExpr , TtLt,    NodeLt)
+exprProd(gtExpr,    gtExprRHS,      ltExpr,    TtGt,    NodeGt)
+exprProd(lteExpr,   lteExprRHS,     gtExpr,    TtLte,   NodeLte)
+exprProd(gteExpr,   gteExprRHS,     lteExpr,   TtGte,   NodeGte)
+exprProd(eqExpr,    eqExprRHS,      gteExpr,   TtCmp,   NodeCmp)
+exprProd(neExpr,    neExprRHS,      eqExpr,    TtNeq,   NodeNe)
+exprProd(andExpr,   andExprRHS,     neExpr,    TtAnd,   NodeAnd)
+exprProd(orExpr,    expression,     andExpr,   TtOr,    NodeOr)
 
 
 production(identifier, NodeIdentifier):
@@ -578,8 +656,7 @@ proc memberExpr(ctx: var ParseCtx, lhs: Con4mNode): Con4mNode =
   while true:
     ctx.advance()
     if ctx.curKind() != TtIdentifier:
-      ctx.errSkipStmt(em("'.'") +
-                      atom(" operator must have an identifier on both sides"))
+      ctx.errSkipStmt("MemberSpec")
 
     result.addKid(ctx.identifier())
     if ctx.curKind() != TtPeriod:
@@ -643,8 +720,7 @@ proc callActuals(ctx: var ParseCtx, lhs: Con4mNode): Con4mNode =
       of TtComma:
         ctx.advance()
       else:
-        ctx.errSkipStmt(atom("After call argument, expect ") +
-                        em("','") + atom(" or ") + em("')'"))
+        ctx.errSkipStmt("ItemExpected", @[")"])
 
 production(listLit, NodeListLit):
   ctx.advance()
@@ -667,7 +743,7 @@ production(listLit, NodeListLit):
           ctx.advance()
           return
         else:
-          ctx.errSkipStmt(atom("Expected either another item or ") + em("]"))
+          ctx.errSkipStmt("ItemExpected", @["]"])
 
 production(kvPair, NodeKvPair):
   result.addKid(ctx.expression())
@@ -699,14 +775,14 @@ production(dictLit, NodeDictLit):
           ctx.advance()
           return
         else:
-          ctx.errSkipStmt(atom("Expected either another item or ") + em("}"))
+          ctx.errSkipStmt("ItemExpected", @["}"])
 
 production(tupleLit, NodeTupleLit):
   ctx.advance()
 
   adtLiteral:
     if ctx.curKind() in [ TtRParen, TtRParenMod ]:
-      ctx.errSkipStmt("Tuples cannot be empty.")
+      ctx.errSkipStmt("BadTuple")
     var gotSecondItem = false
 
     while true:
@@ -722,13 +798,13 @@ production(tupleLit, NodeTupleLit):
         return
       of TtRParenMod:
         if not gotSecondItem:
-          ctx.errSkipStmt("Literal modifier not allowed on paren expression")
+          ctx.errSkipStmt("NotALit")
         else:
           let litmod = ctx.curTok().litType
           result.token.get().litType = litmod
           ctx.advance()
       else:
-          ctx.errSkipStmt(atom("Expected either another item or ") + em(")"))
+          ctx.errSkipStmt("ItemExpected", @[")"])
 
 production(stringLit, NodeStringLit):
   ctx.expect(TtStringLit, consume = true)
@@ -746,11 +822,7 @@ production(charlit, NodeCharLit):
   ctx.expect(TtCharLit, consume = true)
 
 production(boolLit, NodeBoolLit):
-  if ctx.curKind() in [TtTrue, TtFalse]:
-    ctx.advance()
-  else:
-    ctx.errSkipStmt(atom("Expected either ") + em("True") + atom(" or ") +
-                    em("False"))
+  ctx.advance()
 
 production(otherLit, NodeOtherLit):
   ctx.expect(TtOtherLit, consume = true)
@@ -769,7 +841,7 @@ production(accessExpr, NodeIdentifier):
   of TtIdentifier:
     ctx.advance()
   else:
-    ctx.errSkipStmt("Invalid start for member access expression")
+    ctx.errSkipStmt("AccessExpr")
 
   while true:
     case ctx.curKind()
@@ -789,15 +861,14 @@ proc notExprRHS(ctx: var ParseCtx): Con4mNode =
       if optExpr.isSome():
         var r = optExpr.get()
         if len(r.children) == 0:
-          ctx.errSkipStmt("Invalid expression start")
+          ctx.errSkipStmt("ExprStart", @[$(r.token.get())])
         case len(n.children)
         of 0:
           if r.kind notin [NodePlus, NodeMinus, NodeNot]:
-            ctx.errSkipStmt("Invalid expression")
+            ctx.errSkipStmt("ExprStart", @[$(r.token.get())])
         else:
           if r.kind == NodeNot:
-            ctx.errSkipStmt(em("not") + atom(" does not take a left-hand " &
-              "operand."))
+            ctx.errSkipStmt("BinaryNot")
           r.children = @[n, r.children[0]]
           n = r
       else:
@@ -810,32 +881,31 @@ proc notExpr(ctx: var ParseCtx): Option[Con4mNode] =
     ctx.advance()
     res.addKid(ctx.notExprRHS())
     return some(res)
-  of TtIdentifier, TtLParen:
-    return some(ctx.accessExpr())
+  of TtIdentifier:
+    print getStackTrace()
+    result = some(ctx.accessExpr())
+    print result.get().toRope()
   else:
     return
 
 production(callback, NodeCallbackLit):
   ctx.advance()
 
-  case ctx.curKind()
-  of TtLParen:
-    result.addKid(ctx.newNode(NodeNoCallbackName))
+  result.addKid(ctx.identifier())
+  if ctx.curTok().kind == TtLParen:
+    ctx.advance()
     result.addKid(ctx.typeSpec())
-  of TtIdentifier:
-    result.addKid(ctx.identifier())
-    if ctx.curTok().kind == TtLParen:
-      result.addKid(ctx.typeSpec())
-  else:
-    ctx.errSkipStmt(atom("An identifier or parameters required after the ") +
-                    em("func") + atom(" keyword"))
 
 production(literal, NodeLiteral):
   case ctx.curKind()
   of TtBackTick, TtObject:
     result.addKid(ctx.typeSpec())
   of TtFunc:
-    result.addKid(ctx.callback())
+    if ctx.lookAhead().kind == TTIdentifier:
+      result.addKid(ctx.callback())
+    else:
+      ctx.advance()
+      result.addKid(ctx.typeSpec())
   of TtIntLit:
     result.addKid(ctx.intLit())
   of TtHexLit:
@@ -862,9 +932,9 @@ production(literal, NodeLiteral):
     if txt in getAllTypeIdentifiers():
       result.addKid(ctx.typeSpec())
     else:
-      ctx.errSkipStmt("Expected a literal value")
+      ctx.errSkipStmt("LitExpected")
   else:
-    ctx.errSkipStmt("Expected a literal value")
+    ctx.errSkipStmt("LitExpected")
 
 production(expressionStart, NodeExpression):
   case ctx.curKind()
@@ -883,9 +953,7 @@ production(expressionStart, NodeExpression):
     # or binary. And TtNot needs to reject when there's a lhs.
     discard
   else:
-    echo ctx.curKind()
-    echo getStackTrace()
-    ctx.errSkipStmt("Invalid expression start.")
+    ctx.errSkipStmtNoBackup("ExprStart", @[$ctx.curTok()])
 
 production(enumItem, NodeEnumItem):
   result.addKid(ctx.identifier())
@@ -915,7 +983,7 @@ production(attrAssign, NodeAttrAssign):
   of TtAttrAssign, TtColon:
     result.token = some(op)
   else:
-    ctx.errSkipStmt("Expected a : or = for an attribute assignment")
+    ctx.errSkipStmt("NotAttrAssign")
 
   result.addKid(child)
   result.addKid(ctx.expression())
@@ -925,7 +993,7 @@ production(attrAssign, NodeAttrAssign):
 production(lockAttr, NodeAttrSetLock):
   ctx.advance()
   if ctx.curKind() != TtIdentifier:
-    ctx.errSkipStmt("Expected an attribute after '~' (attr lock indicator)")
+    ctx.errSkipStmt("BadLock")
   result.addKid(ctx.attrAssign())
 
 production(elseStmt, NodeElseStmt):
@@ -949,7 +1017,7 @@ production(ifStmt, NodeIfStmt):
   if ctx.curKind() == TtElse:
     result.addKid(ctx.elseStmt())
 
-production(forVarList, NodeVarSymNames):
+production(forVarList, NodeVarSymInfo):
   result.addKid(ctx.identifier())
   if ctx.curKind() == TtComma:
     ctx.advance()
@@ -963,8 +1031,7 @@ production(forStmt, NodeForStmt):
     result.addKid(ctx.expression()) # 2
   else:
     if result.children[0].children.len() != 1:
-      ctx.errSkipStmt(em("for ... from") + text(" loops must have a single " &
-                                            "index variable."))
+      ctx.errSkipStmt("ForFromIx")
 
     ctx.expect(TtFrom, consume = true)
     result.addKid(ctx.expression()) # 2
@@ -983,9 +1050,7 @@ production(whileStmt, NodeWhileStmt):
 
 production(builtinType, NodeTypeBuiltin):
   if ctx.curTok().getTokenText() notin getAllBuiltinTypeNames():
-    ctx.errSkipStmt(em(ctx.curTok().getTokenText()) +
-                    atom(" is not a builtin type. Use ") +
-                    em("struct[typename]") + atom(" for user types."))
+    ctx.errSkipStmt("NameInTypeSpec", @[ctx.curTok().getTokenText()])
   result.addKid(ctx.identifier())
 
 production(refType, NodeTypeRef):
@@ -1003,10 +1068,7 @@ production(tupleType, NodeTypeTuple):
     result.addKid(ctx.typeSpec())
   ctx.expect(TtRBracket, consume = true)
   if result.children.len() < 2:
-    ctx.parseError("Tuple types must contain two or more items.")
-
-const oErr* = "OneOf types must have multiple type options that are more " &
-              "constrained than a generic type variable."
+    ctx.parseError("BadTuple")
 
 production(typeOneOf, NodeTypeOneOf):
   ctx.advance()
@@ -1017,7 +1079,7 @@ production(typeOneOf, NodeTypeOneOf):
     result.addKid(ctx.typeSpec())
   ctx.expect(TtRBracket, consume = true)
   if result.children.len() < 2:
-    ctx.parseError(oErr)
+    ctx.parseError("BadOneOf")
 
 production(typeMaybe, NodeTypeMaybe):
   ctx.advance()
@@ -1059,9 +1121,7 @@ production(objectType, NodeTypeObj):
   of TtIdentifier:
     result.addKid(ctx.identifier())
   else:
-    ctx.errSkipStmt("Object types must provide either a name or a type " &
-                    "variable if specifying an object where no fields " &
-                    "will be referenced")
+    ctx.errSkipStmt("BadObjType")
   ctx.expect(TtRBracket, consume = true)
 
 production(typeVararg, NodeTypeVararg):
@@ -1096,14 +1156,6 @@ production(typeSpec, NodeType):
   case ctx.curKind()
   of TtBacktick:
     result.addKid(ctx.typeVariable())
-  of TtFunc:
-    # Once we know we're parsing a type, we don't require the leading
-    # "func".  It's only necessary for distinguishing generic
-    # parenthesized expressions in an expression context.  We could
-    # deal with that problem unambiguously, but requires more logic.
-    ctx.advance()
-    ctx.expect(TtLParen)
-    result.addKid(ctx.funcType())
   of TtLParen:
     result.addKid(ctx.funcType())
   of TtObject:
@@ -1127,7 +1179,7 @@ production(typeSpec, NodeType):
     else:
       result.addKid(ctx.builtinType())
   else:
-    ctx.errSkipStmt("Invalid syntax for a type declaration.")
+    ctx.errSkipStmt("BadTypeDecl")
 
 production(formal, NodeFormal):
   result.addKid(ctx.identifier())
@@ -1135,12 +1187,19 @@ production(formal, NodeFormal):
     ctx.advance()
     result.addKid(ctx.typeSpec())
 
+production(varargsFormal, NodeVarargsFormal):
+  result.addKid(ctx.identifier())
+
 production(formalList, NodeFormalList):
   ctx.advance()
   if ctx.curKind() == TtRParen:
     ctx.advance()
   else:
     while true:
+      if ctx.curKind() == TtMul:
+        result.addKid(ctx.varargsFormal())
+        ctx.expect(TtRParen, consume = true)
+        return
       result.addKid(ctx.formal())
       case ctx.curKind()
       of TtRParen:
@@ -1149,9 +1208,7 @@ production(formalList, NodeFormalList):
       of TtComma:
         ctx.advance()
       else:
-        ctx.errBail("Expected either a closing paren or an additional " &
-                    "parameter")
-
+        ctx.errBail("BadFormalEnd")
 
 production(funcDef, NodeFuncDef):
   ctx.advance()
@@ -1164,31 +1221,32 @@ production(funcDef, NodeFuncDef):
   result.addKid(ctx.body())
   ctx.inFunc = false
 
-production(varSymNames, NodeVarSymNames):
-  while true:
-    result.addKid(ctx.identifier())
-    if ctx.curKind() == TtComma:
-      ctx.advance()
-    else:
-      return
+production(varSymInfo, NodeVarSymInfo):
+   while true:
+     result.addKid(ctx.identifier())
+     if ctx.curKind() == TtComma:
+       ctx.advance()
+     else:
+       break
+   if ctx.curKind() == TtColon:
+     ctx.advance()
+     result.addKid(ctx.typeSpec())
 
 production(varStmt, NodeVarStmt):
   ctx.advance()
-  result.addKid(ctx.varSymNames)
-  if ctx.curKind() == TtColon:
+  result.addKid(ctx.varSymInfo())
+  while ctx.curKind() == TtComma:
     ctx.advance()
-    result.addKid(ctx.typeSpec())
+    result.addKid(ctx.varSymInfo())
   ctx.endOfStatement()
 
-production(exportStmt, NodeExportStmt):
+production(globalStmt, NodeGlobalStmt):
   ctx.advance()
-  while true:
-    result.addKid(ctx.identifier())
-    if ctx.curKind() == TtComma:
-      ctx.advance()
-    else:
-      ctx.endOfStatement()
-      return
+  result.addKid(ctx.varSymInfo())
+  while ctx.curKind() == TtComma:
+    ctx.advance()
+    result.addKid(ctx.varSymInfo())
+  ctx.endOfStatement()
 
 production(useStmt, NodeUseStmt):
   ctx.advance()
@@ -1205,18 +1263,22 @@ production(useStmt, NodeUseStmt):
     result.addKid(ctx.stringLit())
     ctx.endOfStatement()
   else:
-    ctx.errSkipStmt(em("use") +
-                    atom(" statement requires a string literal after ") +
-                    em("from"))
+    ctx.errSkipStmt("BadUseSyntax")
 
 production(labelStmt, NodeLabelStmt):
   ctx.advance()
   result.addKid(ctx.identifier())
   ctx.endOfStatement()
 
+production(oneVarDecl, NodeVarSymInfo):
+  result.addKid(ctx.identifier())
+  if ctx.curKind() == TtColon:
+    ctx.advance()
+    result.addKid(ctx.typeSpec())
+
 production(paramVarDecl, NodeVarStmt):
   ctx.advance()
-  result.addKid(ctx.identifier())
+  result.addKid(ctx.oneVarDecl())
 
 production(parameterBlock, NodeParamBlock):
   ctx.advance()
@@ -1226,9 +1288,7 @@ production(parameterBlock, NodeParamBlock):
   of TtVar:
     result.addKid(ctx.paramVarDecl())
   else:
-    ctx.errBail(em("parameter") +
-                text(" keyword must be followed by an attribute " &
-                  "(can be dotted) or `var` and a local variable name."))
+    ctx.errBail("BadParamName")
   result.addKid(ctx.optionalBody())
 
 production(varAssign, NodeVarAssign):
@@ -1294,7 +1354,7 @@ production(body, NodeBody):
       case kind
       of TtEof:
         ctx.curTokIx = savedIx
-        ctx.parseError("Unclosed block when end-of-file found")
+        ctx.parseError("EofInBlock")
       of TtRBrace:
         ctx.nesting -= 1
         ctx.advance()
@@ -1303,9 +1363,8 @@ production(body, NodeBody):
         return
       of TtSemi, TtNewline:
         ctx.advance()
-      of TtEnum, TtFunc, TtExportVar:
-        ctx.errSkipStmt(em($(ctx.curKind())) +
-                 atom(" is only allowed at the top-level"), false)
+      of TtEnum, TtFunc:
+        ctx.errSkipStmtNoBackup("TopLevelOnly", @[$(ctx.curKind())])
       of TtLockAttr:
         result.addKid(ctx.attrAssign())
       of TtIf:
@@ -1316,24 +1375,23 @@ production(body, NodeBody):
         result.addKid(ctx.whileStmt())
       of TtContinue:
         if not ctx.inLoop():
-          ctx.errSkipStmt(em("continue") +
-                   atom(" is only allowed inside loops"), false)
+          ctx.errSkipStmtNoBackup("InLoopsOnly", @["continue"])
         else:
           result.addKid(ctx.continueStmt())
       of TtBreak:
         if not ctx.inLoop():
-          ctx.errSkipStmt(em("break") + atom(" is only allowed inside loops"),
-                          false)
+          ctx.errSkipStmtNoBackup("InLoopsOnly", @["break"])
         else:
           result.addKid(ctx.breakStmt())
       of TtReturn:
         if not ctx.inFunction():
-          ctx.errSkipStmt(em("return") +
-                          atom(" is only allowed inside functions"), false)
+          ctx.errSkipStmtNoBackup("RetOutOfFunc")
         else:
           result.addKid(ctx.returnStmt())
       of TtVar:
         result.addKid(ctx.varStmt())
+      of TtGlobal:
+        result.addKid(ctx.globalStmt())
       of TtIdentifier:
         case ctx.curTok.getTokenText()
         of "label":
@@ -1362,10 +1420,11 @@ production(body, NodeBody):
           result.addKid(ctx.expression())
           ctx.endOfStatement()
       else:
-        echo "In body: ", ctx.curKind()
         result.addKid(ctx.expression())
         ctx.endOfStatement()
     except:
+      if getCurrentException().msg == "BAIL":
+        raise
       while true:
         if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
           ctx.advance()
@@ -1380,8 +1439,7 @@ production(module, NodeModule):
   while true:
     try:
       case ctx.curKind()
-      of TtEof, ErrorTok, ErrorLongComment, ErrorStringLit, ErrorCharLit,
-         ErrorOtherLit, ErrorLitMod:
+      of TtEof, ErrorTok:
         return
       of TtSemi, TtNewLine:
         ctx.advance()
@@ -1396,17 +1454,17 @@ production(module, NodeModule):
       of TtWhile:
         result.addKid(ctx.whileStmt())
       of TtContinue:
-        ctx.errSkipStmt("Found 'continue' outside a loop.")
+        ctx.errSkipStmt("InLoopsOnly", @["continue"])
       of TtBreak:
-        ctx.errSkipStmt("Found 'break' outside a loop.")
+        ctx.errSkipStmt("InLoopsOnly", @["break"])
       of TtReturn:
-        ctx.errSkipStmt("Found 'return' outside a function definition.")
+        ctx.errSkipStmt("RetOutOfFunc")
       of TtFunc:
         result.addKid(ctx.funcDef())
       of TtVar:
         result.addKid(ctx.varStmt())
-      of TtExportVar:
-        result.addKid(ctx.exportStmt())
+      of TtGlobal:
+        result.addKid(ctx.globalStmt())
       of TtIdentifier:
         case ctx.curTok.getTokenText()
         of "label":
@@ -1435,6 +1493,8 @@ production(module, NodeModule):
           result.addKid(ctx.expression())
           ctx.endOfStatement()
     except:
+      if getCurrentException().msg == "BAIL":
+        return
       while true:
         if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
           ctx.advance()
@@ -1442,6 +1502,7 @@ production(module, NodeModule):
         ctx.advance()
 
 proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
+  ## If error, you need to fill in the module.
   case n.kind
   of NodeTypeBuiltin:
     let biname = n.children[0].getTokenText()
@@ -1449,15 +1510,15 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
   of NodeType:
     return n.children[0].buildType(tvars)
   of NodeTypeList:
-    return tList(n.children[0].buildType(tvars)).typeId
+    return tList(n.children[0].buildType(tvars))
   of NodeTypeDict:
     return tDict(n.children[0].buildType(tvars),
-                 n.children[1].buildType(tvars)).typeId
+                 n.children[1].buildType(tvars))
   of NodeTypeTuple:
     var items: seq[TypeId]
     for kid in n.children:
       items.add(kid.buildType(tvars))
-    return tTuple(items).typeId
+    return tTuple(items)
   of NodeTypeObj:
     var
       props: Dict[string, TypeId]
@@ -1466,7 +1527,7 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
     props.initDict()
     if n.children[0].kind == NodeIdentifier:
       name = n.children[0].getTokenText()
-    return newStructType(props, name).typeId
+    return tStruct(props, name)
   of NodeTypeVar:
     let varname = n.children[0].getTokenText()
     let objOpt = tvars.lookup(varname)
@@ -1477,12 +1538,12 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
     tvars[varname] = tobj.typeId
     result = tobj.typeId
   of NodeTypeRef:
-    return tRef(n.children[0].buildType(tvars)).typeId
+    return tRef(n.children[0].buildType(tvars))
   of NodeTypeTypeSpec:
     if n.children.len() == 0:
-      return tTypeSpec().typeId
+      return tTypeSpec()
     else:
-      return tTypeSpec(n.children[0].buildType(tvars)).typeId
+      return tTypeSpec(n.children[0].buildType(tvars))
   of NodeTypeFunc:
     var
       items: seq[TypeId]
@@ -1502,11 +1563,22 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
     for kid in n.children:
       items.add(kid.buildType(tvars))
 
-    return tOneOf(items).typeId
+    return tOneOf(items)
   of NodeTypeMaybe:
-    return tMaybe(n.children[0].buildType(tvars)).typeId
+    return tMaybe(n.children[0].buildType(tvars))
   else:
-    raise newException(ValueError, "Invalid type")
+    var errs: seq[Con4mError]
+
+    errs.baseError("BadTypeDecl", n, "", ErrIrGen)
+    raise newCon4mException(errs)
+
+proc buildType*(n: Con4mNode): TypeId =
+  ## Take a parse tree containing type information, and yield a type
+  ## indicator (TypeId)
+  var tvars: Dict[string, TypeId]
+
+  tvars.initDict()
+  return n.buildType(tvars)
 
 proc parseType*(s: string): TypeId =
   var

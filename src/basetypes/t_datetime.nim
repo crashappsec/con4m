@@ -398,32 +398,32 @@ proc otherLitToNativeDateTime*(lit: string, res: var DateTime): bool =
 
   return true
 
-proc constructDateTime*(s: string, outObj: var Any, st: SyntaxType):
+proc constructDateTime*(s: string, outObj: var Mixed, st: SyntaxType):
                       string {.cdecl.} =
   var dt: DateTime
 
   if not otherLitToNativeDateTime(s.strip(), dt):
     return "Invalid literal value for 'datetime' type."
   else:
-    outObj = dt.toAny()
+    outObj = dt.toMixed()
 
-proc constructDate*(s: string, outObj: var Any, st: SyntaxType):
+proc constructDate*(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var dt: DateTime
 
   if not otherLitToNativeDate(s.strip(), dt):
     return "Invalid literal value for 'date' type."
   else:
-    outObj = dt.toAny()
+    outObj = dt.toMixed()
 
-proc constructTime*(s: string, outObj: var Any, st: SyntaxType):
+proc constructTime*(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var dt: DateTime
 
   if not otherLitToNativeTime(s.strip(), dt):
     return "Invalid literal value for 'time' type."
   else:
-    outObj = dt.toAny()
+    outObj = dt.toMixed()
 
 let
   TDateTime* = addBasicType(name        = "datetime",

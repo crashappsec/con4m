@@ -74,9 +74,6 @@ enum CCPreRun, CCArtifact, CCPostChalk, CCPostRun
 # At some point, I'm going to change this in con4m to automatically
 # export.
 
-export default_key_priority, valid_chalk_cmds, all_cmds_that_insert
-export known_sink_filters, other_report_ops
-
 object key {
   # TODO: no callbacks or value fields when system is set on the keyspec.
   user_def_ok:   false
@@ -1532,7 +1529,7 @@ You must set a value for this variable or pass the --exec-command-name flag to b
 
   field initial_sleep_time {
     type: Duration
-    default: <<50 msecs>> # 1/20th of a second
+    default: <-50 msecs-> # 1/20th of a second
     shortdoc: "Exec: initial sleep time"
     doc: """
 Controls how long after exec + fork Chalk waits before collecting data
@@ -1646,7 +1643,7 @@ controlled by the `heartbeat_rate` field.
 
   field heartbeat_rate {
     type:    Duration
-    default: <<20 seconds>>
+    default: <-20 seconds->
     shortdoc: "Heartbeat rate"
     doc: """
 When `heartbeat` is true, after any report, chalk will sleep the specified
@@ -2304,7 +2301,7 @@ Defaults to 'chalk-audit.json'
   field audit_file_size {
     type:       Size
     shortdoc:   "Audit Report log max size"
-    default:    <<100mb>>
+    default:    <-100mb->
     doc:        """
 When using the default log file for the built-in audit report (which, by the way, is off by default), this controls the maximum size allowable for the audit log. If a write to the cache would exceed this amount, the system will truncate down to 75% of the size.
 """
@@ -2448,7 +2445,7 @@ Currently you can just use ours.
 
   field secret_manager_timeout {
     type:    Duration
-    default: << 3 sec >>
+    default: <- 3 sec ->
     shortdoc: "HTTPS timeout for secret manager"
     doc: """
 If the timeout is exceeded and the operation fails, chalk will proceed,
@@ -2863,9 +2860,9 @@ func validate_probability(name, value) {
   return ""
 }
 
-func key_callback_check(keyname, callback: func (string) -> `x) {
-  path      := split(keyname, ".")
-  key_name  := path[1]
+func key_callback_check(keyname, callback: (string) -> `x) {
+  parts     := split(keyname, ".")
+  key_name  := parts[1]
   fieldType := $(attr_get("keyspec." + key_name + ".type", typespec))
   expected  := to_type("(string) -> " + fieldType)
   actual    := typeof(callback)
@@ -2883,8 +2880,8 @@ func never_early_check(keyname, val) {
   result := ""
 
   if val == true {
-    path       := split(keyname, ".")
-    kind_field := "keyspec." + path[1] + ".kind"
+    parts      := split(keyname, ".")
+    kind_field := "keyspec." + parts[1] + ".kind"
     kind       := attr_get(kind_field, int)
 
     if kind != ChalkTimeArtifact {
@@ -3053,8 +3050,8 @@ func in_report(name) {
 
 func outconf_mark_template_check(name, template_name) {
   result := ""
-  path   := split(name, ".")
-  cmd    := path[1]
+  parts  := split(name, ".")
+  cmd    := parts[1]
 
   if template_name != "" and not contains(all_cmds_that_insert, cmd) {
     return (in_outconf(name) + "' Cannot define a chalk mark template; " +

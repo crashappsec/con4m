@@ -1,6 +1,6 @@
 import common
 
-proc constructBool*(s: string, outObj: var Any, st: SyntaxType):
+proc constructBool*(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
   var
     s = s
@@ -14,7 +14,7 @@ proc constructBool*(s: string, outObj: var Any, st: SyntaxType):
   else:
     return "Invalid boolean value."
 
-  outObj = toAny(b)
+  outObj = toMixed(b)
 
 
 let

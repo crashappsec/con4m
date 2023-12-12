@@ -82,7 +82,7 @@ proc parseInt128*(s: string, res: var uint128, sign: var bool): int =
     else:
       return 1
 
-proc constructInteger*[T](s: string, outObj: var Any, st: SyntaxType,
+proc constructInteger*[T](s: string, outObj: var Mixed, st: SyntaxType,
                           name: string): string =
   var
     num:   uint128
@@ -106,57 +106,71 @@ proc constructInteger*[T](s: string, outObj: var Any, st: SyntaxType,
   else:
     unreachable
 
-  outObj = val.toAny()
+  outObj = val.toMixed()
 
-proc constructUint128(s: string, outObj: var Any, st: SyntaxType):
+proc constructUint128(s: string, outObj: var Mixed, st: SyntaxType):
                      string {.cdecl.} =
   return constructInteger[uint128](s, outObj, st, "u128")
-proc constructInt128(s: string, outObj: var Any, st: SyntaxType):
+proc constructInt128(s: string, outObj: var Mixed, st: SyntaxType):
                     string {.cdecl.} =
   return constructInteger[int128](s, outObj, st, "i128")
-proc constructUint64(s: string, outObj: var Any, st: SyntaxType):
+proc constructUint64(s: string, outObj: var Mixed, st: SyntaxType):
                     string {.cdecl.} =
   return constructInteger[uint64](s, outObj, st, "uint")
-proc constructInt64(s: string, outObj: var Any, st: SyntaxType):
+proc constructInt64(s: string, outObj: var Mixed, st: SyntaxType):
                    string {.cdecl.} =
   return constructInteger[int64](s, outObj, st, "int")
-proc constructUint32(s: string, outObj: var Any, st: SyntaxType):
+proc constructUint32(s: string, outObj: var Mixed, st: SyntaxType):
                     string {.cdecl.} =
   return constructInteger[uint32](s, outObj, st, "u32")
-proc constructInt32(s: string, outObj: var Any, st: SyntaxType):
+proc constructInt32(s: string, outObj: var Mixed, st: SyntaxType):
                    string {.cdecl.} =
   return constructInteger[int32](s, outObj, st, "i32")
-proc constructInt8(s: string, outObj: var Any, st: SyntaxType):
+proc constructInt8(s: string, outObj: var Mixed, st: SyntaxType):
                    string {.cdecl.} =
   return constructInteger[int8](s, outObj, st, "i8")
 
 
 let
-  TInt*      = addBasicType(name        = "int",
+  TInt8*     = addBasicType(name        = "i8",
                             kind        = stdIntKind,
-                            litMods     = @["i", "i64", "int"],
-                            fromRawLit  = constructInt64)
-  TUint*     = addBasicType(name        = "uint",
-                            kind        = stdIntKind,
-                            litMods     = @["u", "u64", "uint"],
-                            fromRawLit  = constructUint64)
+                            litMods     = @["i8"],
+                            intBits     = 8,
+                            signed      = true,
+                            fromRawLit  = constructInt8)
   TInt32*    = addBasicType(name        = "i32",
                             kind        = stdIntKind,
                             litMods     = @["i32"],
+                            intBits     = 32,
+                            signed      = true,
                             fromRawLit  = constructInt32)
   TUint32*   = addBasicType(name        = "u32",
                             kind        = stdIntKind,
                             litMods     = @["u32"],
+                            intBits     = 32,
+                            signed      = false,
                             fromRawLit  = constructUint32)
+  TInt*      = addBasicType(name        = "int",
+                            kind        = stdIntKind,
+                            litMods     = @["i", "i64", "int"],
+                            intBits     = 64,
+                            signed      = true,
+                            fromRawLit  = constructInt64)
+  TUint*     = addBasicType(name        = "uint",
+                            kind        = stdIntKind,
+                            litMods     = @["u", "u64", "uint"],
+                            intBits     = 64,
+                            signed      = false,
+                            fromRawLit  = constructUint64)
   TInt128*   = addBasicType(name        = "i128",
                             kind        = stdIntKind,
                             litMods     = @["i128"],
+                            intBits     = 128,
+                            signed      = true,
                             fromRawLit  = constructInt128)
   TUint128*  = addBasicType(name        = "u128",
                             kind        = stdIntKind,
                             litMods     = @["u128"],
+                            intBits     = 128,
+                            signed      = false,
                             fromRawLit  = constructUint128)
-  TInt8*     = addBasicType(name        = "i8",
-                            kind        = stdIntKind,
-                            litMods     = @["i8"],
-                            fromRawLit  = constructInt8)

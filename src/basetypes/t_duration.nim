@@ -2,7 +2,7 @@ import posix, strutils, parseutils, common
 
 type Duration* = Timeval
 
-proc constructDuration(s: string, outObj: var Any, st: SyntaxType):
+proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
                       string {.cdecl.} =
   const err = "Invalid duration literal."
   var
@@ -120,7 +120,7 @@ proc constructDuration(s: string, outObj: var Any, st: SyntaxType):
   res.tv_usec = int32(duration mod 1000000)
   res.tv_sec  = Time(duration div 1000000)
 
-  outObj = res.toAny()
+  outObj = res.toMixed()
 
 let
   TDuration* = addBasicType(name        = "duration",

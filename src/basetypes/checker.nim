@@ -12,6 +12,9 @@ proc followForwards*(id: TypeId): TypeId =
   # forward it to it's new (refined) type. Therefore, every check
   # involving an ID for a generic type should check to see if the
   # type has been updated.
+  #
+  # The stack detects recursive types; we probably should disallow
+  # those, but right now, just shrugging it off.
 
   var stack = @[id]
   while true:
@@ -105,6 +108,13 @@ proc typeHash(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
 proc typeHash*(x: TypeRef): TypeId =
   ## We use this to generate persistant unique IDs for types.  Type
   ## variables make a type NON-hashable.
+  ##
+  ## Note that typespec is normally a concrete type, but you can
+  ## parameterize it by the types that are acceptable values.  So when
+  ## there is no argument, the hash returns a concrete slot, but when
+  ## there is an argument, it must have an unknown element; Saying
+  ## typespec[int] is effectively the same as saying, "this is a
+  ## constant type value that must always be int".
   var
     tvars:       Dict[TypeId, int]
     numTypeVars: int
@@ -165,8 +175,8 @@ proc copyType*(t: TypeRef): TypeRef
 proc copyType*(t: TypeId): TypeRef =
   typeStore[t].copyType()
 
-proc idToObj*(t: TypeId): TypeRef =
-  return typeStore[t]
+template idToTypeRef*(t: TypeId): TypeRef =
+  typeStore[t].followForwards()
 
 {.emit: """
 #include <stdatomic.h>
@@ -187,6 +197,9 @@ proc newTypeVar*(): TypeRef =
   result = TypeRef(kind: C4TVar, typeId: newId, tVarId: newId)
   typeStore[newId] = result
 
+template tVar*(): TypeId =
+  newTypeVar().typeId
+
 proc newContainerType*(kind: C4TypeKind, items: seq[TypeId]): TypeRef =
   result = TypeRef(kind: kind, items: items)
   let hash = result.typeHash()
@@ -197,44 +210,71 @@ proc newContainerType*(kind: C4TypeKind, items: seq[TypeId]): TypeRef =
 
   typeStore[result.typeId] = result
 
-template tList*(item: TypeId): TypeRef =
+template tUnknown*(): TypeId =
+  newTypeVar().typeId
+
+template newList*(item: TypeId): TypeRef =
   newContainerType(C4List, @[item])
 
-template tList*(item: TypeRef): TypeRef =
+template newList*(item: TypeRef): TypeRef =
   newContainerType(C4List, @[item.followForwards().typeId])
 
-template tDict*(ktype: TypeId, vtype: TypeId): TypeRef =
+template tList*(item: TypeId): TypeId =
+  newContainerType(C4List, @[item]).typeId
+
+template newDict*(ktype: TypeId, vtype: TypeId): TypeRef =
   newContainerType(C4Dict, @[ktype, vtype])
 
-template tDict*(ktype: TypeRef, vtype: TypeRef): TypeRef =
+template newDict*(ktype: TypeRef, vtype: TypeRef): TypeRef =
   newContainerType(C4Dict, @[ktype.followForwards().typeId,
                              vtype.followForwards().typeId])
-template tTuple*(l: seq[TypeId]) : TypeRef =
+
+template tDict*(ktype: TypeId, vtype: TypeId): TypeId =
+  newContainerType(C4Dict, @[ktype, vtype]).typeId
+
+template newTuple*(l: seq[TypeId]) : TypeRef =
   newContainerType(C4Tuple, l)
 
-template tTuple*(l: seq[TypeRef]): TypeRef =
+template newTuple*(l: seq[TypeRef]): TypeRef =
   var idSeq: seq[TypeId]
   for item in l:
     idSeq.add(item.followForwards().typeId)
   tTuple(idSeq)
 
-template tRef*(item: TypeId): TypeRef =
+template tTuple*(l: seq[TypeId]) : TypeId =
+  newContainerType(C4Tuple, l).typeId
+
+template newRef*(item: TypeId): TypeRef =
   newContainerType(C4Ref, @[item])
 
-template tRef*(item: TypeRef): TypeRef =
+template newRef*(item: TypeRef): TypeRef =
   newContainerType(C4Ref, @[item.followForwards().typeId])
 
-template tMaybe*(item: TypeId): TypeRef =
+template tRef*(item: TypeId): TypeId =
+  newContainerType(C4Ref, @[item]).typeId
+
+template newMaybe*(item: TypeId): TypeRef =
   newContainerType(C4Maybe, @[item])
 
-template tMaybe*(item: TypeRef): TypeRef =
+template newMaybe*(item: TypeRef): TypeRef =
   newContainerType(C4Maybe, @[item.followForwards().typeId])
 
-template tTypeSpec*(constraint = TypeId(TBottom)): TypeRef =
+template tMaybe*(item: TypeId): TypeId =
+  newContainerType(C4Maybe, @[item]).typeId
+
+proc newTypeSpec*(constraint = TypeId(TBottom)): TypeRef =
   if constraint != TypeId(TBottom):
-    newContainerType(C4TypeSpec, @[constraint])
+    if constraint.isConcrete():
+      return typeStore[TBottom]
+    result = newContainerType(C4TypeSpec, @[constraint])
   else:
-    newContainerType(C4TypeSpec, @[])
+    result = newContainerType(C4TypeSpec, @[])
+
+template tTypeSpec*(constraint = TypeId(TBottom)): TypeId =
+  if constraint != TypeId(TBottom):
+    newContainerType(C4TypeSpec, @[constraint]).typeId
+  else:
+    newContainerType(C4TypeSpec, @[]).typeId
 
 proc newStructType*(props: var Dict, name = ""): TypeRef =
   # Type variables are hashed individually, since their only
@@ -260,6 +300,12 @@ proc newStructType*(props: var Dict, name = ""): TypeRef =
 proc newStructType*(): TypeRef =
   result = TypeRef(kind: C4Struct, typeId: nextVarId())
 
+proc tStruct*(props: var Dict, name = ""): TypeId =
+  return newStructType(props, name).typeId
+
+proc tStruct*(): TypeId =
+  return newStructType().typeId
+
 proc newFuncType*(items: seq[TypeId], va = false): TypeRef =
   result = TypeRef(kind: C4Func, items: items, va: va)
   if items.isGeneric():
@@ -267,6 +313,9 @@ proc newFuncType*(items: seq[TypeId], va = false): TypeRef =
   else:
     result.typeId = result.typeHash()
   typeStore[result.typeId] = result
+
+proc tFunc*(items: seq[TypeId], va = false): TypeId =
+  return newFuncType(items, va).typeId
 
 proc copyType*(t: TypeRef): TypeRef =
   var id = t.typeid
@@ -304,7 +353,7 @@ proc copyType*(t: TypeRef): TypeRef =
 proc baseunify(id1, id2: TypeId): TypeId
 
 const oErr = "'oneof' types must have multiple options."
-proc tOneOf*(items: seq[TypeId]): TypeRef =
+proc newOneOf*(items: seq[TypeId]): TypeRef =
   result = TypeRef(kind: C4OneOf, items: items)
 
   if items.len() < 1:
@@ -317,6 +366,9 @@ proc tOneOf*(items: seq[TypeId]): TypeRef =
 
   result.typeId = nextVarId()
   typeStore[result.typeId] = result
+
+proc tOneOf*(items: seq[TypeId]): TypeId =
+  return newOneOf(items).typeId
 
 proc baseunify(ref1, ref2: TypeRef): TypeId =
   ## Performs unification on two objects, returning the type

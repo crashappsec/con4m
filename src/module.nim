@@ -1,18 +1,17 @@
-import types, nimutils, os, strcursor, strutils, parse, lex, options,
-       httpclient, net, uri, streams, style
+import basetypes, nimutils, os, strutils, parse, lex, options, err,
+       httpclient, net, uri, streams
 
 type
-  Module = ref object
+  Module = object
     url*:    string
     where*:  string
     name*:   string
     ext*:    string
-    raw*:    StringCursor
-    tokens*: seq[Con4mToken]
+    tokens*: TokenBox
     tree*:   Con4mNode
-    err*:    bool
+    errs*:   seq[Con4mError]
 
-var 
+var
   modules:    Dict[string, Module]
   modulePath: seq[string] = @[".", "https://chalkdust.io/"]
 
@@ -21,25 +20,13 @@ proc commonLoad(url: string, contents: string): Module =
   result = Module(url: url)
 
   (result.where, result.name, result.ext) = url.splitFile()
-  result.raw   = newStringCursor(contents)
 
-  let (valid, tokens) = result.raw.lex(url)
+  result.tokens = contents.lex(result.errs, url)
 
-  if not valid:
-    let
-      tok = tokens[^1]
-      msg = case tok.kind:
-        of ErrorTok:         "Invalid character found"
-        of ErrorLongComment: "Unterminated comment"
-        of ErrorStringLit:   "Unterminated string"
-        of ErrorCharLit:     "Invalid char literal"
-        of ErrorOtherLit:    "Unterminated literal"
-        else:                "Unknown error"
+  if result.errs.canProceed():
+    result.tree   = result.tokens.parseModule(result.errs, url)
 
-    fatal(msg, tok)
-
-  result.tokens = tokens
-  result.tree   = tokens.parse(url)
+    # TODO: add more phases here.
 
 proc loadModuleFromFile(url: string): Option[Module] =
   result = modules.lookup(url)
@@ -70,7 +57,7 @@ proc loadModuleFromUrl(url: string): Option[Module] =
   result = some(url.commonLoad(response.bodyStream.readAll()))
 
 proc loadModule*(name: string): Option[Module] =
-  ## Load module always 
+  ## Load module always
 
   if name.startswith("/"):
     return name.loadModuleFromFile()
@@ -78,7 +65,7 @@ proc loadModule*(name: string): Option[Module] =
     return name.loadModuleFromUrl()
   if name.startswith("http://"):
     raise newException(ValueError, "Only https URLs and local files accepted")
-  
+
   for path in modulePath:
     var fullUrl: string
 
@@ -95,18 +82,41 @@ proc loadModule*(name: string): Option[Module] =
       return
 
 proc printTokens*(ctx: Module, start = 0, endix = 0) =
-  var 
+  var
     first = start
     last  = endix
-    
+
+  if ctx.tokens == nil:
+    return
+
   if start < 0:
-    first += ctx.tokens.len()
+    first += ctx.tokens.tokens.len()
 
   if endix <= 0:
-    last += ctx.tokens.len() 
+    last += ctx.tokens.tokens.len()
 
-  print(toRope(ctx.tokens[start ..< last]))
+  print TokenBox(tokens: ctx.tokens.tokens[start ..< last]).toRope()
 
 proc printTree*(ctx: Module) =
-  print(ctx.tree.toRope())
+  if ctx.tree != nil:
+    print(ctx.tree.toRope())
 
+proc printErrors*(ctx: var Module, verbose = true, ll = LlNone) =
+  var errsToPrint: seq[Con4mError]
+
+  for item in ctx.errs:
+    if cast[int](item.severity) >= cast[int](ll):
+      errsToPrint.add(item)
+
+  print errsToPrint.formatErrors(verbose)
+
+
+when isMainModule:
+  useCrashTheme()
+  let m = loadModule("ptest.c4m")
+
+  if m.isSome():
+    var module = m.get()
+    module.printTokens()
+    module.printTree()
+    module.printErrors()
