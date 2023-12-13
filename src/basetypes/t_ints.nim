@@ -1,4 +1,4 @@
-import common
+import ../common
 
 proc parseHex128*(s: string, res: var uint128): int =
   var
@@ -106,69 +106,100 @@ proc constructInteger*[T](s: string, outObj: var Mixed, st: SyntaxType,
   else:
     unreachable
 
+  when T is uint128:
+    val = num
+  when T is int128:
+    val = T(num)
+  else:
+    val = cast[T](num.u128ToU64())
+
+  echo "Returning normally. val = ", val
   outObj = val.toMixed()
 
 proc constructUint128(s: string, outObj: var Mixed, st: SyntaxType):
-                     string {.cdecl.} =
+                      string {.cdecl.} =
   return constructInteger[uint128](s, outObj, st, "u128")
 proc constructInt128(s: string, outObj: var Mixed, st: SyntaxType):
-                    string {.cdecl.} =
+                     string {.cdecl.} =
   return constructInteger[int128](s, outObj, st, "i128")
 proc constructUint64(s: string, outObj: var Mixed, st: SyntaxType):
-                    string {.cdecl.} =
+                     string {.cdecl.} =
   return constructInteger[uint64](s, outObj, st, "uint")
 proc constructInt64(s: string, outObj: var Mixed, st: SyntaxType):
-                   string {.cdecl.} =
+                    string {.cdecl.} =
+  echo "In construct, input is: ", s
   return constructInteger[int64](s, outObj, st, "int")
 proc constructUint32(s: string, outObj: var Mixed, st: SyntaxType):
-                    string {.cdecl.} =
+                     string {.cdecl.} =
   return constructInteger[uint32](s, outObj, st, "u32")
 proc constructInt32(s: string, outObj: var Mixed, st: SyntaxType):
-                   string {.cdecl.} =
+                    string {.cdecl.} =
   return constructInteger[int32](s, outObj, st, "i32")
 proc constructInt8(s: string, outObj: var Mixed, st: SyntaxType):
-                   string {.cdecl.} =
+                    string {.cdecl.} =
   return constructInteger[int8](s, outObj, st, "i8")
 
 
+proc repr8(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return $(toVal[int8](m))
+proc repr32(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return $(toVal[int32](m))
+proc repr64(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return $(toVal[int](m))
+proc repr128(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return toVal[int128](m).toStr()
+proc repru32(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return $(toVal[uint32](m))
+proc repru64(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return $(toVal[uint](m))
+proc repru128(tid: TypeId, m: Mixed): string {.cdecl.} =
+    return toVal[uint128](m).toStr()
+
 let
   TInt8*     = addBasicType(name        = "i8",
+                            repr        = repr8,
                             kind        = stdIntKind,
                             litMods     = @["i8"],
                             intBits     = 8,
                             signed      = true,
                             fromRawLit  = constructInt8)
   TInt32*    = addBasicType(name        = "i32",
+                            repr        = repr32,
                             kind        = stdIntKind,
                             litMods     = @["i32"],
                             intBits     = 32,
                             signed      = true,
                             fromRawLit  = constructInt32)
   TUint32*   = addBasicType(name        = "u32",
+                            repr        = repru32,
                             kind        = stdIntKind,
                             litMods     = @["u32"],
                             intBits     = 32,
                             signed      = false,
                             fromRawLit  = constructUint32)
   TInt*      = addBasicType(name        = "int",
+                            repr        = repr64,
                             kind        = stdIntKind,
                             litMods     = @["i", "i64", "int"],
                             intBits     = 64,
                             signed      = true,
                             fromRawLit  = constructInt64)
   TUint*     = addBasicType(name        = "uint",
+                            repr        = repru64,
                             kind        = stdIntKind,
                             litMods     = @["u", "u64", "uint"],
                             intBits     = 64,
                             signed      = false,
                             fromRawLit  = constructUint64)
   TInt128*   = addBasicType(name        = "i128",
+                            repr        = repr128,
                             kind        = stdIntKind,
                             litMods     = @["i128"],
                             intBits     = 128,
                             signed      = true,
                             fromRawLit  = constructInt128)
   TUint128*  = addBasicType(name        = "u128",
+                            repr        = repru128,
                             kind        = stdIntKind,
                             litMods     = @["u128"],
                             intBits     = 128,

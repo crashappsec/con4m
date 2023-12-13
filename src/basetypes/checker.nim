@@ -1,11 +1,8 @@
-import options, common
-
-proc toRope*(x: TypeRef): Rope
-proc toRope*(x: TypeId): Rope
+import options, ../common
 
 var
-  typeStore:      Dict[TypeId, TypeRef]
-  primitiveTypes: Dict[string, TypeRef]
+  typeStore*:      Dict[TypeId, TypeRef]
+  primitiveTypes*: Dict[string, TypeRef]
 
 proc followForwards*(id: TypeId): TypeId =
   # When we resolve generic types, we change the type ID field to
@@ -27,7 +24,7 @@ proc followForwards*(id: TypeId): TypeId =
 
     stack.add(tref.typeId)
 
-proc followForwards(x: TypeRef): TypeRef =
+proc followForwards*(x: TypeRef): TypeRef =
   let optObj = typestore.lookup(x.typeId)
   if optObj.isSome():
     return typestore[x.typeId.followForwards()]
@@ -49,7 +46,7 @@ proc isConcrete*(tRef: TypeRef): bool =
 template isGeneric*(x: untyped): bool =
   not x.isConcrete()
 
-proc typeHash(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
+proc typeHash*(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
                nvars: var int) =
   var x = x
   if x.isGeneric():
@@ -571,16 +568,6 @@ proc baseunify(id1, id2: TypeId): TypeId =
   return baseunify(id1, id2)
 
 proc unify*(origtype1, origtype2: TypeRef): TypeId =
-  # At this point, there's at least top-level compatability, and at
-  # least one of the sides must have an unbound type
-  # variable. Depending on the context, it might be proper to bind
-  # type variables. But, it might not be. For instance, if a function
-  # has a signature like ([`x], int) -> `x, Unification should help
-  # use understand if the CALLER'S type is compatable, without
-  # changing the type attached to the implementation. So we have a
-  # boolean field in the type class called 'isLocked'. If either side
-  # has that field set to true, we will do a deep-copy of the type,
-  # creating another type object that *can* be refined.
   var
     type1 = origtype1
     type2 = origtype2
@@ -620,89 +607,12 @@ proc unify*(origtype1, origtype2: TypeRef): TypeId =
 
   return type1.baseunify(type2)
 
-const tvarnames = "dtvwxyzabc"
+template unify*(t1, t2: TypeId): TypeId =
+  let
+    opt1 = typestore.lookup(t1)
+    opt2 = typestore.lookup(t2)
 
-proc numToTVarName(num: int): string =
-  var num = num
-
-  while true:
-    result.add(tvarnames[num mod 10])
-    num = num div 10
-    if num == 0:
-      break
-
-proc toRope(x: TypeId, tvars: var Dict[TypeId, int], nvars: var int): Rope
-proc toRope(x: TypeRef, tvars: var Dict[TypeId, int], nvars: var int): Rope =
-  var x = x.followForwards()
-
-  case x.kind
-  of C4Primitive:
-    result = text(typeNameFromId(x.typeId))
-  of C4TVar:
-    if x.localName.isSome():
-      result = text("`" & x.localName.get())
-    else:
-      if tvars.lookup(x.typeId).isNone():
-        nvars += 1
-        tvars[x.typeId] = nvars
-      result = text("`" & numToTVarName(tvars[x.typeId]))
-  of C4List:
-    result = text("list[") + x.items[0].toRope(tvars, nvars) + text("]")
-  of C4Ref:
-    result = text("ref[") + x.items[0].toRope(tvars, nvars) + text("]")
-  of C4Maybe:
-    result = text("maybe[") + x.items[0].toRope(tvars, nvars) + text("]")
-  of C4Dict:
-    result = text("dict[") + x.items[0].toRope(tvars, nvars) + text(", ") +
-            x.items[1].toRope(tvars, nvars) + text("]")
-  of C4Tuple:
-    result = text("tuple[")
-    var itemInfo: seq[Rope]
-    for item in x.items:
-      itemInfo.add(item.toRope(tvars, nvars))
-    result += itemInfo.join(text(", ")) + text("]")
-  of C4Func:
-    result = text("(")
-    var itemInfo: seq[Rope]
-    for item in x.items:
-      itemInfo.add(item.toRope(tvars, nvars))
-    if x.va:
-      itemInfo[^2] = text("*") + itemInfo[^2]
-    result += itemInfo[0 ..< ^1].join(text(", ")) + text(") -> ")
-    result += itemInfo[^1]
-  of C4Struct:
-    result = text("struct[")
-
-    if x.name != "":
-      result += text(x.name)
-    else:
-      if tvars.lookup(x.typeId).isNone():
-        nvars += 1
-        tvars[x.typeId] = nvars
-      result += text("`" & numToTVarName(tvars[x.typeId]))
-  of C4TypeSpec:
-    if x.items.len() == 0:
-      result = text("typespec")
-    else:
-      result = text("typespec[")
-      result += x.items[0].toRope(tvars, nvars) + text("]")
-  of C4OneOf:
-    result = text("oneof[")
-    var itemInfo: seq[Rope]
-    for item in x.items:
-      iteminfo.add(item.toRope(tvars, nvars))
-    result += itemInfo.join(text(", ")) + text("]")
-
-proc toRope(x: TypeId, tvars: var Dict[TypeId, int], nvars: var int): Rope =
-  return typeStore[x].toRope(tvars, nvars)
-
-proc toRope*(x: TypeRef): Rope =
-  var
-    tbl: Dict[TypeId, int]
-    n:   int
-
-  tbl.initDict()
-  return x.toRope(tbl, n)
-
-proc toRope*(x: TypeId): Rope =
-  typeStore[x].toRope()
+  if opt1.isNone() or opt2.isNone():
+    TBottom
+  else:
+    unify(opt1.get(), opt2.get())

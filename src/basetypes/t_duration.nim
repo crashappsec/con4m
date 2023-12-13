@@ -1,4 +1,4 @@
-import posix, strutils, parseutils, common
+import posix, parseutils, ../common
 
 type Duration* = Timeval
 
@@ -122,8 +122,18 @@ proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
 
   outObj = res.toMixed()
 
+proc repr(id: TypeId, m: Mixed): string {.cdecl.} =
+  # TODO: do better.
+  var dur = toVal[Duration](m)
+
+  result = $(cast[int32](dur.tv_sec)) & " sec"
+
+  if dur.tv_usec != 0:
+    result &= " " & $(dur.tv_usec) & " usec"
+
 let
   TDuration* = addBasicType(name        = "duration",
+                            repr        = repr,
                             kind        = stdOtherKind,
                             litMods     = @["duration"],
                             fromRawLit  = constructDuration)

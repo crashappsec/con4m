@@ -1,6 +1,6 @@
-import common, t_ints, nimutils
+import ../common, t_ints, nimutils
 
-proc initCodepointLit(cp: uint, outObj: var Mixed): string =
+proc initCodepointLit(cp: uint, outObj: var Mixed): string {.cdecl.} =
   if cp > 0x10ffff:
     return "Invalid codepoint; value beyond U+10FFFF"
   elif cp >= 0xd800 and cp <= 0xdfff:
@@ -9,7 +9,7 @@ proc initCodepointLit(cp: uint, outObj: var Mixed): string =
     var codepoint = uint32(cp)
     outObj = codepoint.toMixed()
 
-proc initByteLit(cp: uint, outObj: var Mixed): string =
+proc initByteLit(cp: uint, outObj: var Mixed): string {.cdecl.} =
   if cp > 0xff:
     return "Invalid value for a byte (cannot be above 0xff)"
   else:
@@ -35,9 +35,15 @@ proc constructChar(s: string, outObj: var Mixed, st: SyntaxType):
   else:
     unreachable
 
+proc charRepr(tid: TypeId, m: Mixed): string {.cdecl.} =
+  return $(toVal[Rune](m))
+
+proc byteRepr(tid: TypeId, m: Mixed): string {.cdecl.} =
+  return $(toVal[uint8](m))
 
 let
   TByte*     = addBasicType(name        = "byte",
+                            repr        = byteRepr,
                             kind        = stdChrKind,
                             litMods     = @["b", "byte"],
                             fromRawLit  = constructUint8,
@@ -45,6 +51,7 @@ let
                             signed      = false,
                             fromCharLit = initByteLit)
   TChar*     = addBasicType(name        = "char",
+                            repr        = charRepr,
                             kind        = stdChrKind,
                             litMods     = @["c", "char"],
                             fromRawLit  = constructChar,

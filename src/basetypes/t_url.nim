@@ -1,4 +1,4 @@
-import std/uri, common
+import std/uri, ../common
 
 proc constructUrl(s: string, outObj: var Mixed, st: SyntaxType):
                  string {.cdecl.} =
@@ -10,8 +10,12 @@ proc constructUrl(s: string, outObj: var Mixed, st: SyntaxType):
   except:
     return "Invalid url syntax."
 
+proc repr(x: TypeId, m: Mixed): string {.cdecl.} =
+  return $(toVal[Uri](m))
+
 let
   TUrl* = addBasicType(name        = "url",
+                       repr        = repr,
                        kind        = stdStrKind,
                        litMods     = @["url"],
                        fromRawLit  = constructUrl)

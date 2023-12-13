@@ -1,85 +1,18 @@
 ## Lexical analysis.  Should be straightforward.
 ##
 ## :Author: John Viega (john@crashoverride.com)
-## :Copyright: 2022
+## :Copyright: 2022, 2023
 
-import unicode, nimutils, strcursor, style, err, options
+import strcursor, style, err
+export strcursor, style, err
 
-type
-  ## Enumeration of all possible lexical tokens. Should not be exposed
-  ## outside the package.
-  Con4mTokenKind* = enum
-    TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtLockAttr,
-    TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
-    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
-    TtPeriod, TtLBrace, TtRBrace, TtRBraceMod, TtLBracket, TtRBracket,
-    TtRBracketMod, TtLParen, TtRParen, TtRParenMod, TtAnd, TtOr, TtIntLit,
-    TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTIf,
-    TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtOtherLit, TtBacktick,
-    TtArrow, TtObject, TtWhile, TtIn, TtBitAnd, TtBitOr, TtBitXor, TtShl,
-    TtShr, TtSof, TtEof, ErrorTok
 
-  Con4mToken* = ref object
-    ## Lexical tokens. Should not be exposed outside the package.
-    case kind*:   Con4mTokenKind
-    of TtStringLit:
-      unescaped*: string
-    of TtCharLit:
-      codepoint*: uint
-    else:  nil
-    cursor*:      StringCursor
-    id*:          int
-    startPos*:    int
-    endPos*:      int
-    lineNo*:      int
-    lineOffset*:  int
-    litType*:     string
-    adjustment*:  int
+proc newCompileCtx*(s: string, m: string): CompileCtx =
+  result.module = m
+  result.s      = newStringCursor(s)
 
-  TokenBox* = ref object
-    tokens*: seq[Con4mToken]
-
-  LexCtx = object
-    s:         StringCursor
-    err:       seq[Con4mError]
-    module:    string
-    nextId:    int = 1
-    lineNo:    int = 1
-    lineStart: int = 0
-    toks:      TokenBox
-
-proc baseError*(list: var seq[Con4mError], code: string, tok: Con4mToken,
-                module: string, phase: Con4mErrPhase, severity = LlErr,
-                extra: seq[string] = @[], trace = "",
-                ii = none(InstantiationInfo)) =
-  list.baseError(code, tok.cursor, module, tok.lineNo, tok.lineOffset,
-                 phase, severity, extra, trace, ii)
-
-template tokAt*(box: var TokenBox, i: int): Con4mToken =
-  if i >= box.tokens.len():
-    box.tokens[^1]
-  else:
-    box.tokens[i]
-
-proc lexBaseError(ctx: var LexCtx, basemsg: string, t: Con4mToken = nil,
-                  subs: seq[string] = @[]) =
-  var t = t
-
-  if t == nil:
-    t = ctx.toks.tokens[^1]
-
-  ctx.err.baseError(basemsg, t.cursor, ctx.module, t.lineNo,
-                    t.lineOffset, ErrLex, LlErr, subs)
-
-proc lexFatal(ctx: var LexCtx, basemsg: string, t: Con4mToken = nil) =
-  ctx.lexBaseError(basemsg, t)
-  raise newCon4mException()
-
-template lexError(msg: string, t: Con4mToken = nil) =
-  ctx.lexFatal(msg, t)
-
-proc uEsc(ctx: var LexCtx, s: seq[Rune], numchars: int, t: Con4mToken): Rune =
+proc uEsc(ctx: var CompileCtx, s: seq[Rune], numchars: int,
+          t: Con4mToken): Rune =
   var
     c = 0
     n = numchars
@@ -104,7 +37,7 @@ proc uEsc(ctx: var LexCtx, s: seq[Rune], numchars: int, t: Con4mToken): Rune =
     else:
       lexError("UnicodeEscape", t)
 
-proc processEscape(ctx: var LexCtx, s: seq[Rune], t: Con4mToken): (Rune, int) =
+proc processEscape(ctx: var CompileCtx, s: seq[Rune], t: Con4mToken): (Rune, int) =
   # Returns the escaped character along with how many bytes were read.
   case s[0]
   of Rune('n'):  return (Rune('\n'), 1)
@@ -119,7 +52,7 @@ proc processEscape(ctx: var LexCtx, s: seq[Rune], t: Con4mToken): (Rune, int) =
   of Rune('U'):  return (ctx.uEsc(s[1 .. ^1], 8, t), 9)
   else: return (s[0], s[0].size())
 
-proc parseCodePoint(ctx: var LexCtx, t: Con4mToken) =
+proc parseCodePoint(ctx: var CompileCtx, t: Con4mToken) =
   # Extract the actual codepoint from a char literal. The first
   # and last chars will be the tick marks.
   var
@@ -139,7 +72,7 @@ proc parseCodePoint(ctx: var LexCtx, t: Con4mToken) =
   else:
     t.codepoint = uint(raw[0])
 
-proc unescape(ctx: var LexCtx, token: Con4mToken) =
+proc unescape(ctx: var CompileCtx, token: Con4mToken) =
   # Turn a raw string into its intended representation.  Note that we
   # do NOT currently accept hex or octal escapes, since strings
   # theoretically should always be utf-8 only.
@@ -219,18 +152,18 @@ template atNewLine() =
   ctx.lineNo.inc()
   ctx.lineStart = ctx.s.getPosition()
 
-proc addToken(ctx: var LexCtx, k: Con4mTokenKind,
+proc addToken(ctx: var CompileCtx, k: Con4mTokenKind,
               startPos, endPos, tokenLine, lineOffset: int,
               adjustValue = 0,
               eatNewLines: static[bool] = false) =
-  ctx.toks.tokens.add(Con4mToken(startPos:   startPos,
-                                 id:         ctx.nextId,
-                                 endPos:     endPos,
-                                 kind:       k,
-                                 cursor:     ctx.s,
-                                 lineNo:     tokenLine,
-                                 lineOffset: lineOffset,
-                                 adjustment: adjustValue))
+  ctx.tokens.add(Con4mToken(startPos:   startPos,
+                            id:         ctx.nextId,
+                            endPos:     endPos,
+                            kind:       k,
+                            cursor:     ctx.s,
+                            lineNo:     tokenLine,
+                            lineOffset: lineOffset,
+                            adjustment: adjustValue))
   ctx.nextId += 1
   when eatNewlines:
     let wsStart = ctx.s.getPosition()
@@ -247,7 +180,7 @@ proc addToken(ctx: var LexCtx, k: Con4mTokenKind,
                              kind: TtWhiteSpace, cursor: ctx.s,
                              lineNo: tokenLine,
                              lineOffSet: lineOffset + wsStart - startPos)
-      ctx.toks.tokens.add(wsTok)
+      ctx.tokens.add(wsTok)
       ctx.nextId += 1
 
 
@@ -268,40 +201,40 @@ template tok(k: Con4mTokenKind, adjustValue: static[int],
     ctx.addToken(k, startPos + adjustValue, ctx.s.getPosition() - adjustValue,
                  tokenLine, tokenLineOffset, adjustValue)
 
-proc processStrings(ctx: var LexCtx) =
+proc processStrings(ctx: var CompileCtx) =
   var
     i                  = 0
     newtok: Con4mToken = nil
     res:    seq[Con4mToken]
 
-  if ctx.toks.tokens.len() == 0:
+  if ctx.tokens.len() == 0:
     return
 
-  for tok in ctx.toks.tokens:
+  for tok in ctx.tokens:
     case tok.kind
     of TtStringLit: ctx.unescape(tok)
     of TtCharLit:   ctx.parseCodePoint(tok)
     else: discard
 
-  while i < ctx.toks.tokens.len():
+  while i < ctx.tokens.len():
    block outer:
-    var t = ctx.toks.tokens[i]
+    var t = ctx.tokens[i]
 
     case t.kind
     of TtStringLit:
       var j = i + 1
       # (TtWhiteSpace* TtPlus (TtWhiteSpace|TtNewLine)* TtStringLit)*
-      while j < ctx.toks.tokens.len():
+      while j < ctx.tokens.len():
         block inner:
-          let t2 = ctx.toks.tokens[j]
+          let t2 = ctx.tokens[j]
           case t2.kind
           of TtWhiteSpace:
             j += 1
             continue
           of TtPlus:
             j += 1
-            while j < ctx.toks.tokens.len():
-              let t3 = ctx.toks.tokens[j]
+            while j < ctx.tokens.len():
+              let t3 = ctx.tokens[j]
               case t3.kind
               of TtWhiteSpace, TtNewLine:
                 j += 1
@@ -343,7 +276,7 @@ proc processStrings(ctx: var LexCtx) =
       res.add(t)
     i += 1
 
-  ctx.toks.tokens = res
+  ctx.tokens = res
 
 template handleLitMod() =
   if ctx.s.peek() == Rune('\''):
@@ -368,10 +301,13 @@ template handleLitMod() =
         modifier.add(r)
         ctx.s.advance()
 
-      ctx.toks.tokens[^1].litType = $(modifier)
+      ctx.tokens[^1].litType = $(modifier)
 
-proc lex(ctx: var LexCtx) =
-  ## Lexical analysis. Doesn't need to be exported.
+proc lex_impl(ctx: var CompileCtx) =
+  ## The guts; lex() simply wraps in a try/catch block
+  ctx.tokens = @[Con4mToken(startPos: -1, endPos: -1,
+                            kind: TtSof, cursor: ctx.s, lineNo: -1,
+                            lineOffSet: -1)]
 
   while true:
     let
@@ -517,9 +453,9 @@ proc lex(ctx: var LexCtx) =
     of Rune('}'):
       tok(TtRBrace)
       handleLitMod()
-      if ctx.toks.tokens[^1].litType != "":
+      if ctx.tokens[^1].litType != "":
         var
-          oldTok = ctx.toks.tokens[^1]
+          oldTok = ctx.tokens[^1]
           newTok = Con4mToken(kind:       TtRBraceMod,
                               id:         oldTok.id,
                               startPos:   oldTok.startPos,
@@ -527,15 +463,15 @@ proc lex(ctx: var LexCtx) =
                               lineNo:     oldTok.lineNo,
                               lineOffset: oldTok.lineOffset,
                               litType:    oldTok.litType)
-        ctx.toks.tokens[^1] = newTok
+        ctx.tokens[^1] = newTok
     of Rune('['):
       tok(TtLBracket, true)
     of Rune(']'):
       tok(TtRBracket)
       handleLitMod()
-      if ctx.toks.tokens[^1].litType != "":
+      if ctx.tokens[^1].litType != "":
         var
-          oldTok = ctx.toks.tokens[^1]
+          oldTok = ctx.tokens[^1]
           newTok = Con4mToken(kind:       TtRBracketMod,
                               id:         oldTok.id,
                               startPos:   oldTok.startPos,
@@ -543,15 +479,15 @@ proc lex(ctx: var LexCtx) =
                               lineNo:     oldTok.lineNo,
                               lineOffset: oldTok.lineOffset,
                               litType:    oldTok.litType)
-        ctx.toks.tokens[^1] = newTok
+        ctx.tokens[^1] = newTok
     of Rune('('):
       tok(TtLParen, true)
     of Rune(')'):
       tok(TtRParen)
       handleLitMod()
-      if ctx.toks.tokens[^1].litType != "":
+      if ctx.tokens[^1].litType != "":
         var
-          oldTok = ctx.toks.tokens[^1]
+          oldTok = ctx.tokens[^1]
           newTok = Con4mToken(kind:       TtRParenMod,
                               id:         oldTok.id,
                               startPos:   oldTok.startPos,
@@ -559,7 +495,7 @@ proc lex(ctx: var LexCtx) =
                               lineNo:     oldTok.lineNo,
                               lineOffset: oldTok.lineOffset,
                               litType:    oldTok.litType)
-        ctx.toks.tokens[^1] = newTok
+        ctx.tokens[^1] = newTok
     of Rune('&'):
       if ctx.s.peek() == Rune('&'):
         ctx.s.advance()
@@ -792,22 +728,31 @@ proc lex(ctx: var LexCtx) =
 
   unreachable
 
-proc lex*(str: string, err: var seq[Con4mError], module = ""): TokenBox =
-  var ctx: LexCtx
+proc lex*(ctx: var CompileCtx): bool =
+  try:
+    lex_impl(ctx)
+    ctx.tokens.add(Con4mToken(startPos: ctx.s.getPosition(),
+                              endPos:   ctx.s.getPosition(),
+                              kind:     TtEof, lineOffSet: -1,
+                              cursor:   ctx.s, lineNo: -1))
+  except:
+    return false
+
+  return ctx.errors.canProceed()
+
+proc lex*(str: string, err: var seq[Con4mError], module = ""): seq[Con4mToken] =
+  # A version that creates a context and only runs this phase.
+  # This is really only used for testing.
+
+  var ctx: CompileCtx
 
   ctx.s      = str.newStringCursor()
   ctx.module = module
-  ctx.toks   = TokenBox(tokens: @[Con4mToken(startPos: -1, endPos: -1,
-                                  kind: TtSof, cursor: ctx.s, lineNo: -1,
-                                  lineOffSet: -1)])
-  try:
-    lex(ctx)
-  except:
-    discard
 
-  err = ctx.err
-  if err.canProceed():
-    return ctx.toks
+  if ctx.lex():
+    return ctx.tokens
+
+  err = ctx.errors
 
 proc `$`*(tok: Con4mToken): string =
   case tok.kind
@@ -865,11 +810,11 @@ proc toRope*(tok: Con4mToken): Rope =
   of TtWhiteSpace, TtNewLine, TtSof, TtEof, ErrorTok:
     discard
 
-proc toRope*(tokenBox: TokenBox): Rope =
+proc toRope*(tokens: seq[Con4mToken]): Rope =
   var cells: seq[seq[Rope]] = @[@[atom("Number"), atom("Type"), atom("Line"),
                                 atom("Col"), atom("Value")]]
 
-  for i, item in tokenBox.tokens:
+  for i, item in tokens:
     var row: seq[Rope] = @[]
     row.add(atom($(i + 1)))
     row.add(atom($(item.kind)))
@@ -984,33 +929,3 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "object"
     else:
       return "other (id = " & $(int(kind)) & ")"
-
-when isMainModule:
-  useCrashTheme()
-  import std/marshal
-  let f = "x := x + 2"
-  var errs: seq[Con4mError]
-
-  let tokens = f.lex(errs)
-
-  if len(errs) != 0:
-    quit(1)
-
-  print tokens.toRope()
-
-  let marshalled = $$tokens
-
-  print marshalled
-
-  let tokens2 = to[TokenBox](marshalled)
-
-  print tokens2.toRope()
-  print h2("Error test")
-  var ctx = LexCtx(s: tokens.tokens[0].cursor, module: "test.c4m", toks: tokens)
-
-  ctx.lexBaseError("BadExponent", tokens.tokens[1])
-  ctx.lexBaseError("MissingTok", tokens.tokens[3], subs = @["example"])
-  ctx.lexBaseError("CharTerm", tokens.tokens[^2])
-
-  print ctx.err.formatErrors()
-  print ctx.err.formatErrors(false)

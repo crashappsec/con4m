@@ -22,7 +22,7 @@
 # in the year 10,000, but I don't think there are enough cases where
 # someone needs to specify "200 AD" in a config file to deal w/ the
 # challenges with not fixing the length of the year field.
-import posix, parseutils, strutils, common
+import posix, parseutils, ../common
 
 type
   DTFlags* = enum
@@ -425,16 +425,40 @@ proc constructTime*(s: string, outObj: var Mixed, st: SyntaxType):
   else:
     outObj = dt.toMixed()
 
+proc baseDtRepr(fmt: string, dt: var DateTime): string =
+  var buf = cast[cstring](alloc(128))
+
+  discard strftime(buf, 128, cstring(fmt), dt.dt)
+
+  return $buf
+
+proc reprDt(id: TypeId, m: Mixed): string {.cdecl.} =
+  var dt = toVal[DateTime](m)
+  return baseDtRepr("%Y-%m-%dT%H:%M:%S", dt)
+
+proc reprD(id: TypeId, m: Mixed): string {.cdecl.} =
+  var dt = toVal[DateTime](m)
+
+  return baseDtRepr("%Y-%m-%d", dt)
+
+proc reprT(id: TypeId, m: Mixed): string {.cdecl.} =
+  var dt = toVal[DateTime](m)
+
+  return baseDtRepr("%H:%M:%S", dt)
+
 let
   TDateTime* = addBasicType(name        = "datetime",
+                            repr        = reprDt,
                             kind        = stdOtherKind,
                             litMods     = @["datetime"],
                             fromRawLit  = constructDateTime)
   TDate*     = addBasicType(name        = "date",
+                            repr        = reprD,
                             kind        = stdOtherKind,
                             litMods     = @["date"],
                             fromRawLit  = constructDate)
   TTime*     = addBasicType(name        = "time",
+                            repr        = reprT,
                             kind        = stdOtherKind,
                             litMods     = @["time"],
                             fromRawLit  = constructTime)

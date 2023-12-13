@@ -1,9 +1,9 @@
-import basetypes/[common, t_bool, t_ints, t_chars, t_float, t_strs, t_url],
-       basetypes/[t_duration, t_ipaddr, t_size, t_datetime, checker]
-import err, mixed
+import basetypes/[t_bool, t_ints, t_chars, t_float, t_strs, t_url],
+       basetypes/[t_duration, t_ipaddr, t_size, t_datetime, checker, repr]
+import common, err, mixed
 
-export common, t_bool, t_ints, t_chars, t_float, t_strs, t_url, t_duration,
-       t_ipaddr, t_size, t_datetime, checker, err, mixed
+export t_bool, t_ints, t_chars, t_float, t_strs, t_url, t_duration,
+       t_ipaddr, t_size, t_datetime, checker, err, mixed, repr
 
 initTypeStore()
 
@@ -23,6 +23,10 @@ setIntVariants(TInt128, TUint128)
 template isNumericBuiltin*(t: TypeId): bool =
   t.followForwards() in allNumericTypes
 
+template isIntType*(t: TypeId): bool =
+  let tprime = t.followForwards()
+  tprime != TFloat and tprime in allNumericTypes
+
 template numTypeErr(s: Con4mSeverity, errid: string, xtra: seq[string],
                     p = ErrIrGen) =
   err = Con4mError(phase: p, severity: s, code: errid, extra: xtra)
@@ -39,15 +43,14 @@ proc resultingNumType*(t1, t2: TypeId, err: var Con4mError): TypeId =
     to1 = t1.getTypeInfoObject()
     to2 = t2.getTypeInfoObject()
 
-
   if to1.intBits != 0 and to2.intBits != 0:
     if to1.intBits > to2.intBits:
       if not to1.signed and to2.signed:
         result = to1.signVariant
-        numTypeErr(LlWarn, "SignToUnsign", @[$(t1)])
+        numTypeErr(LlWarn, "SignToUnsign", @[t1.toString()])
       elif to1.signed and not to2.signed:
         result = t1
-        numTypeErr(LlInfo, "SignChange", @[$(t1), $(t2)])
+        numTypeErr(LlInfo, "SignChange", @[t1.toString(), t2.toString()])
       else:
         result = t1
     elif to2.intBits > to1.intBits:
@@ -57,13 +60,33 @@ proc resultingNumType*(t1, t2: TypeId, err: var Con4mError): TypeId =
         result = t1
       else:
         if to1.signed:
-          numTypeErr(LlWarn,  "SignToUnsign", @[$(t2)])
+          numTypeErr(LlWarn,  "SignToUnsign", @[t2.toString()])
           result = t1
         else:
-          numTypeErr(LlWarn,  "SignToUnsign", @[$(t1)])
+          numTypeErr(LlWarn,  "SignToUnsign", @[t1.toString()])
           result = t2
   elif t1 == TFloat or t2 == TFloat:
     result = TFloat
   else:
     result = TBottom
     unreachable # Shouldn't get here
+
+proc typeError*(ctx: var CompileCtx, t1, t2: TypeId,
+               where: Con4mNode = nil) =
+  var where = if where == nil: ctx.pt else: where
+  ctx.irError("TypeMismatch", @[t1.toString(), t2.toString()], where)
+
+proc typeCheck*(ctx: var CompileCtx, t1, t2: TypeId,
+               where: Con4mNode = nil): TypeId {.discardable.} =
+
+  result = t1.unify(t2)
+
+  if result == TBottom:
+    ctx.typeError(t1, t2, where)
+
+proc typeCheck*(ctx: var CompileCtx, sym: SymbolInfo, t: TypeId,
+              where: Con4mNode = nil): TypeId {.discardable.} =
+  return ctx.typeCheck(sym.tid, t, where)
+
+proc isBuiltinType*(tid: TypeId): bool =
+  return cast[int](tid.followForwards()) < basicTypes.len()

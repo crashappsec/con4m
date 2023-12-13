@@ -1,27 +1,5 @@
 import nimutils, options, strutils, strcursor, unicode, tables
 
-type
-  Con4mErrPhase* = enum ErrLex, ErrParse, ErrIrgen
-  Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr
-  InstantiationInfo* = tuple[filename: string, line: int, column: int]
-  Con4mError* = object
-    phase*:    Con4mErrPhase
-    severity*: Con4mSeverity
-    cursor*:   StringCursor
-    code*:     string
-    module*:   string
-    line*:     int
-    offset*:   int
-    extra*:    seq[string]
-    when not defined(release):
-      trace*:  string
-      ii*:     InstantiationInfo
-
-  Con4mException* = ref object of ValueError
-    errors*: seq[Con4mError]
-
-  Con4mLongJmp* = ref object of ValueError
-
 ## If we have to bail on control flow, we'll do so here.
 proc newCon4mException*(errs: seq[Con4mError] = @[]): Con4mException =
   result = new(Con4mException)
@@ -52,6 +30,9 @@ const errorMsgs = [
   ("BadChar",        "Invalid character found in token"),
   ("StmtEnd",        "Expected end of a statement after $1."),
   ("NotALit",        "Not a literal; literal modifier not allowed here."),
+  ("BadLitMod",      "Unknown literal modifier: <em>$1</em>"),
+  ("LitModTypeErr",  "Literal modifier <em>$1</em> can't be used with " &
+                      "$2 literals"),
   ("MissingTok",     "Expected $1 here."),
   ("MemberSpec",     "<em>'.'</em> operator must have an identifier on " &
                      "both sides."),
@@ -98,7 +79,36 @@ const errorMsgs = [
   ("SignChange",     "Operand type <em>$1</em> is signed, but <em>$2</em> " &
                      "is unsigned. Since $1 is larger, result will be " &
                      "signed. While no precision is lost, this might be " &
-                     "unexpected (cast explictly to squelch message)")
+                     "unexpected (cast explictly to squelch message)"),
+  ("TypeMismatch",   "<em>$1</em> and <em>$2</em> are incompatible types."),
+  ("LoopVarAssign",  "Cannot assign to (or re-declare) loop iteration " &
+                     "variables."),
+  ("AlreadyAFunc",   "Variable names cannot have names that are identical to " &
+                     "functions named in the same module's top-level."),
+  ("AlreadyAVar",    "Already found a top-level variable with the same " &
+                     "name as this function; this is not allowed within a " &
+                     "module."),
+  ("Immutable",      "Cannot modify immutable values."),
+  ("VarRedef",       "Variable <em>$1</em> declared multiple times in " &
+                     "the same scope."),
+  ("LabelDupe",      "Nested loops have the same label (<em>$1</em>)."),
+  ("LabelLoc",       "<em>label</em> statement must come immediately before " &
+                     "either a <em>for</em> loop or a <em>while</em> loop."),
+  ("DeadCode",       "Dead code after $1."),
+  ("ElifLoc",        "<em>elif</em> statement must follow either an " &
+                     "<em>if</em> block, or another <em>elif</em> block."),
+  ("ElseLoc",        "<em>else<em> statement must follow either an " &
+                     "<em>if</em> block or another <em>elif</em> block."),
+  ("BadLoopExit",    "<em>$1</em> to label <em>$2</em> is invalid, because " &
+                     "it is not contained inside a loop that have that label."),
+  ("DupeParamProp",  "Duplicate parameter property for <em>$1</em>"),
+  ("ParamType",      "Parameter property <em>$1</em> must be a $2."),
+  ("BadParamProp",   "Invalid property for a parameter: <em>$1</em>"),
+  ("EnumDeclConst",  "Enum value assignments must be constants"),
+  ("EnumInt",        "Currently, enum values may only be <em>int<em> types"),
+  ("EnumReuse",      "Value <em>$1</em> has already been used in this enum."),
+  ("InternalErr1",   "Have a st entry where the parser shouldn't allow it?"),
+
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
@@ -115,6 +125,7 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
     err.trace = trace
     if ii.isSome():
       err.ii  = ii.get()
+
     var foundCode = false
     for (k, v) in errorMsgs:
       if code == k:
@@ -125,6 +136,47 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
       text("' was not found.")
 
   list.add(err)
+
+proc baseError*(list: var seq[Con4mError], code: string, tok: Con4mToken,
+                module: string, phase: Con4mErrPhase, severity = LlErr,
+                extra: seq[string] = @[], trace = "",
+                ii = none(InstantiationInfo)) =
+  list.baseError(code, tok.cursor, module, tok.lineNo, tok.lineOffset,
+                 phase, severity, extra, trace, ii)
+
+proc lexBaseError*(ctx: var CompileCtx, basemsg: string, t: Con4mToken = nil,
+                  subs: seq[string] = @[]) =
+  var t = t
+
+  if t == nil:
+    t = ctx.tokens[^1]
+
+  ctx.errors.baseError(basemsg, t.cursor, ctx.module, t.lineNo,
+                       t.lineOffset, ErrLex, LlErr, subs)
+
+proc lexFatal*(ctx: var CompileCtx, basemsg: string, t: Con4mToken = nil) =
+  ctx.lexBaseError(basemsg, t)
+  raise newCon4mException()
+
+template lexError*(msg: string, t: Con4mToken = nil) =
+  ctx.lexFatal(msg, t)
+
+template baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
+                    module: string, phase: Con4mErrPhase, severity = LlErr,
+                    extra = seq[string](@[]), trace = "",
+                    ii = none(InstantiationInfo)) =
+  list.baseError(code, node.token, module, phase, severity, extra,
+                 trace, ii)
+
+template irError*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+                w = Con4mNode(nil)) =
+  var where = if w == nil: ctx.pt else: w
+  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlErr, extra)
+
+template irWarn*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+                w = Con4mNode(nil)) =
+  var where = if w == nil: ctx.pt else: w
+  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlWarn, extra)
 
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:

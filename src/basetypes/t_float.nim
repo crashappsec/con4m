@@ -1,4 +1,4 @@
-import math, common, t_ints
+import math, ../common, t_ints
 
 proc constructFloat(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.} =
@@ -70,8 +70,12 @@ proc constructFloat(s: string, outObj: var Mixed, st: SyntaxType):
 
   outObj = value.toMixed()
 
+proc repr(t: TypeId, m: Mixed): string {.cdecl.} =
+  return $(toVal[float](m))
+
 let
   TFloat* = addBasicType(name        = "float",
+                         repr        = repr,
                          kind        = stdFloatKind,
                          litMods     = @["f", "float"],
                          fromRawLit  = constructFloat)

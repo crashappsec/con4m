@@ -1,3 +1,5 @@
+import unicode
+
 type
   MixedContainer[T] = ref object of RootRef
     item: T
@@ -12,13 +14,13 @@ type
       byRef: RootRef
 
 proc toMixed*[T](item: T): Mixed =
-  when T is SomeOrdinal or T is SomeFloat:
+  when T is SomeOrdinal or T is SomeFloat or T is Rune:
     result = Mixed(kind: MixedValue, byVal: cast[pointer](item))
   else:
     result = Mixed(kind: MixedReference, byRef: MixedContainer[T](item: item))
 
 proc toVal*[T](item: Mixed): T =
-  when T is SomeOrdinal or T is SomeFloat:
+  when T is SomeOrdinal or T is SomeFloat or T is Rune:
     result = cast[T](item.byVal)
   else:
     result = MixedContainer[T](item.byRef).item

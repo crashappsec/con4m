@@ -3,13 +3,8 @@
 # resumption.
 #
 # Plus, I'd prefer to keep UTF32 instead of UTF8.
-import unicode, nimutils
-
-type
-  StringCursor* = ref object
-    runes*: seq[Rune]
-    i*:     int
-
+import common
+export common
 
 proc newStringCursor*(s: string): StringCursor =
   result = StringCursor(runes: s.toRunes(), i: 0)

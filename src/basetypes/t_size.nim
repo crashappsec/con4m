@@ -1,4 +1,4 @@
-import strutils, parseutils, common
+import parseutils, ../common
 
 type   Size* = uint64
 
@@ -48,8 +48,13 @@ proc constructSize(s: string, outObj: var Mixed, st: SyntaxType):
   except:
     return "Invalid value for Size data type."
 
+proc repr(id: TypeId, m: Mixed): string {.cdecl.} =
+  # TODO: do better!
+  return $(toVal[uint64](m)) & " bytes"
+
 let
   TSize*     = addBasicType(name        = "size",
+                            repr        = repr,
                             kind        = stdOtherKind,
                             litMods     = @["size"],
                             fromRawLit  = constructSize)

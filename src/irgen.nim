@@ -11,539 +11,342 @@
 # warn if not.
 
 
-import parse, basetypes, types, options, strutil
+import parse, scope, cbox
+export parse, scope, cbox
 
-type
-  IrNodeType* = enum
-    IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrSectionScope, IrConditional,
-    IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUnary, IrBinary,
-    IrEnum, IrEnumItem, IrCast
+proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
+                          litMod = ""): TypeId =
 
-  IrNode* = object
-    parseNode*: Con4mNode
-    tid*:       TypeId
-    value*:     Option[Mixed]
-    parent*:    IrNode
-    contents*:  IrContents
+  ## If called w/ an empty litmod, returns the primary type
+  ## associated with the syntax.
+  ##
+  ## Doesn't work with 'other' literals, obviously.
+  ##
+  ## Assumes the parse node is correct.
 
-  IrContents* = ref object
-    case kind*: IrNodeType
-    of IrBlock:
-      stmts*: seq[IrNode]
-    of IrLoop:
-      label*:      Con4mNode # Any type of loop.
-      keyVar*:     string    # Both types of for loops.
-      valVar*:     string    # for k, v in dict
-      startIx*:    IrNode    # for x from 0 to 10
-      endIx*:      IrNode    # for x from 0 to 10
-      condition*:  IrNode    # While loop condition or object to iterate over.
-      loopBody*:   IrNode
-      scope*:      Scope
-    of IrAttrAssign:
-      attrlhs*: string
-      attrrhs*: IrNode
-      lock*:    bool
-    of IrVarAssign:
-      varlhs*: seq[IrNode]
-      varrhs*: IrNode
-    of IrSectionScope:
-      secType*: string
-      secName*: string
-      secBody*: IrNode
-    of IrConditional:
-      condition*:   IrNode
-      trueBranch*:  IrNode
-      falseBranch*: IrNode
-    of IrJump:
-      exitLoop*:   bool
-      targetNode*: IrNode
-    of IrRet:
-      retVal*: IrNode
-    of IrLit:
-      syntax*: SyntaxType
-      litmod*: string # Only for containers.
-      items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
-    of IrMember:
-      name*: string
-    of IrIndex:
-      indexStart*: IrNode
-      indexEnd*:   IrNode
-    of IrCall:
-      binop*:   bool     # When we, e.g., replace + with __add__()
-      module*:  string   # For explicit module specifier
-      fname*:   string
-      actuals*: seq[IrNode]
-    of IrUse:
-      targetModule*: string
-      targetLoc*: string
-    of IrUnary:
-      uOp*: string
-      uRhs*: IrNode
-    of IrBinary:
-      bOp*:  string
-      bLhs*: IrNode
-      bRhs*: IrNode
-    of IrEnumItem:
-      enumItemName*: string
-      customValue*:  IrNode
-    of IrEnum:
-      enumItems*: seq[IrNode]
+  if litmod == "":
+    case st
+    of STBase10:
+      return TInt
+    of STHex:
+      return TInt
+    of STFloat:
+      return TFloat
+    of STBoolLit:
+      return TBool
+    of STStrQuotes:
+      return TString
+    of StChrQuotes:
+      return TChar
+    else: # Don't do these. Internal errors, not user errors.
+      return TBottom
 
-  FormalInfo* = ref object
-    name*: string
-    tid*:  TypeId
-    va*:   bool
+  var errType: string = ""
 
-  FuncInfo* = ref object
-    # One module can have multiple instantiations of a function, as
-    # long as the type signatures of the parameters are not
-    # overlapping.
-    #
-    # So for functions, we ignore SymbolInfo's tid field and
-    # come here.
-    name*:           string
-    rawImpl*:        Con4mNode
-    implementation*: IrNode
-    tid*:            TypeId
-    params*:         seq[FormalInfo]
-    retval*:         FormalInfo
-    fnScope*:        Scope
+  for v in basicTypes:
+    if litMod in v.litMods:
+      if v.kind != 0 and uint(st) != 0:
+        return v.typeId
+      else:
+        case st
+        of STBase10:
+          errType = "integer"
+        of STHex:
+          errType = "hex"
+        of STFloat:
+          errType = "float"
+        of STBoolLit:
+          errType = "boolean"
+        of STStrQuotes:
+          errType = "string"
+        of STChrQuotes:
+          errType = "character"
+        of STOther:
+          errType = "specialized"
+        else:
+          unreachable # Not supposed to call this w/ complex types
 
-  ParamInfo*  = ref object
-    shortdoc*:     Option[string]
-    doc*:          Option[string]
-    validator*:    Option[Callback]
-    defaultIr*:    Option[IrNode]
-    startValue*:   Option[Mixed]
+  if errType == "":
+    ctx.irError("BadLitMod", @[litMod])
+  else:
+    ctx.irError("LitModTypeErr", @[litMod, errType])
 
-  SymbolInfo* = ref object
-    name*:         string
-    isFunc*:       bool
-    tid*:          TypeId
-    uses*:         seq[IrNode]
-    defs*:         seq[IrNode]
-    declaredType*: bool
-    immutable*:    bool
-    fimpls*:       seq[FuncInfo]
-    pInfo*:        ParamInfo
+  return TBottom
+proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
+  result = atom(s).fgColor("atomiclime")
+  if x != "":
+    result = result + atom(" " & x).italic()
 
-  IrGenCtx = object
-    pt*:          Con4mNode
-    parent*:      IrNode
-    errors*:      seq[IrErrInfo]
-    globalScope*: Scope # Stuff explicitly declared global w/in this module.
-    moduleScope*: Scope
-    funcScope*:   Scope
-    usedAttrs*:   Scope
-    blockScopes*: seq[Scope]
-    enums*:       seq[IrNode]
-    lhsContext*:  bool
-    attrContext*: bool
+  if y != "":
+    result = result + atom(" (" & y & ")").fgcolor("fandango")
 
-  Scope = ref object
-    table*:  Dict[string, SymbolInfo]
-    attr*:   bool
+  if t != TBottom:
+    result = result + atom(" ") + strong(t.toString())
 
-template irError*(ctx: var IrGenCtx, msg: string, prevLoc: IrNode = nil) =
-  ctx.errors.add(Con4mErr(msg: msg.text(), kind: ErrIr,
-                          token: cast[pointer](ctx.pt.token.get())
-                          node: cast[pointer](ctx.pt)))
+template reprBasicLiteral(ctx: IrNode): string =
+  if ctx.value.isNone():
+    ""
+  else:
+    rawBuiltinRepr(ctx.tid, ctx.value.get())
 
-template irWarn*(ctx: var IrGenCtx, msg: string, prevLoc: IrNode = nil) =
-  ctx.errors.add(Con4mErr(msg: msg.text(), kind: Warn,
-                          token: cast[pointer](ctx.pt.token.get())
-                          node: cast[pointer](ctx.pt)))
+proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
+  var
+    descriptor: string
+    moreinfo:   string
 
-template irError*(ctx: var IrGenCtx, msg: Rope, prevLoc: IrNode = nil) =
-  ctx.errors.add(Con4mErr(msg: msg, kind: ErrIr,
-                          token: cast[pointer](ctx.pt.token.get())
-                          node: cast[pointer](ctx.pt)))
+  if ctx == nil or ctx.contents == nil:
+    return (em("empty"), @[])
 
-template irWarn*(ctx: var IrGenCtx, msg: Rope, prevLoc: IrNode = nil) =
-  ctx.errors.add(Con4mErr(msg: msg, kind: Warn,
-                          token: cast[pointer](ctx.pt.token.get())
-                          node: cast[pointer](ctx.pt)))
+  case ctx.contents.kind
+  of IrBlock:
+    return (fmt("Block"), ctx.contents.stmts)
+  of IrLoop:
+    if ctx.contents.label != nil:
+      moreinfo = "label: " & ctx.contents.label.getText() & " "
 
-template irError*(ctx: var IrGenCtx, err: var Con4mErr) =
-  ctx.errors.add(err)
+    moreinfo &= "id: " & $ctx.contents.label.id & " "
+    if ctx.contents.keyVar == "":
+      descriptor = "while"
+    else:
+      descriptor = "for / "
+      if ctx.contents.startIx != nil:
+        descriptor &= " from"
+      else:
+        descriptor &= " in"
+      if ctx.contents.valVar != "":
+        moreinfo &= "key: " & ctx.contents.keyVar
+        moreinfo &= "val: " & ctx.contents.valVar
+      else:
+        moreinfo &= "ix: " & ctx.contents.keyVar
 
-proc getLitMod(ctx: var IrGenCtx): string =
-  return ctx.pt.token.get().litType
+    return (fmt("Loop", descriptor, moreinfo),
+            @[ctx.contents.condition, ctx.contents.loopBody])
+  of IrAttrAssign:
+    if ctx.contents.lock:
+      moreinfo = "+lock"
+    return (fmt("AttrAssign", ctx.contents.attrlhs, moreinfo, ctx.tid),
+            @[ctx.contents.attrRhs])
+  of IrVarAssign:
+    if ctx.contents.varlhs.len() > 1:
+      moreinfo = "tuple"
+    return (fmt("VarAssign", "", moreinfo, ctx.tid),
+            ctx.contents.varlhs & @[ctx.contents.varrhs])
+  of IrSectionScope:
+    descriptor = ctx.contents.secType
+    moreInfo   = ctx.contents.secName
+    return (fmt("Section", descriptor, moreInfo), @[ctx.contents.secBody])
+  of IrConditional:
+    return (fmt("Conditional"), @[ctx.contents.predicate,
+                                  ctx.contents.trueBranch,
+                                  ctx.contents.falseBranch])
+  of IrJump:
+    if ctx.contents.exitLoop:
+      moreinfo = "break"
+    else:
+      moreinfo = "continue"
+    return (fmt("Jump", "id: " & $(ctx.contents.targetNode.parseNode.id)), @[])
+  of IrRet:
+    return (fmt("Return", "", "", ctx.tid), @[ctx.contents.retVal])
+  of IrLit:
+    if ctx.tid.isBasicType():
+      moreinfo = ctx.reprBasicLiteral()
+    return (fmt("Literal", "", moreinfo, ctx.tid), ctx.contents.items)
+  of IrMember:
+    return (fmt("Member", ctx.contents.name, "", ctx.tid), @[])
+  of IrIndex:
+    return (fmt("Index"), @[ctx.contents.indexStart, ctx.contents.indexEnd])
+  of IrCall:
+    descriptor = ctx.contents.fname
+    if ctx.contents.module != "":
+      descriptor = ctx.contents.module & "::" & descriptor
+    if ctx.contents.binop:
+      moreinfo = "converted from op"
+    return (fmt("Call", descriptor, moreinfo, ctx.tid), ctx.contents.actuals)
+  of IrUse:
+    return (fmt("Use", ctx.contents.targetModule, ctx.contents.targetLoc), @[])
+  of IrUnary:
+    return (fmt("UnaryOp", ctx.contents.uOp, "", ctx.tid), @[ctx.contents.uRhs])
+  of IrBinary:
+    return (fmt("BinaryOp", ctx.contents.bOp, "", ctx.tid),
+            @[ctx.contents.bLhs, ctx.contents.bRhs])
+  of IrStoreLoc:
+    return (fmt("Store", ctx.contents.symbol.name, "", ctx.tid), @[])
+  of IrLoad:
+    return (fmt("Load", ctx.contents.symbol.name, "", ctx.tid), @[])
 
-proc irNode(ctx: var IrGenCtx, kind: IrNodeType) =
+proc toRope*(ctx: IrNode): Rope =
+  if ctx == nil:
+    return em("Null node")
+  return ctx.quickTree(irWalker)
+
+proc getLitMod(ctx: var CompileCtx): string =
+  return ctx.pt.token.litType
+
+proc irNode(ctx: var CompileCtx, kind: IrNodeType): IrNode =
   let payload = IrContents(kind: kind)
-  return IrNode(parseNode: ctx.pt, contents: payload, parent: ctx.parent)
+  result = IrNode(parseNode: ctx.pt, contents: payload, parent: ctx.current)
+  ctx.current = result
 
-proc parseTreeToIr(ctx: var IrGenCtx): IrNode
+proc parseTreeToIr(ctx: var CompileCtx): IrNode
 
-proc downNode(ctx: var IrGenCtx, which: int): IrNode =
-  var savedParent = ctx.parent
-  ctx.parent      = ctx.pt
-  ctx.pt          = ctx.pt.children[which]
-  result          = ctx.parseTreeToIr()
-  ctx.pt          = ctx.parent
-  ctx.parent      = savedParent
+proc downNode(ctx: var CompileCtx, which: int): IrNode =
+  var saved   = ctx.current
+  ctx.pt      = ctx.pt.children[which]
+  result      = ctx.parseTreeToIr()
+  ctx.pt      = ctx.pt.parent
+  ctx.current = saved
 
-proc downNode(ctx: var IrGenCtx, kid, grandkid: int): IrNode =
-  var savedParent = ctx.parent
+proc downNode(ctx: var CompileCtx, kid, grandkid: int): IrNode =
+  var saved = ctx.current
 
-  ctx.parent = ctx.pt.children[kid]
-  ctx.pt     = ctx.parent[grandkid]
-  result     = ctx.parseTreeToIr()
-  ctx.pt     = ctx.parent.parent
-  ctx.parent = savedParent
+  ctx.pt      = ctx.pt.children[kid].children[grandkid]
+  result      = ctx.parseTreeToIr()
+  ctx.pt      = ctx.pt.parent.parent
+  ctx.current = saved
 
-template independentSubtree(newRoot: IrNode, code: untyped) =
-  var savedParent = ctx.parent
+template independentSubtree(code: untyped) =
+  var saved = ctx.current
 
-  ctx.parent = newRoot
+  ctx.current = nil
   code
-  ctx.parent = savedParent
+  ctx.current = saved
 
-template getText(ctx: var IrGenCtx): string =
-  ctx.pt.getTokenText()
+template getText(ctx: var CompileCtx): string =
+  ctx.pt.getText()
 
-template getText(ctx: var IrGenCtx, which: int): string =
-   ctx.pt.children[which].getTokenText()
+template getText(ctx: var CompileCtx, which: int): string =
+   ctx.pt.children[which].getText()
 
-template getText(ctx: var IrGenCtx, kidIx: int, grandIx: int): string =
-  ctx.pt.children[kidIx].children[grandIx].getTokenText()
+template getText(ctx: var CompileCtx, kidIx: int, grandIx: int): string =
+  ctx.pt.children[kidIx].children[grandIx].getText()
 
-template numKids(ctx: var IrGenCtx): int =
+template numKids(ctx: var CompileCtx): int =
   ctx.pt.children.len()
 
-template kidKind(ctx: var IrGenCtx, i: int): Con4mNodeType =
+template kidKind(ctx: var CompileCtx, i: int): Con4mNodeKind =
   ctx.pt.children[i].kind
 
-template kidKind(ctx: var IrGenCtx, i, j: int): Con4mNodeType =
+template kidKind(ctx: var CompileCtx, i, j: int): Con4mNodeKind =
   ctx.pt.children[i].children[j].kind
 
-template numGrandKids(ctx: var IrGenCtx, i: int): int =
+template numGrandKids(ctx: var CompileCtx, i: int): int =
   ctx.pt.children[i].children.len()
 
-template parseKid(ctx: var IrGenCtx, i: int): Con4mNode =
+template parseKid(ctx: var CompileCtx, i: int): Con4mNode =
   ctx.pt.children[i]
 
-template parseGrandKid(ctx: var IrGenCtx, i, j: int): Con4mNode =
+template parseGrandKid(ctx: var CompileCtx, i, j: int): Con4mNode =
   ctx.pt.children[i].children[j]
 
-proc initScope*(s: var Scope, parent = Scope(nil)) =
-  s = Scope(parent: parent)
-  s.table.initDict()
+proc isConstant*(n: IrNode): bool =
+  return n.tid != TBottom and n.tid.isBuiltinType() and n.value.isSome()
 
-proc updateType(sym: var SymbolInfo, tid: TypeId):
-               Option[Con4mError] =
-  if sym.typeId.unify(tid) == TBottom:
-    return some(Con4mError(kind: IrErr,
-                           msg: "Current type is incomptable with " &
-                             "previous type information"))
-
-proc baseScopeLookup(scope: var Scope, n: string, sym: var SymbolInfo,
-                     isFunc: bool, tid = TBottom): Option[Con4mError] =
-  # This is a helper function to look up a symbol in the given scope,
-  # or create the symbol in the scope, if it is not found.
-  #
-  # If it's found, we make sure that the current symbol matches us in
-  # terms of being a variable or a function.  If there's no error,
-  # then it returns the symbol. If it creates the symbol, it will use
-  # the value of 'isFunc' passed.
-
-  let symOpt = scope.table.lookup(n)
-
-  if symOpt.isSome():
-    sym = symOpt.get()
-
-    if sym.isFunc != isFunc:
-      if isFunc:
-        return some(Con4mError(kind: IrErr,
-                               msg: "Variable cannot have same name as a func"))
-      else:
-        return some(Con4mError(kind: IrErr,
-                               msg: "Func cannot have same name as a variable"))
-    if tid != TBottom:
-      result = sym.updateType(tid)
-  else:
-    sym = SymbolInfo(name: n, tid: tid)
-    scope.table[name] = sym
-
-proc scopeDeclare*(scope: var Scope, n: string, sym: var SymbolInfo,
-                   isfunc: bool, tid = TBottom, immutable = false):
-                     Option[Con4mError] =
- # This is meant for things that should be declared in a specific scope,
- # like enums, functions and explicitly declared variables.
- # Generally, these are not assignments, so we do NOT treat this as a 'def'.
- # `immutable` currently is used for enum; we may also add a `const`.
-
-  result = scope.baseScopeLookup(n, sym, id, isfunc, tid)
-  if result.isSome():
-    return
-
-  # Funcs can have multiple declarations as long as signatures are disjoint.
-  if sym.declaredType and not isFunc:
-    return some(Con4mError(kind: ErrVar,
-                           msg: "Variable declared multiple times."))
-  if immutable and sym.defs.len() > 0:
-      return some(Con4mError(kinds: ErrVar,
-         msg: "Enums are immutable, but value was previously assigned."))
-
-  sym.declaredType = true
-  sym.immutable    = immutable
-
-proc addDef*(ctx: var IrGenCtx, name: string, sym: var SymbolInfo,
-             loc: IRNode, tid = TBottom): Option[Con4mError] =
-  ## This is the interface for *variables* used on the LHS. It should
-  ## *not* be called during an explicit definition via `global` or
-  ## `var`.
-  ##
-  ##
-  ## If TID isn't TBottom, we'll type-check against whatever we find
-  ## already in the symbol table.
-  ##
-  ## Basically, we have the following scopes:
-
-  ## 1. The global scope.
-  ## 2. The module scope.
-  ## 3. Function scope.
-  ## 4. Block scope for loop index variables only.
-  ##
-  ## For #4, if you have multiple loops that all do:
-  ## `for item in somelist`
-  ##
-  ## `item` might end up being a different type across loops.
-  ## For the this use case, it's fine for `item` to disappear
-  ## when exiting the loop.
-  ##
-  ## However, in cases where we do:
-  ## `for i from 0 to somelist.len()`
-  ## it might be useful to know the value of i after the loop ends.
-  ##
-  ## At the IR level we handle this by giving each loop its own scope,
-  ## into which we only drop index variables.
-  ##
-  ## This results in unique SymbolInfo objects, giving us flexibility
-  ## for code generation approaches.
-  ##
-  ## The global vs. module scope is a bit trickier given our attempts
-  ## to do as much type inferencing as possible.
-  ##
-  ## When we first construct the IR, we do not consider the variables
-  ## we might get from the global scope directly.  We need to be able
-  ## to figure that out when we go to link things together.
-  ##
-  ## Here's our approach:
-  ##
-  ## 1. The `var` statement will declare a variable to be unique to
-  ##    the scope it's in. If it's used in a function, it stays in the
-  ##    function scope. If you use it outside a function, then it's
-  ##    defined at a function level.
-  ##
-  ##    If you use this at the module level, when it's link time, any
-  ##    variable of the same name in the global scope will be
-  ##    considered different.
-  ##
-  ##    a. In the local scope, if something has been explicitly added
-  ##       to the module scope (with a var statement), then we assume
-  ##       variables inside the module's functions can use that variable,
-  ##       unless they mask it with a `var` statement.
-  ##
-  ## 2. If you explicitly declare something to be in the `global`
-  ##    scope, it's put in the global scope, no matter where you
-  ##    declare it. When we go to link this module, all globals are
-  ##    merged, so names must be of compatable type.
-  ##
-  ##    However, if you declare it global inside the function, we will
-  ##    warn about this.
-  ##
-  ## 3. If you do NOT declare a variable explicitly, then it's hard to
-  ##    do the sane thing, but here's our current attempt:
-  ##
-  ##    a. If a variable is used in the module scope, but not declared,
-  ##       and does *not* exist in the global scope, then we leave it
-  ##       in the module scope.
-  ##
-  ##    b. If it *is* in the global scope, we merge if the types are
-  ##       compatable, and leave it shadowing the global scope if not,
-  ##       giving a warning.  Explicitly declaring removes the warning,
-  ##       of course.
-  ##
-  ##    c. If you use something in the local scope, *if* we see it in the
-  ##       module scope, and we can merge it, we will. But we give a
-  ##       warning when doing so, always. Then it follows the rules
-  ##       for variables in the module scope.
-  ##
-  ##    d. At link time, we look through all function scopes in that
-  ##       module. If they've got non-declared variables, we will merge
-  ##       them with the global. This will *also* result in a warning;
-  ##       you can get rid of it by re-declaring the variables `global`
-  ##       in your function's scope.
-  ##
-  ##    e. Loop index variables can only be shaddowed by a deeper loop.
-  ##       Trying to add a `var` or `global` statement inside the loop
-  ##       to shadow the loop index will give an error.
-  ##
-  ## We want to be insensitive to code moving around, so we should
-  ## give the same results whether or not the module scope declares a
-  ## variable before or after a function. To that end, when we *do*
-  ## explicitly add a `var` or `global` statement, we will go to every
-  ## symbol in the module we've seen so far and merge them if
-  ## neccessary.
-  ##
-  ## This also means that, if we *don't* find symbols that are explicitly
-  ## declared yet, we can't assume they won't be taken out of our scope.
-  ## The var/global statements check to see what's already declared and
-  ## will conflict. This kind of stuff will give errors.
-  ##
-  ## Loops will push on new block scope frames if and only if there are
-  ## index variables. In this function, we just check block scopes to
-  ## make sure there is no masking of these vars.
-  ##
-  ## Additionally, if we get to the module or global scope and see a
-  ## SymFunc, we will act as if we are looking to shadow that symbol;
-  ## this only looks up SymVars.
-
-  var lookup: Option[SymbolInfo]
-
-  assert sym == nil
-
-  for scope in ctx.blockScopes:
-    if scope.table.lookup(name).isSome():
-      ctx.irError("Cannot assign to (or re-declare) loop iteration variables.")
-      return
-
-  if ctx.funcScope != nil:
-    lookup = ctx.funcScope.table.lookup(name)
-
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym == nil:
-    lookup = ctx.moduleScope.table.lookup(name)
-
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym == nil:
-    lookup = ctx.globalScope.table.lookup(name)
-
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym.isFunc and ctx.funcScope != nil:
-    # We can shadow this symbol in the local scope.
-    sym = nil
-  elif sym.isFunc:
-    return some(Con4mError(kinds: IrErr, err: "Variable names cannot conflict" &
-    " with functions from the same module.")
-
-  if sym == nil:
-    let scope = if ctx.funcScope != nil: ctx.functionScope else: ctx.moduleScope
-
-    result = scope.baseScopeLookup(name, sym, tid)
-  else:
-    if sym.immutable:
-      return some(Con4mError(kinds: ErrVal,
-                             msg: "Cannot change immutable value."))
-
-    result = sym.updateType(tid)
-    if result.isSome():
-      return
-
-  sym.defs.add(loc)
-
-proc addUse*(ctx: var IrGenCtx, name: string, sym: var SymbolInfo,
-             loc: IRNode, tid = TBottom): Option[Con4mError] =
-  var lookup: Option[SymbolInfo]
-
-  assert sym == nil
-
-  for scope in ctx.blockScopes:
-    lookup = scope.table.lookup(name)
-    if lookup.isSome():
-      sym = lookup.get()
-      break
-
-  if sym == nil and ctx.funcScope != nil:
-    lookup = ctx.funcScope.table.lookup(name)
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym == nil:
-    lookup = ctx.moduleScope.table.lookup(name)
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym == nil:
-    lookup = ctx.globalScope.table.lookup(name)
-    if lookup.isSome():
-      sym = lookup.get()
-
-  if sym.isFunc and ctx.funcScope != nil:
-    # We can shadow this symbol in the local scope.
-    sym = nil
-  elif sym.isFunc:
-    return some(Con4mError(kinds: IrErr, err: "Variable names cannot conflict" &
-    " with functions from the same module.")
-
-  if sym == nil:
-    let scope = if ctx.funcScope != nil: ctx.functionScope else: ctx.moduleScope
-
-    result = scope.baseScopeLookup(name, sym, tid)
-  else:
-
-    result = sym.mergeTypes(tid)
-    if result.isSome():
-      return
-
-  sym.uses.add(loc)
 const
   ntLoops        = [ NodeForStmt, NodeWhileStmt ]
   ntConditionals = [ NodeIfStmt, NodeElifStmt ]
 
 proc addFalseBranch(conditional: IrNode, falseBranch: IrNode) =
   var n = conditional
-  while n.falseBranch != nil:
-    n = n.falseBranch
+  while n.contents.falseBranch != nil:
+    n = n.contents.falseBranch
 
-  n.falseBranch = falseBranch
+  n.contents.falseBranch = falseBranch
 
-proc checkLabelDupe(ctx: var IrGen, label: string) =
-  var n = ctx.parent
+proc checkLabelDupe(ctx: var CompileCtx, label: string) =
+  var
+    n       = ctx.current.parent
+
   while n != nil:
-    if n.kind == IrLoop and n.contents.label == label:
-      ctx.irWarn("Nested loops have the same label (" & label & ")", n)
+    if n.contents.kind == IrLoop and n.contents.label.getText() == label:
+      ctx.irWarn("LabelDupe", @[label], n.parseNode)
       return
     n = n.parent
 
-proc convertEnum*(ctx: var IrGen) =
-  # We skip adding the actual values to the symbol table here, because
-  # we're not propogating type information in this pass, at least
-  # not yet.
-  var stmtNode = ctx.irNode(IrEnum)
+proc convertEnum*(ctx: var CompileCtx) =
+  var
+    usedVals: seq[int]
+    nextVal = 0
+    value: int64
 
-  independentSubtree(stmtNode):
+  independentSubtree:
     for i in 0 ..< ctx.numKids():
+      let itemName = ctx.getText(i, 0)
 
-      var itemNode = IrNode(kind: EnumItem, tid: tInt(),
-                            parseNode: ctx.pt.children[i],
-                            enumItemName: ctx.getText(i, 0),
-                            parent: stmtNode)
+      if ctx.numGrandKids(i) == 2:
+        let v = ctx.downNode(i, 1)
+        if not v.isConstant():
+          ctx.irError("EnumDeclConst", w = ctx.parseKid(i))
+          continue
+        if not v.tid.isIntType():
+          ctx.irError("EnumInt", w = ctx.parseKid(i))
+          continue
+        value = toVal[int64](v.value.get())
+        if value in usedVals:
+          ctx.irWarn("EnumReuse", @[$value], w = ctx.parseKid(i))
+        else:
+          usedVals.add(value)
+          if value > nextVal:
+            nextVal = value + 1
+      else:
+        value = nextVal
+        usedVals.add(value)
+        nextVal = nextVal + 1
 
-      if ctx.numKids(i) == 2:
-        itemNode.customValue = itemNode.ctx.downNode(i, 1)
-
-      stmtNode.enumItems.add(itemNode)
       var
-        sym: SymbolInfo
-        err = ctx.moduleScope.scopeDeclare(itemNode.enumItemName, sym,
-                                          false, tInt().typeId)
-        if err.isSome():
-          result.irError(err.get())
-          return false
+        symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false, TInt)
 
-  ctx.enums.add(stmtNode)
+      if symOpt.isSome():
+        let sym = symOpt.get()
+        sym.constValue = some(newCbox(value, TInt))
 
-proc extractSymInfo(ctx: var IrGen, scope: Scope): SymbolInfo {.discardable.} =
-  # Returns the last processed symbol; useful for convertParamBlock where
+proc convertIdentifier(ctx: var CompileCtx): IrNode =
+  let name = ctx.pt.getText()
+  var stOpt: Option[SymbolInfo]
+
+  if ctx.lhsContext:
+    result = ctx.irNode(IrStoreLoc)
+    stOpt  = ctx.addDef(name, result, tVar())
+  else:
+    result = ctx.irNode(IrLoad)
+    stOpt = ctx.addUse(name, result, tVar())
+
+  result.contents.symbol = stOpt.getOrElse(nil)
+  if result.contents.symbol != nil:
+    result.tid = result.contents.symbol.tid
+
+proc convertVarAssignment(ctx: var CompileCtx): IrNode =
+  var
+    lhs:      seq[IrNode]
+    itemTids: seq[TypeId]
+    rhs:      IrNode
+
+  result = ctx.irNode(IrVarAssign)
+  ctx.lhsContext = true
+
+  for i in 0 ..< ctx.pt.children.len() - 1:
+    ctx.curSym = nil
+    let item = ctx.downNode(i)
+
+    lhs.add(item)
+    itemTids.add(item.tid)
+
+  ctx.lhsContext = false
+  ctx.curSym = nil
+  rhs = ctx.downNode(ctx.pt.children.len() - 1)
+
+  if lhs.len > 1:
+    result.tid = tTuple(itemTids)
+  else:
+    result.tid = itemTids[0]
+
+  result.tid = ctx.typeCheck(result.tid, rhs.tid)
+
+  result.contents.varLhs = lhs
+  result.contents.varRhs = rhs
+
+proc extractSymInfo(ctx: var CompileCtx,
+                    scope: var Scope): SymbolInfo {.discardable.} =
+  # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
   var
     toAdd: seq[(string, TypeId)]
@@ -561,28 +364,28 @@ proc extractSymInfo(ctx: var IrGen, scope: Scope): SymbolInfo {.discardable.} =
       if foundType == TBottom:
         toAdd.add((oneVarName, tVar()))
       else:
-        toAdd.add((oneVarName, foundType.copyType())
+        toAdd.add((oneVarName, foundType.copyType().typeId))
 
-  for (name, tid) in toAdd:
-    let optErr = scope.scopeDeclare(name, result, false, tid)
-    if optErr.isSome():
-      ctx.irError(optErr.get())
+  for i, (name, tid) in toAdd:
+    let symOpt = ctx.scopeDeclare(scope, name, false, tid)
+    if i == toAdd.len() - 1 and symOpt.isSome():
+      result = symOpt.get()
 
-proc convertVarStmt*(ctx: var IrGen) =
+proc convertVarStmt(ctx: var CompileCtx) =
   if ctx.funcScope != nil:
     ctx.extractSymInfo(ctx.funcScope)
   else:
     ctx.extractSymInfo(ctx.moduleScope)
 
-proc convertGlobalStmt*(ctx: var IrGen) =
+proc convertGlobalStmt(ctx: var CompileCtx) =
   ctx.extractSymInfo(ctx.globalScope)
 
-proc convertParamBody*(ctx: var IrGen, sym: var Sym) =
+proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
   var
     gotShort, gotLong, gotValid, gotDefault: bool
-    paramInfo: ParamInfo()
+    paramInfo = ParamInfo()
 
-  independentSubtree(nil):
+  independentSubtree:
     for i in 0 ..< ctx.numKids():
       if ctx.kidKind(i) != NodeAttrAssign:
         ctx.irError("No code is allowed inside parameter blocks")
@@ -590,55 +393,63 @@ proc convertParamBody*(ctx: var IrGen, sym: var Sym) =
       let propname = ctx.getText(i, 0)
       case propname
       of "shortdoc":
-        if gotShortDoc:
-          ctx.irError("Duplicate parameter property for 'shortdoc'")
+        if gotShort:
+          ctx.irError("DupeParamProp", @["shortdoc"], ctx.pt.children[i])
           continue
         if ctx.kidKind(i, 1) != NodeStringLit:
-          ctx.irError("'shortdoc' parameter field must be a string literal.")
+          ctx.irError("BadParamProp", @["shortdoc", "string literal"],
+                      ctx.pt.children[i])
           continue
         paramInfo.shortdoc = some(ctx.getText(i, 1))
-        gotShortDoc = true
+        gotShort = true
       of "doc":
         if gotLong:
-          ctx.irError("Duplicate parameter property for 'doc'")
+          ctx.irError("DupeParamProp", @["doc"], ctx.pt.children[i])
           continue
         if ctx.kidKind(i, 1) != NodeStringLit:
-          ctx.irError("'doc' parameter field must be a string literal.")
+          ctx.irError("BadParamProp", @["doc", "string literal"],
+                      ctx.pt.children[i])
           continue
         paramInfo.doc = some(ctx.getText(i, 1))
         gotLong = true
       of "validator":
         if gotValid:
-          ctx.irError("Duplicate parameter property for 'validator'")
+          ctx.irError("DupeParamProp", @["validator"], ctx.pt.children[i])
           continue
-        if ctx.kindKind(i, 1) != NodeCallback:
-          ctx.irError("'validator' parameter property must be a callback.")
-        let irNode = ctx.downNode(i, 1)
-        ## You are here.
-        paramInfo.validator = some(toVal[Callback])
+        if ctx.kidKind(i, 1) != NodeCallbackLit:
+          ctx.irError("BadParamProp", @["validator", "callback"],
+                      ctx.pt.children[i])
+        let
+          irNode = ctx.downNode(i, 1)
+          mixed  = irNode.value.get()
+          to     = irNode.tid.idToTypeRef()
+
+        if to.items.len() != 0:
+          ctx.typeCheck(sym, to.items[^1])
+
+        paramInfo.validator = some(toVal[Callback](mixed))
         gotValid = true
       of "default":
         if gotDefault:
-          ctx.irError("Duplicate parameter property for 'default'")
+          ctx.irError("DupeParamProp", @["default"], ctx.pt.children[i])
           continue
-        paramInfo.defaultIr = some(ctx.pt.children[i].children[1])
-        gotDefault          = true
+        paramInfo.defaultParse = some(ctx.pt.children[i].children[1])
+        gotDefault             = true
       else:
-        ctx.irError("Invalid parameter property: " & propname)
+        ctx.irError("BadParamProp", @[propname], ctx.pt.children[i])
         continue
 
-  sym.pinfo = paramInfo()
+  sym.pinfo = paramInfo
 
-proc convertParamBlock*(ctx: var IrGen) =
-  var
-    sym: SymbolInfo
-    tid: TypeIndo
+proc convertParamBlock(ctx: var CompileCtx) =
+  var sym: SymbolInfo
 
   if ctx.pt.children[0].kind == NodeMember:
 
-    independentSubtree(nil):
+    independentSubtree:
       let memberIr = ctx.downNode(0)
-      ctx.usedAttrs.scopeDeclare(memberIr.name, sym, false, tVar())
+      sym = ctx.scopeDeclare(ctx.usedAttrs, memberIr.contents.name, false,
+                             tVar()).getOrElse(nil)
   else: # will be something we can call extractSymInfo on.
     var savedPt = ctx.pt
     ctx.pt = ctx.pt.children[0]
@@ -649,56 +460,6 @@ proc convertParamBlock*(ctx: var IrGen) =
   ctx.pt = ctx.pt.children[1]
   ctx.convertParamBody(sym)
   ctx.pt = savedPt
-
-proc findExplicitDeclarations(ctx: var IrGenCtx, n: Con4mNode) =
-  ## To make life easier for us when handling def's and uses, we will
-  ## scan through either the module scope or individual function scopes
-  ## in their entirety, looking just for 'var' and 'global' statements,
-  ## so that when we get to def/use handling, we can know definitively
-  ## what to do.
-  ##
-  ## If we're scanning in the module scope, we do NOT descend into
-  ## FuncDef nodes; we'll call this function when creating our entry
-  ## for a function.
-  ##
-  ## All executable bodies get properly processed only when all explicit
-  ## declarations are found.
-  ## This consists of:
-  ##
-  ## 1) Body content in the top level.
-  ## 2) Body content in functions.
-  ## 3) The default value in a parameter block.
-
-  for kid in n.children:
-    case item.kind
-    of NodeFuncDef:
-      continue
-    of NodeVarStmt:
-      ctx.convertVarStmt()
-    of NodeGlobalStmt:
-      ctx.convertGlobalStmt()
-    of NodeParamBlock:
-      ctx.convertParamBlock()
-    else:
-      ctx.findExplicitDeclarations(kid)
-
-proc findExplicitDeclarations(ctx: var IrGenCtx) =
-  # First, pull declarations from the toplevel scope.
-  ctx.findExplicitDeclarations(ctx.pt)
-
-  for i in 0 ..< ctx.numKids():
-    let item = ctx.parseKid(i)
-
-    case item.kind
-    of NodeEnumStmt:
-      ctx.convertEnum() # Enums are fully processed in this first pass.
-      continue
-    of NodeFuncDef:
-      # Function definitions are processed for declarations.
-      ctx.convertFuncDefinition()
-      continue
-    else:
-      discard
 
 proc convertFormal(info: FuncInfo, n: Con4mNode) =
   var formalInfo = FormalInfo()
@@ -721,10 +482,10 @@ proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
     info.retVal     = FormalInfo(name: "result")
     info.retval.tid = n.buildType()
   else:
-    info.retVal = FormalInfo(name: "result", tid = newTypeVar().typeId)
+    info.retVal = FormalInfo(name: "result", tid: tVar())
 
   var
-    actTypes: seq[typeid]
+    actTypes: seq[TypeId]
     va = false
 
   if info.params.len() != 0 and info.params[^1].va:
@@ -735,27 +496,31 @@ proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
 
   actTypes.add(info.retVal.tid)
 
-  info.tid = newFuncType(actTypes, va)
+  info.tid = tFunc(actTypes, va)
 
   if va == true:
     # From the body of the function, the named parameter collects
     # all arguments of the given type into a list. This sets the
     # ACTUAL type that we'll add to the function's symbol table.
-    info.params[^1].tid = tList(info.params[^1].tid).typeId
+    info.params[^1].tid = tList(info.params[^1].tid)
 
-proc handleFuncdefSymbols(ctx: var IrGen, fname: string, info: var FuncInfo) =
-  var
-    sym: SymbolInfo
+proc handleFuncdefSymbols(ctx:   var CompileCtx,
+                          info:  var FuncInfo) =
+  var symOpt: Option[SymbolInfo]
 
   info.fnScope.initScope()
 
   for item in info.params & @[info.retVal]:
-    ctx.irErrOpt(info.fnScope.scopeDeclare(info.name, sym, SymVar, item.tid))
+    discard ctx.scopeDeclare(info.fnScope, item.name, false, item.tid)
 
-  ctx.irErrOpt(ctx.moduleScope.scopeDeclare(info.name, sym, SymFunc, info.tid))
-  sym.fimpls.add(info)
+  symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true, TBottom)
 
-proc convertFuncDefinition(ctx: var IrGen) =
+  if symOpt.isSome():
+    symOpt.get().fimpls.add(info)
+
+proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode)
+
+proc convertFuncDefinition(ctx: var CompileCtx) =
   ## This converts the declaration portion, NOT the body. For now, the
   ## body just goes into the FuncInfo `rawImpl` parameter. Once we have
   ## found all explicitly declared symbols, we then come back to
@@ -768,19 +533,80 @@ proc convertFuncDefinition(ctx: var IrGen) =
   # Params are in the second node, and the last item there might
   # have the varargs marker, which changes what we insert into the symbol
   # table for that thing.
-  for item in ctx.st.children[1]:
+  for item in ctx.pt.children[1].children:
     info.convertFormal(item)
 
   if ctx.numKids() == 4:
-    returnType = ctx.ct.kids[2]
+    returnType = ctx.pt.children[2]
 
   info.setupTypeSignature(returnType)
-  ctx.handleFuncdefSymbols(funcName, info)
+  info.name = funcName
+  ctx.handleFuncdefSymbols(info)
 
   info.rawImpl = ctx.pt.children[^1]
-  ctx.findExplicitDeclarations(info.rawImpl)
 
-proc statementsToIr(ctx: var IrGenCtx): IrNode =
+  ctx.funcScope = info.fnScope
+  ctx.findExplicitDeclarations(info.rawImpl)
+  ctx.funcScope = nil
+
+proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
+  ## To make life easier for us when handling def's and uses, we will
+  ## scan through either the module scope or individual function scopes
+  ## in their entirety, looking just for 'var' and 'global' statements,
+  ## so that when we get to def/use handling, we can know definitively
+  ## what to do.
+  ##
+  ## If we're scanning in the module scope, we do NOT descend into
+  ## FuncDef nodes; we'll call this function when creating our entry
+  ## for a function.
+  ##
+  ## All executable bodies get properly processed only when all explicit
+  ## declarations are found.
+  ## This consists of:
+  ##
+  ## 1) Body content in the top level.
+  ## 2) Body content in functions.
+  ## 3) The default value in a parameter block.
+
+  let saved = ctx.pt
+
+  for kid in n.children:
+    ctx.pt = kid
+    case kid.kind
+    of NodeFuncDef:
+      continue
+    of NodeVarStmt:
+      ctx.convertVarStmt()
+    of NodeGlobalStmt:
+      ctx.convertGlobalStmt()
+    of NodeParamBlock:
+      ctx.convertParamBlock()
+    else:
+      ctx.findExplicitDeclarations(kid)
+
+  ctx.pt = saved
+
+proc findExplicitDeclarations(ctx: var CompileCtx) =
+  # First, pull declarations from the toplevel scope.
+  let root = ctx.pt
+
+  ctx.findExplicitDeclarations(ctx.pt)
+
+  for item in root.children:
+    case item.kind
+    of NodeEnumStmt:
+      ctx.pt = item
+      ctx.convertEnum() # Enums are currently 100% processed this pass
+      continue
+    of NodeFuncDef:
+      # Function definitions are processed for declarations.
+      ctx.pt = item
+      ctx.convertFuncDefinition()
+      continue
+    else:
+      ctx.findExplicitDeclarations(item)
+
+proc statementsToIr(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrBlock)
   var skipI = false
 
@@ -788,38 +614,36 @@ proc statementsToIr(ctx: var IrGenCtx): IrNode =
     let item = ctx.parseKid(i)
 
     case item.kind
-    of NodeBreak, NodeContinue, NodeReturn:
+    of NodeBreakStmt, NodeContinueStmt, NodeReturnStmt:
       if i != ctx.numKids() + 1:
-        ctx.irWarn("Dead code after '" & ctx.getText() & "' statement.")
-        result.stmts.add(ctx.downNode(i))
+        ctx.irWarn("DeadCode", @[$(item)], w = item)
+        result.contents.stmts.add(ctx.downNode(i))
         return # Don't process that dead code.
-    of NodeLabel:
+    of NodeLabelStmt:
       if i == ctx.numKids() - 1 and ctx.parseKid(i + 1).kind in ntLoops:
-          let one   = ctx.downNode(i + 1)
-          one.label = ctx.parseGrandKid(i, 0)
-          skipI = true
-          result.stmts.add(one)
-          ctx.checkLabelDupe(one.label)
+          let one            = ctx.downNode(i + 1)
+          one.contents.label = ctx.parseGrandKid(i, 0)
+          skipI              = true
+          result.contents.stmts.add(one)
+          ctx.checkLabelDupe(one.contents.label.getText())
       else:
-        ctx.irError("'label' statement must proceed a 'for' or 'while' loop")
+        ctx.irError("LabelLoc", w = item)
         continue
     of NodeElifStmt:
       if i != 0:
         let prev = ctx.parseKid(i - 1)
         if prev.kind in ntConditionals:
-          result.stmts[^1].addFalseBranch(ctx.downNode(i))
+          result.contents.stmts[^1].addFalseBranch(ctx.downNode(i))
           continue
-      ctx.irError("'elif' statement must follow an 'if' block or another " &
-                  "'elif' block.")
+      ctx.irError("ElifLoc", w = item)
       continue
     of NodeElseStmt:
       if i != 0:
         let prev = ctx.parseKid(i = 1)
         if prev.kind in ntConditionals:
-          result.stmts[^1].addFalseBranch(ctx.downNode(i))
+          result.contents.stmts[^1].addFalseBranch(ctx.downNode(i))
           continue
-      ctx.irError("'else' statement must follow an 'if' block or another " &
-                  "'elif' block.")
+      ctx.irError("ElseLoc", w = item)
       continue
     # These items all get handled early so that we know what is
     # explicitly declared. Funcdefs and parameter blocks do need some
@@ -834,15 +658,149 @@ proc statementsToIr(ctx: var IrGenCtx): IrNode =
       skipI = false
       continue
     else:
-      result.stmts.add(ctx.downNode(i))
+      result.contents.stmts.add(ctx.downNode(i))
 
-proc convertAttrAssignment(ctx: var IrGenCtx): IrNode =
+proc convertLit(ctx: var CompileCtx, st: SyntaxType): IrNode =
+  var
+    err: string
+    lmod = ctx.getLitMod()
+
+  result = ctx.irNode(IrLit)
+
+  result.contents.syntax = st
+
+  result.tid = ctx.getTypeIdFromSyntax(st, lmod)
+
+  if result.tid != TBottom:
+    let val = parseLiteral(cast[int](result.tid), ctx.getText(), err, st)
+    if err != "":
+      ctx.irError(err)
+    else:
+      result.value = some(val)
+
+proc convertCharLit(ctx: var CompileCtx): IrNode =
+  var
+    err: string
+    lmod = ctx.getLitMod()
+
+  result = ctx.irNode(IrLit)
+  result.tid = ctx.getTypeIdFromSyntax(StChrQuotes, lmod)
+
+  if err != "":
+      ctx.irError(err)
+  else:
+    let
+      codepoint = ctx.pt.token.codepoint
+      val       = initializeCharLiteral(cast[int](result.tid), codepoint, err)
+    if err != "":
+      ctx.irError(err)
+    else:
+      result.value = some(val)
+
+proc parseTreeToIr(ctx: var CompileCtx): IrNode =
+  case ctx.pt.kind:
+    of NodeModule, NodeBody:
+      result = ctx.statementsToIr()
+    of NodeUnpack, NodeVarAssign:
+      result = ctx.convertVarAssignment()
+    of NodeIdentifier:
+      result = ctx.convertIdentifier()
+    of NodeExpression, NodeLiteral:
+      result = ctx.downNode(0)
+    of NodeStringLit:
+      result = ctx.convertLit(StStrQuotes)
+    of NodeIntLit:
+      result = ctx.convertLit(STBase10)
+    of NodeHexLit:
+      result = ctx.convertLit(StHex)
+    of NodeFloatLit:
+      result = ctx.convertLit(STFloat)
+    of NodeBoolLit:
+      result = ctx.convertLit(StBoolLit)
+    of NodeOtherLit:
+      result = ctx.convertLit(StOther)
+    of NodeCharLit:
+      result = ctx.convertCharLit()
+    # of NodeType:
+    #   result = ctx.convertTypeLit()
+    # of NodeDictLit:
+    #   result = ctx.convertDictLit()
+    # of NodeListLit:
+    #   result = ctx.convertListLit()
+    # of NodeTupleLit:
+    #   result = ctx.convertTupleLit()
+    # of NodeCallbackLit:
+    #   result = ctx.convertCallbackLit()
+    else:
+      return ctx.irNode(IrBlock)
+
+
+  return
+
+
+  # case ctx.pt.kind
+  # of NodeModule, NodeBody:
+  #  result = ctx.statementsToIr()
+  # of NodeBody:
+  #   result = ctx.statementsToIr()
+  # of NodeAttrAssign:
+  #   result = ctx.convertAttrAssignment()
+  # of NodeAttrSetLock:
+  #   result      = ctx.downNode(0)
+  #   result.lock = true
+  # of NodeUnpack, NodeVarAssign:
+  #   result = ctx.convertVarAssignment()
+  # of NodeSection:
+  #   result = ctx.convertSection()
+  # of NodeIfStmt, NodeElifStmt:
+  #   result = ctx.convertConditional()
+  # of NodeElseStmt:
+  #   result = ctx.downNode(0)
+  # of NodeForStmt:
+  #   result = ctx.convertForStmt()
+  # of NodeWhileStmt:
+  #   result = ctx.convertWhileStmt()
+  # of NodeBreakStmt:
+  #   result = ctx.loopExit(true)
+  # of NodeContinueStmt:
+  #   result = ctx.loopExit(false)
+  # of NodeReturnStmt:
+  #   result = ctx.convertReturn()
+  # of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
+  #    NodeMod, NodeMul, NodeDiv:
+  #   result = ctx.convertBinaryOp()
+  # of NodePlus, NodeMinus:
+  #   if ctx.numKids == 2:
+  #     result = ctx.convertBinaryOp()
+  #   else:
+  #     result = ctx.convertUnaryOp()
+  # of NodeNot:
+  #   result = ctx.convertUnaryOp()
+  # of NodeMember:
+  #   result = ctx.convertMember()
+  # of NodeLiteral, NodeParenExpr, NodeExpression:
+  #   result = ctx.downNode(0)
+  # of NodeIndex:
+  #   result = ctx.convertIndex()
+  # of NodeCall:
+  #   result = ctx.convertCall()
+  # of NodeUseStmt:
+  #   result = ctx.convertUseStmt()
+  # of NodeIdentifier:
+  #   result = ctx.downNode(0)
+  # else:
+  #   unreachable
+
+#[
+
+
+proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrAttrAssign)
   var
     parts: seq[string] = @[]
     kid = ctx.parseKid(0)
   while true:
-    parts.add(kid.getTokenText())
+    parts.add(kid.getText())
     if kid.children.len() == 0:
       break
     kid = kid.children[0]
@@ -854,21 +812,12 @@ proc convertAttrAssignment(ctx: var IrGenCtx): IrNode =
   result.attrrhs  = ctx.downNode(1)
   result.tid      = result.attrrhs.tid
 
-proc convertVarAssignment(ctx: var IrGenCtx): IrNode =
-  ctx.convertVarAssignment()
-  result = ctx.irNode(IrVarAssign)
-  ctx.lhsContext = true
-  for i in 0 ..< ctx.children.len() - 1:
-    result.varlhs.add(ctx.downNode(i))
-  ctx.lhsContext = false
-  result.varrhs  = ctx.downNode(ctx.children.len() - 1)
-
-proc convertConditional(ctx: var IrGenCtx): IrNode =
+proc convertConditional(ctx: var CompileCtx): IrNode =
   result            = ctx.irNode(IrConditional)
-  result.condition  = ctx.downNode(0)
+  result.predicate  = ctx.downNode(0)
   result.trueBranch = ctx.downNode(1)
 
-proc convertSection(ctx: var IrGenCtx): IrNode =
+proc convertSection(ctx: var CompileCtx): IrNode =
   result         = ctx.irNode(IrSectionScope)
   result.secType = ctx.getText(0)
   if ctx.numKids() == 3:
@@ -877,7 +826,7 @@ proc convertSection(ctx: var IrGenCtx): IrNode =
   else:
     result.body    = ctx.downNode(1)
 
-proc convertForStmt(ctx: var IrGenCtx): IrNode =
+proc convertForStmt(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrLoop)
   if ctx.numKids() == 3:
     result.contents.keyVar = ctx.getText(0, 0)
@@ -892,12 +841,12 @@ proc convertForStmt(ctx: var IrGenCtx): IrNode =
     result.contents.endIx    = ctx.downNode(2)
     result.contents.loopBody = ctx.downNode(3)
 
-proc convertWhileStmt(ctx: var IrGenCtx): IrNode =
+proc convertWhileStmt(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrLoop)
   result.contents.condition = ctx.downNode(0)
   result.contents.loopBody  = ctx.downNode(1)
 
-proc loopExit(ctx: var IrGenCtx, loopExit: bool): IrNode =
+proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
   result = ctx.irNode(IrJump)
   result.contents.exitLoop = loopExit
   if ctx.numKids() != 0:
@@ -909,9 +858,7 @@ proc loopExit(ctx: var IrGenCtx, loopExit: bool): IrNode =
           result.contents.targetNode = n
           return
       n = n.parent
-    ctx.irError(ctx.getText() & " to label '" & label &
-      "' is invalid, because it is not contained inside a loop that was " &
-      "given that label.")
+    ctx.irError("BadLoopExit", @[ctx.getText(), label]]
 
   var n = ctx.parent
   while n != nil:
@@ -920,12 +867,12 @@ proc loopExit(ctx: var IrGenCtx, loopExit: bool): IrNode =
       return
     n = n.parent
 
-proc convertReturn(ctx: var IrGenCtx): IrNode =
+proc convertReturn(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrRet)
   if ctx.numKids() == 1:
     result.contents.retVal = ctx.downNode(0)
 
-proc convertTypeLit(ctx: var IrGenCtx): IrNode =
+proc convertTypeLit(ctx: var CompileCtx): IrNode =
   var
     tvars: Dict[string, TypeId]
     tinfo: TypeId
@@ -935,56 +882,14 @@ proc convertTypeLit(ctx: var IrGenCtx): IrNode =
   tinfo                  = ctx.pt.buildType(tvars)
   result.contents.litVal = tinfo.toMixed()
 
-proc convertCharLit(ctx: var IrGenCtx): IrNode =
-  let
-    err: string
-    tid: int
-    lmod = ctx.getLitMod()
-
-  result = ctx.irNode(IrLit)
-
-  if litMod != "":
-    tid = getTypeIdFromSyntax(tid, lmod, STChrQuotes)
-    if err != "":
-      ctx.irError(err)
-    else:
-      let
-        codepoint = ctx.pt.token.get().codepoint
-        val       = initializeCharLiteral(tid, codepoint, err)
-      if err != "":
-        ctx.irError(err)
-      else:
-        result.value = some(val)
-
-proc convertLit(ctx: var IrGenCtx, st: SyntaxType): IrNode =
-  var
-    err: string
-    tid: int
-    lmod = ctx.getLitMod()
-
-  result = ctx.irNode(IrLit)
-
-  result.contents.syntax = st
-
-  if lmod != "":
-    tid = getTypeIdFromSyntax(st, lmod, err)
-    if err != "":
-      ctx.irError(err)
-    else:
-      let val = parseLiteral(tid, ctx.getText(), err, st)
-      if err != "":
-        ctx.irError(err)
-      else:
-        result.value = some(val)
-
-proc convertListLit(ctx: var IrGenCtx): IrNode =
+proc convertListLit(ctx: var CompileCtx): IrNode =
   result                 = ctx.irNode(IrLit)
   result.contents.syntax = STList
   result.contents.litmod = ctx.getLitMod()
   for i in 0 ..< ctx.numKids:
     result.items.add(ctx.downNode(i))
 
-proc convertDictLit(ctx: var IrGenCtx): IrNode =
+proc convertDictLit(ctx: var CompileCtx): IrNode =
   result                 = ctx.irNode(IrLit)
   result.contents.syntax = STDict
   result.contents.litmod = ctx.getLitMod()
@@ -992,14 +897,14 @@ proc convertDictLit(ctx: var IrGenCtx): IrNode =
     result.items.add(ctx.downNode(i, 0))
     result.items.add(ctx.downNode(i, 1))
 
-proc convertTupleLit(ctx: var IrGenCtx): IrNode =
+proc convertTupleLit(ctx: var CompileCtx): IrNode =
   result          = ctx.irNode(IrLit)
   result.contents = STTuple
   result.contents = ctx.getLitMod()
   for i in 0 ..< ctx.numKids():
     result.items.add(ctx.downNode(i))
 
-proc convertCallbackLit(ctx: var IrGenCtx): IrNode =
+proc convertCallbackLit(ctx: var CompileCtx): IrNode =
   ## TODO:
   ##
   ##  1) Makes no sense for callback literals to not have a name,
@@ -1024,53 +929,53 @@ proc convertCallbackLit(ctx: var IrGenCtx): IrNode =
     result.tid = tref(newFuncType(@[]))
   result.value = some(cb.toMixed())
 
-proc convertMember(ctx: var IrGenCtx): IrNode =
+proc convertMember(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrMember)
   var parts: seq[string]
   for i in 0 ..< ctx.numKids():
     parts.add(ctx.getText(i))
   result.name = parts.join(".")
 
-proc convertIndex(ctx: var IrGenCtx): IrNode =
+proc convertIndex(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrIndex)
   result.indexStart = ctx.downNode(0)
   if ctx.numKids() == 2:
     result.indexEnd = ctx.downNode(1)
 
-proc convertCall(ctx: var IrGenCtx): IrNode =
+proc convertCall(ctx: var CompileCtx): IrNode =
   result       = ctx.irNode(IrCall)
   result.fname = ctx.getText(0)
 
   for i in 0 ..< ctx.numKids(1):
     result.actuals.add(ctx.downNode(1, i))
 
-proc convertUseStmt(ctx: var IrGenCtx): IrNode =
+proc convertUseStmt(ctx: var CompileCtx): IrNode =
   result                       = ctx.irNode(IrUse)
   result.contents.targetModule = ctx.getText(0)
   if ctx.numKids() == 2:
     result.contents.targetLoc = ctx.getText(1)
 
-proc convertUnaryOp(ctx: var IrGenCtx): IrNode =
+proc convertUnaryOp(ctx: var CompileCtx): IrNode =
   result               = ctx.irNode(IrUnary)
   result.contents.uOp  = ctx.getText()
   result.contents.uRhs = ctx.downNode(0)
 
 const notFloatOps = ["shl", "shr", "and", "or", "xor", "div", "%"]
 
-template binOpReplace(ctx: var IrGenCtx, o, f: string) =
+template binOpReplace(ctx: var CompileCtx, o, f: string) =
   if n.binOp == o:
     cc.fname = f
     cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
     n.contents = cc
 
-template boolOpReplace(ctx: var IrGenCtx, o, f: string) =
+template boolOpReplace(ctx: var CompileCtx, o, f: string) =
   if n.binOp == o:
     cc.fname = f
     cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
     n.contents = cc
     n.tid = TBool
 
-proc replaceBinOpWithCall(ctx: var IrGenCtx, n: IrNode) =
+proc replaceBinOpWithCall(ctx: var CompileCtx, n: IrNode) =
   var cc = IrContents(kind: IrCall, binop: true)
 
   ctx.binOpReplace("/", "__slash__")
@@ -1093,7 +998,7 @@ proc replaceBinOpWithCall(ctx: var IrGenCtx, n: IrNode) =
   ctx.boolOpReplace("!=",  "__ne__")
   ctx.boolOpReplace("==",  "__eq__")
 
-proc convertBinaryOp(ctx: var IrGenCtx): IrNode =
+proc convertBinaryOp(ctx: var CompileCtx): IrNode =
   result          = ctx.irNode(IrBinary)
   result.contents.bOp   = ctx.getText()
   result.contents.bLhs  = ctx.downNode(0)
@@ -1128,7 +1033,7 @@ proc convertBinaryOp(ctx: var IrGenCtx): IrNode =
       if not result.tid.isNumericBuiltin():
         ctx.replaceBinOpWithCall(result)
 
-proc parseTreeToIr(ctx: var IrGenCtx): IrNode =
+proc parseTreeToIr(ctx: var CompileCtx): IrNode =
   case ctx.pt.kind
   of NodeModule:
     ctx.moduleScope.initScope()
@@ -1218,3 +1123,33 @@ proc parseTreeToIr(ctx: var IrGenCtx): IrNode =
     result = ctx.downNode(0)
   else:
     unreachable
+]#
+
+proc toIr*(ctx: var CompileCtx): bool {.discardable.} =
+  ctx.globalScope.initScope()
+  ctx.moduleScope.initScope()
+  ctx.pt = ctx.root
+  ctx.findExplicitDeclarations()
+
+  # Build IR; first the top-level module, then walk the module symbol table
+  # to find functions and parameters (where only the setting of a default
+  # value is evaluated as an expression)
+
+  ctx.pt     = ctx.root
+  ctx.irRoot = ctx.parseTreeToIr()
+
+  for (name, sym) in ctx.moduleScope.table.items():
+    for impl in sym.fimpls:
+      ctx.funcScope = impl.fnScope
+      ctx.pt        = impl.rawImpl
+      impl.implementation = ctx.parseTreeToIr() # This should be a body node.
+    if sym.pInfo != nil and sym.pinfo.defaultParse.isSome():
+      ctx.funcScope = nil
+      ctx.pt        = sym.pinfo.defaultParse.get()
+      ctx.current   = nil
+      let paramIr   = ctx.parseTreeToIr()
+
+      sym.pinfo.defaultIr = some(paramIr)
+      ctx.typeCheck(sym, paramIr.tid)
+
+  return ctx.errors.canProceed()

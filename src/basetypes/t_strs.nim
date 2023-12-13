@@ -1,4 +1,4 @@
-import unicode, common
+import unicode, ../common
 
 proc constructRope(s: string, outObj: var Mixed, st: SyntaxType):
                   string {.cdecl.}  =
@@ -33,24 +33,44 @@ proc constructBuf(s: string, outObj: var Mixed, st: SyntaxType):
 
   outObj = s.toMixed()
 
+proc reprStr(id: TypeId, m: Mixed): string {.cdecl.} =
+  var r = toVal[Rope](m)
+  return $r
+
+proc reprBuf(id: TypeId, m: Mixed): string {.cdecl.} =
+  return hex(toVal[string](m))
+
+proc reprUtf8(id: TypeId, m: Mixed): string {.cdecl.} =
+  return toVal[string](m)
+
+proc reprUtf32(id: TypeId, m: Mixed): string {.cdecl.} =
+  var r = toVal[seq[Rune]](m)
+
+  return $r
+
 let
   TString*   = addBasicType(name        = "string",
+                            repr        = reprStr,
                             kind        = stdStrKind,
                             litMods     = @["r"],
                             fromRawLit  = constructRope)
   TBuffer*   = addBasicType(name        = "buffer",
+                            repr        = reprBuf,
                             kind        = stdStrKind,
                             litMods     = @["b"],
                             fromRawLit  = constructBuf)
   TUtf8*     = addBasicType(name        = "utf8",
+                            repr        = reprUtf8,
                             kind        = stdStrKind,
                             litMods     = @["u"],
                             fromRawLit  = constructUtf8)
   TUtf32*    = addBasicType(name        = "utf32",
+                            repr        = reprutf32,
                             kind        = stdStrKind,
                             litMods     = @["u32"],
                             fromRawLit  = constructUtf32)
   TPath*     = addBasicType(name        = "path",
+                            repr        = reprutf8,
                             kind        = stdStrKind,
                             litMods     = @["p", "path"],
                             fromRawLit  = constructUtf8)
