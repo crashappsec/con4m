@@ -7,10 +7,6 @@ import strcursor, style, err
 export strcursor, style, err
 
 
-proc newCompileCtx*(s: string, m: string): CompileCtx =
-  result.module = m
-  result.s      = newStringCursor(s)
-
 proc uEsc(ctx: var CompileCtx, s: seq[Rune], numchars: int,
           t: Con4mToken): Rune =
   var
@@ -705,6 +701,7 @@ proc lex_impl(ctx: var CompileCtx) =
       of "False", "false":
         tok(TtFalse)
         handleLitMod()
+      of "in":             tok(TtIn)
       of "var":            tok(TtVar)
       of "global":         tok(TtGlobal)
       of "is":             tok(TtCmp)
@@ -883,6 +880,16 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "and"
     of TtOr:
       return "or"
+    of TtBitAnd:
+      return "&"
+    of TtBitOr:
+      return "|"
+    of TtBitXor:
+      return "^"
+    of TtShl:
+      return "<<"
+    of TtShr:
+      return ">>"
     of TtIntLit:
       return "an integer"
     of TtFloatLit:
@@ -927,5 +934,7 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "->"
     of TtObject:
       return "object"
+    of TtIn:
+      return "in"
     else:
       return "other (id = " & $(int(kind)) & ")"

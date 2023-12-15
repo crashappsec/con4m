@@ -49,7 +49,11 @@ let
                             fromRawLit  = constructUint8,
                             intBits     = 8,
                             signed      = false,
-                            fromCharLit = initByteLit)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromCharLit = initByteLit,
+                            eqFn        = basicEq)
   TChar*     = addBasicType(name        = "char",
                             repr        = charRepr,
                             kind        = stdChrKind,
@@ -57,4 +61,8 @@ let
                             fromRawLit  = constructChar,
                             intBits     = 21,
                             signed      = false,
-                            fromCharLit = initCodepointLit)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromCharLit = initCodepointLit,
+                            eqFn        = basicEq)

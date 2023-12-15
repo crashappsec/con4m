@@ -116,7 +116,7 @@ proc printParseTree*(ctx: Module) =
 
 proc printIr*(ctx: Module) =
   if ctx.ir != nil:
-    print(ctx.ir.toRope())
+    print ctx.ir.toRope()
   else:
     print h4("No IR produced.")
 
@@ -126,6 +126,8 @@ proc printModuleScope*(ctx: Module) =
   print ctx.moduleScope.toRope("Module scope")
 proc printFuncScope*(fn: FuncInfo) =
   print fn.fnScope.toRope("Scope for function " & fn.name)
+  if fn.implementation != nil:
+    print fn.implementation.toRope()
 proc printAllFuncScopes*(ctx: Module) =
   if ctx.moduleScope == nil:
     print h4("No functions found due to parse failure.")

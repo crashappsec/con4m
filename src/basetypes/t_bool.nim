@@ -19,8 +19,13 @@ proc constructBool*(s: string, outObj: var Mixed, st: SyntaxType):
 proc repr(tid: TypeId, m: Mixed): string {.cdecl.} =
   return $(toVal[bool](m))
 
+proc castToSelf(n: Mixed): bool {.cdecl.} =
+  result = toVal[bool](n)
+
 let
   TBool* = addBasicType(name        = "bool",
                         repr        = repr,
+                        castToBool  = castToSelf,
                         kind        = stdBoolKind,
-                        fromRawLit  = constructBool)
+                        fromRawLit  = constructBool,
+                        eqFn        = basicEq)

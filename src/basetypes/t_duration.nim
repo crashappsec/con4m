@@ -131,9 +131,19 @@ proc repr(id: TypeId, m: Mixed): string {.cdecl.} =
   if dur.tv_usec != 0:
     result &= " " & $(dur.tv_usec) & " usec"
 
+proc durEq(a, b: CBox): bool {.cdecl.} =
+  var
+    d1 = toVal[Duration](a.v)
+    d2 = toVal[Duration](b.v)
+
+  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Timeval)))
+
+  return r == 0
+
 let
   TDuration* = addBasicType(name        = "duration",
                             repr        = repr,
                             kind        = stdOtherKind,
                             litMods     = @["duration"],
-                            fromRawLit  = constructDuration)
+                            fromRawLit  = constructDuration,
+                            eqFn        = durEq)

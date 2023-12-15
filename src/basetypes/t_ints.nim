@@ -113,7 +113,6 @@ proc constructInteger*[T](s: string, outObj: var Mixed, st: SyntaxType,
   else:
     val = cast[T](num.u128ToU64())
 
-  echo "Returning normally. val = ", val
   outObj = val.toMixed()
 
 proc constructUint128(s: string, outObj: var Mixed, st: SyntaxType):
@@ -127,7 +126,6 @@ proc constructUint64(s: string, outObj: var Mixed, st: SyntaxType):
   return constructInteger[uint64](s, outObj, st, "uint")
 proc constructInt64(s: string, outObj: var Mixed, st: SyntaxType):
                     string {.cdecl.} =
-  echo "In construct, input is: ", s
   return constructInteger[int64](s, outObj, st, "int")
 proc constructUint32(s: string, outObj: var Mixed, st: SyntaxType):
                      string {.cdecl.} =
@@ -154,6 +152,17 @@ proc repru64(tid: TypeId, m: Mixed): string {.cdecl.} =
     return $(toVal[uint](m))
 proc repru128(tid: TypeId, m: Mixed): string {.cdecl.} =
     return toVal[uint128](m).toStr()
+proc largeToBool(m: Mixed): bool {.cdecl.} =
+  return toVal[int128](m) != iToI128(0)
+proc largeToU128(m: Mixed): uint128 {.cdecl.} =
+  return toVal[uint128](m)
+proc largeToI128(m: Mixed): int128 {.cdecl.} =
+  return toVal[int128](m)
+
+proc eq128(a, b: CBox): bool {.cdecl.} =
+  ## I think I forgot to add in a built-in equals, so this
+  ## is a tmp hack (TODO)
+  toVal[int128](a.v).toStr() == toVal[int128](b.v).toStr()
 
 let
   TInt8*     = addBasicType(name        = "i8",
@@ -162,46 +171,74 @@ let
                             litMods     = @["i8"],
                             intBits     = 8,
                             signed      = true,
-                            fromRawLit  = constructInt8)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromRawLit  = constructInt8,
+                            eqFn        = basicEq)
   TInt32*    = addBasicType(name        = "i32",
                             repr        = repr32,
                             kind        = stdIntKind,
                             litMods     = @["i32"],
                             intBits     = 32,
                             signed      = true,
-                            fromRawLit  = constructInt32)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromRawLit  = constructInt32,
+                            eqFn        = basicEq)
   TUint32*   = addBasicType(name        = "u32",
                             repr        = repru32,
                             kind        = stdIntKind,
                             litMods     = @["u32"],
                             intBits     = 32,
                             signed      = false,
-                            fromRawLit  = constructUint32)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromRawLit  = constructUint32,
+                            eqFn        = basicEq)
   TInt*      = addBasicType(name        = "int",
                             repr        = repr64,
                             kind        = stdIntKind,
                             litMods     = @["i", "i64", "int"],
                             intBits     = 64,
                             signed      = true,
-                            fromRawLit  = constructInt64)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromRawLit  = constructInt64,
+                            eqFn        = basicEq)
   TUint*     = addBasicType(name        = "uint",
                             repr        = repru64,
                             kind        = stdIntKind,
                             litMods     = @["u", "u64", "uint"],
                             intBits     = 64,
                             signed      = false,
-                            fromRawLit  = constructUint64)
+                            castToBool  = normalSizeIntToBool,
+                            castToU128  = normalSizeIntToU128,
+                            castToI128  = normalSizeIntToI128,
+                            fromRawLit  = constructUint64,
+                            eqFn        = basicEq)
   TInt128*   = addBasicType(name        = "i128",
                             repr        = repr128,
                             kind        = stdIntKind,
                             litMods     = @["i128"],
                             intBits     = 128,
                             signed      = true,
-                            fromRawLit  = constructInt128)
+                            castToBool  = largeToBool,
+                            castToU128  = largeToU128,
+                            castToI128  = largeToI128,
+                            fromRawLit  = constructInt128,
+                            eqFn        = eq128)
   TUint128*  = addBasicType(name        = "u128",
                             repr        = repru128,
                             kind        = stdIntKind,
                             litMods     = @["u128"],
                             intBits     = 128,
                             signed      = false,
-                            fromRawLit  = constructUint128)
+                            castToBool  = largeToBool,
+                            castToU128  = largeToU128,
+                            castToI128  = largeToI128,
+                            fromRawLit  = constructUint128,
+                            eqFn        = eq128)

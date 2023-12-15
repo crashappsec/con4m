@@ -2,17 +2,44 @@
 ## Ideally, we will keep refining the nodes until we can use them essentially
 ## as fat VM instructions that we can directly marshal.
 #
+#
 # TODO:
-# Expressions.
-#
-# Type propogation.
-#
-# After pass 1, check to see if declared variables are used, and
-# warn if not.
+# - After pass 1, check to see if declared variables are used, and
+#   warn if not.
+# - Infer the function signatures if return isn't used.
+# - Number blocks and check for use-before-def.
+# - Add $index and $index.label to for ... in loops, and restrict it
+#   elsewhere.
+# - Link-time checking.
+# - Deal with the rhs ambiguity.
+# - REPL
+# - Execution from IR (possibly compressing IR more)
+# - Stack traces.
+# - Spec checking
+# - Checkpointing.
+# - FFI
+# - No-side-effect to allow calling functions at compile time.
+# - const keyword
+# - Give names to enums / turn them into int subtypes
+# - Fold for list indexes when the length is fixed size.
+# - Swap in hatrack lists.
+# - Add objects.
+# - Add maybe
+# - Add oneof
+# - Add ref
+# - Add global enum
+# - Warnings when there are naming conflicts on inputs.
+# - :: module scope operator.
+# - root:: and local::
+# C-level interface to attributes
+# Validation routines need routines to validate their inputs.
 
-
-import parse, scope, cbox
+import parse, scope, cbox, strutils
 export parse, scope, cbox
+
+proc fold[T](n: IrNode, val: T) =
+  n.contents = IrContents(kind: IrFold)
+  n.value    = some(toMixed[T](val))
 
 proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
                           litMod = ""): TypeId =
@@ -64,6 +91,7 @@ proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
         of STOther:
           errType = "specialized"
         else:
+
           unreachable # Not supposed to call this w/ complex types
 
   if errType == "":
@@ -78,7 +106,7 @@ proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
     result = result + atom(" " & x).italic()
 
   if y != "":
-    result = result + atom(" (" & y & ")").fgcolor("fandango")
+      result = result + atom(" (" & y & ")").fgcolor("fandango")
 
   if t != TBottom:
     result = result + atom(" ") + strong(t.toString())
@@ -100,11 +128,18 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   case ctx.contents.kind
   of IrBlock:
     return (fmt("Block"), ctx.contents.stmts)
+  of IrSection:
+    var sec: string = ctx.contents.prefix
+
+    if sec == "":
+      sec = ctx.contents.sectName
+    else:
+      sec &= "." & ctx.contents.sectName
+
+    return (fmt("Section", sec, ctx.contents.instance), @[ctx.contents.blk])
   of IrLoop:
     if ctx.contents.label != nil:
-      moreinfo = "label: " & ctx.contents.label.getText() & " "
-
-    moreinfo &= "id: " & $ctx.contents.label.id & " "
+      moreinfo = "label: " & ctx.contents.label.getText()
     if ctx.contents.keyVar == "":
       descriptor = "while"
     else:
@@ -124,8 +159,8 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrAttrAssign:
     if ctx.contents.lock:
       moreinfo = "+lock"
-    return (fmt("AttrAssign", ctx.contents.attrlhs, moreinfo, ctx.tid),
-            @[ctx.contents.attrRhs])
+    return (fmt("AttrAssign", "", moreinfo, ctx.tid),
+            @[ctx.contents.attrLhs, ctx.contents.attrRhs])
   of IrVarAssign:
     if ctx.contents.varlhs.len() > 1:
       moreinfo = "tuple"
@@ -144,13 +179,21 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
       moreinfo = "break"
     else:
       moreinfo = "continue"
-    return (fmt("Jump", "id: " & $(ctx.contents.targetNode.parseNode.id)), @[])
+    if ctx.contents.targetNode.contents.label != nil:
+      let labelStr = ctx.contents.targetNode.contents.label.getText()
+      result = (fmt("Jump", moreinfo, "label: " & labelStr), @[])
+    else:
+      result = (fmt("Jump", moreinfo), @[])
   of IrRet:
     return (fmt("Return", "", "", ctx.tid), @[ctx.contents.retVal])
   of IrLit:
     if ctx.tid.isBasicType():
       moreinfo = ctx.reprBasicLiteral()
     return (fmt("Literal", "", moreinfo, ctx.tid), ctx.contents.items)
+  of IrFold:
+    return (fmt("Folded", "", ctx.reprBasicLiteral(), ctx.tid), @[])
+  of IrNop:
+    return (fmt("Nop"), @[])
   of IrMember:
     return (fmt("Member", ctx.contents.name, "", ctx.tid), @[])
   of IrIndex:
@@ -169,8 +212,14 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrBinary:
     return (fmt("BinaryOp", ctx.contents.bOp, "", ctx.tid),
             @[ctx.contents.bLhs, ctx.contents.bRhs])
-  of IrStoreLoc:
-    return (fmt("Store", ctx.contents.symbol.name, "", ctx.tid), @[])
+  of IrBool:
+    return (fmt("BooleanOp", ctx.contents.bOp, "", ctx.tid),
+            @[ctx.contents.bLhs, ctx.contents.bRhs])
+  of IrLogic:
+    return (fmt("LogicOp", ctx.contents.bOp, "", ctx.tid),
+            @[ctx.contents.bLhs, ctx.contents.bRhs])
+  of IrLhsLoad:
+    return (fmt("LhsLoad", ctx.contents.symbol.name, "", ctx.tid), @[])
   of IrLoad:
     return (fmt("Load", ctx.contents.symbol.name, "", ctx.tid), @[])
 
@@ -191,17 +240,19 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode
 
 proc downNode(ctx: var CompileCtx, which: int): IrNode =
   var saved   = ctx.current
+  var savedpt = ctx.pt
   ctx.pt      = ctx.pt.children[which]
   result      = ctx.parseTreeToIr()
-  ctx.pt      = ctx.pt.parent
+  ctx.pt      = savedpt
   ctx.current = saved
 
 proc downNode(ctx: var CompileCtx, kid, grandkid: int): IrNode =
   var saved = ctx.current
+  var savedpt = ctx.pt
 
   ctx.pt      = ctx.pt.children[kid].children[grandkid]
   result      = ctx.parseTreeToIr()
-  ctx.pt      = ctx.pt.parent.parent
+  ctx.pt      = savedpt
   ctx.current = saved
 
 template independentSubtree(code: untyped) =
@@ -257,7 +308,8 @@ proc checkLabelDupe(ctx: var CompileCtx, label: string) =
     n       = ctx.current.parent
 
   while n != nil:
-    if n.contents.kind == IrLoop and n.contents.label.getText() == label:
+    if n.contents.kind == IrLoop and n.contents.label != nil and
+       n.contents.label.getText() == label:
       ctx.irWarn("LabelDupe", @[label], n.parseNode)
       return
     n = n.parent
@@ -300,11 +352,14 @@ proc convertEnum*(ctx: var CompileCtx) =
         sym.constValue = some(newCbox(value, TInt))
 
 proc convertIdentifier(ctx: var CompileCtx): IrNode =
-  let name = ctx.pt.getText()
+  var name = ctx.pt.getText()
   var stOpt: Option[SymbolInfo]
 
   if ctx.lhsContext:
-    result = ctx.irNode(IrStoreLoc)
+    if ctx.attrContext and ctx.curSecPrefix != "":
+      name = ctx.curSecPrefix & "." & name
+
+    result = ctx.irNode(IrLhsLoad)
     stOpt  = ctx.addDef(name, result, tVar())
   else:
     result = ctx.irNode(IrLoad)
@@ -313,6 +368,30 @@ proc convertIdentifier(ctx: var CompileCtx): IrNode =
   result.contents.symbol = stOpt.getOrElse(nil)
   if result.contents.symbol != nil:
     result.tid = result.contents.symbol.tid
+
+proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
+  result                  = ctx.irNode(IrAttrAssign)
+  ctx.lhsContext          = true
+  ctx.attrContext         = true
+  result.contents.attrLhs = ctx.downNode(0)
+  ctx.attrContext         = false
+  ctx.lhsContext          = false
+  result.contents.attrRhs = ctx.downNode(1)
+  result.tid              = tVar()
+
+  result.tid = result.tid.unify(result.contents.attrLhs.tid)
+  result.tid = result.tid.unify(result.contents.attrRhs.tid)
+
+proc convertMember(ctx: var CompileCtx): IrNode =
+  result = ctx.irNode(IrMember)
+  var parts: seq[string]
+  for kid in ctx.pt.children:
+    parts.add(kid.getText())
+
+  result.contents.name = parts.join(".")
+
+  if ctx.attrContext and ctx.curSecPrefix != "":
+    result.contents.name = ctx.curSecPrefix & "." & result.contents.name
 
 proc convertVarAssignment(ctx: var CompileCtx): IrNode =
   var
@@ -549,6 +628,22 @@ proc convertFuncDefinition(ctx: var CompileCtx) =
   ctx.findExplicitDeclarations(info.rawImpl)
   ctx.funcScope = nil
 
+proc processUseStmt(ctx: var CompileCtx) =
+  ## Since currently use statements both import symbols and cause
+  ## execution, we want to import symbols early, but we'll also leave
+  ## this in the tre, and process it in the 2nd pass w/ convertUseStmt()
+  var
+    moduleName = ctx.getText(0)
+    moduleLoc  = if ctx.numKids() == 2: ctx.getText(1) else: ""
+
+  ctx.usedModules.add((moduleName, moduleLoc))
+
+proc convertUseStmt(ctx: var CompileCtx): IrNode =
+  result                       = ctx.irNode(IrUse)
+  result.contents.targetModule = ctx.getText(0)
+  if ctx.numKids() == 2:
+    result.contents.targetLoc = ctx.getText(1)
+
 proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
   ## To make life easier for us when handling def's and uses, we will
   ## scan through either the module scope or individual function scopes
@@ -581,6 +676,8 @@ proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
       ctx.convertGlobalStmt()
     of NodeParamBlock:
       ctx.convertParamBlock()
+    of NodeUseStmt:
+      ctx.processUseStmt()
     else:
       ctx.findExplicitDeclarations(kid)
 
@@ -608,24 +705,23 @@ proc findExplicitDeclarations(ctx: var CompileCtx) =
 
 proc statementsToIr(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrBlock)
-  var skipI = false
 
-  for i in 0 ..< ctx.numKids():
-    let item = ctx.parseKid(i)
+  for i, item in ctx.pt.children:
 
     case item.kind
     of NodeBreakStmt, NodeContinueStmt, NodeReturnStmt:
-      if i != ctx.numKids() + 1:
+      # For these, we're going to process them when we descend;
+      # But we check for dead code here.
+      if i != ctx.numKids() - 1:
         ctx.irWarn("DeadCode", @[$(item)], w = item)
+        # Do process this one statement.
         result.contents.stmts.add(ctx.downNode(i))
         return # Don't process that dead code.
     of NodeLabelStmt:
-      if i == ctx.numKids() - 1 and ctx.parseKid(i + 1).kind in ntLoops:
-          let one            = ctx.downNode(i + 1)
-          one.contents.label = ctx.parseGrandKid(i, 0)
-          skipI              = true
-          result.contents.stmts.add(one)
-          ctx.checkLabelDupe(one.contents.label.getText())
+      if i != ctx.numKids() - 1 and ctx.parseKid(i + 1).kind in ntLoops:
+        ctx.labelNode = ctx.parseGrandKid(i, 0)
+        ctx.checkLabelDupe(ctx.labelNode.getText())
+        continue
       else:
         ctx.irError("LabelLoc", w = item)
         continue
@@ -654,11 +750,7 @@ proc statementsToIr(ctx: var CompileCtx): IrNode =
     else:
       discard  # An expression.
 
-    if skipI:
-      skipI = false
-      continue
-    else:
-      result.contents.stmts.add(ctx.downNode(i))
+    result.contents.stmts.add(ctx.downNode(i))
 
 proc convertLit(ctx: var CompileCtx, st: SyntaxType): IrNode =
   var
@@ -697,6 +789,419 @@ proc convertCharLit(ctx: var CompileCtx): IrNode =
     else:
       result.value = some(val)
 
+proc convertTypeLit(ctx: var CompileCtx): IrNode =
+  var
+    tvars: Dict[string, TypeId]
+    tinfo: TypeId
+
+  tvars.initDict()
+  result        = ctx.irNode(IrLit)
+  result.tid    = tTypeSpec()
+  tinfo         = ctx.pt.buildType(tvars)
+  result.value  = some(tinfo.toMixed())
+
+proc convertListLit(ctx: var CompileCtx): IrNode =
+  result                 = ctx.irNode(IrLit)
+  result.contents.syntax = STList
+  result.contents.litmod = ctx.getLitMod()
+  var
+    itemType             = tVar()
+    canFold              = true
+
+  for i in 0 ..< ctx.numKids:
+    let oneItem = ctx.downNode(i)
+    if not oneItem.isConstant:
+      canFold = false
+    ctx.typeCheck(itemType, oneItem.tid, ctx.parseKid(i), "TyDiffListItem")
+    result.contents.items.add(oneItem)
+
+  if itemType != TBottom:
+    result.tid = tList(itemType)
+
+  # TODO: capture the value if possible.
+  # TODO: Allow the litmod to be used here.
+
+proc convertDictLit(ctx: var CompileCtx): IrNode =
+  result                 = ctx.irNode(IrLit)
+  result.contents.syntax = STDict
+  result.contents.litmod = ctx.getLitMod()
+  var
+    keyType              = tVar()
+    itemType             = tVar()
+    canFold              = true
+
+  for i in 0 ..< ctx.numKids():
+    let oneKey = ctx.downNode(i, 0)
+    if not oneKey.isConstant:
+      canFold = false
+    ctx.typeCheck(keyType, oneKey.tid, ctx.parseGrandKid(i, 0), "TyDiffKey")
+    let oneVal = ctx.downNode(i, 1)
+    if not oneVal.isConstant:
+      canFold = false
+    ctx.typeCheck(itemType, oneVal.tid, ctx.parseGrandKid(i, 1), "TyDiffVal")
+
+  if itemType != TBottom:
+    result.tid = tDict(keyType, itemType)
+
+proc convertTupleLit(ctx: var CompileCtx): IrNode =
+  result                 = ctx.irNode(IrLit)
+  result.contents.syntax = STTuple
+  result.contents.litmod = ctx.getLitMod()
+  var
+    types:    seq[TypeId]
+    canFold   = true
+    gotBottom = false
+
+  for i in 0 ..< ctx.numKids():
+    let oneItem = ctx.downNode(i)
+    if not oneItem.isConstant:
+      canFold = false
+    types.add(oneItem.tid)
+    if oneItem.tid.followForwards() == TBottom:
+      gotBottom = true
+    result.contents.items.add(oneItem)
+
+  if not gotBottom:
+    result.tid = tTuple(types)
+
+proc convertCallbackLit(ctx: var CompileCtx): IrNode =
+  var cb: Callback
+
+  result = ctx.irNode(IrLit)
+  cb.name = ctx.getText(0)
+  if ctx.numKids() == 2:
+    var
+      tvars: Dict[string, TypeId]
+    cb.tid = ctx.pt.children[1].buildType(tvars)
+    result.tid = cb.tid
+  else:
+    result.tid = tFunc(@[])
+  result.value = some(cb.toMixed())
+  # We wait to resolve any function reference until after functions
+  # have fully inferred their types from their bodies, so that we
+  # can be as accurate as possible when doing resolution.
+  ctx.funcRefs.add((cb.name, result.tid, result))
+
+proc convertForStmt(ctx: var CompileCtx): IrNode =
+  result                    = ctx.irNode(IrLoop)
+  result.contents.label     = ctx.labelNode
+  ctx.labelNode             = nil
+
+  if ctx.numKids() == 3:
+    result.contents.keyVar = ctx.getText(0, 0)
+    if ctx.numGrandKids(0) == 2:
+      result.contents.valVar = ctx.getText(0, 1)
+
+    result.contents.condition = ctx.downNode(1)
+    result.contents.loopBody  = ctx.downNode(2)
+  else:
+    result.contents.keyVar   = ctx.getText(0, 0)
+    result.contents.startIx  = ctx.downNode(1)
+    result.contents.endIx    = ctx.downNode(2)
+    result.contents.loopBody = ctx.downNode(3)
+
+proc convertWhileStmt(ctx: var CompileCtx): IrNode =
+  result                    = ctx.irNode(IrLoop)
+  result.contents.label     = ctx.labelNode
+  ctx.labelNode             = nil
+  result.contents.condition = ctx.downNode(0)
+  result.contents.loopBody  = ctx.downNode(1)
+
+  if unify(TBool, result.contents.condition.tid) == TBottom:
+    if result.contents.condition.tid.canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[result.contents.condition.tid.toString()],
+                 w = ctx.parseKid(0))
+    else:
+      ctx.irError("NoBoolCast", @[result.contents.condition.tid.toString()],
+                  w = ctx.parseKid(0))
+  elif result.contents.condition.isConstant():
+    let
+      valToCast = result.contents.condition.value.get()
+      val       = valToCast.castToBool(result.contents.condition.tid).get()
+
+    if not val:
+      result.contents = IrContents(kind: IrNop)
+
+proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
+  result                   = ctx.irNode(IrJump)
+  result.contents.exitLoop = loopExit
+  if ctx.numKids() != 0:
+    let label = ctx.getText(0)
+    var n = result.parent
+    while n != nil:
+      if n.contents.kind == IrLoop:
+
+        if n.contents.label != nil and n.contents.label.getText() == label:
+          result.contents.targetNode = n
+          return
+      n = n.parent
+    ctx.irError("BadLoopExit", @[ctx.getText(), label])
+  else:
+    var n = result.parent
+    while n != nil:
+      if n.contents.kind == IrLoop:
+        result.contents.targetNode = n
+        return
+      n = n.parent
+
+proc convertConditional(ctx: var CompileCtx): IrNode =
+  result                      = ctx.irNode(IrConditional)
+  result.contents.predicate   = ctx.downNode(0)
+  result.contents.trueBranch  = ctx.downNode(1)
+
+  if ctx.numKids() == 3:
+    result.contents.falseBranch = ctx.downNode(2)
+
+  if unify(TBool, result.contents.predicate.tid) == TBottom:
+    if result.contents.predicate.tid.canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[result.contents.predicate.tid.toString()],
+                 w = ctx.parseKid(0))
+    else:
+      ctx.irError("NoBoolCast", @[result.contents.predicate.tid.toString()],
+                  w = ctx.parseKid(0))
+
+  elif result.contents.predicate.isConstant():
+    let
+      valToCast = result.contents.predicate.value.get()
+      val       = valToCast.castToBool(result.contents.predicate.tid).get()
+
+    if val:
+      result.contents = result.contents.trueBranch.contents
+    elif result.contents.falseBranch != nil:
+      result.contents = result.contents.falseBranch.contents
+    else:
+      result.contents = IrContents(kind: IrNop)
+
+proc convertReturn(ctx: var CompileCtx): IrNode =
+  result = ctx.irNode(IrRet)
+  if ctx.numKids() == 1:
+    let rv = ctx.downNode(0)
+    result.contents.retVal = rv
+    discard ctx.addDef("result", result, rv.tid)
+
+proc convertUnaryOp(ctx: var CompileCtx): IrNode =
+  result               = ctx.irNode(IrUnary)
+  result.contents.uOp  = ctx.getText()
+  result.contents.uRhs = ctx.downNode(0)
+
+const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
+
+template binOpReplace(ctx: var CompileCtx, o, f: string) =
+  if n.contents.kind == IrBinary and n.contents.bOp == o:
+    cc.fname   = f
+    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
+    n.contents = cc
+
+template boolOpReplace(ctx: var CompileCtx, o, f: string) =
+  if n.contents.kind == IrBool and n.contents.bOp == o:
+    cc.fname = f
+    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
+    n.tid = TBool
+
+proc replaceBinOpWithCall(ctx: var CompileCtx, n: IrNode) =
+  var cc  = IrContents(kind: IrCall, binop: true)
+  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
+
+  ctx.binOpReplace("/",    "__slash__")
+  ctx.binOpReplace("*",    "__star__")
+  ctx.binOpReplace("+",    "__plus__")
+  ctx.binOpReplace("-",    "__minus__")
+  ctx.binOpReplace("%",    "__percent__")
+  ctx.binOpReplace("<<",   "__shl__")
+  ctx.binOpReplace(">>",   "__shr__")
+  ctx.binOpReplace("div",  "__div__")
+  ctx.binOpReplace("&",    "__bitand__")
+  ctx.binOpReplace("|",    "__bitor__")
+  ctx.binOpReplace("^",    "__bitxor__")
+  ctx.binOpReplace("shl",  "__shl__")
+  ctx.binOpReplace("shr",  "__shr__")
+
+  ctx.funcRefs.add((cc.fname, sig, n))
+  n.contents = cc
+
+proc replaceBoolOpWithCall(ctx: var CompileCtx, n: IrNode) =
+  var cc = IrContents(kind: IrCall, binop: true)
+  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, TBool])
+
+  ctx.boolOpReplace("<",   "__lt__")
+  ctx.boolOpReplace("<=",  "__lte__")
+  ctx.boolOpReplace(">",   "__gt__")
+  ctx.boolOpReplace(">=",  "__gte__")
+  ctx.boolOpReplace("!=",  "__ne__")
+  ctx.boolOpReplace("==",  "__eq__")
+
+  ctx.funcRefs.add((cc.fname, sig, n))
+  n.contents = cc
+
+proc convertBooleanOp(ctx: var CompileCtx): IrNode =
+  # Comparison operators.
+
+  result                = ctx.irNode(IrBool)
+  result.contents.bOp   = ctx.getText()
+  let
+    bLhs                = ctx.downNode(0)
+    bRhs                = ctx.downNode(1)
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
+
+  var operandType = bLhs.tid.unify(bRhs.tid)
+
+  if operandType == TBottom and bLhs.tid.isNumericBuiltin() and
+     bRhs.tid.isNumericBuiltin():
+    operandType = ctx.resultingNumType(bLhs.tid, bRhs.tid)
+
+  if operandType == TBottom:
+    ctx.irError("BinaryOpCompat", @[bLhs.tid.toString(), bRhs.tid.toString()])
+  else:
+    result.tid = TBool
+    if not operandType.isNumericBuiltin():
+      ctx.replaceBoolOpWithCall(result)
+
+proc convertBinaryOp(ctx: var CompileCtx): IrNode =
+  result                = ctx.irNode(IrBinary)
+  result.contents.bOp   = ctx.getText()
+
+  let
+    bLhs                = ctx.downNode(0)
+    bRhs                = ctx.downNode(1)
+
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
+
+  result.tid = bLhs.tid.unify(bRhs.tid)
+
+  if result.tid == TBottom and bLhs.tid.isNumericBuiltin() and
+     bRhs.tid.isNumericBuiltin():
+    result.tid = ctx.resultingNumType(bLhs.tid, bRhs.tid)
+
+    if result.tid == TFloat and result.contents.bOp in notFloatOps:
+        result.tid = TBottom
+
+  if result.tid == TBottom:
+    ctx.irError("BinaryOpCompat", @[bLhs.tid.toString(), bRhs.tid.toString()])
+  else:
+    case result.contents.bOp
+    of "/":
+      if result.tid.isNumericBuiltin():
+        result.tid = TFloat
+      else:
+        ctx.replaceBinOpWithCall(result)
+    of "+", "-", "*":
+      if not result.tid.isNumericBuiltin():
+        ctx.replaceBinOpWithCall(result)
+    of "<<", ">>", "div", "&", "|", "^", "%":
+      if result.tid == TFloat or not result.tid.isNumericBuiltin():
+        ctx.replaceBinOpWithCall(result)
+    else:
+      unreachable
+
+proc convertLogicOp(ctx: var CompileCtx): IrNode =
+  result                = ctx.irNode(IrLogic)
+  result.contents.bOp   = ctx.getText()
+  let
+    bLhs                = ctx.downNode(0)
+    bRhs                = ctx.downNode(1)
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
+
+  if unify(TBool, bLhs.tid) == TBottom:
+    if bLhs.tid.canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[bLhs.tid.toString()], w = ctx.parseKid(0))
+    else:
+      ctx.irError("NoBoolCast", @[bLhs.tid.toString()], w = ctx.parseKid(0))
+
+  if unify(TBool, bRhs.tid) == TBottom:
+    if bRhs.tid.canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[bRhs.tid.toString()], w = ctx.parseKid(1))
+    else:
+      ctx.irError("NoBoolCast", @[bRhs.tid.toString()], w = ctx.parseKid(1))
+
+  result.tid = TBool
+
+  # Fold constant stuff.
+  if bLhs.isConstant():
+    if bLhs.value.get().castToBool(bLhs.tid).get() == false:
+      if result.contents.bOp == "and":
+        result.fold(false)
+      elif bRhs.isConstant():
+        result.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
+      else:
+        result.contents = bRhs.contents
+    else:
+      if result.contents.bOp == "or":
+        result.fold(true)
+      elif bRhs.isConstant():
+        result.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
+      else:
+        result.contents = bRhs.contents
+  elif bRhs.isConstant():
+    let val = bRhs.value.get().castToBool(bRhs.tid).get()
+    if result.contents.bOp == "and":
+      if val == false:
+        result.fold(false)
+      else:
+        result.contents = bLhs.contents
+    else:
+      if val == true:
+        result.fold(true)
+      else:
+        result.contents = bLhs.contents
+
+proc convertSection(ctx: var CompileCtx): IrNode =
+  var
+    haveSpec     = ctx.attrSpec != nil
+    savedSecSpec = ctx.curSecSpec
+  result                   = ctx.irNode(IrSection)
+  result.contents.prefix   = ctx.curSecPrefix
+  result.contents.sectName = ctx.getText(0)
+
+  if haveSpec:
+    let specOpt = ctx.attrSpec.secSpecs.lookup(result.contents.sectName)
+    if specOpt.isNone():
+      ctx.irError("BadSectionType", @[result.contents.sectName])
+    else:
+     if savedSecSpec != nil and
+        result.contents.sectName notin savedSecSpec.allowedSections:
+        ctx.irError("SecNotAllowed", @[result.contents.sectName])
+
+     ctx.curSecSpec = specOpt.get()
+
+     if ctx.curSecSpec.singleton:
+       if ctx.pt.children.len() == 3:
+         ctx.irError("NotASingleton", @[result.contents.sectName])
+     elif ctx.pt.children.len() == 2:
+       ctx.irError("IsASingleton", @[result.contents.sectName])
+
+  if ctx.curSecPrefix != "":
+    ctx.curSecPrefix &= "." & result.contents.sectName
+  else:
+    ctx.curSecPrefix = result.contents.sectName
+
+  if ctx.pt.children.len() == 3:
+    result.contents.instance = ctx.getText(1)
+    ctx.curSecPrefix &= "." & result.contents.instance
+    result.contents.blk = ctx.downNode(2)
+  else:
+    result.contents.blk = ctx.downNode(1)
+
+  ctx.curSecPrefix = result.contents.prefix
+  ctx.curSecSpec   = savedSecSpec
+
+proc convertIndex(ctx: var CompileCtx): IrNode =
+  # TODO: symbol lookup and typing.
+  result = ctx.irNode(IrIndex)
+  result.contents.indexStart = ctx.downNode(0)
+  if ctx.numKids() == 2:
+    result.contents.indexEnd = ctx.downNode(1)
+
+proc convertCall(ctx: var CompileCtx): IrNode =
+  # TODO: handle this properly.
+  result                = ctx.irNode(IrCall)
+  result.contents.fname = ctx.getText(0)
+
+  for i in 0 ..< ctx.numGrandKids(1):
+    result.contents.actuals.add(ctx.downNode(1, i))
+
 proc parseTreeToIr(ctx: var CompileCtx): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
@@ -705,7 +1210,7 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode =
       result = ctx.convertVarAssignment()
     of NodeIdentifier:
       result = ctx.convertIdentifier()
-    of NodeExpression, NodeLiteral:
+    of NodeExpression, NodeLiteral, NodeElseStmt, NodeParenExpr:
       result = ctx.downNode(0)
     of NodeStringLit:
       result = ctx.convertLit(StStrQuotes)
@@ -721,409 +1226,64 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode =
       result = ctx.convertLit(StOther)
     of NodeCharLit:
       result = ctx.convertCharLit()
-    # of NodeType:
-    #   result = ctx.convertTypeLit()
-    # of NodeDictLit:
-    #   result = ctx.convertDictLit()
-    # of NodeListLit:
-    #   result = ctx.convertListLit()
-    # of NodeTupleLit:
-    #   result = ctx.convertTupleLit()
-    # of NodeCallbackLit:
-    #   result = ctx.convertCallbackLit()
-    else:
-      return ctx.irNode(IrBlock)
-
-
-  return
-
-
-  # case ctx.pt.kind
-  # of NodeModule, NodeBody:
-  #  result = ctx.statementsToIr()
-  # of NodeBody:
-  #   result = ctx.statementsToIr()
-  # of NodeAttrAssign:
-  #   result = ctx.convertAttrAssignment()
-  # of NodeAttrSetLock:
-  #   result      = ctx.downNode(0)
-  #   result.lock = true
-  # of NodeUnpack, NodeVarAssign:
-  #   result = ctx.convertVarAssignment()
-  # of NodeSection:
-  #   result = ctx.convertSection()
-  # of NodeIfStmt, NodeElifStmt:
-  #   result = ctx.convertConditional()
-  # of NodeElseStmt:
-  #   result = ctx.downNode(0)
-  # of NodeForStmt:
-  #   result = ctx.convertForStmt()
-  # of NodeWhileStmt:
-  #   result = ctx.convertWhileStmt()
-  # of NodeBreakStmt:
-  #   result = ctx.loopExit(true)
-  # of NodeContinueStmt:
-  #   result = ctx.loopExit(false)
-  # of NodeReturnStmt:
-  #   result = ctx.convertReturn()
-  # of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
-  #    NodeMod, NodeMul, NodeDiv:
-  #   result = ctx.convertBinaryOp()
-  # of NodePlus, NodeMinus:
-  #   if ctx.numKids == 2:
-  #     result = ctx.convertBinaryOp()
-  #   else:
-  #     result = ctx.convertUnaryOp()
-  # of NodeNot:
-  #   result = ctx.convertUnaryOp()
-  # of NodeMember:
-  #   result = ctx.convertMember()
-  # of NodeLiteral, NodeParenExpr, NodeExpression:
-  #   result = ctx.downNode(0)
-  # of NodeIndex:
-  #   result = ctx.convertIndex()
-  # of NodeCall:
-  #   result = ctx.convertCall()
-  # of NodeUseStmt:
-  #   result = ctx.convertUseStmt()
-  # of NodeIdentifier:
-  #   result = ctx.downNode(0)
-  # else:
-  #   unreachable
-
-#[
-
-
-proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrAttrAssign)
-  var
-    parts: seq[string] = @[]
-    kid = ctx.parseKid(0)
-  while true:
-    parts.add(kid.getText())
-    if kid.children.len() == 0:
-      break
-    kid = kid.children[0]
-  ctx.lhsContext  = true
-  ctx.attrContext = true
-  result.attrlhs  = parts.join(".")
-  ctx.attrContext = false
-  ctx.lhsContext  = false
-  result.attrrhs  = ctx.downNode(1)
-  result.tid      = result.attrrhs.tid
-
-proc convertConditional(ctx: var CompileCtx): IrNode =
-  result            = ctx.irNode(IrConditional)
-  result.predicate  = ctx.downNode(0)
-  result.trueBranch = ctx.downNode(1)
-
-proc convertSection(ctx: var CompileCtx): IrNode =
-  result         = ctx.irNode(IrSectionScope)
-  result.secType = ctx.getText(0)
-  if ctx.numKids() == 3:
-    result.secName = ctx.getText(1)
-    result.body    = ctx.downNode(2)
-  else:
-    result.body    = ctx.downNode(1)
-
-proc convertForStmt(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrLoop)
-  if ctx.numKids() == 3:
-    result.contents.keyVar = ctx.getText(0, 0)
-    if ctx.numGrandKids(0) == 2:
-      result.contents.valVar = ctx.getText(0, 1)
-
-    result.contents.condition = ctx.downNode(1)
-    result.contents.loopBody  = ctx.downNode(2)
-  else:
-    result.contents.keyVar   = ctx.getText(0, 0)
-    result.contents.startIx  = ctx.downNode(1)
-    result.contents.endIx    = ctx.downNode(2)
-    result.contents.loopBody = ctx.downNode(3)
-
-proc convertWhileStmt(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrLoop)
-  result.contents.condition = ctx.downNode(0)
-  result.contents.loopBody  = ctx.downNode(1)
-
-proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
-  result = ctx.irNode(IrJump)
-  result.contents.exitLoop = loopExit
-  if ctx.numKids() != 0:
-    let label = ctx.getText(0)
-    var n = ctx.parent
-    while n != nil:
-      if n.contents.kind == IrLoop:
-        if n.contents.label == label:
-          result.contents.targetNode = n
-          return
-      n = n.parent
-    ctx.irError("BadLoopExit", @[ctx.getText(), label]]
-
-  var n = ctx.parent
-  while n != nil:
-    if n.kind == IrLoop:
-      result.contents.targetNode = n
-      return
-    n = n.parent
-
-proc convertReturn(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrRet)
-  if ctx.numKids() == 1:
-    result.contents.retVal = ctx.downNode(0)
-
-proc convertTypeLit(ctx: var CompileCtx): IrNode =
-  var
-    tvars: Dict[string, TypeId]
-    tinfo: TypeId
-
-  result                 = ctx.irNode(IrLit)
-  result.tid             = some(tTypeSpec().typeId)
-  tinfo                  = ctx.pt.buildType(tvars)
-  result.contents.litVal = tinfo.toMixed()
-
-proc convertListLit(ctx: var CompileCtx): IrNode =
-  result                 = ctx.irNode(IrLit)
-  result.contents.syntax = STList
-  result.contents.litmod = ctx.getLitMod()
-  for i in 0 ..< ctx.numKids:
-    result.items.add(ctx.downNode(i))
-
-proc convertDictLit(ctx: var CompileCtx): IrNode =
-  result                 = ctx.irNode(IrLit)
-  result.contents.syntax = STDict
-  result.contents.litmod = ctx.getLitMod()
-  for i in 0 ..< ctx.numKids():
-    result.items.add(ctx.downNode(i, 0))
-    result.items.add(ctx.downNode(i, 1))
-
-proc convertTupleLit(ctx: var CompileCtx): IrNode =
-  result          = ctx.irNode(IrLit)
-  result.contents = STTuple
-  result.contents = ctx.getLitMod()
-  for i in 0 ..< ctx.numKids():
-    result.items.add(ctx.downNode(i))
-
-proc convertCallbackLit(ctx: var CompileCtx): IrNode =
-  ## TODO:
-  ##
-  ##  1) Makes no sense for callback literals to not have a name,
-  ##     unless we're actually in a *type* literal, where we might
-  ##     want to accept the name as part of the type?? Nuke.
-  ##
-  ##  2) The callback needs to be run through a addFuncUse(); we need
-  ##     to see if it matches anything in the module, and if it
-  ##     doesn't, keep it in a list of things we need to resolve when
-  ##     linking.
-  var
-    cb: Callback
-  result = ctx.irNode(IrLit)
-  if ctx.pt.children[0].kind != NodeNoCallbackName:
-    cb.name = getText(0, 0)
-  if ctx.numKids() == 2:
-    var
-      tvars: Dict[string, TypeId]
-    cb.tid = ctx.pt.children[1].buildType(tvars)
-    result.tid = tref(cb.tid)
-  else:
-    result.tid = tref(newFuncType(@[]))
-  result.value = some(cb.toMixed())
-
-proc convertMember(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrMember)
-  var parts: seq[string]
-  for i in 0 ..< ctx.numKids():
-    parts.add(ctx.getText(i))
-  result.name = parts.join(".")
-
-proc convertIndex(ctx: var CompileCtx): IrNode =
-  result = ctx.irNode(IrIndex)
-  result.indexStart = ctx.downNode(0)
-  if ctx.numKids() == 2:
-    result.indexEnd = ctx.downNode(1)
-
-proc convertCall(ctx: var CompileCtx): IrNode =
-  result       = ctx.irNode(IrCall)
-  result.fname = ctx.getText(0)
-
-  for i in 0 ..< ctx.numKids(1):
-    result.actuals.add(ctx.downNode(1, i))
-
-proc convertUseStmt(ctx: var CompileCtx): IrNode =
-  result                       = ctx.irNode(IrUse)
-  result.contents.targetModule = ctx.getText(0)
-  if ctx.numKids() == 2:
-    result.contents.targetLoc = ctx.getText(1)
-
-proc convertUnaryOp(ctx: var CompileCtx): IrNode =
-  result               = ctx.irNode(IrUnary)
-  result.contents.uOp  = ctx.getText()
-  result.contents.uRhs = ctx.downNode(0)
-
-const notFloatOps = ["shl", "shr", "and", "or", "xor", "div", "%"]
-
-template binOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.binOp == o:
-    cc.fname = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.contents = cc
-
-template boolOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.binOp == o:
-    cc.fname = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.contents = cc
-    n.tid = TBool
-
-proc replaceBinOpWithCall(ctx: var CompileCtx, n: IrNode) =
-  var cc = IrContents(kind: IrCall, binop: true)
-
-  ctx.binOpReplace("/", "__slash__")
-  ctx.binOpReplace("*", "__star__")
-  ctx.binOpReplace("+", "__plus__")
-  ctx.binOpReplace("-", "__minus__")
-  ctx.binOpReplace("%", "__percent__")
-  ctx.binOpReplace("shl", "__shl__")
-  ctx.binOpReplace("shr", "__shr__")
-  ctx.binOpReplace("div", "__div__")
-  ctx.binOpReplace("&", "__bitand__")
-  ctx.binOpReplace("|", "__bitor__")
-  ctx.binOpReplace("^", "__bitxor__")
-  ctx.binOpReplace("shl", "__shl__")
-  ctx.binOpReplace("shr", "__shr__")
-  ctx.boolOpReplace("<",   "__lt__")
-  ctx.boolOpReplace("<=",  "__lte__")
-  ctx.boolOpReplace(">",   "__gt__")
-  ctx.boolOpReplace(">=",  "__gte__")
-  ctx.boolOpReplace("!=",  "__ne__")
-  ctx.boolOpReplace("==",  "__eq__")
-
-proc convertBinaryOp(ctx: var CompileCtx): IrNode =
-  result          = ctx.irNode(IrBinary)
-  result.contents.bOp   = ctx.getText()
-  result.contents.bLhs  = ctx.downNode(0)
-  result.contents.bRhs  = ctx.downNode(1)
-
-  result.tid = result.bLhs.contents.tid.unify(result.bRhs.contents.tid)
-
-  if result.tid == TBottom and result.bLhs.isNumericBuiltin() and
-     result.bRhs.isNumericBuiltin():
-    result.tid = resultingNumType(result.bLhs.tid, result.bRhs.tid, warn)
-
-    if result.tid == TFloat and result.bOp in notFloatOps:
-      result.tid = TBottom
-
-  if result.tid == TBottom:
-    result.irError(BinaryOperandsNotCompatable)
-  else:
-    case result.contents.bOp
-    of "/":
-      if result.tid.isNumericBuiltin():
-        result.tid == TFloat
-      else:
-        ctx.replaceBinOpWithCall(result)
-    of "+", "-", "*":
-      if not result.tid.isNumericBuiltin():
-        ctx.replaceBinOpWithCall(result)
-    of "shl", "shr", "div", "&", "|", "^", "%":
-      if result.tid == TFloat or not result.tid.isNumericBuiltin():
-        ctx.replaceBinOpWithCall(result)
-    of ">", "<", ">=", "<=", "!=", "==":
-      result.tid = TBool
-      if not result.tid.isNumericBuiltin():
-        ctx.replaceBinOpWithCall(result)
-
-proc parseTreeToIr(ctx: var CompileCtx): IrNode =
-  case ctx.pt.kind
-  of NodeModule:
-    ctx.moduleScope.initScope()
-    ctx.findExplicitDeclarations()
-    for (name, sym) in ctx.globalScope.table.items():
-      for impl in sym.fimpls:
-        ctx.funcScope = impl.fnScope
-        ctx.pt        = impl.rawImpl
-        ctx.parent    = nil
-        ctx.parseTreeToIr() # This should be a body node.
-      if sym.pInfo != nil and sym.pinfo.defaultIr.isSome():
-        ctx.funcScope = nil
-        ctx.pt        = ctx.pinfo.defaultIr.get()
-        ctx.parent    = nil
-        ctx.parseTreeToIr() # This should be some sort of expression node.
-    result = ctx.statementsToIr()
-  of NodeBody:
-    result = ctx.statementsToIr()
-  of NodeAttrAssign:
-    result = ctx.convertAttrAssignment()
-  of NodeAttrSetLock:
-    result      = ctx.downNode(0)
-    result.lock = true
-  of NodeUnpack, NodeVarAssign:
-    result = ctx.convertVarAssignment()
-  of NodeSection:
-    result = ctx.convertSection()
-  of NodeIfStmt, NodeElifStmt:
-    result = ctx.convertConditional()
-  of NodeElseStmt:
-    result = ctx.downNode(0)
-  of NodeForStmt:
-    result = ctx.convertForStmt()
-  of NodeWhileStmt:
-    result = ctx.convertWhileStmt()
-  of NodeBreakStmt:
-    result = ctx.loopExit(true)
-  of NodeContinueStmt:
-    result = ctx.loopExit(false)
-  of NodeReturnStmt:
-    result = ctx.convertReturn()
-  of NodeType:
-    result = ctx.convertTypeLit()
-  of NodeStringLit:
-    result = ctx.convertLit(StStrQuotes)
-  of NodeIntLit:
-    result = ctx.convertLit(STBase10)
-  of NodeHexLit:
-    result = ctx.convertLit(StHex)
-  of NodeFloatLit:
-    result = ctx.convertLit(STFloat)
-  of NodeBoolLit:
-    result = ctx.convertLit(StBoolLit)
-  of NodeOtherLit:
-    result = ctx.convertLit(StOther)
-  of NodeCharLit:
-    result = ctx.convertCharLit()
-  of NodeDictLit:
-    result = ctx.convertDictLit()
-  of NodeListLit:
-    result = ctx.convertListLit()
-  of NodeTupleLit:
-    result = ctx.convertTupleLit()
-  of NodeCallbackLit:
-    result = ctx.convertCallbackLit()
-  of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt,
-     NodeMod, NodeMul, NodeDiv:
-    result = ctx.convertBinaryOp()
-  of NodePlus, NodeMinus:
-    if ctx.numKids == 2:
+    of NodeType:
+      result = ctx.convertTypeLit()
+    of NodeDictLit:
+      result = ctx.convertDictLit()
+    of NodeListLit:
+      result = ctx.convertListLit()
+    of NodeTupleLit:
+      result = ctx.convertTupleLit()
+    of NodeCallbackLit:
+      result = ctx.convertCallbackLit()
+    of NodeUseStmt:
+      result = ctx.convertUseStmt()
+    of NodeForStmt:
+      result = ctx.convertForStmt()
+    of NodeWhileStmt:
+      result = ctx.convertWhileStmt()
+    of NodeBreakStmt:
+      result = ctx.loopExit(true)
+    of NodeContinueStmt:
+      result = ctx.loopExit(false)
+    of NodeIfStmt, NodeElifStmt:
+      result = ctx.convertConditional()
+    of NodeAttrSetLock:
+      result               = ctx.downNode(0)
+      result.contents.lock = true
+    of NodeReturnStmt:
+      result = ctx.convertReturn()
+    of NodeAttrAssign:
+      discard
+      result = ctx.convertAttrAssignment()
+    of NodeSection:
+      discard
+      result = ctx.convertSection()
+    of NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt:
+      result = ctx.convertBooleanOp()
+    of NodeOr, NodeAnd:
+      result = ctx.convertLogicOp()
+    of NodeMod, NodeMul, NodeDiv, NodeBitOr, NodeBitXor, NodeBitAnd,
+       NodeShl, NodeShr:
       result = ctx.convertBinaryOp()
-    else:
+    of NodePlus, NodeMinus:
+      if ctx.numKids == 2:
+        result = ctx.convertBinaryOp()
+      else:
+        result = ctx.convertUnaryOp()
+    of NodeNot:
       result = ctx.convertUnaryOp()
-  of NodeNot:
-    result = ctx.convertUnaryOp()
-  of NodeMember:
-    result = ctx.convertMember()
-  of NodeLiteral, NodeParenExpr, NodeExpression:
-    result = ctx.downNode(0)
-  of NodeIndex:
-    result = ctx.convertIndex()
-  of NodeCall:
-    result = ctx.convertCall()
-  of NodeUseStmt:
-    result = ctx.convertUseStmt()
-  of NodeIdentifier:
-    result = ctx.downNode(0)
-  else:
-    unreachable
-]#
+    of NodeMember:
+      discard
+      result = ctx.convertMember()
+    of NodeIndex:
+      discard
+      result = ctx.convertIndex()
+    of NodeCall:
+      discard
+      result = ctx.convertCall()
+    else:
+      unreachable
 
 proc toIr*(ctx: var CompileCtx): bool {.discardable.} =
   ctx.globalScope.initScope()

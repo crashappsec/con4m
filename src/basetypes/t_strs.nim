@@ -35,7 +35,7 @@ proc constructBuf(s: string, outObj: var Mixed, st: SyntaxType):
 
 proc reprStr(id: TypeId, m: Mixed): string {.cdecl.} =
   var r = toVal[Rope](m)
-  return $r
+  return r.toUtf8()
 
 proc reprBuf(id: TypeId, m: Mixed): string {.cdecl.} =
   return hex(toVal[string](m))
@@ -48,29 +48,64 @@ proc reprUtf32(id: TypeId, m: Mixed): string {.cdecl.} =
 
   return $r
 
+proc basicStrToBool*(m: Mixed): bool {.cdecl.} =
+  let s = toVal[string](m)
+  return s.len() != 0
+
+proc ropeToBool*(m: Mixed): bool {.cdecl.} =
+  return toVal[Rope](m) != nil
+
+proc u32ToBool*(m: Mixed): bool {.cdecl.} =
+  let r = toVal[seq[Rune]](m)
+  return r.len() != 0
+
+proc strEq(a, b: CBox): bool {.cdecl.} =
+  var
+    s1 = toVal[string](a.v)
+    s2 = toVal[string](b.v)
+
+  return s1 == s2
+
+proc runeEq(a, b: CBox): bool {.cdecl.} =
+  var
+    s1 = toVal[Rune](a.v)
+    s2 = toVal[Rune](b.v)
+
+  return s1 == s2
+
 let
-  TString*   = addBasicType(name        = "string",
+  TRich*     = addBasicType(name        = "rich",
                             repr        = reprStr,
                             kind        = stdStrKind,
                             litMods     = @["r"],
-                            fromRawLit  = constructRope)
+                            castToBool  = ropeToBool,
+                            fromRawLit  = constructRope,
+                            eqFn        = pointerEq)
   TBuffer*   = addBasicType(name        = "buffer",
                             repr        = reprBuf,
                             kind        = stdStrKind,
+                            castToBool  = basicStrToBool,
                             litMods     = @["b"],
-                            fromRawLit  = constructBuf)
-  TUtf8*     = addBasicType(name        = "utf8",
+                            fromRawLit  = constructBuf,
+                            eqFn        = strEq)
+  TString*   = addBasicType(name        = "string",
                             repr        = reprUtf8,
                             kind        = stdStrKind,
+                            castToBool  = basicStrToBool,
                             litMods     = @["u"],
-                            fromRawLit  = constructUtf8)
+                            fromRawLit  = constructUtf8,
+                            eqFn        = strEq)
   TUtf32*    = addBasicType(name        = "utf32",
                             repr        = reprutf32,
                             kind        = stdStrKind,
                             litMods     = @["u32"],
-                            fromRawLit  = constructUtf32)
+                            castToBool  = u32ToBool,
+                            fromRawLit  = constructUtf32,
+                            eqFn        = runeEq)
   TPath*     = addBasicType(name        = "path",
                             repr        = reprutf8,
                             kind        = stdStrKind,
                             litMods     = @["p", "path"],
-                            fromRawLit  = constructUtf8)
+                            castToBool  = basicStrToBool,
+                            fromRawLit  = constructUtf8,
+                            eqFn        = strEq)

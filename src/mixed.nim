@@ -14,17 +14,20 @@ type
       byRef: RootRef
 
 proc toMixed*[T](item: T): Mixed =
-  when T is SomeOrdinal or T is SomeFloat or T is Rune:
+  when T is Mixed:
+    return item
+  when T is SomeOrdinal or T is SomeFloat or T is Rune or T is bool:
     result = Mixed(kind: MixedValue, byVal: cast[pointer](item))
   else:
     result = Mixed(kind: MixedReference, byRef: MixedContainer[T](item: item))
 
 proc toVal*[T](item: Mixed): T =
-  when T is SomeOrdinal or T is SomeFloat or T is Rune:
-    result = cast[T](item.byVal)
+  when T is SomeOrdinal or T is SomeFloat or T is Rune or T is bool:
+    if item.kind == MixedValue:
+      result = cast[T](item.byVal)
   else:
-    result = MixedContainer[T](item.byRef).item
-
+    if item.kind == MixedReference:
+      result = MixedContainer[T](item.byRef).item
 when isMainModule:
   let
     f = toMixed("foo bar")

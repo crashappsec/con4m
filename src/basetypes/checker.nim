@@ -32,12 +32,12 @@ proc followForwards*(x: TypeRef): TypeRef =
     return x
 
 proc isConcrete*(id: TypeId): bool =
-  return id < TypeId(0x8000000000000000'u64)
+  return id.followForwards() < TypeId(0x8000000000000000'u64)
 
 proc isConcrete*(ids: seq[TypeId]): bool =
   var combined: TypeId
   for item in ids:
-    combined = combined or item
+    combined = combined or item.followForwards()
   return combined.isConcrete()
 
 proc isConcrete*(tRef: TypeRef): bool =
@@ -45,6 +45,70 @@ proc isConcrete*(tRef: TypeRef): bool =
 
 template isGeneric*(x: untyped): bool =
   not x.isConcrete()
+
+proc isBasicType*(id: TypeId): bool =
+  let n = cast[uint](id.followForwards())
+  let l = uint(basicTypes.len())
+  if n >= l:
+    return false
+  else:
+    return true
+
+proc castToBool*(v: Mixed, t: TypeId): Option[bool] =
+  if not t.isBasicType():
+    return none(bool)
+
+  var ti = basicTypes[cast[int](t.followForwards())]
+
+  if ti.castToBool == nil:
+    return none(bool)
+
+  return some(ti.castToBool(v))
+
+proc canCastToBool*(t: TypeId): bool =
+  if not t.isBasicType():
+    return false
+
+  var ti = basicTypes[cast[int](t.followForwards())]
+
+  return not (ti.castToBool == nil)
+
+proc castToU128*(v: Mixed, t: TypeId): Option[uint128] =
+  if not t.isBasicType():
+    return none(uint128)
+
+  var ti = basicTypes[cast[int](t.followForwards())]
+
+  if ti.castToU128 == nil:
+    return none(uint128)
+  else:
+    return some(ti.castToU128(v))
+
+proc castToI128*(v: Mixed, t: TypeId): Option[int128] =
+  if not t.isBasicType():
+    return none(int128)
+
+  var ti = basicTypes[cast[int](t.followForwards())]
+
+  if ti.castToU128 == nil:
+    return none(int128)
+  else:
+    return some(ti.castToI128(v))
+
+proc rawBuiltinRepr*(tid: TypeId, m: Mixed): string {.cdecl.} =
+  var tid = tid.followForwards()
+
+  result = basicTypes[tid].repr(tid, m)
+
+proc builtinRepr*(v: Cbox): string {.cdecl.} =
+  let tid = v.t.followForwards()
+  result  = basicTypes[tid].repr(tid, v.v)
+
+proc baseValueEq*(a, b: CBox): bool {.cdecl.} =
+  let
+    t1 = a.t.followForwards()
+
+  result = basicTypes[t1].eqFn(a, b)
 
 proc typeHash*(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
                nvars: var int) =
@@ -156,7 +220,7 @@ template tByte*():     TypeRef = typeStore[TByte]
 template tFloat*():    TypeRef = typeStore[TFloat]
 template tString*():   TypeRef = typeStore[TString]
 template tBuffer*():   TypeRef = typeStore[TBuffer]
-template tUtf8*():     TypeRef = typeStore[TUtf8]
+template tRich*():     TypeRef = typeStore[TRich]
 template tUtf32*():    TypeRef = typeStore[TUtf32]
 template tDuration*(): TypeRef = typeStore[TDuration]
 template tIpv4*():     TypeRef = typeStore[TIpv4]
@@ -236,7 +300,7 @@ template newTuple*(l: seq[TypeRef]): TypeRef =
   var idSeq: seq[TypeId]
   for item in l:
     idSeq.add(item.followForwards().typeId)
-  tTuple(idSeq)
+  newContainerType(C4Tuple, idSeq)
 
 template tTuple*(l: seq[TypeId]) : TypeId =
   newContainerType(C4Tuple, l).typeId

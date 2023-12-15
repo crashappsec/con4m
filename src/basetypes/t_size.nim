@@ -57,4 +57,6 @@ let
                             repr        = repr,
                             kind        = stdOtherKind,
                             litMods     = @["size"],
-                            fromRawLit  = constructSize)
+                            castToBool  = normalSizeIntToBool,
+                            fromRawLit  = constructSize,
+                            eqFn        = basicEq)

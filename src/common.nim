@@ -78,19 +78,28 @@ type
   ContainerConstructor* = proc (i0: var TypeId, i1: var Mixed): string {.cdecl.}
   CharInitFn*           = proc (i0: uint, i1: var Mixed): string {.cdecl.}
   ReprFn*               = proc (i0: TypeId, i1: Mixed): string {.cdecl.}
+  BoolCastFn*           = proc (i0: Mixed): bool {.cdecl.}
+  U128CastFn*           = proc (i0: Mixed): uint128 {.cdecl.}
+  I128CastFn*           = proc (i0: Mixed): int128 {.cdecl.}
+  EqFn*                 = proc (i0: CBox, i2: Cbox): bool {.cdecl.}
+
   TypeId*               = uint64
   TypeInfo* = ref object
     name*:        string
     kind*:        uint
     litmods*:     seq[string]
     typeId*:      TypeId
-    fromRawLit*:  TypeConstructor
-    fromCharLit*: CharInitFn
     intBits*:     int
     signed*:      bool
     signVariant*: TypeId
     isLocked*:    bool
     repr*:        ReprFn
+    fromRawLit*:  TypeConstructor
+    fromCharLit*: CharInitFn
+    castToBool*:  BoolCastFn
+    castToU128*:  U128CastFn
+    castToI128*:  I128CastFn
+    eqFn*:        EqFn
 
   CBox* = object
     v*: Mixed
@@ -177,12 +186,13 @@ type
     NodeTypeTuple, NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeRef,
     NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg,
     NodeType, NodeParenExpr, NodeGlobalStmt, NodeVarStmt, NodeVarSymInfo,
-    NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeLabelStmt
+    NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeLabelStmt,
+    NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrSectionScope, IrConditional,
     IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUnary, IrBinary,
-    IrStoreLoc, IrLoad
+    IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection
     #IrCast
 
   IrNode* = ref object
@@ -196,6 +206,12 @@ type
     case kind*: IrNodeType
     of IrBlock:
       stmts*: seq[IrNode]
+    of IrSection:
+      prefix*:   string
+      sectName*: string
+      instance*: string
+      blk*:      IrNode
+      spec*:     SectionSpec
     of IrLoop:
       label*:      Con4mNode # Any type of loop.
       keyVar*:     string    # Both types of for loops.
@@ -206,7 +222,7 @@ type
       loopBody*:   IrNode
       scope*:      Scope
     of IrAttrAssign:
-      attrlhs*: string
+      attrlhs*: IrNode
       attrrhs*: IrNode
       lock*:    bool
     of IrVarAssign:
@@ -228,7 +244,7 @@ type
       retVal*: IrNode
     of IrLit:
       syntax*: SyntaxType
-      litmod*: string # Only for containers.
+      litmod*: string
       items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
     of IrMember:
       name*: string
@@ -242,16 +258,18 @@ type
       actuals*: seq[IrNode]
     of IrUse:
       targetModule*: string
-      targetLoc*: string
+      targetLoc*:    string
     of IrUnary:
-      uOp*: string
+      uOp*:  string
       uRhs*: IrNode
-    of IrBinary:
+    of IrBinary, IrBool, IrLogic:
       bOp*:  string
       bLhs*: IrNode
       bRhs*: IrNode
-    of IrStoreLoc, IrLoad:
+    of IrLhsLoad, IrLoad:
       symbol*: SymbolInfo
+    of IrFold, IrNop:
+      discard
 
   FormalInfo* = ref object
     name*: string
@@ -339,7 +357,6 @@ type
     doc*:              Rope
     shortdoc*:         Rope
     allowedSections*:  seq[string]
-    requiredSections*: seq[string]
 
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
@@ -352,14 +369,14 @@ type
   CompileCtx* = object
     # This is the compilation context for a single module. It includes
     # fields to support all phases; many fields are unused when the
-    # appropriate phase is done.
+    # appropriate phamse is done.
     #
     # When we cache info after a successful transformation of the thing
     # into what is essentially our byte code, we copy over only
     # what we need to keep around into the Module object.
     errors*:      seq[Con4mError]
     module*:      string
-    s*:           StringCursor      # Source
+    s*:           StringCursor      # Sourcee
     tokens*:      seq[Con4mToken]
     root*:        Con4mNode         # Parse tree root
     irRoot*:      IrNode
@@ -404,12 +421,17 @@ type
     prevNode*:       Con4mNode
 
     # Used for IR generation only.
-    pt*:          Con4mNode
-    current*:     IrNode
-    blockScopes*: seq[Scope]   # Stack of loop iteration vars.
-    lhsContext*:  bool
-    curSym*:      SymbolInfo
-
+    pt*:           Con4mNode
+    current*:      IrNode
+    blockScopes*:  seq[Scope]   # Stack of loop iteration vars.
+    lhsContext*:   bool         # To determine when this might be a def.
+    attrContext*:  bool         # True when we are def processing an attr.
+    curSym*:       SymbolInfo
+    usedModules*:  seq[(string, string)]
+    funcRefs*:     seq[(string, TypeId, IrNode)]
+    labelNode*:    Con4mNode
+    curSecPrefix*: string
+    curSecSpec*:   SectionSpec
 
 var
   basicTypes*: seq[TypeInfo]
@@ -423,17 +445,23 @@ proc unlockType*(tid: TypeId) =
   tiMap[tid].isLocked = false
 
 proc addBasicType*(name:        string,
-                   repr:        ReprFn,
                    kind:        uint,
                    litmods:     seq[string] = @[],
                    intBits:     int = 0,
                    signed:      bool = false,
+                   repr:        ReprFn,
+                   castToBool:  BoolCastFn = nil,
+                   castToU128:  U128CastFn = nil,
+                   castToI128:  I128CastFn = nil,
                    fromRawLit:  TypeConstructor = nil,
-                   fromCharLit: CharInitFn = nil): TypeId  =
+                   fromCharLit: CharInitFn = nil,
+                   eqFn:        EqFn = nil): TypeId  =
 
   var tInfo = TypeInfo(name: name, repr: repr, kind: kind, litMods: litMods,
-                       intBits: intBits, signed: signed,
-                       fromRawLit: fromRawLit, fromCharLit: fromCharLit)
+                       intBits: intBits, signed: signed, castToBool: castToBool,
+                       castToU128: castToU128, castToI128: castToI128,
+                       fromRawLit: fromRawLit, fromCharLit: fromCharLit,
+                       eqFn: eqFn)
 
   result        = TypeId(basicTypes.len())
   tinfo.typeId  = result
@@ -489,7 +517,7 @@ proc basicRepr(tid: TypeId, m: Mixed): string {.cdecl.} =
   return "error: type has no representation"
 
 let
-  TBottom* = addBasicType(name = "bottom",
+  TBottom* = addBasicType(name = "none (type error)",
                           repr = basicRepr,
                           kind = noRepr)
   TVoid*   = addBasicType(name = "void",
@@ -551,8 +579,24 @@ proc numBuiltinTypes*(): int =
 proc getTypeInfoObject*(id: TypeId): TypeInfo =
   return basicTypes[int(id)]
 
-proc isBasicType*(id: TypeId): bool =
-  return int(id) < basicTypes.len()
+proc normalSizeIntToBool*(n: Mixed): bool {.cdecl.} =
+  return toVal[uint64](n) != 0
 
-proc rawBuiltinRepr*(tid: TypeId, m: Mixed): string {.cdecl.} =
-  result = basicTypes[tid].repr(tid, m)
+proc normalSizeIntToU128*(n: Mixed): uint128 {.cdecl.} =
+  return iToU128(toVal[uint64](n))
+
+proc normalSizeIntToI128*(n: Mixed): int128 {.cdecl.} =
+  return iToI128(toVal[int64](n))
+
+proc basicEq*(a, b: CBox): bool {.cdecl.} =
+  # Only meant to work for by-value storage.
+  return toVal[int64](a.v) == toVal[int64](b.v)
+
+proc pointerEq*(a, b: CBox): bool {.cdecl.} =
+  # Should work with anything stored by reference in Nim.
+  # So NOT seqs, etc.
+  return toVal[pointer](a.v) == toVal[pointer](b.v)
+
+proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
+                                                   header: "<string.h>",
+                                                   noSideEffect.}

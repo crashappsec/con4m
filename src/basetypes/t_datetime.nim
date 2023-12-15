@@ -446,19 +446,33 @@ proc reprT(id: TypeId, m: Mixed): string {.cdecl.} =
 
   return baseDtRepr("%H:%M:%S", dt)
 
+proc dteq(a, b: CBox): bool {.cdecl.} =
+  var
+    d1 = toVal[DateTime](a.v)
+    d2 = toVal[DateTime](b.v)
+
+  let r = memcmp(cast[pointer](d1.dt),
+                 cast[pointer](d2.dt),
+                 csize_t(sizeof(Tm)))
+
+  return r == 0
+
 let
   TDateTime* = addBasicType(name        = "datetime",
                             repr        = reprDt,
                             kind        = stdOtherKind,
                             litMods     = @["datetime"],
-                            fromRawLit  = constructDateTime)
+                            fromRawLit  = constructDateTime,
+                            eqFn        = dteq)
   TDate*     = addBasicType(name        = "date",
                             repr        = reprD,
                             kind        = stdOtherKind,
                             litMods     = @["date"],
-                            fromRawLit  = constructDate)
+                            fromRawLit  = constructDate,
+                            eqfn        = dteq)
   TTime*     = addBasicType(name        = "time",
                             repr        = reprT,
                             kind        = stdOtherKind,
                             litMods     = @["time"],
-                            fromRawLit  = constructTime)
+                            fromRawLit  = constructTime,
+                            eqFn        = dteq)

@@ -63,16 +63,34 @@ proc repr6(id: TypeId, m: Mixed): string {.cdecl.} =
 
   return $(s)
 
+proc ipv4Eq(a, b: CBox): bool {.cdecl.} =
+  var
+    d1 = toVal[Ipv4](a.v)
+    d2 = toVal[Ipv4](b.v)
 
+  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Ipv4)))
+
+  return r == 0
+
+proc ipv6Eq(a, b: CBox): bool {.cdecl.} =
+  var
+    d1 = toVal[Ipv6](a.v)
+    d2 = toVal[Ipv6](b.v)
+
+  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Ipv6)))
+
+  return r == 0
 
 let
   TIPv4* = addBasicType(name        = "ipv4",
                         repr        = repr4,
                         kind        = stdOtherKind,
                         litMods     = @["ipv4", "ip"],
-                        fromRawLit  = constructIPV4)
+                        fromRawLit  = constructIPV4,
+                        eqFn        = ipv4Eq)
   TIPv6* = addBasicType(name        = "ipv6",
                         repr        = repr6,
                         kind        = stdOtherKind,
                         litMods     = @["ipv6"],
-                        fromRawLit  = constructIPV6)
+                        fromRawLit  = constructIPV6,
+                        eqFn        = ipv6Eq)

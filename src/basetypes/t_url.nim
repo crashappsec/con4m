@@ -13,9 +13,13 @@ proc constructUrl(s: string, outObj: var Mixed, st: SyntaxType):
 proc repr(x: TypeId, m: Mixed): string {.cdecl.} =
   return $(toVal[Uri](m))
 
+proc urlEqFn(a, b: CBox): bool {.cdecl.} =
+  return `$`(toVal[Uri](a.v)) == `$`(toVal[Uri](b.v))
+
 let
   TUrl* = addBasicType(name        = "url",
                        repr        = repr,
                        kind        = stdStrKind,
                        litMods     = @["url"],
-                       fromRawLit  = constructUrl)
+                       fromRawLit  = constructUrl,
+                       eqFn        = urlEqFn)

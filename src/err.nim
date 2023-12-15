@@ -107,6 +107,25 @@ const errorMsgs = [
   ("EnumDeclConst",  "Enum value assignments must be constants"),
   ("EnumInt",        "Currently, enum values may only be <em>int<em> types"),
   ("EnumReuse",      "Value <em>$1</em> has already been used in this enum."),
+  ("BinaryOpCompat", "LHS and RHS do not have compatable types " &
+                     "(lhs: <em>$1</em>; rhs: <em>$2</em>)."),
+  ("NoBoolCast",     "The condition cannot be automatically converted to " &
+                     "a true / false value; provide a specific check. " &
+                     "Type of condition is: <em>$1</em>"),
+  ("BoolAutoCast",   "This condition (of type <em>$1</em> is not a " &
+                     "boolean value, but is being auto-cast."),
+  ("TyDiffListItem", "List item type is not consistent with other items (" &
+                     "Previous items were <em>$1</em>; this is a <em>$2</em>)"),
+  ("TyDiffKey",      "Key type is not consistent with other keys (" &
+                     "Previous keys were <em>$1</em>; this is a <em>$2</em>)"),
+  ("TyDiffValue",    "Value type is not consistent with other values (" &
+                     "Previous values were <em>$1</em>; this is a " &
+                     "<em>$2</em>)"),
+  ("BadSectionType", "There isn't an allowed section type named <em>$1</em>."),
+  ("SecNotAllowed",  "A <em>$1</em> section is not allowed from within $2."),
+  ("NotASingleton",  "The <em>$1</em> section expects an instance name."),
+  ("IsASingleton",   "A <em>$1</em> section does not allow named instances;" &
+                     " there is only one unnamed section."),
   ("InternalErr1",   "Have a st entry where the parser shouldn't allow it?"),
 
  ]
@@ -178,6 +197,11 @@ template irWarn*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlWarn, extra)
 
+template irInfo*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+                w = Con4mNode(nil)) =
+  var where = if w == nil: ctx.pt else: w
+  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlInfo, extra)
+
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:
     if err.severity == LlErr:
@@ -203,7 +227,7 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
   of LlWarn:
     result.add(fgColor("warn:", "yellow").td().overflow(OTruncate))
   of LLInfo:
-    result.add(fgColor("info:", "green").td().overflow(OTruncate))
+    result.add(fgColor("info:", "atomiclime").td().overflow(OTruncate))
   of LlNone:
     unreachable
 

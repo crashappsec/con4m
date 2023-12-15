@@ -27,16 +27,7 @@ template isIntType*(t: TypeId): bool =
   let tprime = t.followForwards()
   tprime != TFloat and tprime in allNumericTypes
 
-template numTypeErr(s: Con4mSeverity, errid: string, xtra: seq[string],
-                    p = ErrIrGen) =
-  err = Con4mError(phase: p, severity: s, code: errid, extra: xtra)
-
-proc resultingNumType*(t1, t2: TypeId, err: var Con4mError): TypeId =
-  ## If this produces an error object, the location information
-  ## needs to be filled in by the caller.
-  ##
-  ## Specifically, 'module', 'line', 'offset' and 'cursor'.
-
+proc resultingNumType*(ctx: var CompileCtx, t1, t2: TypeId): TypeId =
   var
     t1  = t1.followForwards()
     t2  = t2.followForwards()
@@ -47,23 +38,23 @@ proc resultingNumType*(t1, t2: TypeId, err: var Con4mError): TypeId =
     if to1.intBits > to2.intBits:
       if not to1.signed and to2.signed:
         result = to1.signVariant
-        numTypeErr(LlWarn, "SignToUnsign", @[t1.toString()])
+        ctx.irWarn("SignToUnsign", @[t1.toString()])
       elif to1.signed and not to2.signed:
         result = t1
-        numTypeErr(LlInfo, "SignChange", @[t1.toString(), t2.toString()])
+        ctx.irInfo("SignChange", @[t1.toString(), t2.toString()])
       else:
         result = t1
     elif to2.intBits > to1.intBits:
-      return resultingNumType(t2, t1, err)
+      return ctx.resultingNumType(t2, t1)
     else:
       if to1.signed == to2.signed:
         result = t1
       else:
         if to1.signed:
-          numTypeErr(LlWarn,  "SignToUnsign", @[t2.toString()])
+          ctx.irWarn("SignToUnsign", @[t2.toString()])
           result = t1
         else:
-          numTypeErr(LlWarn,  "SignToUnsign", @[t1.toString()])
+          ctx.irWarn("SignToUnsign", @[t1.toString()])
           result = t2
   elif t1 == TFloat or t2 == TFloat:
     result = TFloat
@@ -71,22 +62,23 @@ proc resultingNumType*(t1, t2: TypeId, err: var Con4mError): TypeId =
     result = TBottom
     unreachable # Shouldn't get here
 
-proc typeError*(ctx: var CompileCtx, t1, t2: TypeId,
-               where: Con4mNode = nil) =
+proc typeError*(ctx: var CompileCtx, t1, t2: TypeId, where: Con4mNode = nil,
+                err = "TypeMismatch") =
   var where = if where == nil: ctx.pt else: where
-  ctx.irError("TypeMismatch", @[t1.toString(), t2.toString()], where)
+  ctx.irError(err, @[t1.toString(), t2.toString()], where)
 
-proc typeCheck*(ctx: var CompileCtx, t1, t2: TypeId,
-               where: Con4mNode = nil): TypeId {.discardable.} =
+proc typeCheck*(ctx: var CompileCtx, t1, t2: TypeId, where: Con4mNode = nil,
+                err = "TypeMismatch"): TypeId {.discardable.} =
 
   result = t1.unify(t2)
 
   if result == TBottom:
-    ctx.typeError(t1, t2, where)
+    ctx.typeError(t1, t2, where, err)
 
 proc typeCheck*(ctx: var CompileCtx, sym: SymbolInfo, t: TypeId,
-              where: Con4mNode = nil): TypeId {.discardable.} =
-  return ctx.typeCheck(sym.tid, t, where)
+              where: Con4mNode = nil, err = "TypeMismatch"):
+                TypeId {.discardable.} =
+  return ctx.typeCheck(sym.tid, t, where, err)
 
 proc isBuiltinType*(tid: TypeId): bool =
   return cast[int](tid.followForwards()) < basicTypes.len()

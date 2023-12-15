@@ -73,9 +73,14 @@ proc constructFloat(s: string, outObj: var Mixed, st: SyntaxType):
 proc repr(t: TypeId, m: Mixed): string {.cdecl.} =
   return $(toVal[float](m))
 
+proc floatToBool(m: Mixed): bool {.cdecl.} =
+  return toVal[float](m) != 0.0
+
 let
   TFloat* = addBasicType(name        = "float",
                          repr        = repr,
                          kind        = stdFloatKind,
                          litMods     = @["f", "float"],
-                         fromRawLit  = constructFloat)
+                         castToBool  = floatToBool,
+                         fromRawLit  = constructFloat,
+                         eqFn        = basicEq)

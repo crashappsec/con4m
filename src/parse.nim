@@ -85,10 +85,10 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeHexLit:         toPrint = n.ropeNtNamed("Hex")
   of NodeFloatLit:       toPrint = n.ropeNtNamed("Float")
   of NodeBoolLit:        toPrint = n.ropeNtNamed("Bool")
-  of NodeFuncDef:        toPrint = n.ropeNtNamed("Def")
-
+  of NodeFuncDef:        toPrint = n.ropeNtNamed("FuncDef")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
-     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
+     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+     NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
     toPrint = n.ropeNt($(n.token))
   of NodeIdentifier:   toPrint = n.ropeNtNamed("Identifier")
 
@@ -171,11 +171,10 @@ proc `$`*(n: Con4mNode): string =
   of NodeFloatLit:       "a <em>float</em> literal"
   of NodeBoolLit:        "a <em>boolean</em> literal"
   of NodeFuncDef:        "a <em>function</em> declaration"
-
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
-     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv:
+     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+     NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
     ("the <em>" & $(n.getText()) & "</em> operator")
-
   of NodeIdentifier:
     "an identifier <em>(" & $(n.getText()) & ")</em>"
 
@@ -322,6 +321,7 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
 
   proc prodName(ctx: var CompileCtx): Option[Con4mNode] =
     var res: Con4mNode
+
     if ctx.curKind() == tokenType:
       res = ctx.newNode(nodeType)
       ctx.advance()
@@ -402,8 +402,10 @@ template errBail(ctx: var CompileCtx, msg: string) =
 
 const ignore1Nl = [TtPlus, TtMinus, TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte,
                    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign,
-                   TtCmp, TtComma, TtPeriod, TtLBrace, TtLBracket,
-                   TtLParen, TtAnd, TtOr, TTFrom, TtTo, TtArrow]
+                   TtCmp, TtComma, TtPeriod, TtLBrace, TtLBracket, TtLParen,
+                   TtAnd, TtOr, TTFrom, TtTo, TtArrow, TtIn, TtBitAnd,
+                   TtBitOr, TtBitXor, TTShl, TtShr
+]
 
 const commentToks = [TtLineComment, TtLongComment]
 
@@ -570,20 +572,24 @@ template adtLiteral(literalProduction: untyped) =
     ctx.literalDepth -= 1
     ctx.nesting      -= 1
 
-exprProd(divExpr,   divExprRHS,     notExpr,   TtDiv,   NodeDiv)
-exprProd(mulExpr,   mulExprRHS,     divExpr,   TtMul,   NodeMul)
-exprProd(modExpr,   modExprRHS,     mulExpr,   TtMod,   NodeMod)
-exprProd(minusExpr, minusExprRHS,   modExpr,   TtMinus, NodeMinus)
-exprProd(plusExpr,  plusExprRHS,    minusExpr, TtPlus,  NodePlus)
-exprProd(ltExpr,    ltExprRHS,      plusExpr , TtLt,    NodeLt)
-exprProd(gtExpr,    gtExprRHS,      ltExpr,    TtGt,    NodeGt)
-exprProd(lteExpr,   lteExprRHS,     gtExpr,    TtLte,   NodeLte)
-exprProd(gteExpr,   gteExprRHS,     lteExpr,   TtGte,   NodeGte)
-exprProd(eqExpr,    eqExprRHS,      gteExpr,   TtCmp,   NodeCmp)
-exprProd(neExpr,    neExprRHS,      eqExpr,    TtNeq,   NodeNe)
-exprProd(andExpr,   andExprRHS,     neExpr,    TtAnd,   NodeAnd)
-exprProd(orExpr,    expression,     andExpr,   TtOr,    NodeOr)
-
+exprProd(shlExpr,    shlExprRHS,     notExpr,    TtShl,    NodeShl)
+exprProd(shrExpr,    shrExprRHS,     shlExpr,    TtShr,    NodeShr)
+exprProd(divExpr,    divExprRHS,     shrExpr,    TtDiv,    NodeDiv)
+exprProd(mulExpr,    mulExprRHS,     divExpr,    TtMul,    NodeMul)
+exprProd(modExpr,    modExprRHS,     mulExpr,    TtMod,    NodeMod)
+exprProd(minusExpr,  minusExprRHS,   modExpr,    TtMinus,  NodeMinus)
+exprProd(plusExpr,   plusExprRHS,    minusExpr,  TtPlus,   NodePlus)
+exprProd(ltExpr,     ltExprRHS,      plusExpr,   TtLt,     NodeLt)
+exprProd(gtExpr,     gtExprRHS,      ltExpr,     TtGt,     NodeGt)
+exprProd(lteExpr,    lteExprRHS,     gtExpr,     TtLte,    NodeLte)
+exprProd(gteExpr,    gteExprRHS,     lteExpr,    TtGte,    NodeGte)
+exprProd(eqExpr,     eqExprRHS,      gteExpr,    TtCmp,    NodeCmp)
+exprProd(binAndExpr, binAndExprRhs,  eqExpr,     TtBitAnd, NodeBitAnd)
+exprProd(binXorExpr, binXorExprRhs,  binAndExpr, TtBitXor, NodeBitXor)
+exprProd(binOrExpr,  binOrExprRhs,   binXorExpr, TtBitOr,  NodeBitOr)
+exprProd(neExpr,     neExprRHS,      binOrExpr,  TtNeq,    NodeNe)
+exprProd(andExpr,    andExprRHS,     neExpr,     TtAnd,    NodeAnd)
+exprProd(orExpr,     expression,     andExpr,    TtOr,     NodeOr)
 
 production(identifier, NodeIdentifier):
   ctx.expect(TtIdentifier, consume = true)
@@ -1337,6 +1343,7 @@ production(body, NodeBody):
         case ctx.curTok.getText()
         of "label":
           result.addKid(ctx.labelStmt())
+          continue
         of "use":
           result.addKid(ctx.useStmt())
           continue
@@ -1410,6 +1417,7 @@ production(module, NodeModule):
         case ctx.curTok.getText()
         of "label":
           result.addKid(ctx.labelStmt())
+          continue
         of "use":
           result.addKid(ctx.useStmt())
           continue
