@@ -151,7 +151,7 @@ proc printErrors*(ctx: var Module, verbose = true, ll = LlNone) =
 
 when isMainModule:
   useCrashTheme()
-  let m = loadModule("ptest.c4m")
+  let m = loadModule("ptest-tiny.c4m")
 
   if m.isSome():
     var module = m.get()
