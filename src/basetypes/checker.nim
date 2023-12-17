@@ -54,6 +54,16 @@ proc isBasicType*(id: TypeId): bool =
   else:
     return true
 
+proc intBits*(id: TypeId): int =
+  var id = id.followForwards()
+  if not id.isBasicType():
+    return 0
+  return basicTypes[cast[int](id)].intBits
+
+proc isSigned*(id: TypeId): bool =
+  var id = id.followForwards()
+  return basicTypes[cast[int](id)].signed
+
 proc castToBool*(v: Mixed, t: TypeId): Option[bool] =
   if not t.isBasicType():
     return none(bool)

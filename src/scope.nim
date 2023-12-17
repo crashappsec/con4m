@@ -1,4 +1,4 @@
-import parse, algorithm
+import parse, algorithm, strutils
 
 proc initScope*(s: var Scope) =
   s = Scope()
@@ -71,7 +71,78 @@ proc scopeDeclare*(ctx: var CompileCtx, scope: var Scope, n: string,
   sym.declaredType = true
   sym.immutable    = immutable
 
-proc addDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+proc typeFromSpec*(sec: SectionSpec, name: string): TypeId =
+  if sec == nil:
+    return TBottom
+
+  let fsOpt = sec.fields.lookup(name)
+  if fsOpt.isNone():
+    return TBottom
+
+  result = fsOpt.get().tid.copyType().typeId
+
+proc resolveSection*(ctx: var CompileCtx, n: seq[string]): SectionSpec =
+  var
+    curSpec      = ctx.curSecSpec
+    i            = 0
+
+  while i < n.len():
+    let
+      subSecName = n[i]
+      subSecOpt  = ctx.attrSpec.secSpecs.lookup(subSecName)
+
+
+    # Allowed section in cur spec?
+    if subSecName notin curSpec.allowedSections:
+      if subSecOpt.isSome():
+        ctx.irError("SecNotAllowed", @[subSecName, curSpec.name])
+      else:
+        ctx.irError("NotASection", @[subSecName])
+
+    if subSecOpt.isNone():
+      if curSpec != nil and not curSpec.singleton and i != 0:
+        if n[i - 1] in curSpec.allowedSections:
+          ctx.irError("4gotObjName?", @[subSecName, n[i - 1]])
+          return nil
+      ctx.irError("NotASection", @[subSecName])
+      return nil
+
+    i += 1
+
+    curSpec = subSecOpt.get()
+    if not curSpec.singleton:
+      if i == n.len():
+        ctx.irError("NotASingleton", @[subSecName])
+        return nil
+      i += 1
+
+  return curSpec
+
+proc addAttrDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+                 tid = TBottom): Option[SymbolInfo] =
+  var
+    sym: SymbolInfo
+    sec: SectionSpec
+    parts = name.split(".")
+    tid = tid
+
+
+  if ctx.curSecSpec != nil:
+    if parts.len() > 1:
+      sec = ctx.resolveSection(parts[0 ..< 1])
+    else:
+      sec = ctx.curSecSpec
+
+    if sec != nil and tid != TBottom:
+      let expectedType = sec.typeFromSpec(parts[^1])
+      tid = tid.unify(expectedType)
+      if tid == TBottom:
+        ctx.irError("TypeVsSpec", @[tid.toString(), expectedType.toString()])
+
+  result = ctx.lookupOrAdd(ctx.usedAttrs, name, false, tid)
+
+
+proc addVarDef*(ctx: var CompileCtx, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   ## This is the interface for *variables* used on the LHS. It should
   ## *not* be called during an explicit definition via `global` or
@@ -88,9 +159,10 @@ proc addDef*(ctx: var CompileCtx, name: string, loc: IRNode,
   ## 4. Block scope for loop index variables only.
   ## 5. Attribute scopes.
   ##
-  ## While we get told when we're in an attribute scope lhs
-  ## (the assignment operator is : or =), we do want to
-  ## be intelligent when people fat-finger this.
+  ## While we get told when we're in an attribute scope lhs (the
+  ## assignment operator is : or =), we do want to be intelligent when
+  ## people fat-finger this (which leads to this function getting
+  ## called instead of addAttrDef).
   ##
   ## To that end, if there's an attr spec available, we do not allow
   ## assigning to variable names if they would conflict with an
@@ -193,6 +265,7 @@ proc addDef*(ctx: var CompileCtx, name: string, loc: IRNode,
   ## this only looks up SymVars.
 
   var sym: SymbolInfo
+
 
   for scope in ctx.blockScopes:
     if scope.table.lookup(name).isSome():

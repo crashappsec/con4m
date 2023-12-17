@@ -81,6 +81,7 @@ let
                          repr        = repr,
                          kind        = stdFloatKind,
                          litMods     = @["f", "float"],
+                         signed      = true,
                          castToBool  = floatToBool,
                          fromRawLit  = constructFloat,
                          eqFn        = basicEq)

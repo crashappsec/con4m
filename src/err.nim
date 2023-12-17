@@ -126,8 +126,25 @@ const errorMsgs = [
   ("NotASingleton",  "The <em>$1</em> section expects an instance name."),
   ("IsASingleton",   "A <em>$1</em> section does not allow named instances;" &
                      " there is only one unnamed section."),
+  ("SecNotAllowed",  "The section type <em>$1</em> does not allow the " &
+                     "section type <em>$2</em> in its contents."),
+  ("NotASection",    "The specification doesn't have a defined section type " &
+                     "named <em>$1</em>"),
+  ("4gotObjName?",   "$1 appeared where a section name was expected, which " &
+                     "is not a valid section name here. But the previous " &
+                     "object name, <em>$2</em> would be a valid section " &
+                     "here. This means you probably forgot an object name."),
+  ("TypeVsSpec",     "The type of this use (<em>$1</em>) is not compatible " &
+                     "with the specified type (<em>$2</em>)"),
+  ("UnsignedUMinus", "Unary minus would turn an unsigned value to a signed " &
+                     "value; cast either to the same size (which you " &
+                     "shouldn't do if the int value might be larger than the " &
+                     "highest signed value), or cast to the next size up if " &
+                     "possible."),
+  ("128BitLimit",    "$1 is not currently supported for 128-bit integers."),
+  ("U64Div",         "Division producing a float isn't currently defined for " &
+                     "unsigned 64-bit integers."),
   ("InternalErr1",   "Have a st entry where the parser shouldn't allow it?"),
-
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,

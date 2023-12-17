@@ -155,7 +155,7 @@ when isMainModule:
 
   if m.isSome():
     var module = m.get()
-    module.printTokens()
+    #module.printTokens()
     module.printParseTree()
     module.printIr()
     module.printErrors()

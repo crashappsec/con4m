@@ -191,8 +191,8 @@ type
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrSectionScope, IrConditional,
-    IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUnary, IrBinary,
-    IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection
+    IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUMinus, IrNot,
+    IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection
     #IrCast
 
   IrNode* = ref object
@@ -259,8 +259,7 @@ type
     of IrUse:
       targetModule*: string
       targetLoc*:    string
-    of IrUnary:
-      uOp*:  string
+    of IrNot, IrUminus:
       uRhs*: IrNode
     of IrBinary, IrBool, IrLogic:
       bOp*:  string

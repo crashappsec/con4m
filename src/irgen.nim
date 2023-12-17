@@ -207,8 +207,10 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("Call", descriptor, moreinfo, ctx.tid), ctx.contents.actuals)
   of IrUse:
     return (fmt("Use", ctx.contents.targetModule, ctx.contents.targetLoc), @[])
-  of IrUnary:
-    return (fmt("UnaryOp", ctx.contents.uOp, "", ctx.tid), @[ctx.contents.uRhs])
+  of IrUminus:
+    return (fmt("Uminus", "", "", ctx.tid), @[ctx.contents.uRhs])
+  of IrNot:
+    return (fmt("Not"), @[ctx.contents.uRhs])
   of IrBinary:
     return (fmt("BinaryOp", ctx.contents.bOp, "", ctx.tid),
             @[ctx.contents.bLhs, ctx.contents.bRhs])
@@ -290,6 +292,8 @@ template parseGrandKid(ctx: var CompileCtx, i, j: int): Con4mNode =
   ctx.pt.children[i].children[j]
 
 proc isConstant*(n: IrNode): bool =
+  # Doesn't capture everything that's constant, just things we
+  # are currently folding.
   return n.tid != TBottom and n.tid.isBuiltinType() and n.value.isSome()
 
 const
@@ -360,7 +364,7 @@ proc convertIdentifier(ctx: var CompileCtx): IrNode =
       name = ctx.curSecPrefix & "." & name
 
     result = ctx.irNode(IrLhsLoad)
-    stOpt  = ctx.addDef(name, result, tVar())
+    stOpt  = ctx.addVarDef(name, result, tVar())
   else:
     result = ctx.irNode(IrLoad)
     stOpt = ctx.addUse(name, result, tVar())
@@ -390,8 +394,10 @@ proc convertMember(ctx: var CompileCtx): IrNode =
 
   result.contents.name = parts.join(".")
 
-  if ctx.attrContext and ctx.curSecPrefix != "":
-    result.contents.name = ctx.curSecPrefix & "." & result.contents.name
+  if ctx.attrContext:
+    if ctx.curSecPrefix != "":
+      result.contents.name = ctx.curSecPrefix & "." & result.contents.name
+    discard ctx.addAttrDef(result.contents.name, result, result.tid)
 
 proc convertVarAssignment(ctx: var CompileCtx): IrNode =
   var
@@ -977,12 +983,91 @@ proc convertReturn(ctx: var CompileCtx): IrNode =
   if ctx.numKids() == 1:
     let rv = ctx.downNode(0)
     result.contents.retVal = rv
-    discard ctx.addDef("result", result, rv.tid)
+    discard ctx.addVarDef("result", result, rv.tid)
 
-proc convertUnaryOp(ctx: var CompileCtx): IrNode =
-  result               = ctx.irNode(IrUnary)
-  result.contents.uOp  = ctx.getText()
+proc convertUnaryPlus(ctx: var CompileCtx): IrNode =
+  result = ctx.downNode(0)
+
+proc foldI128(n: IrNode, value: int128, tid: TypeId) =
+  case tid.intBits()
+  of 8:
+    fold[int8](n, i128toI8(value))
+  of 16:
+    fold[int16](n, i128toI16(value))
+  of 32:
+    fold[int32](n, i128toI32(value))
+  of 64:
+    fold[int64](n, i128toI64(value))
+  of 128:
+    fold[int128](n, value)
+  else:
+    unreachable
+
+
+proc foldU128(n: IrNode, value: uint128, tid: TypeId) =
+  case tid.intBits()
+  of 8:
+    fold[uint8](n, u128toU8(value))
+  of 16:
+    fold[uint16](n, u128toU16(value))
+  of 32:
+    fold[uint32](n, u128toU32(value))
+  of 64:
+    fold[uint64](n, u128toU64(value))
+  of 128:
+    fold[uint128](n, value)
+  else:
+    unreachable
+
+proc convertUnaryMinus(ctx: var CompileCtx): IrNode =
+  result               = ctx.irNode(IrUMinus)
   result.contents.uRhs = ctx.downNode(0)
+  result.tid           = result.contents.uRhs.tid
+
+  if not result.tid.isBasicType() or (not result.tid.isIntType() and
+                                       result.tid != TFloat):
+    var cc = IrContents(kind: IrCall, binop: true)
+    cc.actuals = @[result.contents.uRhs]
+    let sig = tFunc(@[result.tid, result.tid])
+    ctx.funcRefs.add(("__uminus__", sig, result))
+    result.contents = cc
+  else:
+    if result.tid.isSigned() == false:
+      ctx.irError("UnsignedUminus")
+    elif result.contents.uRhs.isConstant():
+      if result.tid.isIntType():
+        let
+          rhs = result.contents.uRhs
+          v   = rhs.value.get().castToI128(rhs.tid).get()
+          neg = itoI128(-1) * v
+
+        foldI128(result, neg, result.tid)
+      else:
+        let
+          rhs = result.contents.uRhs
+          v   = toVal[float](rhs.value.get())
+        fold[float](result, -v)
+
+proc convertNotOp(ctx: var CompileCtx): IrNode =
+  print ctx.pt.toRope()
+  result               = ctx.irNode(IrNot)
+  result.contents.uRhs = ctx.downNode(0)
+  result.tid           = TBool
+
+  if result.contents.uRhs.tid.canCastToBool():
+    if result.contents.uRhs.isConstant():
+      # 2. call castToBool
+      # 3. call fold
+      let
+        box = result.contents.uRhs.value.get()
+        v   = castToBool(box, result.contents.uRhs.tid).get()
+      result.fold(not v)
+  else:
+    var cc = IrContents(kind: IrCall, binop: true)
+    cc.actuals = @[result.contents.uRhs]
+    let sig = tFunc(@[result.contents.uRhs.tid, TBool])
+    ctx.funcRefs.add(("__not__", sig, result))
+    result.contents = cc
 
 const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
 
@@ -1052,10 +1137,72 @@ proc convertBooleanOp(ctx: var CompileCtx): IrNode =
 
   if operandType == TBottom:
     ctx.irError("BinaryOpCompat", @[bLhs.tid.toString(), bRhs.tid.toString()])
-  else:
-    result.tid = TBool
-    if not operandType.isNumericBuiltin():
-      ctx.replaceBoolOpWithCall(result)
+
+  if not operandType.isNumericBuiltin():
+    ctx.replaceBoolOpWithCall(result)
+
+  elif bLhs.isConstant() and bRhs.isConstant():
+
+    if operandType.isIntType():
+      if result.tid.isSigned():
+        let
+          v1: int128 = bLhs.value.get().castToI128(bLhs.tid).get()
+          v2: int128 = bRhs.value.get().castToI128(bRhs.tid).get()
+        case result.contents.bOp
+        of "<":
+          result.fold(int128_t.`<`(v1, v2))
+        of ">":
+          result.fold(int128_t.`>`(v1, v2))
+        of "<=":
+          result.fold(int128_t.`<=`(v1, v2))
+        of ">=":
+          result.fold(int128_t.`>=`(v1, v2))
+        of "==":
+          result.fold(int128_t.`eq`(v1, v2))
+        of "!=":
+          result.fold(int128_t.`neq`(v1, v2))
+        else:
+          unreachable
+      else:
+        let
+          v1 = bLhs.value.get().castToU128(bLhs.tid).get()
+          v2 = bRhs.value.get().castToU128(bRhs.tid).get()
+        case result.contents.bOp
+        of "<":
+          result.fold(int128_t.`<`(v1, v2))
+        of ">":
+          result.fold(int128_t.`>`(v1, v2))
+        of "<=":
+          result.fold(int128_t.`<=`(v1, v2))
+        of ">=":
+          result.fold(int128_t.`>=`(v1, v2))
+        of "==":
+          result.fold(int128_t.`eq`(v1, v2))
+        of "!=":
+          result.fold(int128_t.`neq`(v1, v2))
+        else:
+          unreachable
+    else:
+      let
+        v1 = toVal[float](bLhs.value.get())
+        v2 = toVal[float](bRhs.value.get())
+      case result.contents.bOp
+      of "<":
+        result.fold(v1 < v2)
+      of ">":
+        result.fold(v1 > v2)
+      of "<=":
+        result.fold(v1 <= v2)
+      of ">=":
+        result.fold(v1 >= v2)
+      of "==":
+        result.fold(v1 == v2)
+      of "!=":
+        result.fold(v1 != v2)
+      else:
+        unreachable
+
+  result.tid = TBool
 
 proc convertBinaryOp(ctx: var CompileCtx): IrNode =
   result                = ctx.irNode(IrBinary)
@@ -1082,16 +1229,141 @@ proc convertBinaryOp(ctx: var CompileCtx): IrNode =
   else:
     case result.contents.bOp
     of "/":
-      if result.tid.isNumericBuiltin():
-        result.tid = TFloat
+      if bLhs.tid.intBits() == 128 or bRhs.tid.intBits() == 128:
+        ctx.irError("128BitLimit", @["Float division"])
+      elif bLhs.tid == TUint or bRhs.tid == TUint:
+        ctx.irError("U64Div")
       else:
-        ctx.replaceBinOpWithCall(result)
+        if result.tid.isNumericBuiltin():
+          if bLhs.isConstant() and bRhs.isConstant():
+            # This will currently be set to an int if the operands
+            # were ints; we override it for division below. Thus,
+            # we can just do this one check.
+            if result.tid == TFloat:
+              var lhf, rhf: float
+
+              if bLhs.tid == TFloat:
+                lhf = toVal[float](bLhs.value.get())
+              else:
+                let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
+                lhf        = float(i128ToI64(asI128))
+
+              if bRhs.tid == TFloat:
+                rhf = toVal[float](bRhs.value.get())
+              else:
+                let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
+                rhf = float(i128ToI64(asI128))
+
+              result.fold(lhf / rhf)
+            let
+              l128 = bLhs.value.get().castToI128(bLhs.tid).get()
+              r128 = bLhs.value.get().castToI128(bRhs.tid).get()
+              l    = i128ToI64(l128)
+              r    = i128ToI64(r128)
+            result.fold(l / r)
+          result.tid = TFloat
+        else:
+          ctx.replaceBinOpWithCall(result)
     of "+", "-", "*":
       if not result.tid.isNumericBuiltin():
         ctx.replaceBinOpWithCall(result)
+      elif bLhs.isConstant() and bRhs.isConstant():
+        if result.tid == TFloat:
+          var lhf, rhf: float
+
+          if bLhs.tid == TFloat:
+            lhf = toVal[float](bLhs.value.get())
+          else:
+            let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
+            lhf = float(i128ToI64(asI128))
+          if bRhs.tid == TFloat:
+            rhf = toVal[float](bRhs.value.get())
+          else:
+            let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
+            rhf = float(i128ToI64(asI128))
+
+          case result.contents.bOp
+          of "+":
+            result.fold(lhf + rhf)
+          of "-":
+            result.fold(lhf - rhf)
+          of "*":
+            result.fold(lhf * rhf)
+          else:
+            unreachable
+        elif result.tid.isSigned():
+          let
+            l128 = bLhs.value.get().castToI128(bLhs.tid).get()
+            r128 = bRhs.value.get().castToI128(bRhs.tid).get()
+          case result.contents.bOp
+          of "+":
+            result.foldI128(int128_t.`+`(l128, r128), result.tid)
+          of "-":
+            result.foldI128(int128_t.`-`(l128, r128), result.tid)
+          of "*":
+            result.foldI128(int128_t.`*`(l128,  r128), result.tid)
+          else:
+            unreachable
+        else:
+          let
+            l128 = bLhs.value.get().castToU128(bLhs.tid).get()
+            r128 = bRhs.value.get().castToU128(bRhs.tid).get()
+          case result.contents.bOp
+          of "+":
+            result.foldU128(l128 + r128, result.tid)
+          of "-":
+            result.foldU128(l128 - r128, result.tid)
+          of "*":
+            result.foldU128(l128 * r128, result.tid)
+          else:
+            unreachable
+
     of "<<", ">>", "div", "&", "|", "^", "%":
       if result.tid == TFloat or not result.tid.isNumericBuiltin():
         ctx.replaceBinOpWithCall(result)
+      elif bLhs.isConstant() and bRhs.isConstant():
+        if result.tid.isSigned():
+          let
+            l128 = bLhs.value.get().castToI128(bLhs.tid).get()
+            r128 = bRhs.value.get().castToI128(bRhs.tid).get()
+          case result.contents.bop
+               of "<<":
+                 result.foldI128(l128 shl r128, result.tid)
+               of ">>":
+                 result.foldI128(l128 shr r128, result.tid)
+               of "div":
+                 result.foldI128(l128 div r128, result.tid)
+               of "&":
+                 result.foldI128(l128 and r128, result.tid)
+               of "|":
+                 result.foldI128(l128 or r128, result.tid)
+               of "^":
+                 result.foldI128(l128 xor r128, result.tid)
+               of "%":
+                 result.foldI128(l128 mod r128, result.tid)
+               else:
+                 unreachable
+        else:
+          let
+            l128 = bLhs.value.get().castToU128(bLhs.tid).get()
+            r128 = bRhs.value.get().castToU128(bRhs.tid).get()
+          case result.contents.bop
+               of "<<":
+                 result.foldU128(l128 shl r128, result.tid)
+               of ">>":
+                 result.foldU128(l128 shr r128, result.tid)
+               of "div":
+                 result.foldU128(l128 div r128, result.tid)
+               of "&":
+                 result.foldU128(l128 and r128, result.tid)
+               of "|":
+                 result.foldU128(l128 or r128, result.tid)
+               of "^":
+                 result.foldU128(l128 xor r128, result.tid)
+               of "%":
+                 result.foldU128(l128 mod r128, result.tid)
+               else:
+                 unreachable
     else:
       unreachable
 
@@ -1266,13 +1538,18 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode =
     of NodeMod, NodeMul, NodeDiv, NodeBitOr, NodeBitXor, NodeBitAnd,
        NodeShl, NodeShr:
       result = ctx.convertBinaryOp()
-    of NodePlus, NodeMinus:
+    of NodePlus:
       if ctx.numKids == 2:
         result = ctx.convertBinaryOp()
       else:
-        result = ctx.convertUnaryOp()
+        result = ctx.convertUnaryPlus()
+    of NodeMinus:
+      if ctx.numKids == 2:
+        result = ctx.convertBinaryOp()
+      else:
+        result = ctx.convertUnaryMinus()
     of NodeNot:
-      result = ctx.convertUnaryOp()
+      result = ctx.convertNotOp()
     of NodeMember:
       discard
       result = ctx.convertMember()

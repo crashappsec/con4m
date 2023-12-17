@@ -295,6 +295,34 @@ template production(prodName: untyped,
 
     errs = ctx.errors
 
+template idStmtProd(prodName: untyped, nodeType: Con4mNodeKind,
+                    prodImpl: untyped) {.dirty.} =
+  proc `prodName`(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
+    result = ctx.newNode(nodeType)
+    result.addKid(lhs)
+    prodImpl
+
+  proc `parse prodName`*(ctx: var CompileCtx): bool =
+    if ctx.tokens.len() == 0:
+      if not ctx.lex():
+        return false
+
+    let x = ctx.expression()
+    ctx.root = ctx.`prodName`(x)
+
+    return ctx.errors.canProceed()
+
+  proc `parse prodName`*(s: string, errs: var seq[Con4mError],
+                         module = ""): Con4mNode =
+    var ctx: CompileCtx
+    ctx.s      = s.newStringCursor()
+    ctx.module = module
+
+    if ctx.`parse prodName`():
+      result =  ctx.root
+
+    errs = ctx.errors
+
 template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
   proc prodName(ctx: var CompileCtx): Option[Con4mNode]
 
@@ -302,22 +330,13 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
     var n = ctx.expressionStart()
     while true:
       let optExpr = ctx.prodName()
-      if optExpr.isSome():
-        var r = optExpr.get()
-        if len(r.children) == 0:
-          ctx.errSkipStmt("ExprStart", @[$(r.token)])
-        case len(n.children)
-        of 0:
-          if r.kind notin [NodePlus, NodeMinus, NodeNot]:
-            ctx.errSkipStmt("ExprStart", @[$(r.token)])
-          n = r
-        else:
-          if r.kind == NodeNot:
-            ctx.errSkipStmt("BinaryNot")
-          r.children = @[n, r.children[0]]
-          n = r
-      else:
+      if optExpr.isNone():
         return n
+      else:
+        var r = optExpr.get()
+        if n != nil:
+          r.children = @[n] & r.children
+        n = r
 
   proc prodName(ctx: var CompileCtx): Option[Con4mNode] =
     var res: Con4mNode
@@ -466,7 +485,7 @@ proc curTok(ctx: var CompileCtx): Con4mToken =
 
     ctx.curTokIx += 1
 
-  return ctx.tokAt(ctx.curTokIx)
+  result = ctx.tokAt(ctx.curTokIx)
 
 template curKind(ctx: var CompileCtx): Con4mTokenKind =
   ctx.curTok().kind
@@ -589,7 +608,27 @@ exprProd(binXorExpr, binXorExprRhs,  binAndExpr, TtBitXor, NodeBitXor)
 exprProd(binOrExpr,  binOrExprRhs,   binXorExpr, TtBitOr,  NodeBitOr)
 exprProd(neExpr,     neExprRHS,      binOrExpr,  TtNeq,    NodeNe)
 exprProd(andExpr,    andExprRHS,     neExpr,     TtAnd,    NodeAnd)
-exprProd(orExpr,     expression,     andExpr,    TtOr,     NodeOr)
+exprProd(orExpr,     orExprRhs,      andExpr,    TtOr,     NodeOr)
+
+proc expression(ctx: var CompileCtx): Con4mNode =
+  let
+    expr   = ctx.expressionStart()
+    rhsOpt = ctx.orExpr()
+
+  if rhsOpt.isSome():
+    result = rhsOpt.get()
+    if expr != nil:
+      result.children = @[expr] & result.children
+    while true:
+      let optExpr = ctx.orExpr()
+      if optExpr.isNone():
+        return
+      else:
+        var r = optExpr.get()
+        r.children = @[result] & r.children
+        result = r
+  else:
+    return expr
 
 production(identifier, NodeIdentifier):
   ctx.expect(TtIdentifier, consume = true)
@@ -801,37 +840,13 @@ production(accessExpr, NodeIdentifier):
     else:
       return
 
-proc notExprRHS(ctx: var CompileCtx): Con4mNode =
-    var n = ctx.expressionStart()
-    while true:
-      let optExpr = ctx.divExpr()
-      if optExpr.isSome():
-        var r = optExpr.get()
-        if len(r.children) == 0:
-          ctx.errSkipStmt("ExprStart", @[$(r.token)])
-        case len(n.children)
-        of 0:
-          if r.kind notin [NodePlus, NodeMinus, NodeNot]:
-            ctx.errSkipStmt("ExprStart", @[$(r.token)])
-        else:
-          if r.kind == NodeNot:
-            ctx.errSkipStmt("BinaryNot")
-          r.children = @[n, r.children[0]]
-          n = r
-      else:
-        return n
-
 proc notExpr(ctx: var CompileCtx): Option[Con4mNode] =
   case ctx.curKind()
   of TtNot:
     var res = ctx.newNode(NodeNot)
     ctx.advance()
-    res.addKid(ctx.notExprRHS())
+    res.addKid(ctx.expression())
     return some(res)
-  of TtIdentifier:
-    print getStackTrace()
-    result = some(ctx.accessExpr())
-    print result.get().toRope()
   else:
     return
 
@@ -898,7 +913,7 @@ production(expressionStart, NodeExpression):
     # empty string for the LHS; For TtPlus and TtMinus, the proper
     # production below us will need to tease out whether it's a unary
     # or binary. And TtNot needs to reject when there's a lhs.
-    discard
+    return nil
   else:
     ctx.errSkipStmtNoBackup("ExprStart", @[$ctx.curTok()])
 
@@ -919,34 +934,26 @@ production(enumStmt, NodeEnumStmt):
     else:
       ctx.advance()
 
-production(attrAssign, NodeAttrAssign):
-  var child = ctx.identifier()
-
-  if ctx.curKind() == TtPeriod:
-    child = ctx.memberExpr(child)
-
-  let op = ctx.consume()
-  case op.kind
-  of TtAttrAssign, TtColon:
-    result.token = op
-  else:
-    ctx.errSkipStmt("NotAttrAssign")
-
-  result.addKid(child)
+idStmtProd(attrAssign, NodeAttrAssign):
+  ctx.advance()
   result.addKid(ctx.expression())
-
   ctx.endOfStatement()
 
 production(lockAttr, NodeAttrSetLock):
   ctx.advance()
   if ctx.curKind() != TtIdentifier:
     ctx.errSkipStmt("BadLock")
-  result.addKid(ctx.attrAssign())
+  let x = ctx.expression()
+  case ctx.curKind()
+  of TtColon, TtAttrAssign:
+    ctx.advance()
+    result.addKid(ctx.attrAssign(x))
+  else:
+    ctx.errSkipStmt("BadLock")
 
 production(elseStmt, NodeElseStmt):
   ctx.advance()
   result.addKid(ctx.body())
-
 
 production(elifStmt, NodeElifStmt):
   ctx.advance()
@@ -1238,20 +1245,9 @@ production(parameterBlock, NodeParamBlock):
     ctx.errBail("BadParamName")
   result.addKid(ctx.optionalBody())
 
-production(varAssign, NodeVarAssign):
-  result.addKid(ctx.identifier())
-  # The := has already been validated by the caller checking lookahead.
+idStmtProd(varAssign, NodeVarAssign):
+  # The := has already been validated by the caller.
   ctx.advance()
-  result.addKid(ctx.expression())
-  ctx.endOfStatement()
-
-production(unpack, NodeUnpack):
-  result.addKid(ctx.identifier())
-  while ctx.curKind() == TtComma:
-    ctx.advance()
-    result.addKid(ctx.identifier)
-
-  ctx.expect(TtLocalAssign, consume = true)
   result.addKid(ctx.expression())
   ctx.endOfStatement()
 
@@ -1261,9 +1257,7 @@ production(optionalBody, NodeBody):
   else:
     ctx.endOfStatement()
 
-production(section, NodeSection):
-  result.addKid(ctx.identifier())
-
+idStmtProd(section, NodeSection):
   if ctx.curKind() == TtStringLit:
     result.addKid(ctx.stringLit())
   elif ctx.curKind() == TtIdentifier:
@@ -1310,35 +1304,45 @@ production(body, NodeBody):
         return
       of TtSemi, TtNewline:
         ctx.advance()
+        continue
       of TtEnum, TtFunc:
         ctx.errSkipStmtNoBackup("TopLevelOnly", @[$(ctx.curKind())])
       of TtLockAttr:
-        result.addKid(ctx.attrAssign())
+        result.addKid(ctx.attrAssign(ctx.expression()))
+        continue
       of TtIf:
         result.addKid(ctx.ifStmt())
+        continue
       of TtFor:
         result.addKid(ctx.forStmt())
+        continue
       of TtWhile:
         result.addKid(ctx.whileStmt())
+        continue
       of TtContinue:
         if not ctx.inLoop():
           ctx.errSkipStmtNoBackup("InLoopsOnly", @["continue"])
         else:
           result.addKid(ctx.continueStmt())
+        continue
       of TtBreak:
         if not ctx.inLoop():
           ctx.errSkipStmtNoBackup("InLoopsOnly", @["break"])
         else:
           result.addKid(ctx.breakStmt())
+        continue
       of TtReturn:
         if not ctx.inFunction():
           ctx.errSkipStmtNoBackup("RetOutOfFunc")
         else:
           result.addKid(ctx.returnStmt())
+        continue
       of TtVar:
         result.addKid(ctx.varStmt())
+        continue
       of TtGlobal:
         result.addKid(ctx.globalStmt())
+        continue
       of TtIdentifier:
         case ctx.curTok.getText()
         of "label":
@@ -1352,24 +1356,24 @@ production(body, NodeBody):
           continue
         else:
           discard
-
-        case ctx.lookAhead().kind
-        of TtAttrAssign, TtColon, TtPeriod:
-          result.addKid(ctx.attrAssign())
-          continue
-        of TtLocalAssign:
-          result.addKid(ctx.varAssign())
-          continue
-        of TtComma:
-          result.addKid(ctx.unpack())
-        of TtIdentifier, TtStringLit, TtLBrace:
-          result.addKid(ctx.section())
-        else:
-          result.addKid(ctx.expression())
-          ctx.endOfStatement()
       else:
-        result.addKid(ctx.expression())
+        discard
+
+      let x = ctx.expression()
+      case ctx.curKind()
+      of TtLocalAssign:
+        result.addKid(ctx.varAssign(x))
+        continue
+      of TtColon, TtAttrAssign:
+        result.addKid(ctx.attrAssign(x))
+        continue
+      of TtIdentifier, TtStringLit, TtLBrace:
+        result.addKid(ctx.section(x))
+        continue
+      else:
+        result.addKid(x)
         ctx.endOfStatement()
+        continue
     except:
       if getCurrentException().msg == "BAIL":
         raise
@@ -1391,16 +1395,22 @@ production(module, NodeModule):
         return
       of TtSemi, TtNewLine:
         ctx.advance()
+        continue
       of TtEnum:
         result.addKid(ctx.enumStmt())
+        continue
       of TtLockAttr:
-        result.addKid(ctx.attrAssign())
+        result.addKid(ctx.attrAssign(ctx.expression()))
+        continue
       of TtIf:
         result.addKid(ctx.ifStmt())
+        continue
       of TtFor:
         result.addKid(ctx.forStmt())
+        continue
       of TtWhile:
         result.addKid(ctx.whileStmt())
+        continue
       of TtContinue:
         ctx.errSkipStmt("InLoopsOnly", @["continue"])
       of TtBreak:
@@ -1409,12 +1419,15 @@ production(module, NodeModule):
         ctx.errSkipStmt("RetOutOfFunc")
       of TtFunc:
         result.addKid(ctx.funcDef())
+        continue
       of TtVar:
         result.addKid(ctx.varStmt())
+        continue
       of TtGlobal:
         result.addKid(ctx.globalStmt())
+        continue
       of TtIdentifier:
-        case ctx.curTok.getText()
+        case ctx.curTok().getText()
         of "label":
           result.addKid(ctx.labelStmt())
           continue
@@ -1426,21 +1439,23 @@ production(module, NodeModule):
           continue
         else:
           discard
-        case ctx.lookAhead().kind
-        of TtAttrAssign, TtColon, TtPeriod:
-          result.addKid(ctx.attrAssign())
-          continue
-        of TtLocalAssign, TtComma:
-          result.addKid(ctx.varAssign())
-          continue
-        of TtIdentifier, TtStringLit, TtLBrace:
-          result.addKid(ctx.section())
-        else:
-          result.addKid(ctx.expression())
-          ctx.endOfStatement()
       else:
-          result.addKid(ctx.expression())
-          ctx.endOfStatement()
+        discard
+      let x = ctx.expression()
+      case ctx.curKind()
+      of TtLocalAssign:
+        result.addKid(ctx.varAssign(x))
+        continue
+      of TtColon, TtAttrAssign:
+        result.addKid(ctx.attrAssign(x))
+        continue
+      of TtIdentifier, TtStringLit, TtLBrace:
+        result.addKid(ctx.section(x))
+        continue
+      else:
+        result.addKid(x)
+        ctx.endOfStatement()
+        continue
     except:
       if getCurrentException().msg == "BAIL":
         return
