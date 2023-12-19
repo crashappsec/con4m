@@ -4,6 +4,8 @@ var
   typeStore*:      Dict[TypeId, TypeRef]
   primitiveTypes*: Dict[string, TypeRef]
 
+proc newTypeVar*(): TypeRef
+
 proc followForwards*(id: TypeId): TypeId =
   # When we resolve generic types, we change the type ID field to
   # forward it to it's new (refined) type. Therefore, every check
@@ -13,16 +15,24 @@ proc followForwards*(id: TypeId): TypeId =
   # The stack detects recursive types; we probably should disallow
   # those, but right now, just shrugging it off.
 
-  var stack = @[id]
+  var
+    stack = @[id]
+    refs: seq[TypeRef]
+
   while true:
     let trefOpt = typeStore.lookup(stack[^1])
     if trefOpt.isNone():
       return id
     let tref = trefOpt.get()
     if tref.typeId in stack:
+      for i, item in refs:
+        item.typeId = tref.typeId
+        typeStore[stack[i]] = tref
+
       return tref.typeId
 
     stack.add(tref.typeId)
+    refs.add(tref)
 
 proc followForwards*(x: TypeRef): TypeRef =
   let optObj = typestore.lookup(x.typeId)
@@ -30,6 +40,9 @@ proc followForwards*(x: TypeRef): TypeRef =
     return typestore[x.typeId.followForwards()]
   else:
     return x
+
+template getTid*(x: TypeId): TypeId =
+  x.followForwards()
 
 proc isConcrete*(id: TypeId): bool =
   return id.followForwards() < TypeId(0x8000000000000000'u64)
@@ -249,6 +262,7 @@ proc copyType*(t: TypeId): TypeRef =
 template idToTypeRef*(t: TypeId): TypeRef =
   typeStore[t].followForwards()
 
+
 {.emit: """
 #include <stdatomic.h>
 #include <stdint.h>
@@ -462,10 +476,16 @@ proc baseunify(ref1, ref2: TypeRef): TypeId =
   ## unify succeeds, call it again on the actuals.
 
   var
-    type1 = ref1
-    type2 = ref2
-    id1   = type1.typeId.followForwards()
-    id2   = type2.typeId.followForwards()
+    type1 = ref1.followForwards()
+    type2 = ref2.followForwards()
+    id1   = type1.typeId
+    id2   = type2.typeId
+
+  if type1.typeId != ref1.typeId:
+    ref1.typeId = type1.typeId
+
+  if type2.typeId != ref2.typeId:
+    ref2.typeId = type2.typeId
 
   if id1 == id2:
     return id1
@@ -502,17 +522,22 @@ proc baseunify(ref1, ref2: TypeRef): TypeId =
     # be a type variable at this point.
     unreachable
   of C4TVar:
-    typeStore[id1] = type2
-    type1.typeId   = id2
-    return id2
+    type1.typeid = id2
+    result       = id2
   of C4List, C4Dict, C4Tuple, C4TypeSpec, C4Ref, C4Maybe:
     let l = type1.items.len()
     if l != type2.items.len():
       return TBottom
 
+    var newItems: seq[TypeId]
     for i in 0 ..< l:
-      if type1.items[i].baseunify(type2.items[i]) == TBottom:
+      let one = type1.items[i].baseunify(type2.items[i])
+      if one == TBottom:
         return TBottom
+      newItems.add(one)
+
+    type1.items = newItems
+    type2.items = newItems
 
     type1.typeid = type1.typeHash()
     id1 = type1.typeid
@@ -628,9 +653,16 @@ proc baseunify(ref1, ref2: TypeRef): TypeId =
       type1.items  = remainingItems
       type2.typeId = type1.typeId
 
-  if result != type1.typeId or typestore.lookup(type1.typeId).isNone():
-    typestore[type1.typeId] = type2
+  var resObj: TypeRef
+  if result == id1:
+    resObj = type1
+  else:
+    resObj = type2
 
+  typestore[result] = resObj
+
+  if result != type1.typeid or typestore.lookup(type1.typeid).isNone():
+    typestore[type1.typeId] = resObj
   if result != type2.typeId or typestore.lookup(type1.typeId).isNone():
     typestore[type2.typeId] = type1
 
@@ -640,6 +672,8 @@ proc baseunify(id1, id2: TypeId): TypeId =
     id2 = typeStore[id2].followForwards()
 
   return baseunify(id1, id2)
+
+proc toStr*(x: TypeRef): string {.importc, cdecl.}
 
 proc unify*(origtype1, origtype2: TypeRef): TypeId =
   var
@@ -679,7 +713,8 @@ proc unify*(origtype1, origtype2: TypeRef): TypeId =
   if copy2 and not lock2:
     type2 = origtype2
 
-  return type1.baseunify(type2)
+  result = type1.baseunify(type2)
+
 
 template unify*(t1, t2: TypeId): TypeId =
   let

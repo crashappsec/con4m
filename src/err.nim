@@ -144,7 +144,22 @@ const errorMsgs = [
   ("128BitLimit",    "$1 is not currently supported for 128-bit integers."),
   ("U64Div",         "Division producing a float isn't currently defined for " &
                      "unsigned 64-bit integers."),
-  ("InternalErr1",   "Have a st entry where the parser shouldn't allow it?"),
+  ("TupleLhs",       "When unpacking a tuple, all items on the left hand " &
+                     "side of the assignment must be valid variables, and " &
+                     "cannot currently be attributes."),
+  ("MemberTop",      "Attribute member access (.) can only be applied " &
+                     "to attributes, not to values."),
+  ("AttrLhs",        "Currently, the left hand side of the attribute " &
+                     "assignment operator can only be a named attribute."),
+  ("NDim",           "Multi-dimensional arrays are not yet supported."),
+  ("TupleConstIx",   "When indexing a tuple, the index must evaluate to " &
+                     "a constant integer."),
+  ("TupleIxBound",   "Constant index is out of bounds for the tuple being " &
+                     "indexed."),
+  ("ContainerType",  "Cannot determine the type of the container used " &
+                     "In this indexing operation (e.g., list, dict, tuple)." &
+                     " Please explicitly declare this type.")
+
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,

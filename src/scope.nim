@@ -1,5 +1,8 @@
 import parse, algorithm, strutils
 
+template getTid*(s: SymbolInfo): TypeId =
+  s.tid.followForwards()
+
 proc initScope*(s: var Scope) =
   s = Scope()
   s.table.initDict()
@@ -314,6 +317,13 @@ proc addVarDef*(ctx: var CompileCtx, name: string, loc: IRNode,
 
   sym.defs.add(loc)
 
+proc addDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+             tid = TBottom): Option[SymbolInfo] =
+  if ctx.attrContext:
+    return ctx.addAttrDef(name, loc, tid)
+  else:
+    return ctx.addVarDef(name, loc, tid)
+
 proc addUse*(ctx: var CompileCtx, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   ## Note that, when we're in a `def` context, we know for sure
@@ -372,19 +382,19 @@ proc addUse*(ctx: var CompileCtx, name: string, loc: IRNode,
   if sym == nil:
     var scope = if ctx.funcScope != nil: ctx.funcScope else: ctx.moduleScope
 
-    result = ctx.lookupOrAdd(scope, name, false, tid)
+    result = ctx.lookupOrAdd(scope, name, false, tid.followForwards())
     if result.isNone():
       return
     else:
       sym = result.get()
   elif tid != TBottom:
-    sym.tid = sym.tid.unify(tid)
+    discard sym.tid.followForwards().unify(tid.followForwards())
 
   sym.uses.add(loc)
 
 template isDeclaredRepr(v: bool): Rope =
   if v:
-    fgColor("✓", "green")
+    fgColor("✓", "atomiclime")
   else:
     fgColor("✗", "red")
 
@@ -412,10 +422,12 @@ proc toRope*(s: Scope, title = ""): Rope =
       let box = sym.constValue.get()
       # TODO: This only works for base types.  Need to build CBox to Rope
       cc = em(rawBuiltinRepr(box.t, box.v))
+    elif sym.immutable:
+      cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")
     if sym.fImpls.len() != 0:
-      isFunc = fgColor("✓", "green")
+      isFunc = fgColor("✓", "atomiclime")
 
-    cells.add(@[name.atom(), sym.tid.toRope(),
+    cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
                 sym.declaredType.isDeclaredRepr(), cc, isFunc])
 
 

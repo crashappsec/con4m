@@ -11,7 +11,7 @@
 # - Add $index and $index.label to for ... in loops, and restrict it
 #   elsewhere.
 # - Link-time checking.
-# - Deal with the rhs ambiguity.
+# - Deal with the rhs ambiguity better.
 # - REPL
 # - Execution from IR (possibly compressing IR more)
 # - Stack traces.
@@ -22,24 +22,33 @@
 # - const keyword
 # - Give names to enums / turn them into int subtypes
 # - Fold for list indexes when the length is fixed size.
-# - Swap in hatrack lists.
+# - Swap in hatrack lists (and add rings?).
 # - Add objects.
+# - Allow assignment inside var / global / const statements.
 # - Add maybe
 # - Add oneof
 # - Add ref
+# - Add 'error' to functions.
 # - Add global enum
 # - Warnings when there are naming conflicts on inputs.
 # - :: module scope operator.
+# - Components
 # - root:: and local::
+# - for x in <container>: generate a call to items() if the object is
+#   not one of the built-in types.
 # C-level interface to attributes
 # Validation routines need routines to validate their inputs.
+# Defined-but-never-used across whole program
+# Add post-IR check that const things have been assigned.
+# For dicts and lists: capture the value when possible and perform folding
+# Support litmods for containers.
+
 
 import parse, scope, cbox, strutils
 export parse, scope, cbox
 
-proc fold[T](n: IrNode, val: T) =
-  n.contents = IrContents(kind: IrFold)
-  n.value    = some(toMixed[T](val))
+template getTid*(n: untyped): TypeId =
+  n.tid.followForwards()
 
 proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
                           litMod = ""): TypeId =
@@ -91,7 +100,6 @@ proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
         of STOther:
           errType = "specialized"
         else:
-
           unreachable # Not supposed to call this w/ complex types
 
   if errType == "":
@@ -159,17 +167,11 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrAttrAssign:
     if ctx.contents.lock:
       moreinfo = "+lock"
-    return (fmt("AttrAssign", "", moreinfo, ctx.tid),
+    return (fmt("AttrAssign", "", moreinfo, ctx.getTid()),
             @[ctx.contents.attrLhs, ctx.contents.attrRhs])
   of IrVarAssign:
-    if ctx.contents.varlhs.len() > 1:
-      moreinfo = "tuple"
-    return (fmt("VarAssign", "", moreinfo, ctx.tid),
-            ctx.contents.varlhs & @[ctx.contents.varrhs])
-  of IrSectionScope:
-    descriptor = ctx.contents.secType
-    moreInfo   = ctx.contents.secName
-    return (fmt("Section", descriptor, moreInfo), @[ctx.contents.secBody])
+    return (fmt("VarAssign", "", "", ctx.getTid()),
+            @[ctx.contents.varlhs, ctx.contents.varrhs])
   of IrConditional:
     return (fmt("Conditional"), @[ctx.contents.predicate,
                                   ctx.contents.trueBranch,
@@ -185,17 +187,17 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     else:
       result = (fmt("Jump", moreinfo), @[])
   of IrRet:
-    return (fmt("Return", "", "", ctx.tid), @[ctx.contents.retVal])
+    return (fmt("Return", "", "", ctx.getTid()), @[ctx.contents.retVal])
   of IrLit:
-    if ctx.tid.isBasicType():
+    if ctx.getTid().isBasicType():
       moreinfo = ctx.reprBasicLiteral()
-    return (fmt("Literal", "", moreinfo, ctx.tid), ctx.contents.items)
+    return (fmt("Literal", "", moreinfo, ctx.getTid()), ctx.contents.items)
   of IrFold:
-    return (fmt("Folded", "", ctx.reprBasicLiteral(), ctx.tid), @[])
+    return (fmt("Folded", "", ctx.reprBasicLiteral(), ctx.getTid()), @[])
   of IrNop:
     return (fmt("Nop"), @[])
   of IrMember:
-    return (fmt("Member", ctx.contents.name, "", ctx.tid), @[])
+    return (fmt("Member", ctx.contents.name, "", ctx.getTid()), @[])
   of IrIndex:
     return (fmt("Index"), @[ctx.contents.indexStart, ctx.contents.indexEnd])
   of IrCall:
@@ -204,26 +206,27 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
       descriptor = ctx.contents.module & "::" & descriptor
     if ctx.contents.binop:
       moreinfo = "converted from op"
-    return (fmt("Call", descriptor, moreinfo, ctx.tid), ctx.contents.actuals)
+    return (fmt("Call", descriptor, moreinfo, ctx.getTid()),
+            ctx.contents.actuals)
   of IrUse:
     return (fmt("Use", ctx.contents.targetModule, ctx.contents.targetLoc), @[])
   of IrUminus:
-    return (fmt("Uminus", "", "", ctx.tid), @[ctx.contents.uRhs])
+    return (fmt("Uminus", "", "", ctx.getTid()), @[ctx.contents.uRhs])
   of IrNot:
     return (fmt("Not"), @[ctx.contents.uRhs])
   of IrBinary:
-    return (fmt("BinaryOp", ctx.contents.bOp, "", ctx.tid),
+    return (fmt("BinaryOp", ctx.contents.bOp, "", ctx.getTid()),
             @[ctx.contents.bLhs, ctx.contents.bRhs])
   of IrBool:
-    return (fmt("BooleanOp", ctx.contents.bOp, "", ctx.tid),
+    return (fmt("BooleanOp", ctx.contents.bOp, "", ctx.getTid()),
             @[ctx.contents.bLhs, ctx.contents.bRhs])
   of IrLogic:
-    return (fmt("LogicOp", ctx.contents.bOp, "", ctx.tid),
+    return (fmt("LogicOp", ctx.contents.bOp, "", ctx.getTid()),
             @[ctx.contents.bLhs, ctx.contents.bRhs])
   of IrLhsLoad:
-    return (fmt("LhsLoad", ctx.contents.symbol.name, "", ctx.tid), @[])
+    return (fmt("LhsLoad", ctx.contents.symbol.name, "", ctx.getTid()), @[])
   of IrLoad:
-    return (fmt("Load", ctx.contents.symbol.name, "", ctx.tid), @[])
+    return (fmt("Load", ctx.contents.symbol.name, "", ctx.getTid()), @[])
 
 proc toRope*(ctx: IrNode): Rope =
   if ctx == nil:
@@ -294,7 +297,8 @@ template parseGrandKid(ctx: var CompileCtx, i, j: int): Con4mNode =
 proc isConstant*(n: IrNode): bool =
   # Doesn't capture everything that's constant, just things we
   # are currently folding.
-  return n.tid != TBottom and n.tid.isBuiltinType() and n.value.isSome()
+  return n.getTid() != TBottom and n.getTid().isBuiltinType() and
+                                                       n.value.isSome()
 
 const
   ntLoops        = [ NodeForStmt, NodeWhileStmt ]
@@ -333,7 +337,7 @@ proc convertEnum*(ctx: var CompileCtx) =
         if not v.isConstant():
           ctx.irError("EnumDeclConst", w = ctx.parseKid(i))
           continue
-        if not v.tid.isIntType():
+        if not v.getTid().isIntType():
           ctx.irError("EnumInt", w = ctx.parseKid(i))
           continue
         value = toVal[int64](v.value.get())
@@ -364,14 +368,17 @@ proc convertIdentifier(ctx: var CompileCtx): IrNode =
       name = ctx.curSecPrefix & "." & name
 
     result = ctx.irNode(IrLhsLoad)
-    stOpt  = ctx.addVarDef(name, result, tVar())
+    stOpt  = ctx.addDef(name, result, tVar())
   else:
     result = ctx.irNode(IrLoad)
     stOpt = ctx.addUse(name, result, tVar())
 
   result.contents.symbol = stOpt.getOrElse(nil)
+
   if result.contents.symbol != nil:
-    result.tid = result.contents.symbol.tid
+    result.tid = result.contents.symbol.getTid()
+
+
 
 proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
   result                  = ctx.irNode(IrAttrAssign)
@@ -383,60 +390,65 @@ proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
   result.contents.attrRhs = ctx.downNode(1)
   result.tid              = tVar()
 
-  result.tid = result.tid.unify(result.contents.attrLhs.tid)
-  result.tid = result.tid.unify(result.contents.attrRhs.tid)
+  result.tid = result.getTid().unify(result.contents.attrLhs.getTid())
+  result.tid = result.getTid().unify(result.contents.attrRhs.getTid())
+
+  if result.contents.attrLhs.contents.kind notin [IrMember, IrLhsLoad]:
+    ctx.irError("AttrLhs", w = result.contents.attrLhs.parseNode)
 
 proc convertMember(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrMember)
   var parts: seq[string]
-  for kid in ctx.pt.children:
-    parts.add(kid.getText())
+  for i, kid in ctx.pt.children:
+    case kid.kind:
+    of NodeIdentifier:
+      parts.add(kid.getText())
+    else:
+      if i != ctx.pt.children.len() - 1:
+        ctx.irError("MemberTop", w = ctx.pt.children[i + 1])
+        return
+      result.contents.subaccess = ctx.downnode(i)
 
   result.contents.name = parts.join(".")
 
   if ctx.attrContext:
     if ctx.curSecPrefix != "":
       result.contents.name = ctx.curSecPrefix & "." & result.contents.name
-    discard ctx.addAttrDef(result.contents.name, result, result.tid)
+
+  let sym = ctx.addAttrDef(result.contents.name, result, tVar())
+  if sym.isSome():
+    result.contents.attrSym = sym.get()
+    result.tid              = result.contents.attrSym.getTid()
 
 proc convertVarAssignment(ctx: var CompileCtx): IrNode =
-  var
-    lhs:      seq[IrNode]
-    itemTids: seq[TypeId]
-    rhs:      IrNode
-
   result = ctx.irNode(IrVarAssign)
   ctx.lhsContext = true
-
-  for i in 0 ..< ctx.pt.children.len() - 1:
-    ctx.curSym = nil
-    let item = ctx.downNode(i)
-
-    lhs.add(item)
-    itemTids.add(item.tid)
-
+  let lhsIr = ctx.downNode(0)
   ctx.lhsContext = false
-  ctx.curSym = nil
-  rhs = ctx.downNode(ctx.pt.children.len() - 1)
+  let rhsIr = ctx.downNode(1)
 
-  if lhs.len > 1:
-    result.tid = tTuple(itemTids)
-  else:
-    result.tid = itemTids[0]
+  if lhsIr.contents.kind == IrLit:
+    for node in lhsIr.contents.items:
+      if node.contents.kind != IrLhsLoad:
+        ctx.irError("TupleLhs", w = node.parseNode)
 
-  result.tid = ctx.typeCheck(result.tid, rhs.tid)
+  result.tid = ctx.typeCheck(lhsIr.getTid(), rhsIr.getTid())
 
-  result.contents.varLhs = lhs
-  result.contents.varRhs = rhs
+  result.contents.varLhs = lhsIr
+  result.contents.varRhs = rhsIr
 
-proc extractSymInfo(ctx: var CompileCtx,
-                    scope: var Scope): SymbolInfo {.discardable.} =
+
+
+proc extractSymInfo(ctx: var CompileCtx, scope: var Scope,
+                   isConst = false): SymbolInfo {.discardable.} =
   # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
   var
     toAdd: seq[(string, TypeId)]
 
   for varNode in ctx.pt.children:
+    if varNode.kind in [NodeGlobalStmt, NodeVarStmt, NodeConstStmt]:
+      continue
     var
       varNames:  seq[string]
       foundType: TypeId = TBottom
@@ -452,18 +464,46 @@ proc extractSymInfo(ctx: var CompileCtx,
         toAdd.add((oneVarName, foundType.copyType().typeId))
 
   for i, (name, tid) in toAdd:
-    let symOpt = ctx.scopeDeclare(scope, name, false, tid)
+    let symOpt = ctx.scopeDeclare(scope, name, false, tid.getTid(), isConst)
     if i == toAdd.len() - 1 and symOpt.isSome():
       result = symOpt.get()
 
 proc convertVarStmt(ctx: var CompileCtx) =
+  var symbolsAreConst = false
+  if ctx.pt.children[^1].kind == NodeConstStmt:
+    symbolsAreConst = true
+
   if ctx.funcScope != nil:
-    ctx.extractSymInfo(ctx.funcScope)
+    ctx.extractSymInfo(ctx.funcScope, symbolsAreConst)
   else:
-    ctx.extractSymInfo(ctx.moduleScope)
+    ctx.extractSymInfo(ctx.moduleScope, symbolsAreConst)
 
 proc convertGlobalStmt(ctx: var CompileCtx) =
-  ctx.extractSymInfo(ctx.globalScope)
+  var symbolsAreConst = false
+
+  if ctx.pt.children.len() == 0:
+    return
+
+  if ctx.pt.children[^1].kind == NodeConstStmt:
+    symbolsAreConst = true
+
+  ctx.extractSymInfo(ctx.globalScope, symbolsAreConst)
+
+proc convertConstStmt(ctx: var CompileCtx) =
+  var scope: Scope
+
+  if ctx.pt.children.len() == 0:
+    return
+
+  if ctx.pt.children[^1].kind == NodeGlobalStmt:
+    scope = ctx.globalScope
+  elif ctx.funcScope == nil:
+    scope = ctx.moduleScope
+  else:
+    scope = ctx.funcScope
+
+  ctx.extractSymInfo(scope, true)
+
 
 proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
   var
@@ -507,7 +547,7 @@ proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
         let
           irNode = ctx.downNode(i, 1)
           mixed  = irNode.value.get()
-          to     = irNode.tid.idToTypeRef()
+          to     = irNode.getTid().idToTypeRef()
 
         if to.items.len() != 0:
           ctx.typeCheck(sym, to.items[^1])
@@ -558,7 +598,7 @@ proc convertFormal(info: FuncInfo, n: Con4mNode) =
   if n.children.len() == 2:
     formalInfo.tid = n.children[1].buildType()
   else:
-    formalInfo.tid = newTypeVar().typeid
+    formalInfo.tid = tVar()
 
   info.params.add(formalInfo)
 
@@ -577,9 +617,9 @@ proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
     va = true
 
   for actual in info.params:
-    actTypes.add(actual.tid)
+    actTypes.add(actual.getTid())
 
-  actTypes.add(info.retVal.tid)
+  actTypes.add(info.retVal.getTid())
 
   info.tid = tFunc(actTypes, va)
 
@@ -587,7 +627,7 @@ proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
     # From the body of the function, the named parameter collects
     # all arguments of the given type into a list. This sets the
     # ACTUAL type that we'll add to the function's symbol table.
-    info.params[^1].tid = tList(info.params[^1].tid)
+    info.params[^1].tid = tList(info.params[^1].getTid())
 
 proc handleFuncdefSymbols(ctx:   var CompileCtx,
                           info:  var FuncInfo) =
@@ -596,7 +636,7 @@ proc handleFuncdefSymbols(ctx:   var CompileCtx,
   info.fnScope.initScope()
 
   for item in info.params & @[info.retVal]:
-    discard ctx.scopeDeclare(info.fnScope, item.name, false, item.tid)
+    discard ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid())
 
   symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true, TBottom)
 
@@ -680,6 +720,8 @@ proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
       ctx.convertVarStmt()
     of NodeGlobalStmt:
       ctx.convertGlobalStmt()
+    of NodeConstStmt:
+      ctx.convertConstStmt()
     of NodeParamBlock:
       ctx.convertParamBlock()
     of NodeUseStmt:
@@ -751,7 +793,8 @@ proc statementsToIr(ctx: var CompileCtx): IrNode =
     # explicitly declared. Funcdefs and parameter blocks do need some
     # further processing, but that happens before the main body is
     # processed; this function gets called for those nodes seprately.
-    of NodeEnumStmt, NodeFuncDef, NodeParamBlock, NodeVarStmt, NodeGlobalStmt:
+    of NodeEnumStmt, NodeFuncDef, NodeParamBlock, NodeVarStmt, NodeGlobalStmt,
+         NodeConstStmt:
       continue
     else:
       discard  # An expression.
@@ -770,7 +813,7 @@ proc convertLit(ctx: var CompileCtx, st: SyntaxType): IrNode =
   result.tid = ctx.getTypeIdFromSyntax(st, lmod)
 
   if result.tid != TBottom:
-    let val = parseLiteral(cast[int](result.tid), ctx.getText(), err, st)
+    let val = parseLiteral(cast[int](result.getTid()), ctx.getText(), err, st)
     if err != "":
       ctx.irError(err)
     else:
@@ -789,7 +832,8 @@ proc convertCharLit(ctx: var CompileCtx): IrNode =
   else:
     let
       codepoint = ctx.pt.token.codepoint
-      val       = initializeCharLiteral(cast[int](result.tid), codepoint, err)
+      val       = initializeCharLiteral(cast[int](result.getTid()), codepoint,
+                                        err)
     if err != "":
       ctx.irError(err)
     else:
@@ -812,20 +856,14 @@ proc convertListLit(ctx: var CompileCtx): IrNode =
   result.contents.litmod = ctx.getLitMod()
   var
     itemType             = tVar()
-    canFold              = true
 
   for i in 0 ..< ctx.numKids:
     let oneItem = ctx.downNode(i)
-    if not oneItem.isConstant:
-      canFold = false
-    ctx.typeCheck(itemType, oneItem.tid, ctx.parseKid(i), "TyDiffListItem")
+    ctx.typeCheck(itemType, oneItem.getTid(), ctx.parseKid(i), "TyDiffListItem")
     result.contents.items.add(oneItem)
 
   if itemType != TBottom:
     result.tid = tList(itemType)
-
-  # TODO: capture the value if possible.
-  # TODO: Allow the litmod to be used here.
 
 proc convertDictLit(ctx: var CompileCtx): IrNode =
   result                 = ctx.irNode(IrLit)
@@ -834,17 +872,16 @@ proc convertDictLit(ctx: var CompileCtx): IrNode =
   var
     keyType              = tVar()
     itemType             = tVar()
-    canFold              = true
 
   for i in 0 ..< ctx.numKids():
     let oneKey = ctx.downNode(i, 0)
-    if not oneKey.isConstant:
-      canFold = false
-    ctx.typeCheck(keyType, oneKey.tid, ctx.parseGrandKid(i, 0), "TyDiffKey")
+    ctx.typeCheck(keyType, oneKey.getTid(), ctx.parseGrandKid(i, 0),
+                  "TyDiffKey")
     let oneVal = ctx.downNode(i, 1)
-    if not oneVal.isConstant:
-      canFold = false
-    ctx.typeCheck(itemType, oneVal.tid, ctx.parseGrandKid(i, 1), "TyDiffVal")
+    ctx.typeCheck(itemType, oneVal.getTid(), ctx.parseGrandKid(i, 1),
+                  "TyDiffVal")
+    result.contents.items.add(oneKey)
+    result.contents.items.add(oneVal)
 
   if itemType != TBottom:
     result.tid = tDict(keyType, itemType)
@@ -855,15 +892,12 @@ proc convertTupleLit(ctx: var CompileCtx): IrNode =
   result.contents.litmod = ctx.getLitMod()
   var
     types:    seq[TypeId]
-    canFold   = true
     gotBottom = false
 
   for i in 0 ..< ctx.numKids():
     let oneItem = ctx.downNode(i)
-    if not oneItem.isConstant:
-      canFold = false
-    types.add(oneItem.tid)
-    if oneItem.tid.followForwards() == TBottom:
+    types.add(oneItem.getTid())
+    if oneItem.getTid() == TBottom:
       gotBottom = true
     result.contents.items.add(oneItem)
 
@@ -879,32 +913,67 @@ proc convertCallbackLit(ctx: var CompileCtx): IrNode =
     var
       tvars: Dict[string, TypeId]
     cb.tid = ctx.pt.children[1].buildType(tvars)
-    result.tid = cb.tid
+    result.tid = cb.getTid()
   else:
     result.tid = tFunc(@[])
   result.value = some(cb.toMixed())
   # We wait to resolve any function reference until after functions
   # have fully inferred their types from their bodies, so that we
   # can be as accurate as possible when doing resolution.
-  ctx.funcRefs.add((cb.name, result.tid, result))
+  ctx.funcRefs.add((cb.name, result.getTid(), result))
 
 proc convertForStmt(ctx: var CompileCtx): IrNode =
+
+
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
+  var scope: Scope
+
+  scope.initScope()
+
+  result.contents.scope = scope
+  ctx.blockScopes = @[scope] & ctx.blockScopes
+
+  var
+    kt   = tVar()
+    vt   = tVar()
+    dict = false
 
   if ctx.numKids() == 3:
     result.contents.keyVar = ctx.getText(0, 0)
+
+    discard ctx.scopeDeclare(scope, result.contents.keyVar, false, kt, true)
     if ctx.numGrandKids(0) == 2:
       result.contents.valVar = ctx.getText(0, 1)
+      discard ctx.scopeDeclare(scope, result.contents.valVar, false, vt, true)
+
+
+    # Declare phantom variables.
+    discard ctx.scopeDeclare(scope, "$i", false, TInt, true)
+    if result.contents.label != nil:
+      discard ctx.scopeDeclare(scope, "$i_" & result.contents.label.getText(),
+                                              false, TInt, true)
 
     result.contents.condition = ctx.downNode(1)
+
+    if dict:
+      result.contents.condition.tid.unify(tDict(kt, vt))
+    else:
+      result.contents.condition.tid.unify(tList(kt, vt))
+
     result.contents.loopBody  = ctx.downNode(2)
   else:
     result.contents.keyVar   = ctx.getText(0, 0)
+    discard ctx.scopeDeclare(scope, result.contents.keyVar, false, kt, true)
     result.contents.startIx  = ctx.downNode(1)
     result.contents.endIx    = ctx.downNode(2)
     result.contents.loopBody = ctx.downNode(3)
+
+  if ctx.blockScopes.len() > 1:
+    ctx.blockScopes = ctx.blockScopes[1 .. ^1]
+  else:
+    ctx.blockScopes = @[]
 
 proc convertWhileStmt(ctx: var CompileCtx): IrNode =
   result                    = ctx.irNode(IrLoop)
@@ -913,20 +982,15 @@ proc convertWhileStmt(ctx: var CompileCtx): IrNode =
   result.contents.condition = ctx.downNode(0)
   result.contents.loopBody  = ctx.downNode(1)
 
-  if unify(TBool, result.contents.condition.tid) == TBottom:
-    if result.contents.condition.tid.canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[result.contents.condition.tid.toString()],
+  if unify(TBool, result.contents.condition.getTid()) == TBottom:
+    if result.contents.condition.getTid().canCastToBool():
+      ctx.irWarn("BoolAutoCast",
+                 @[result.contents.condition.getTid().toString()],
                  w = ctx.parseKid(0))
     else:
-      ctx.irError("NoBoolCast", @[result.contents.condition.tid.toString()],
+      ctx.irError("NoBoolCast",
+                  @[result.contents.condition.getTid().toString()],
                   w = ctx.parseKid(0))
-  elif result.contents.condition.isConstant():
-    let
-      valToCast = result.contents.condition.value.get()
-      val       = valToCast.castToBool(result.contents.condition.tid).get()
-
-    if not val:
-      result.contents = IrContents(kind: IrNop)
 
 proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
   result                   = ctx.irNode(IrJump)
@@ -958,165 +1022,36 @@ proc convertConditional(ctx: var CompileCtx): IrNode =
   if ctx.numKids() == 3:
     result.contents.falseBranch = ctx.downNode(2)
 
-  if unify(TBool, result.contents.predicate.tid) == TBottom:
-    if result.contents.predicate.tid.canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[result.contents.predicate.tid.toString()],
+  if unify(TBool, result.contents.predicate.getTid()) == TBottom:
+    if result.contents.predicate.getTid().canCastToBool():
+      ctx.irWarn("BoolAutoCast",
+                 @[result.contents.predicate.getTid().toString()],
                  w = ctx.parseKid(0))
     else:
-      ctx.irError("NoBoolCast", @[result.contents.predicate.tid.toString()],
+      ctx.irError("NoBoolCast",
+                  @[result.contents.predicate.getTid().toString()],
                   w = ctx.parseKid(0))
-
-  elif result.contents.predicate.isConstant():
-    let
-      valToCast = result.contents.predicate.value.get()
-      val       = valToCast.castToBool(result.contents.predicate.tid).get()
-
-    if val:
-      result.contents = result.contents.trueBranch.contents
-    elif result.contents.falseBranch != nil:
-      result.contents = result.contents.falseBranch.contents
-    else:
-      result.contents = IrContents(kind: IrNop)
 
 proc convertReturn(ctx: var CompileCtx): IrNode =
   result = ctx.irNode(IrRet)
   if ctx.numKids() == 1:
     let rv = ctx.downNode(0)
     result.contents.retVal = rv
-    discard ctx.addVarDef("result", result, rv.tid)
+    discard ctx.addVarDef("result", result, rv.getTid())
 
 proc convertUnaryPlus(ctx: var CompileCtx): IrNode =
   result = ctx.downNode(0)
 
-proc foldI128(n: IrNode, value: int128, tid: TypeId) =
-  case tid.intBits()
-  of 8:
-    fold[int8](n, i128toI8(value))
-  of 16:
-    fold[int16](n, i128toI16(value))
-  of 32:
-    fold[int32](n, i128toI32(value))
-  of 64:
-    fold[int64](n, i128toI64(value))
-  of 128:
-    fold[int128](n, value)
-  else:
-    unreachable
-
-
-proc foldU128(n: IrNode, value: uint128, tid: TypeId) =
-  case tid.intBits()
-  of 8:
-    fold[uint8](n, u128toU8(value))
-  of 16:
-    fold[uint16](n, u128toU16(value))
-  of 32:
-    fold[uint32](n, u128toU32(value))
-  of 64:
-    fold[uint64](n, u128toU64(value))
-  of 128:
-    fold[uint128](n, value)
-  else:
-    unreachable
-
 proc convertUnaryMinus(ctx: var CompileCtx): IrNode =
   result               = ctx.irNode(IrUMinus)
   result.contents.uRhs = ctx.downNode(0)
-  result.tid           = result.contents.uRhs.tid
-
-  if not result.tid.isBasicType() or (not result.tid.isIntType() and
-                                       result.tid != TFloat):
-    var cc = IrContents(kind: IrCall, binop: true)
-    cc.actuals = @[result.contents.uRhs]
-    let sig = tFunc(@[result.tid, result.tid])
-    ctx.funcRefs.add(("__uminus__", sig, result))
-    result.contents = cc
-  else:
-    if result.tid.isSigned() == false:
-      ctx.irError("UnsignedUminus")
-    elif result.contents.uRhs.isConstant():
-      if result.tid.isIntType():
-        let
-          rhs = result.contents.uRhs
-          v   = rhs.value.get().castToI128(rhs.tid).get()
-          neg = itoI128(-1) * v
-
-        foldI128(result, neg, result.tid)
-      else:
-        let
-          rhs = result.contents.uRhs
-          v   = toVal[float](rhs.value.get())
-        fold[float](result, -v)
+  result.tid           = result.contents.uRhs.getTid()
 
 proc convertNotOp(ctx: var CompileCtx): IrNode =
-  print ctx.pt.toRope()
   result               = ctx.irNode(IrNot)
   result.contents.uRhs = ctx.downNode(0)
   result.tid           = TBool
 
-  if result.contents.uRhs.tid.canCastToBool():
-    if result.contents.uRhs.isConstant():
-      # 2. call castToBool
-      # 3. call fold
-      let
-        box = result.contents.uRhs.value.get()
-        v   = castToBool(box, result.contents.uRhs.tid).get()
-      result.fold(not v)
-  else:
-    var cc = IrContents(kind: IrCall, binop: true)
-    cc.actuals = @[result.contents.uRhs]
-    let sig = tFunc(@[result.contents.uRhs.tid, TBool])
-    ctx.funcRefs.add(("__not__", sig, result))
-    result.contents = cc
-
-const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
-
-template binOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.contents.kind == IrBinary and n.contents.bOp == o:
-    cc.fname   = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.contents = cc
-
-template boolOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.contents.kind == IrBool and n.contents.bOp == o:
-    cc.fname = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.tid = TBool
-
-proc replaceBinOpWithCall(ctx: var CompileCtx, n: IrNode) =
-  var cc  = IrContents(kind: IrCall, binop: true)
-  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
-
-  ctx.binOpReplace("/",    "__slash__")
-  ctx.binOpReplace("*",    "__star__")
-  ctx.binOpReplace("+",    "__plus__")
-  ctx.binOpReplace("-",    "__minus__")
-  ctx.binOpReplace("%",    "__percent__")
-  ctx.binOpReplace("<<",   "__shl__")
-  ctx.binOpReplace(">>",   "__shr__")
-  ctx.binOpReplace("div",  "__div__")
-  ctx.binOpReplace("&",    "__bitand__")
-  ctx.binOpReplace("|",    "__bitor__")
-  ctx.binOpReplace("^",    "__bitxor__")
-  ctx.binOpReplace("shl",  "__shl__")
-  ctx.binOpReplace("shr",  "__shr__")
-
-  ctx.funcRefs.add((cc.fname, sig, n))
-  n.contents = cc
-
-proc replaceBoolOpWithCall(ctx: var CompileCtx, n: IrNode) =
-  var cc = IrContents(kind: IrCall, binop: true)
-  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, TBool])
-
-  ctx.boolOpReplace("<",   "__lt__")
-  ctx.boolOpReplace("<=",  "__lte__")
-  ctx.boolOpReplace(">",   "__gt__")
-  ctx.boolOpReplace(">=",  "__gte__")
-  ctx.boolOpReplace("!=",  "__ne__")
-  ctx.boolOpReplace("==",  "__eq__")
-
-  ctx.funcRefs.add((cc.fname, sig, n))
-  n.contents = cc
 
 proc convertBooleanOp(ctx: var CompileCtx): IrNode =
   # Comparison operators.
@@ -1129,80 +1064,19 @@ proc convertBooleanOp(ctx: var CompileCtx): IrNode =
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
 
-  var operandType = bLhs.tid.unify(bRhs.tid)
+  var operandType = bLhs.getTid().unify(bRhs.getTid())
 
-  if operandType == TBottom and bLhs.tid.isNumericBuiltin() and
-     bRhs.tid.isNumericBuiltin():
-    operandType = ctx.resultingNumType(bLhs.tid, bRhs.tid)
+  if operandType == TBottom and bLhs.getTid().isNumericBuiltin() and
+     bRhs.getTid().isNumericBuiltin():
+    operandType = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
 
   if operandType == TBottom:
-    ctx.irError("BinaryOpCompat", @[bLhs.tid.toString(), bRhs.tid.toString()])
-
-  if not operandType.isNumericBuiltin():
-    ctx.replaceBoolOpWithCall(result)
-
-  elif bLhs.isConstant() and bRhs.isConstant():
-
-    if operandType.isIntType():
-      if result.tid.isSigned():
-        let
-          v1: int128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          v2: int128 = bRhs.value.get().castToI128(bRhs.tid).get()
-        case result.contents.bOp
-        of "<":
-          result.fold(int128_t.`<`(v1, v2))
-        of ">":
-          result.fold(int128_t.`>`(v1, v2))
-        of "<=":
-          result.fold(int128_t.`<=`(v1, v2))
-        of ">=":
-          result.fold(int128_t.`>=`(v1, v2))
-        of "==":
-          result.fold(int128_t.`eq`(v1, v2))
-        of "!=":
-          result.fold(int128_t.`neq`(v1, v2))
-        else:
-          unreachable
-      else:
-        let
-          v1 = bLhs.value.get().castToU128(bLhs.tid).get()
-          v2 = bRhs.value.get().castToU128(bRhs.tid).get()
-        case result.contents.bOp
-        of "<":
-          result.fold(int128_t.`<`(v1, v2))
-        of ">":
-          result.fold(int128_t.`>`(v1, v2))
-        of "<=":
-          result.fold(int128_t.`<=`(v1, v2))
-        of ">=":
-          result.fold(int128_t.`>=`(v1, v2))
-        of "==":
-          result.fold(int128_t.`eq`(v1, v2))
-        of "!=":
-          result.fold(int128_t.`neq`(v1, v2))
-        else:
-          unreachable
-    else:
-      let
-        v1 = toVal[float](bLhs.value.get())
-        v2 = toVal[float](bRhs.value.get())
-      case result.contents.bOp
-      of "<":
-        result.fold(v1 < v2)
-      of ">":
-        result.fold(v1 > v2)
-      of "<=":
-        result.fold(v1 <= v2)
-      of ">=":
-        result.fold(v1 >= v2)
-      of "==":
-        result.fold(v1 == v2)
-      of "!=":
-        result.fold(v1 != v2)
-      else:
-        unreachable
+    ctx.irError("BinaryOpCompat",
+                @[bLhs.getTid().toString(), bRhs.getTid().toString()])
 
   result.tid = TBool
+
+const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
 
 proc convertBinaryOp(ctx: var CompileCtx): IrNode =
   result                = ctx.irNode(IrBinary)
@@ -1215,157 +1089,25 @@ proc convertBinaryOp(ctx: var CompileCtx): IrNode =
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
 
-  result.tid = bLhs.tid.unify(bRhs.tid)
+  result.tid = bLhs.getTid().unify(bRhs.getTid())
 
-  if result.tid == TBottom and bLhs.tid.isNumericBuiltin() and
-     bRhs.tid.isNumericBuiltin():
-    result.tid = ctx.resultingNumType(bLhs.tid, bRhs.tid)
+  if result.getTid() == TBottom and bLhs.getTid().isNumericBuiltin() and
+     bRhs.getTid().isNumericBuiltin():
+    result.tid = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
 
-    if result.tid == TFloat and result.contents.bOp in notFloatOps:
+    if result.getTid() == TFloat and result.contents.bOp in notFloatOps:
         result.tid = TBottom
 
-  if result.tid == TBottom:
-    ctx.irError("BinaryOpCompat", @[bLhs.tid.toString(), bRhs.tid.toString()])
-  else:
-    case result.contents.bOp
-    of "/":
-      if bLhs.tid.intBits() == 128 or bRhs.tid.intBits() == 128:
-        ctx.irError("128BitLimit", @["Float division"])
-      elif bLhs.tid == TUint or bRhs.tid == TUint:
-        ctx.irError("U64Div")
-      else:
-        if result.tid.isNumericBuiltin():
-          if bLhs.isConstant() and bRhs.isConstant():
-            # This will currently be set to an int if the operands
-            # were ints; we override it for division below. Thus,
-            # we can just do this one check.
-            if result.tid == TFloat:
-              var lhf, rhf: float
-
-              if bLhs.tid == TFloat:
-                lhf = toVal[float](bLhs.value.get())
-              else:
-                let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
-                lhf        = float(i128ToI64(asI128))
-
-              if bRhs.tid == TFloat:
-                rhf = toVal[float](bRhs.value.get())
-              else:
-                let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
-                rhf = float(i128ToI64(asI128))
-
-              result.fold(lhf / rhf)
-            let
-              l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-              r128 = bLhs.value.get().castToI128(bRhs.tid).get()
-              l    = i128ToI64(l128)
-              r    = i128ToI64(r128)
-            result.fold(l / r)
-          result.tid = TFloat
-        else:
-          ctx.replaceBinOpWithCall(result)
-    of "+", "-", "*":
-      if not result.tid.isNumericBuiltin():
-        ctx.replaceBinOpWithCall(result)
-      elif bLhs.isConstant() and bRhs.isConstant():
-        if result.tid == TFloat:
-          var lhf, rhf: float
-
-          if bLhs.tid == TFloat:
-            lhf = toVal[float](bLhs.value.get())
-          else:
-            let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
-            lhf = float(i128ToI64(asI128))
-          if bRhs.tid == TFloat:
-            rhf = toVal[float](bRhs.value.get())
-          else:
-            let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
-            rhf = float(i128ToI64(asI128))
-
-          case result.contents.bOp
-          of "+":
-            result.fold(lhf + rhf)
-          of "-":
-            result.fold(lhf - rhf)
-          of "*":
-            result.fold(lhf * rhf)
-          else:
-            unreachable
-        elif result.tid.isSigned():
-          let
-            l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-            r128 = bRhs.value.get().castToI128(bRhs.tid).get()
-          case result.contents.bOp
-          of "+":
-            result.foldI128(int128_t.`+`(l128, r128), result.tid)
-          of "-":
-            result.foldI128(int128_t.`-`(l128, r128), result.tid)
-          of "*":
-            result.foldI128(int128_t.`*`(l128,  r128), result.tid)
-          else:
-            unreachable
-        else:
-          let
-            l128 = bLhs.value.get().castToU128(bLhs.tid).get()
-            r128 = bRhs.value.get().castToU128(bRhs.tid).get()
-          case result.contents.bOp
-          of "+":
-            result.foldU128(l128 + r128, result.tid)
-          of "-":
-            result.foldU128(l128 - r128, result.tid)
-          of "*":
-            result.foldU128(l128 * r128, result.tid)
-          else:
-            unreachable
-
-    of "<<", ">>", "div", "&", "|", "^", "%":
-      if result.tid == TFloat or not result.tid.isNumericBuiltin():
-        ctx.replaceBinOpWithCall(result)
-      elif bLhs.isConstant() and bRhs.isConstant():
-        if result.tid.isSigned():
-          let
-            l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-            r128 = bRhs.value.get().castToI128(bRhs.tid).get()
-          case result.contents.bop
-               of "<<":
-                 result.foldI128(l128 shl r128, result.tid)
-               of ">>":
-                 result.foldI128(l128 shr r128, result.tid)
-               of "div":
-                 result.foldI128(l128 div r128, result.tid)
-               of "&":
-                 result.foldI128(l128 and r128, result.tid)
-               of "|":
-                 result.foldI128(l128 or r128, result.tid)
-               of "^":
-                 result.foldI128(l128 xor r128, result.tid)
-               of "%":
-                 result.foldI128(l128 mod r128, result.tid)
-               else:
-                 unreachable
-        else:
-          let
-            l128 = bLhs.value.get().castToU128(bLhs.tid).get()
-            r128 = bRhs.value.get().castToU128(bRhs.tid).get()
-          case result.contents.bop
-               of "<<":
-                 result.foldU128(l128 shl r128, result.tid)
-               of ">>":
-                 result.foldU128(l128 shr r128, result.tid)
-               of "div":
-                 result.foldU128(l128 div r128, result.tid)
-               of "&":
-                 result.foldU128(l128 and r128, result.tid)
-               of "|":
-                 result.foldU128(l128 or r128, result.tid)
-               of "^":
-                 result.foldU128(l128 xor r128, result.tid)
-               of "%":
-                 result.foldU128(l128 mod r128, result.tid)
-               else:
-                 unreachable
-    else:
-      unreachable
+  if result.getTid() == TBottom:
+    ctx.irError("BinaryOpCompat", @[bLhs.getTid().toString(),
+                                    bRhs.getTid().toString()])
+  elif result.contents.bOp == "/":
+    if bLhs.getTid().intBits() == 128 or bRhs.getTid().intBits() == 128:
+      ctx.irError("128BitLimit", @["Float division"])
+      result.tid = TBottom
+    elif bLhs.getTid() == TUint or bRhs.getTid() == TUint:
+      ctx.irError("U64Div")
+      result.tid = TBottom
 
 proc convertLogicOp(ctx: var CompileCtx): IrNode =
   result                = ctx.irNode(IrLogic)
@@ -1376,48 +1118,27 @@ proc convertLogicOp(ctx: var CompileCtx): IrNode =
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
 
-  if unify(TBool, bLhs.tid) == TBottom:
-    if bLhs.tid.canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[bLhs.tid.toString()], w = ctx.parseKid(0))
+  if unify(TBool, bLhs.getTid()) == TBottom:
+    if bLhs.getTid().canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[bLhs.getTid().toString()],
+                 w = ctx.parseKid(0))
     else:
-      ctx.irError("NoBoolCast", @[bLhs.tid.toString()], w = ctx.parseKid(0))
+      ctx.irError("NoBoolCast", @[bLhs.getTid().toString()],
+                  w = ctx.parseKid(0))
+      result.tid = TBottom
+      return
 
-  if unify(TBool, bRhs.tid) == TBottom:
-    if bRhs.tid.canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[bRhs.tid.toString()], w = ctx.parseKid(1))
+  if unify(TBool, bRhs.getTid()) == TBottom:
+    if bRhs.getTid().canCastToBool():
+      ctx.irWarn("BoolAutoCast", @[bRhs.getTid().toString()],
+                 w = ctx.parseKid(1))
+      result.tid = TBool
     else:
-      ctx.irError("NoBoolCast", @[bRhs.tid.toString()], w = ctx.parseKid(1))
-
-  result.tid = TBool
-
-  # Fold constant stuff.
-  if bLhs.isConstant():
-    if bLhs.value.get().castToBool(bLhs.tid).get() == false:
-      if result.contents.bOp == "and":
-        result.fold(false)
-      elif bRhs.isConstant():
-        result.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
-      else:
-        result.contents = bRhs.contents
-    else:
-      if result.contents.bOp == "or":
-        result.fold(true)
-      elif bRhs.isConstant():
-        result.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
-      else:
-        result.contents = bRhs.contents
-  elif bRhs.isConstant():
-    let val = bRhs.value.get().castToBool(bRhs.tid).get()
-    if result.contents.bOp == "and":
-      if val == false:
-        result.fold(false)
-      else:
-        result.contents = bLhs.contents
-    else:
-      if val == true:
-        result.fold(true)
-      else:
-        result.contents = bLhs.contents
+      ctx.irError("NoBoolCast", @[bRhs.getTid().toString()],
+                  w = ctx.parseKid(1))
+      result.tid = TBottom
+  else:
+      result.tid = TBool
 
 proc convertSection(ctx: var CompileCtx): IrNode =
   var
@@ -1459,15 +1180,70 @@ proc convertSection(ctx: var CompileCtx): IrNode =
   ctx.curSecPrefix = result.contents.prefix
   ctx.curSecSpec   = savedSecSpec
 
+# When we are indexing into a tuple, we go ahead and constant-fold the
+# index immediately, instead of waiting till the folding pass.
+proc foldDown*(ctx: var CompileCtx, newNode: IrNode) {.importc, cdecl.}
+
 proc convertIndex(ctx: var CompileCtx): IrNode =
-  # TODO: symbol lookup and typing.
   result = ctx.irNode(IrIndex)
-  result.contents.indexStart = ctx.downNode(0)
+  var
+    toIx = ctx.downNode(0)
+
+  var
+    ixStart = ctx.downNode(1)
+    ixEnd: IrNode
+
+  if toIx.contents.kind == IrIndex:
+    ctx.irError("NDim", w = toIx.parseNode)
+    return
+  elif toIx.contents.kind == IrMember:
+    result.contents.toIxSym = toIx.contents.attrSym
+  elif toIx.contents.kind != IrCall:
+    result.contents.toIxSym = toIx.contents.symbol
+
+  result.tid = tVar()
+
   if ctx.numKids() == 2:
-    result.contents.indexEnd = ctx.downNode(1)
+    let tobj = toIx.getTid().idToTypeRef()
+    case tobj.kind
+    of C4List:
+      if TInt.unify(ixStart.getTid()) == TBottom:
+        if not ixStart.getTid().isIntType():
+          ctx.irError("ListIx")
+      discard toIx.getTid().unify(tList(result.tid)).toString()
+    of C4Dict:
+      let expected = tDict(ixStart.getTid(), result.tid)
+      let dictType = unify(toIx.getTid(), expected)
+
+    of C4Tuple:
+      ctx.foldDown(ixStart)
+      if not ixStart.isConstant():
+        ctx.irError("TupleConstIx", w = ixStart.parseNode)
+        return
+      let v = toVal[int](ixStart.value.get())
+      if v < 0 or v >= tobj.items.len():
+        ctx.irError("TupleIxBound", w = ixStart.parseNode)
+        return
+      let to = toIx.getTid().idToTypeRef().items[v]
+      discard result.tid.unify(to)
+    of C4TVar:
+      # Currently, we do not try to infer the container type;
+      # we instead just error that the type needs to be known
+      # to index it.
+      ctx.irError("ContainerType")
+    else:
+      if tobj.typeId == TBottom:
+        return
+      unreachable
+  else:  # SLICE operator. *must* be a list.
+    ixEnd = ctx.downNode(2)
+    result.tid = tList(tVar()).unify(toIx.getTid())
+
+  result.contents.toIx       = toIx
+  result.contents.indexStart = ixStart
+  result.contents.indexEnd   = ixEnd
 
 proc convertCall(ctx: var CompileCtx): IrNode =
-  # TODO: handle this properly.
   result                = ctx.irNode(IrCall)
   result.contents.fname = ctx.getText(0)
 
@@ -1478,7 +1254,7 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
       result = ctx.statementsToIr()
-    of NodeUnpack, NodeVarAssign:
+    of NodeVarAssign:
       result = ctx.convertVarAssignment()
     of NodeIdentifier:
       result = ctx.convertIdentifier()
@@ -1587,6 +1363,6 @@ proc toIr*(ctx: var CompileCtx): bool {.discardable.} =
       let paramIr   = ctx.parseTreeToIr()
 
       sym.pinfo.defaultIr = some(paramIr)
-      ctx.typeCheck(sym, paramIr.tid)
+      ctx.typeCheck(sym, paramIr.getTid())
 
   return ctx.errors.canProceed()

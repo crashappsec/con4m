@@ -704,6 +704,7 @@ proc lex_impl(ctx: var CompileCtx) =
       of "in":             tok(TtIn)
       of "var":            tok(TtVar)
       of "global":         tok(TtGlobal)
+      of "const":          tok(TtConst)
       of "is":             tok(TtCmp)
       of "and":            tok(TtAnd)
       of "or":             tok(TtOr)
@@ -800,7 +801,7 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().otherDelimColor)
   of TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
-     TtWhile, TtGlobal:
+     TtWhile, TtGlobal, TtConst:
     result.fgColor(getCurrentCodeStyle().keywordColor)
   of TtIdentifier:
     result.fgColor(getCurrentCodeStyle().identColor)
@@ -926,6 +927,8 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "var"
     of TtGlobal:
       return "global"
+    of TtConst:
+      return "const"
     of TtOtherLit:
       return "a << literal >>"
     of TtBacktick:

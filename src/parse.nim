@@ -31,7 +31,6 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeAttrAssign:     toPrint = n.ropeNt("AttrAssign")
   of NodeAttrSetLock:    toPrint = n.ropeNt("AttrSetLock")
   of NodeVarAssign:      toPrint = n.ropeNt("VarAssign")
-  of NodeUnpack:         toPrint = n.ropeNt("Unpack")
   of NodeSection:        toPrint = n.ropeNt("Section")
   of NodeIfStmt:         toPrint = n.ropeNt("If")
   of NodeWhileStmt:      toPrint = n.ropeNt("While")
@@ -71,6 +70,7 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeVarStmt:        toPrint = n.ropeNt("VarStmt")
   of NodeGlobalStmt:     toPrint = n.ropeNt("GlobalStmt")
   of NodeVarSymInfo:     toPrint = n.ropeNt("VarSymInfo")
+  of NodeConstStmt:      toPrint = n.ropeNt("ConstStmt")
   of NodeUseStmt:        toPrint = n.ropeNt("UseStmt")
   of NodeLabelStmt:      toPrint = n.ropeNt("LabelStmt")
   of NodeExpression:     toPrint = n.ropeNt("Expression")
@@ -116,7 +116,6 @@ proc `$`*(n: Con4mNode): string =
   of NodeAttrAssign:     "an assignment"
   of NodeAttrSetLock:    "a lock operation"
   of NodeVarAssign:      "a variable assignment"
-  of NodeUnpack:         "an unpack operation"
   of NodeSection:        "a section declaration"
   of NodeIfStmt:         "an <em>if</em> block"
   of NodeWhileStmt:      "a <em>while</em> loop"
@@ -155,6 +154,7 @@ proc `$`*(n: Con4mNode): string =
   of NodeFormal:         "a formal parameter"
   of NodeVarStmt:        "a <em>var</em> statement"
   of NodeGlobalStmt:     "a <em>global</em> statement"
+  of NodeConstStmt:      "a <em>const</em> statement"
   of NodeVarSymInfo:     "<em>var</em> statement symbol info"
   of NodeUseStmt:        "a <em>use</em> statement"
   of NodeLabelStmt:      "a <em>label</em> statement"
@@ -202,9 +202,8 @@ proc inLoop(ctx: var CompileCtx): bool {.inline.} =
 proc curTok(ctx: var CompileCtx): Con4mToken
 
 const stmtStartList = [NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
-                       NodeUnpack, NodeSection, NodeIfStmt, NodeElifStmt,
-                       NodeElseStmt, NodeForStmt, NodeWhileStmt,
-                       NodeBreakStmt]
+                       NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt,
+                       NodeForStmt, NodeWhileStmt, NodeBreakStmt]
 
 proc newNode(ctx: var CompileCtx, kind: Con4mNodeKind): Con4mNode =
   ctx.curNodeId += 1
@@ -1187,20 +1186,57 @@ production(varSymInfo, NodeVarSymInfo):
      result.addKid(ctx.typeSpec())
 
 production(varStmt, NodeVarStmt):
+  var constNode: Con4mNode
+
   ctx.advance()
+  if ctx.curKind() == TtConst:
+    constNode = ctx.newNode(NodeConstStmt)
+    ctx.advance()
+
   result.addKid(ctx.varSymInfo())
   while ctx.curKind() == TtComma:
     ctx.advance()
     result.addKid(ctx.varSymInfo())
   ctx.endOfStatement()
 
+  if constNode != nil:
+    result.addKid(constNode)
+
 production(globalStmt, NodeGlobalStmt):
+  var constNode: Con4mNode
+
   ctx.advance()
+  if ctx.curKind() == TtConst:
+    constNode = ctx.newNode(NodeConstStmt)
+    ctx.advance()
+
   result.addKid(ctx.varSymInfo())
   while ctx.curKind() == TtComma:
     ctx.advance()
     result.addKid(ctx.varSymInfo())
   ctx.endOfStatement()
+
+  if constNode != nil:
+    result.addKid(constNode)
+
+production(constStmt, NodeConstStmt):
+  var globalNode: Con4mNode
+
+  ctx.advance()
+  if ctx.curKind() == TtGlobal:
+    globalNode = ctx.newNode(NodeConstStmt)
+    ctx.advance()
+  elif ctx.curKind() == TtVar:
+    ctx.advance()
+
+  result.addKid(ctx.varSymInfo())
+  while ctx.curKind() == TtComma:
+    ctx.advance()
+    result.addKid(ctx.varSymInfo())
+  ctx.endOfStatement()
+
+  if globalNode != nil:
+    result.addKid(globalNode)
 
 production(useStmt, NodeUseStmt):
   ctx.advance()
@@ -1343,6 +1379,9 @@ production(body, NodeBody):
       of TtGlobal:
         result.addKid(ctx.globalStmt())
         continue
+      of TtConst:
+        result.addKid(ctx.constStmt())
+        continue
       of TtIdentifier:
         case ctx.curTok.getText()
         of "label":
@@ -1425,6 +1464,9 @@ production(module, NodeModule):
         continue
       of TtGlobal:
         result.addKid(ctx.globalStmt())
+        continue
+      of TtConst:
+        result.addKid(ctx.constStmt())
         continue
       of TtIdentifier:
         case ctx.curTok().getText()

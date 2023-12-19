@@ -136,9 +136,9 @@ type
     TtRBracketMod, TtLParen, TtRParen, TtRParenMod, TtAnd, TtOr, TtIntLit,
     TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
-    TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtOtherLit, TtBacktick,
-    TtArrow, TtObject, TtWhile, TtIn, TtBitAnd, TtBitOr, TtBitXor, TtShl,
-    TtShr, TtSof, TtEof, ErrorTok
+    TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtConst, TtOtherLit,
+    TtBacktick, TtArrow, TtObject, TtWhile, TtIn, TtBitAnd, TtBitOr, TtBitXor,
+    TtShl, TtShr, TtSof, TtEof, ErrorTok
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -174,23 +174,23 @@ type
     ## state objects that are the primary object type exposed to the
     ## user.
     NodeModule, NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
-    NodeUnpack, NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt,
-    NodeForStmt, NodeWhileStmt, NodeBreakStmt,  NodeContinueStmt,
-    NodeReturnStmt, NodeStringLit, NodeIntLit, NodeHexLit, NodeFloatLit,
-    NodeBoolLit, NodeNot, NodeMember, NodeLiteral, NodeIndex, NodeActuals,
-    NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit, NodeTupleLit,
-    NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte,
-    NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
+    NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, NodeForStmt,
+    NodeWhileStmt, NodeBreakStmt,  NodeContinueStmt, NodeReturnStmt,
+    NodeStringLit, NodeIntLit, NodeHexLit, NodeFloatLit, NodeBoolLit, NodeNot,
+    NodeMember, NodeLiteral, NodeIndex, NodeActuals, NodeCall, NodeDictLit,
+    NodeKVPair, NodeListLit, NodeOtherLit, NodeTupleLit, NodeCharLit,
+    NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte,
+    NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
     NodeEnumStmt, NodeEnumItem, NodeIdentifier, NodeFuncDef, NodeFormalList,
     NodeVarargsFormal, NodeTypeOneOf, NodeTypeMaybe, NodeTypeVar, NodeTypeFunc,
     NodeTypeTuple, NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeRef,
     NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg,
-    NodeType, NodeParenExpr, NodeGlobalStmt, NodeVarStmt, NodeVarSymInfo,
-    NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal, NodeLabelStmt,
-    NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr
+    NodeType, NodeParenExpr, NodeGlobalStmt, NodeConstStmt, NodeVarStmt,
+    NodeVarSymInfo, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal,
+    NodeLabelStmt, NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr
 
   IrNodeType* = enum
-    IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrSectionScope, IrConditional,
+    IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrConditional,
     IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUMinus, IrNot,
     IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection
     #IrCast
@@ -226,13 +226,8 @@ type
       attrrhs*: IrNode
       lock*:    bool
     of IrVarAssign:
-      varlhs*: seq[IrNode]
+      varlhs*: IrNode
       varrhs*: IrNode
-    of IrSectionScope:
-      secType*:  string
-      secName*:  string
-      secBody*:  IrNode
-      prevPath*: string
     of IrConditional:
       predicate*:   IrNode
       trueBranch*:  IrNode
@@ -247,10 +242,14 @@ type
       litmod*: string
       items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
     of IrMember:
-      name*: string
+      name*:      string
+      subaccess*: IrNode
+      attrSym*:   SymbolInfo
     of IrIndex:
+      toIx*:       IrNode
       indexStart*: IrNode
       indexEnd*:   IrNode
+      toIxSym*:    SymbolInfo
     of IrCall:
       binop*:   bool     # When we, e.g., replace + with __add__()
       module*:  string   # For explicit module specifier
@@ -287,10 +286,12 @@ type
     implementation*: IrNode
     tid*:            TypeId
     params*:         seq[FormalInfo]
+    paramNames*:     seq[string] # In prep for future keyword args.
     retval*:         FormalInfo
     fnScope*:        Scope
 
   ParamInfo*  = ref object
+    ## Module parameters.
     shortdoc*:      Option[string]
     doc*:           Option[string]
     validator*:     Option[Callback]
@@ -561,8 +562,8 @@ proc getAllBuiltinTypeNames*(): seq[string] =
     biTypeNames.add(item.name)
 
   allTypeIds = biTypeNames
-  allTypeIds &= ["list", "dict", "tuple", "struct", "ref", "set",
-                 "maybe", "oneof", "typespec"]
+  allTypeIds &= ["list", "dict", "tuple", "struct", "ref", "set", "maybe",
+                 "oneof", "typespec"]
 
   return biTypeNames
 

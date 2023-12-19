@@ -1,5 +1,5 @@
 import nimutils, os, strutils, httpclient, net, uri, streams
-import irgen
+import irgen, fold
 
 type
   Module = object
@@ -32,6 +32,8 @@ proc commonLoad(url: string, contents: string): Module =
 
   if ctx.parseModule():
     ctx.toIr()
+    if ctx.errors.canProceed():
+      ctx.foldingPass()
 
   result.ir          = ctx.irRoot
   result.tree        = ctx.root
@@ -151,7 +153,7 @@ proc printErrors*(ctx: var Module, verbose = true, ll = LlNone) =
 
 when isMainModule:
   useCrashTheme()
-  let m = loadModule("ptest-tiny.c4m")
+  let m = loadModule("ptest.c4m")
 
   if m.isSome():
     var module = m.get()
