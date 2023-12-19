@@ -958,9 +958,9 @@ proc convertForStmt(ctx: var CompileCtx): IrNode =
     result.contents.condition = ctx.downNode(1)
 
     if dict:
-      result.contents.condition.tid.unify(tDict(kt, vt))
+      discard result.contents.condition.tid.unify(tDict(kt, vt))
     else:
-      result.contents.condition.tid.unify(tList(kt, vt))
+      discard result.contents.condition.tid.unify(tList(kt))
 
     result.contents.loopBody  = ctx.downNode(2)
   else:
