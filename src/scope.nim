@@ -3,20 +3,18 @@ import parse, algorithm, strutils
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.followForwards()
 
-proc initScope*(s: var Scope) =
-  s = Scope()
-  s.table.initDict()
+proc initScope*(): Scope =
+  result = Scope()
+  result.table.initDict()
 
-proc newCompileCtx*(s: string, m: string): CompileCtx =
-  result.module = m
-  result.s      = newStringCursor(s)
+proc newModuleObj*(contents: string, name: string, where = "", ext = "",
+                   url = ""): Module =
+  result = Module(url: url, where: where, modname: name, ext: ext,
+                  s: newStringCursor(contents))
+  result.moduleScope = initScope()
+  result.usedAttrs   = initScope()
 
-
-  result.globalScope.initScope()
-  result.moduleScope.initScope()
-  result.usedAttrs.initScope()
-
-proc lookupOrAdd*(ctx: var CompileCtx, scope: var Scope, n: string,
+proc lookupOrAdd*(ctx: Module, scope: var Scope, n: string,
                   isFunc: bool, tid = TBottom): Option[SymbolInfo] =
   # This is a helper function to look up a symbol in the given scope,
   # or create the symbol in the scope, if it is not found.
@@ -48,7 +46,7 @@ proc lookupOrAdd*(ctx: var CompileCtx, scope: var Scope, n: string,
     scope.table[n] = sym
     result = some(sym)
 
-proc scopeDeclare*(ctx: var CompileCtx, scope: var Scope, n: string,
+proc scopeDeclare*(ctx: Module, scope: var Scope, n: string,
                    isfunc: bool, tid = TBottom, immutable = false):
                      Option[SymbolInfo] =
  # This is meant for things that should be declared in a specific scope,
@@ -84,7 +82,7 @@ proc typeFromSpec*(sec: SectionSpec, name: string): TypeId =
 
   result = fsOpt.get().tid.copyType().typeId
 
-proc resolveSection*(ctx: var CompileCtx, n: seq[string]): SectionSpec =
+proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
   var
     curSpec      = ctx.curSecSpec
     i            = 0
@@ -121,10 +119,9 @@ proc resolveSection*(ctx: var CompileCtx, n: seq[string]): SectionSpec =
 
   return curSpec
 
-proc addAttrDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
                  tid = TBottom): Option[SymbolInfo] =
   var
-    sym: SymbolInfo
     sec: SectionSpec
     parts = name.split(".")
     tid = tid
@@ -145,7 +142,7 @@ proc addAttrDef*(ctx: var CompileCtx, name: string, loc: IRNode,
   result = ctx.lookupOrAdd(ctx.usedAttrs, name, false, tid)
 
 
-proc addVarDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+proc addVarDef*(ctx: Module, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   ## This is the interface for *variables* used on the LHS. It should
   ## *not* be called during an explicit definition via `global` or
@@ -309,7 +306,7 @@ proc addVarDef*(ctx: var CompileCtx, name: string, loc: IRNode,
     else:
       sym = result.get()
   else:
-    if sym.immutable:
+    if sym.immutable and sym.defs.len() != 0:
       ctx.irError("Immutable")
       return
     if tid != TBottom:
@@ -317,14 +314,14 @@ proc addVarDef*(ctx: var CompileCtx, name: string, loc: IRNode,
 
   sym.defs.add(loc)
 
-proc addDef*(ctx: var CompileCtx, name: string, loc: IRNode,
+proc addDef*(ctx: Module, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   if ctx.attrContext:
     return ctx.addAttrDef(name, loc, tid)
   else:
     return ctx.addVarDef(name, loc, tid)
 
-proc addUse*(ctx: var CompileCtx, name: string, loc: IRNode,
+proc addUse*(ctx: Module, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   ## Note that, when we're in a `def` context, we know for sure
   ## whether or not we should be using an attribute, or a variable.
@@ -421,14 +418,39 @@ proc toRope*(s: Scope, title = ""): Rope =
     if sym.constValue.isSome():
       let box = sym.constValue.get()
       # TODO: This only works for base types.  Need to build CBox to Rope
-      cc = em(rawBuiltinRepr(box.t, box.v))
+      cc = fgColor(rawBuiltinRepr(box.t, box.v), "atomiclime")
     elif sym.immutable:
       cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")
     if sym.fImpls.len() != 0:
       isFunc = fgColor("✓", "atomiclime")
 
-    cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
-                sym.declaredType.isDeclaredRepr(), cc, isFunc])
+    if sym.fImpls.len() == 0:
+      cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
+                  sym.declaredType.isDeclaredRepr(), cc, isFunc])
+    else:
+      for item in sym.fImpls:
+        cells.add(@[name.atom(), item.tid.toRope(),
+                  sym.declaredType.isDeclaredRepr(),
+                  fgColor("✓", "atomiclime"), fgColor("✓", "atomiclime")])
 
 
   return quickTable(cells, title = title)
+
+proc allFunctions*(s: Scope): seq[FuncInfo] =
+  for (_, v) in s.table.items():
+    if v.isFunc:
+      result &= v.fimpls
+
+proc allFunctions*(m: Module): seq[FuncInfo] =
+  return m.moduleScope.allFunctions()
+
+proc allParams*(m: Module): seq[SymbolInfo] =
+  for (_, v) in m.moduleScope.table.items():
+    if v.pInfo != nil:
+      result.add(v)
+
+
+proc allVars*(s: Scope): seq[SymbolInfo] =
+  for (_, v) in s.table.items():
+    if not v.isFunc:
+      result.add(v)

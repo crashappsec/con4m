@@ -60,16 +60,9 @@ type
       discard
 
   Callback* = object
-    # Right now, this doesn't even stash a pointer; we could cache
-    # this, but we accept callbacks that aren't provided, so we
-    # currently just defer until runtime to look up the function
-    # anyway.  Also helps make it easy to handle the case where a
-    # function's entry is dynamically replaced via a stack.
-    #
-    # This probably should get moved to its own module.
-    # It's a value for a ref to a function.
     name*: string
     tid*:  TypeId
+    impl*: FuncInfo
 
   TypeConstructor* = proc (i0: string, i1: var Mixed, i2: SyntaxType):
                          string {.cdecl.}
@@ -105,15 +98,15 @@ type
     v*: Mixed
     t*: TypeId
 
-  Con4mErrPhase* = enum ErrLex, ErrParse, ErrIrgen
-  Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr
+  Con4mErrPhase* = enum ErrLoad, ErrLex, ErrParse, ErrIrgen
+  Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr, LlFatal
   InstantiationInfo* = tuple[filename: string, line: int, column: int]
   Con4mError* = object
     phase*:    Con4mErrPhase
     severity*: Con4mSeverity
     cursor*:   StringCursor
     code*:     string
-    module*:   string
+    modname*:  string
     line*:     int
     offset*:   int
     extra*:    seq[string]
@@ -167,6 +160,8 @@ type
     children*:     seq[Con4mNode]
     parent*:       Con4mNode
     commentLocs*:  seq[int]
+    err*:          bool
+
 
   Con4mNodeKind* = enum
     ## Parse tree nodes types. Really no reason for these to be
@@ -237,6 +232,7 @@ type
       targetNode*: IrNode
     of IrRet:
       retVal*: IrNode
+      retSym*: SymbolInfo
     of IrLit:
       syntax*: SyntaxType
       litmod*: string
@@ -251,13 +247,15 @@ type
       indexEnd*:   IrNode
       toIxSym*:    SymbolInfo
     of IrCall:
-      binop*:   bool     # When we, e.g., replace + with __add__()
-      module*:  string   # For explicit module specifier
-      fname*:   string
-      actuals*: seq[IrNode]
+      replacement*: bool     # When we, e.g., replace + with __add__()
+      module*:      string   # For explicit module specifier
+      fname*:       string
+      actuals*:     seq[IrNode]
+      toCall*:      FuncInfo
     of IrUse:
       targetModule*: string
       targetLoc*:    string
+      moduleObj*:    Module
     of IrNot, IrUminus:
       uRhs*: IrNode
     of IrBinary, IrBool, IrLogic:
@@ -273,6 +271,7 @@ type
     name*: string
     tid*:  TypeId
     va*:   bool
+    sym*:  SymbolInfo
 
   FuncInfo* = ref object
     # One module can have multiple instantiations of a function, as
@@ -289,6 +288,10 @@ type
     paramNames*:     seq[string] # In prep for future keyword args.
     retval*:         FormalInfo
     fnScope*:        Scope
+    frozen*:         bool
+    defModule*:      Module
+    cfg*:            CfgNode
+    exitNode*:       CfgNode
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -310,6 +313,32 @@ type
     fimpls*:       seq[FuncInfo]
     pInfo*:        ParamInfo
     constValue*:   Option[CBox]
+
+  CfgExitType* = enum
+    CFXNormal, CFXCall, CFXUse, CFXBreak, CFXContinue, CFXReturn, CFXStart
+
+  CfgNode* = ref object
+    pre*:            seq[CfgNode]
+    stmts*:          seq[IrNode]
+    post*:           seq[CFGNode]
+    defAtStart*:     seq[SymbolInfo]
+    defInBlock*:     seq[SymbolInfo]
+    errorsInBlock*:  seq[SymbolInfo]
+    nextBlock*:      CfgNode
+    loopIrNode*:     IrNode
+    exitNode*:       CfgNode
+    startNode*:      CfgNode # Exit node points to the start.
+    splits*:         bool
+    exitType*:       CfgExitType
+    # Fields to assist in graph repr.
+    # The node ID is not set until we go to print.
+    # Don't print subgraphs in parallel, as node numberings could
+    # go berzerk.
+    nodeId*:         int
+    irNode*:         IrNode
+    loopTop*:        bool
+    blockEnd*:       bool
+    label*:          string
 
   AttrDict*      = Dict[string, CBox]
 
@@ -366,7 +395,7 @@ type
     table*:  Dict[string, SymbolInfo]
     attr*:   bool
 
-  CompileCtx* = object
+  Module* = ref object
     # This is the compilation context for a single module. It includes
     # fields to support all phases; many fields are unused when the
     # appropriate phamse is done.
@@ -374,12 +403,19 @@ type
     # When we cache info after a successful transformation of the thing
     # into what is essentially our byte code, we copy over only
     # what we need to keep around into the Module object.
+    url*:         string
+    where*:       string
+    modname*:     string
+    ext*:         string
     errors*:      seq[Con4mError]
-    module*:      string
     s*:           StringCursor      # Sourcee
     tokens*:      seq[Con4mToken]
     root*:        Con4mNode         # Parse tree root
-    irRoot*:      IrNode
+    ir*:          IrNode
+    cfg*:         CfgNode
+    exitNode*:    CfgNode
+    compileCtx*:  CompileCtx        # An unfortunate temporary during IR pass.
+    imports*:     seq[Module]
 
     # The next set of variables don't show up till first IR pass, but
     # have a long life.
@@ -397,18 +433,24 @@ type
     # uses, and against the type in the validation spec, if it's
     # available (stashed in attrSpec).
 
+    # First two fields are refs to the one in the compile context.
     globalScope*: Scope
-    moduleScope*: Scope
-    funcScope*:   Scope
-    usedAttrs*:   Scope
     attrSpec*:    ValidationSpec
 
+    moduleScope*:    Scope
+    funcScope*:      Scope
+    usedAttrs*:      Scope
+    fatalErrors*:    bool
+    processed*:      bool
+
     # Used in lexical analysis only.
+    # This should move to a tmp object.
     nextId*:    int = 1
     lineNo*:    int = 1
     lineStart*: int = 0
 
     # Used in parsing only.
+    # This should move to a tmp object.
     curTokIx*:       int
     prevTokIx*:      int
     curNodeId*:      int
@@ -421,18 +463,31 @@ type
     prevNode*:       Con4mNode
 
     # Used for IR generation only.
-    pt*:           Con4mNode
-    current*:      IrNode
-    blockScopes*:  seq[Scope]   # Stack of loop iteration vars.
-    lhsContext*:   bool         # To determine when this might be a def.
-    attrContext*:  bool         # True when we are def processing an attr.
-    curSym*:       SymbolInfo
-    usedModules*:  seq[(string, string)]
-    funcRefs*:     seq[(string, TypeId, IrNode)]
-    labelNode*:    Con4mNode
-    curSecPrefix*: string
-    curSecSpec*:   SectionSpec
+    # This should move to a tmp object.
+    pt*:             Con4mNode
+    current*:        IrNode
+    blockScopes*:    seq[Scope]   # Stack of loop iteration vars.
+    lhsContext*:     bool         # To determine when this might be a def.
+    attrContext*:    bool         # True when we are def processing an attr.
+    curSym*:         SymbolInfo
+    usedModules*:    seq[(string, string)]
+    funcsToResolve*: seq[(IrNode, TypeId, seq[FuncInfo], seq[FuncInfo])]
+    labelNode*:      Con4mNode
+    curSecPrefix*:   string
+    curSecSpec*:     SectionSpec
 
+    didFoldingPass*: bool
+
+  CompileCtx* = ref object
+    modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
+    defaultExt*:  string      = ".c4m"
+    attrSpec*:    ValidationSpec
+    errors*:      seq[Con4mError]
+    globalScope*: Scope
+    modules*:     Dict[string, Module]
+    entrypoint*:  Module
+    fatal*:       bool
+    topExitNode*: CfgNode # Used when building CFG
 var
   basicTypes*: seq[TypeInfo]
   tiMap*:      Dict[TypeId, TypeInfo]

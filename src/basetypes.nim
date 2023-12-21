@@ -27,7 +27,7 @@ template isIntType*(t: TypeId): bool =
   let tprime = t.followForwards()
   tprime != TFloat and tprime in allNumericTypes
 
-proc resultingNumType*(ctx: var CompileCtx, t1, t2: TypeId): TypeId =
+proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =
   var
     t1  = t1.followForwards()
     t2  = t2.followForwards()
@@ -62,12 +62,12 @@ proc resultingNumType*(ctx: var CompileCtx, t1, t2: TypeId): TypeId =
     result = TBottom
     unreachable # Shouldn't get here
 
-proc typeError*(ctx: var CompileCtx, t1, t2: TypeId, where: Con4mNode = nil,
+proc typeError*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
                 err = "TypeMismatch") =
   var where = if where == nil: ctx.pt else: where
   ctx.irError(err, @[t1.toString(), t2.toString()], where)
 
-proc typeCheck*(ctx: var CompileCtx, t1, t2: TypeId, where: Con4mNode = nil,
+proc typeCheck*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
                 err = "TypeMismatch"): TypeId {.discardable.} =
 
   result = t1.unify(t2)
@@ -75,7 +75,7 @@ proc typeCheck*(ctx: var CompileCtx, t1, t2: TypeId, where: Con4mNode = nil,
   if result == TBottom:
     ctx.typeError(t1, t2, where, err)
 
-proc typeCheck*(ctx: var CompileCtx, sym: SymbolInfo, t: TypeId,
+proc typeCheck*(ctx: Module, sym: SymbolInfo, t: TypeId,
               where: Con4mNode = nil, err = "TypeMismatch"):
                 TypeId {.discardable.} =
   return ctx.typeCheck(sym.tid, t, where, err)

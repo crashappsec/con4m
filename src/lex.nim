@@ -7,7 +7,7 @@ import strcursor, style, err
 export strcursor, style, err
 
 
-proc uEsc(ctx: var CompileCtx, s: seq[Rune], numchars: int,
+proc uEsc(ctx: Module, s: seq[Rune], numchars: int,
           t: Con4mToken): Rune =
   var
     c = 0
@@ -33,7 +33,7 @@ proc uEsc(ctx: var CompileCtx, s: seq[Rune], numchars: int,
     else:
       lexError("UnicodeEscape", t)
 
-proc processEscape(ctx: var CompileCtx, s: seq[Rune], t: Con4mToken): (Rune, int) =
+proc processEscape(ctx: Module, s: seq[Rune], t: Con4mToken): (Rune, int) =
   # Returns the escaped character along with how many bytes were read.
   case s[0]
   of Rune('n'):  return (Rune('\n'), 1)
@@ -48,7 +48,7 @@ proc processEscape(ctx: var CompileCtx, s: seq[Rune], t: Con4mToken): (Rune, int
   of Rune('U'):  return (ctx.uEsc(s[1 .. ^1], 8, t), 9)
   else: return (s[0], s[0].size())
 
-proc parseCodePoint(ctx: var CompileCtx, t: Con4mToken) =
+proc parseCodePoint(ctx: Module, t: Con4mToken) =
   # Extract the actual codepoint from a char literal. The first
   # and last chars will be the tick marks.
   var
@@ -68,7 +68,7 @@ proc parseCodePoint(ctx: var CompileCtx, t: Con4mToken) =
   else:
     t.codepoint = uint(raw[0])
 
-proc unescape(ctx: var CompileCtx, token: Con4mToken) =
+proc unescape(ctx: Module, token: Con4mToken) =
   # Turn a raw string into its intended representation.  Note that we
   # do NOT currently accept hex or octal escapes, since strings
   # theoretically should always be utf-8 only.
@@ -148,7 +148,7 @@ template atNewLine() =
   ctx.lineNo.inc()
   ctx.lineStart = ctx.s.getPosition()
 
-proc addToken(ctx: var CompileCtx, k: Con4mTokenKind,
+proc addToken(ctx: Module, k: Con4mTokenKind,
               startPos, endPos, tokenLine, lineOffset: int,
               adjustValue = 0,
               eatNewLines: static[bool] = false) =
@@ -197,7 +197,7 @@ template tok(k: Con4mTokenKind, adjustValue: static[int],
     ctx.addToken(k, startPos + adjustValue, ctx.s.getPosition() - adjustValue,
                  tokenLine, tokenLineOffset, adjustValue)
 
-proc processStrings(ctx: var CompileCtx) =
+proc processStrings(ctx: Module) =
   var
     i                  = 0
     newtok: Con4mToken = nil
@@ -299,7 +299,7 @@ template handleLitMod() =
 
       ctx.tokens[^1].litType = $(modifier)
 
-proc lex_impl(ctx: var CompileCtx) =
+proc lex_impl(ctx: Module) =
   ## The guts; lex() simply wraps in a try/catch block
   ctx.tokens = @[Con4mToken(startPos: -1, endPos: -1,
                             kind: TtSof, cursor: ctx.s, lineNo: -1,
@@ -726,7 +726,7 @@ proc lex_impl(ctx: var CompileCtx) =
 
   unreachable
 
-proc lex*(ctx: var CompileCtx): bool =
+proc lex*(ctx: Module): bool =
   try:
     lex_impl(ctx)
     ctx.tokens.add(Con4mToken(startPos: ctx.s.getPosition(),
@@ -738,14 +738,15 @@ proc lex*(ctx: var CompileCtx): bool =
 
   return ctx.errors.canProceed()
 
-proc lex*(str: string, err: var seq[Con4mError], module = ""): seq[Con4mToken] =
+proc lex*(str: string, err: var seq[Con4mError], modname = ""):
+        seq[Con4mToken] =
   # A version that creates a context and only runs this phase.
   # This is really only used for testing.
 
-  var ctx: CompileCtx
+  var ctx: Module
 
   ctx.s      = str.newStringCursor()
-  ctx.module = module
+  ctx.modname = modname
 
   if ctx.lex():
     return ctx.tokens

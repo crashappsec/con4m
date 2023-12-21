@@ -1,5 +1,6 @@
 import options, ../common
 
+proc toString(x: TypeId): string {.importc, cdecl.}
 var
   typeStore*:      Dict[TypeId, TypeRef]
   primitiveTypes*: Dict[string, TypeRef]
@@ -420,7 +421,7 @@ proc copyType*(t: TypeRef): TypeRef =
     var items: seq[TypeId]
     for item in t.items:
       items.add(item.copyType().typeId)
-      return newFuncType(items, t.va)
+    return newFuncType(items, t.va)
   of C4Struct:
     result = newStructType()
     for (k, v) in t.props.items():

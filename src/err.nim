@@ -158,18 +158,37 @@ const errorMsgs = [
                      "indexed."),
   ("ContainerType",  "Cannot determine the type of the container used " &
                      "In this indexing operation (e.g., list, dict, tuple)." &
-                     " Please explicitly declare this type.")
-
+                     " Please explicitly declare this type."),
+  ("BadUrl",         "Invalid URL for loading con4m source code."),
+  ("InsecureUrl",    "Warning: loading file from an insecure URL. " &
+                     "The contents could be injected by an attacker."),
+  ("NoImpl",         "Could not find any function implementations in scope " &
+                     "named <em>$1</em>.  Full signature: <em>$1$2</em>"),
+  ("BadSig",         "No implementation of <em>$1</em> matched the $4." &
+                     "The $4 had the type: <em>$1$2</em> But available " &
+                     "functions were: <br>$3"),
+  ("CallAmbig",      "Found multiple functions matching the $4: <em>$1$2" &
+                     "</em> Please disambiguate. Found functions:<br>$3"),
+  ("NotIndexible",   "Type <em>$1</em> is not indexible."),
+  ("CantLiftFunc",   "Function <em>$1</em> has the same name as a " &
+                     "global variable. Currently, other modules will have to " &
+                     "explicitly qualify the module to call this function."),
+  ("DoesntExit",     "Control does not reach the end of this $1."),
+  ("ExprResult",     "Result of expression is unused. Expression result is " &
+                     "of type <em>$1</em>. Please assign to _ to discard."),
+  ("InfLoop",        "While loop does not exit."),
+  ("UseBeforeDef",   "This use of <em>$1</em> can happen before a value is " &
+                     "assigned to the variable."),
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
-                module: string, line: int, lineOffset: int,
-                phase: Con4mErrPhase, severity = LlErr,
+                modname: string, line: int, lineOffset: int,
+                phase: Con4mErrPhase, severity = LlFatal,
                 extraContents: seq[string] = @[],
                 trace: string = "", ii: Option[InstantiationInfo] =
                                   none(InstantiationInfo)) =
   var err = Con4mError(phase: phase, severity: severity, code: code,
-                       cursor: cursor, module: module, line: line,
+                       cursor: cursor, modname: modname, line: line,
                        offset: lineOffset, extra: extraContents)
 
   when not defined(release):
@@ -189,54 +208,73 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
   list.add(err)
 
 proc baseError*(list: var seq[Con4mError], code: string, tok: Con4mToken,
-                module: string, phase: Con4mErrPhase, severity = LlErr,
+                modname: string, phase: Con4mErrPhase, severity = LlFatal,
                 extra: seq[string] = @[], trace = "",
                 ii = none(InstantiationInfo)) =
-  list.baseError(code, tok.cursor, module, tok.lineNo, tok.lineOffset,
+  list.baseError(code, tok.cursor, modname, tok.lineNo, tok.lineOffset,
                  phase, severity, extra, trace, ii)
 
-proc lexBaseError*(ctx: var CompileCtx, basemsg: string, t: Con4mToken = nil,
+proc lexBaseError*(ctx: Module, basemsg: string, t: Con4mToken = nil,
                   subs: seq[string] = @[]) =
   var t = t
 
   if t == nil:
     t = ctx.tokens[^1]
 
-  ctx.errors.baseError(basemsg, t.cursor, ctx.module, t.lineNo,
-                       t.lineOffset, ErrLex, LlErr, subs)
+  ctx.errors.baseError(basemsg, t.cursor, ctx.modname, t.lineNo,
+                       t.lineOffset, ErrLex, LlFatal, subs)
 
-proc lexFatal*(ctx: var CompileCtx, basemsg: string, t: Con4mToken = nil) =
+proc lexFatal*(ctx: Module, basemsg: string, t: Con4mToken = nil) =
   ctx.lexBaseError(basemsg, t)
   raise newCon4mException()
 
 template lexError*(msg: string, t: Con4mToken = nil) =
   ctx.lexFatal(msg, t)
 
-template baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
-                    module: string, phase: Con4mErrPhase, severity = LlErr,
-                    extra = seq[string](@[]), trace = "",
-                    ii = none(InstantiationInfo)) =
-  list.baseError(code, node.token, module, phase, severity, extra,
+proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
+                modname: string, phase: Con4mErrPhase, severity = LlFatal,
+                extra = seq[string](@[]), trace = "",
+                ii = none(InstantiationInfo)) =
+  if node.err and severity != LlInfo:
+    return
+  if severity in [LlErr, LlFatal]:
+    node.err = true
+  list.baseError(code, node.token, modname, phase, severity, extra,
                  trace, ii)
 
-template irError*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlErr, extra)
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra)
 
-template irWarn*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
+  # Things we consider errors, but we may end up allowing. Currently, this
+  # is just for use-before-def errors.
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlWarn, extra)
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
 
-template irInfo*(ctx: var CompileCtx, msg: string, extra: seq[string] = @[],
+template irWarn*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.module, ErrIrGen, LlInfo, extra)
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
+
+template irInfo*(ctx: Module, msg: string, extra: seq[string] = @[],
+                w = Con4mNode(nil)) =
+  var where = if w == nil: ctx.pt else: w
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
+
+template loadError*(ctx: CompileCtx, msg: string, modname: string,
+                    extra: seq[string] = @[]) =
+  ctx.errors.baseError(msg, Con4mNode(nil), modname, ErrLoad, LlFatal, extra)
+
+template loadWarn*(ctx: CompileCtx, msg: string, modname: string,
+                    extra: seq[string] = @[]) =
+  ctx.errors.baseError(msg, Con4mNode(nil), modname, ErrLoad, LlWarn, extra)
 
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:
-    if err.severity == LlErr:
+    if err.severity == LlFatal:
       return false
 
   return true
@@ -254,7 +292,7 @@ proc performSubs(err: Con4mError, s: var string) =
 
 proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
   case err.severity
-  of LlErr:
+  of LlErr, LlFatal:
     result.add(fgColor("error:", "red").td().overflow(OTruncate))
   of LlWarn:
     result.add(fgColor("warn:", "yellow").td().overflow(OTruncate))
@@ -263,10 +301,10 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
   of LlNone:
     unreachable
 
-  if err.module.len() != 0:
-    let module = fgColor(err.module, "jazzberry") + text(":")
-    let offset = td(text(`$`(err.line + 1) & ":" & `$`(err.offset + 1)))
-    result.add(module.overflow(OTruncate))
+  if err.modname.len() != 0:
+    let modname = fgColor(err.modname, "jazzberry") + text(":")
+    let offset = td(text(`$`(err.line + 1) & ":" & `$`(err.offset + 1) & ":"))
+    result.add(modname.overflow(OTruncate))
     result.add(offset.overflow(OTruncate))
   else:
     result.add(text(""))
@@ -280,7 +318,7 @@ proc getVerboseInfo(err: Con4mError): Rope =
     lines   = src.split("\n")
     locator = em(repeat((' '), err.offset) & "^")
 
-  result = text(lines[err.line]) + newBreak() + locator + newBreak()
+  result = text(lines[err.line - 1]) + newBreak() + locator + newBreak()
 
 proc getLocWidth(errs: seq[Con4mError]): int =
   for err in errs:
@@ -291,15 +329,15 @@ proc getLocWidth(errs: seq[Con4mError]): int =
 
 proc getModuleWidth(errs: seq[Con4mError]): int =
   for err in errs:
-    let l = err.module.len()
+    let l = err.modname.len()
     if l != 0 and (l + 1) > result:
       result = l + 1
 
 proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
   var errList: seq[seq[Rope]]
   let
-    mw = errs.getModuleWidth()
-    lw = errs.getLocWidth()
+    mw = errs.getModuleWidth() + 1
+    lw = errs.getLocWidth() + 1
 
   for error in errs:
     var msg = error.lookupMsg()

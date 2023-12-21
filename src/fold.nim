@@ -41,15 +41,15 @@ proc foldU128(n: IrNode, value: uint128, tid: TypeId) =
   else:
     unreachable
 
-proc foldIr(ctx: var CompileCtx)
+proc foldIr(ctx: Module)
 
-proc foldDown*(ctx: var CompileCtx, newNode: IrNode) {.cdecl, exportc.} =
+proc foldDown*(ctx: Module, newNode: IrNode) {.cdecl, exportc.} =
   let savedNode = ctx.current
   ctx.current   = newNode
   ctx.foldIr()
   ctx.current   = savedNode
 
-proc loopFold(ctx: var CompileCtx) =
+proc loopFold(ctx: Module) =
   let n = ctx.current
 
   ctx.foldDown(n.contents.startIx)
@@ -64,7 +64,7 @@ proc loopFold(ctx: var CompileCtx) =
     if not val:
       n.contents = IrContents(kind: IrNop)
 
-proc conditionalFold(ctx: var CompileCtx) =
+proc conditionalFold(ctx: Module) =
   let n = ctx.current
 
   ctx.foldDown(n.contents.predicate)
@@ -82,10 +82,10 @@ proc conditionalFold(ctx: var CompileCtx) =
     else:
       n.contents = IrContents(kind: IrNop)
 
-proc retFold(ctx: var CompileCtx) =
+proc retFold(ctx: Module) =
   discard
 
-proc listLitFold(ctx: var CompileCtx) =
+proc listLitFold(ctx: Module) =
   var values: seq[Mixed]
 
   for item in ctx.current.contents.items:
@@ -96,30 +96,40 @@ proc listLitFold(ctx: var CompileCtx) =
 
   # TODO: finish this.
 
-proc dictFold(ctx: var CompileCtx) =
+proc dictFold(ctx: Module) =
   discard
 
-proc litFold(ctx: var CompileCtx) =
+proc litFold(ctx: Module) =
   discard
 
-proc indexFold(ctx: var CompileCtx) =
+proc indexFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.indexStart)
   ctx.foldDown(ctx.current.contents.indexEnd)
 
-proc callFold(ctx: var CompileCtx) =
+proc callFold(ctx: Module) =
   for item in ctx.current.contents.actuals:
     ctx.foldDown(item)
 
-proc uminusFold(ctx: var CompileCtx) =
+proc replaceCall*(ctx: Module, n: IrNode, name: string, sig: TypeId,
+                 actuals: seq[IrNode]) =
+  var
+    newcontents = IrContents(kind: IrCall, replacement: true)
+
+  newcontents.fname   = name
+  newcontents.toCall  = ctx.beginFunctionResolution(n, name, sig)
+  newcontents.actuals = actuals
+
+  n.contents = newcontents
+
+proc uminusFold(ctx: Module) =
   let n = ctx.current
 
   if not n.tid.isBasicType() or (not n.tid.isIntType() and n.tid != TFloat):
-    var cc = IrContents(kind: IrCall, binop: true)
-    cc.actuals = @[n.contents.uRhs]
-    let sig = tFunc(@[n.tid, n.tid])
-    ctx.funcRefs.add(("__uminus__", sig, n))
-    n.contents = cc
-    ctx.callFold()
+    let
+      actuals = @[n.contents.uRhs]
+      sig = tFunc(@[n.tid, n.tid])
+
+    ctx.replaceCall(n, "__uminus__", sig, actuals)
   else:
     if n.tid.isSigned() == false:
       ctx.irError("UnsignedUminus")
@@ -137,7 +147,7 @@ proc uminusFold(ctx: var CompileCtx) =
           v   = toVal[float](rhs.value.get())
         fold[float](n, -v)
 
-proc notFold(ctx: var CompileCtx) =
+proc notFold(ctx: Module) =
   let n = ctx.current
 
   if n.contents.uRhs.tid.canCastToBool():
@@ -147,61 +157,60 @@ proc notFold(ctx: var CompileCtx) =
         v   = castToBool(box, n.contents.uRhs.tid).get()
       n.fold(not v)
   else:
-    var cc = IrContents(kind: IrCall, binop: true)
-    cc.actuals = @[n.contents.uRhs]
-    let sig = tFunc(@[n.contents.uRhs.tid, TBool])
-    ctx.funcRefs.add(("__not__", sig, n))
-    n.contents = cc
-    ctx.callFold()
+    let
+      sig     = tFunc(@[n.contents.uRhs.tid, TBool])
+      actuals = @[n.contents.uRhs]
 
-template binOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.contents.kind == IrBinary and n.contents.bOp == o:
-    cc.fname   = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.contents = cc
+    ctx.replaceCall(n, "__not__", sig, actuals)
 
-template boolOpReplace(ctx: var CompileCtx, o, f: string) =
-  if n.contents.kind == IrBool and n.contents.bOp == o:
-    cc.fname = f
-    cc.actuals = @[n.contents.bLhs, n.contents.bRhs]
-    n.tid = TBool
+template opReplace(ctx: Module, o, f: string) =
+  if n.contents.bOp == o:
+    ctx.replaceCall(n, f, sig, actuals)
+    return
 
-proc replaceBinOpWithCall(ctx: var CompileCtx, n: IrNode) =
-  var cc  = IrContents(kind: IrCall, binop: true)
-  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
+template opReplace(ctx: Module, o, f: string) =
+  if n.contents.bOp == o:
+    ctx.replaceCall(n, f, sig, actuals)
+    return
 
-  ctx.binOpReplace("/",    "__slash__")
-  ctx.binOpReplace("*",    "__star__")
-  ctx.binOpReplace("+",    "__plus__")
-  ctx.binOpReplace("-",    "__minus__")
-  ctx.binOpReplace("%",    "__percent__")
-  ctx.binOpReplace("<<",   "__shl__")
-  ctx.binOpReplace(">>",   "__shr__")
-  ctx.binOpReplace("div",  "__div__")
-  ctx.binOpReplace("&",    "__bitand__")
-  ctx.binOpReplace("|",    "__bitor__")
-  ctx.binOpReplace("^",    "__bitxor__")
-  ctx.binOpReplace("shl",  "__shl__")
-  ctx.binOpReplace("shr",  "__shr__")
+proc replaceBinOpWithCall(ctx: Module, n: IrNode) =
+  if n.contents.kind != IrBinary:
+    return
 
-  ctx.funcRefs.add((cc.fname, sig, n))
-  n.contents = cc
+  let
+    sig     = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
+    actuals = @[n.contents.bLhs, n.contents.bRhs]
 
-proc replaceBoolOpWithCall(ctx: var CompileCtx, n: IrNode) =
-  var cc = IrContents(kind: IrCall, binop: true)
-  let sig = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, TBool])
+  ctx.opReplace("/",    "__slash__")
+  ctx.opReplace("*",    "__star__")
+  ctx.opReplace("+",    "__plus__")
+  ctx.opReplace("-",    "__minus__")
+  ctx.opReplace("%",    "__percent__")
+  ctx.opReplace("<<",   "__shl__")
+  ctx.opReplace(">>",   "__shr__")
+  ctx.opReplace("div",  "__div__")
+  ctx.opReplace("&",    "__bitand__")
+  ctx.opReplace("|",    "__bitor__")
+  ctx.opReplace("^",    "__bitxor__")
+  ctx.opReplace("shl",  "__shl__")
+  ctx.opReplace("shr",  "__shr__")
 
-  ctx.boolOpReplace("<",   "__lt__")
-  ctx.boolOpReplace("<=",  "__lte__")
-  ctx.boolOpReplace(">",   "__gt__")
-  ctx.boolOpReplace(">=",  "__gte__")
-  ctx.boolOpReplace("!=",  "__ne__")
-  ctx.boolOpReplace("==",  "__eq__")
+proc replaceBoolOpWithCall(ctx: Module, n: IrNode) =
+  if n.contents.kind != IrBool:
+    return
 
-  ctx.funcRefs.add((cc.fname, sig, n))
-  n.contents = cc
+  let
+    sig     = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, TBool])
+    actuals = @[n.contents.bLhs, n.contents.bRhs]
 
-proc boolFold(ctx: var CompileCtx) =
+  ctx.opReplace("<",   "__lt__")
+  ctx.opReplace("<=",  "__lte__")
+  ctx.opReplace(">",   "__gt__")
+  ctx.opReplace(">=",  "__gte__")
+  ctx.opReplace("!=",  "__ne__")
+  ctx.opReplace("==",  "__eq__")
+
+proc boolFold(ctx: Module) =
   let
     node        = ctx.current
     bLhs        = node.contents.bLhs
@@ -277,7 +286,7 @@ proc boolFold(ctx: var CompileCtx) =
       else:
         unreachable
 
-proc binFold(ctx: var CompileCtx) =
+proc binFold(ctx: Module) =
   let
     node        = ctx.current
     bLhs        = node.contents.bLhs
@@ -424,7 +433,7 @@ proc binFold(ctx: var CompileCtx) =
   else:
     unreachable
 
-proc logicFold(ctx: var CompileCtx) =
+proc logicFold(ctx: Module) =
   let
     node        = ctx.current
     operandType = node.contents.bOp
@@ -465,23 +474,25 @@ proc logicFold(ctx: var CompileCtx) =
       else:
         node.contents = bLhs.contents
 
-
-proc varAssignFold(ctx: var CompileCtx) =
+proc varAssignFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.varlhs)
   ctx.foldDown(ctx.current.contents.varrhs)
 
-proc attrAssignFold(ctx: var CompileCtx) =
+proc attrAssignFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.attrLhs)
   ctx.foldDown(ctx.current.contents.attrRhs)
 
-proc foldIr(ctx: var CompileCtx) =
+proc foldIr(ctx: Module) =
   if ctx.current == nil:
     return
 
   case ctx.current.contents.kind
   of IrBlock:
+    # We could consider pruning this if it's empty (after subtracting
+    # nops), but right now we count on it being here when generating
+    # the CFG. Anyway, we skip the nops when building the CFG.
     for item in ctx.current.contents.stmts:
-          ctx.foldDown(item)
+      ctx.foldDown(item)
   of IrLoop:
     ctx.loopFold()
   of IrAttrAssign:
@@ -513,9 +524,9 @@ proc foldIr(ctx: var CompileCtx) =
   of IrLoad, IrLhsLoad, IrNop, IrFold, IrUse, IrJump, IrMember:
     discard
 
-proc foldingPass*(ctx: var CompileCtx) =
+proc foldingPass*(ctx: Module) =
   ctx.funcScope = nil
-  ctx.current   = ctx.irRoot
+  ctx.current   = ctx.ir
   ctx.foldIr()
 
   for (name, sym) in ctx.moduleScope.table.items():

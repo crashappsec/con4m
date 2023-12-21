@@ -1528,7 +1528,7 @@ You must set a value for this variable or pass the --exec-command-name flag to b
   }
 
   field initial_sleep_time {
-    type: Duration
+    type: duration
     default: <-50 msecs-> # 1/20th of a second
     shortdoc: "Exec: initial sleep time"
     doc: """
@@ -1642,7 +1642,7 @@ controlled by the `heartbeat_rate` field.
   }
 
   field heartbeat_rate {
-    type:    Duration
+    type:    duration
     default: <-20 seconds->
     shortdoc: "Heartbeat rate"
     doc: """
@@ -2299,7 +2299,7 @@ Defaults to 'chalk-audit.json'
   }
 
   field audit_file_size {
-    type:       Size
+    type:       size
     shortdoc:   "Audit Report log max size"
     default:    <-100mb->
     doc:        """
@@ -2444,7 +2444,7 @@ Currently you can just use ours.
   }
 
   field secret_manager_timeout {
-    type:    Duration
+    type:    duration
     default: <- 3 sec ->
     shortdoc: "HTTPS timeout for secret manager"
     doc: """
@@ -3271,12 +3271,12 @@ func key_name_validation() {
   }
 }
 
-func sink_object_check(path) {
+func sink_object_check(pwd) {
   result := ""
-  f := fields(path)
+  f := fields(pwd)
 
   for i from 0 to len(f) {
-    fieldname := path + "." + f[i]
+    fieldname := pwd + "." + f[i]
     fieldtype := attr_type(fieldname)
     if typecmp(fieldtype, bool) or typecmp(fieldtype, string) {
       continue
@@ -3290,9 +3290,9 @@ func sink_object_check(path) {
 sink_config_skip_fields := ["enabled", "loaded", "sink", "filters"]
 export sink_config_skip_fields
 
-func sink_config_check(path) {
+func sink_config_check(pwd) {
   result   := ""
-  sinkname := attr_get(path + ".sink", string)
+  sinkname := attr_get(pwd + ".sink", string)
   if sinkname == "" {
     return # Unconfigured.
   }
@@ -3300,7 +3300,7 @@ func sink_config_check(path) {
     return "No such sink configured: '" + sinkname + "'"
   }
   sinkfields := fields("sink." + sinkname)
-  conffields := fields(path)
+  conffields := fields(pwd)
 
   for i from 0 to len(conffields) {
     conffield := conffields[i]
@@ -3315,34 +3315,34 @@ func sink_config_check(path) {
     }
 
     if contains(["timeout", "truncation_amount", "max"], conffield) {
-      t := attr_type(path + "." + conffield)
-      if not typecmp(t, Size) and not typecmp(t, int) {
+      t := attr_type(pwd + "." + conffield)
+      if not typecmp(t, size) and not typecmp(t, int) {
           return "max: This field must be a con4m Size, or an int (in bytes)"
       }
     }
     elif conffield == "headers" {
-      t := attr_type(path + "." + conffield)
+      t := attr_type(pwd + "." + conffield)
       if not typecmp(t, dict[string, string]) {
           return conffield + ": Field must be a dict[string, string]"
       }
     }
     elif contains(["enabled", "use_search_path", "disallow_http"], conffield) {
-      t := attr_type(path + "." + conffield)
+      t := attr_type(pwd + "." + conffield)
       if not typecmp(t, bool) {
           return conffield + ": Field must be `true` or `false`"
       }
     }
     elif contains(["log_search_path", "filters"], conffield) {
-      t := attr_type(path + "." + conffield)
+      t := attr_type(pwd + "." + conffield)
       if not typecmp(t, list[string]) {
           return conffield + ": Field must be a list[string]"
       }
     }
-    elif not typecmp(attr_type(path + "." + conffield), string) {
+    elif not typecmp(attr_type(pwd + "." + conffield), string) {
       return "This field must be a string."
     }
     elif conffield == "pinned_cert_file" {
-      if attr_exists(path + ".pinned_cert") {
+      if attr_exists(pwd + ".pinned_cert") {
         return ("Cannot have `pinned_cert_file` and `pinned_cert` in the same" +
         "sink configuration.")
       }

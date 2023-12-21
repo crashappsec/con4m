@@ -1,48 +1,6 @@
 ## The IR is essentially the graph representation on which we do all checking.
 ## Ideally, we will keep refining the nodes until we can use them essentially
 ## as fat VM instructions that we can directly marshal.
-#
-#
-# TODO:
-# - After pass 1, check to see if declared variables are used, and
-#   warn if not.
-# - Infer the function signatures if return isn't used.
-# - Number blocks and check for use-before-def.
-# - Add $index and $index.label to for ... in loops, and restrict it
-#   elsewhere.
-# - Link-time checking.
-# - Deal with the rhs ambiguity better.
-# - REPL
-# - Execution from IR (possibly compressing IR more)
-# - Stack traces.
-# - Spec checking
-# - Checkpointing.
-# - FFI
-# - No-side-effect to allow calling functions at compile time.
-# - const keyword
-# - Give names to enums / turn them into int subtypes
-# - Fold for list indexes when the length is fixed size.
-# - Swap in hatrack lists (and add rings?).
-# - Add objects.
-# - Allow assignment inside var / global / const statements.
-# - Add maybe
-# - Add oneof
-# - Add ref
-# - Add 'error' to functions.
-# - Add global enum
-# - Warnings when there are naming conflicts on inputs.
-# - :: module scope operator.
-# - Components
-# - root:: and local::
-# - for x in <container>: generate a call to items() if the object is
-#   not one of the built-in types.
-# C-level interface to attributes
-# Validation routines need routines to validate their inputs.
-# Defined-but-never-used across whole program
-# Add post-IR check that const things have been assigned.
-# For dicts and lists: capture the value when possible and perform folding
-# Support litmods for containers.
-
 
 import parse, scope, cbox, strutils
 export parse, scope, cbox
@@ -50,7 +8,72 @@ export parse, scope, cbox
 template getTid*(n: untyped): TypeId =
   n.tid.followForwards()
 
-proc getTypeIdFromSyntax*(ctx: var CompileCtx, st: SyntaxType,
+proc lockFn*(impl: FuncInfo) =
+  impl.frozen = true
+  let to      = impl.tid.idToTypeRef()
+  to.isLocked = true
+
+proc unlockFn*(impl: FuncInfo) =
+  impl.frozen = false
+  let to      = impl.tid.idToTypeRef()
+  to.isLocked = true
+
+template withFnLock(fi: FuncInfo, code: untyped) =
+  let
+    tobj = fi.tid.idToTypeRef()
+    lock = tobj.isLocked
+
+  tobj.isLocked = true
+
+  try:
+    code
+  finally:
+    tobj.isLocked = lock
+
+proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
+                              callType: TypeId): FuncInfo =
+  var
+    symOpt   = ctx.moduleScope.table.lookup(name)
+    sym:     SymbolInfo
+    matches: seq[FuncInfo]
+    fails:   seq[FuncInfo]
+
+  if symOpt.isSome():
+    sym = symOpt.get()
+    if sym.isFunc:
+      for fimpl in sym.fimpls:
+        withFnLock(fimpl):
+          if callType.copyType().typeId.unify(fimpl.tid) == TBottom:
+            fails.add(fimpl)
+          else:
+            matches.add(fimpl)
+
+  # All our functions generally will already be in the global scope,
+  # so there's a bit of redundancy we could remove here.
+  if matches.len() == 0:
+    symOpt = ctx.globalScope.table.lookup(name)
+    if symOpt.isSome():
+      sym = symOpt.get()
+      if sym.isFunc:
+        for fimpl in sym.fimpls:
+          withFnLock(fimpl):
+            if callType.copyType().typeId.unify(fimpl.tid) == TBottom:
+              fails.add(fimpl)
+            else:
+              matches.add(fimpl)
+
+  if matches.len() == 1:
+    result = matches[0]
+
+    withFnLock(matches[0]):
+      discard matches[0].tid.unify(callType)
+  else:
+    # Try again after functions have had a chance to be fully inferred.
+    # Even if there's no match, it'll allow us to be more accurate
+    # with type errors.
+    ctx.funcsToResolve.add((n, callType, matches, fails))
+
+proc getTypeIdFromSyntax*(ctx: Module, st: SyntaxType,
                           litMod = ""): TypeId =
 
   ## If called w/ an empty litmod, returns the primary type
@@ -204,8 +227,8 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     descriptor = ctx.contents.fname
     if ctx.contents.module != "":
       descriptor = ctx.contents.module & "::" & descriptor
-    if ctx.contents.binop:
-      moreinfo = "converted from op"
+    if ctx.contents.replacement:
+      moreinfo = "converted op to call"
     return (fmt("Call", descriptor, moreinfo, ctx.getTid()),
             ctx.contents.actuals)
   of IrUse:
@@ -233,17 +256,17 @@ proc toRope*(ctx: IrNode): Rope =
     return em("Null node")
   return ctx.quickTree(irWalker)
 
-proc getLitMod(ctx: var CompileCtx): string =
+proc getLitMod(ctx: Module): string =
   return ctx.pt.token.litType
 
-proc irNode(ctx: var CompileCtx, kind: IrNodeType): IrNode =
+proc irNode(ctx: Module, kind: IrNodeType): IrNode =
   let payload = IrContents(kind: kind)
   result = IrNode(parseNode: ctx.pt, contents: payload, parent: ctx.current)
   ctx.current = result
 
-proc parseTreeToIr(ctx: var CompileCtx): IrNode
+proc parseTreeToIr(ctx: Module): IrNode
 
-proc downNode(ctx: var CompileCtx, which: int): IrNode =
+proc downNode(ctx: Module, which: int): IrNode =
   var saved   = ctx.current
   var savedpt = ctx.pt
   ctx.pt      = ctx.pt.children[which]
@@ -251,7 +274,7 @@ proc downNode(ctx: var CompileCtx, which: int): IrNode =
   ctx.pt      = savedpt
   ctx.current = saved
 
-proc downNode(ctx: var CompileCtx, kid, grandkid: int): IrNode =
+proc downNode(ctx: Module, kid, grandkid: int): IrNode =
   var saved = ctx.current
   var savedpt = ctx.pt
 
@@ -267,31 +290,31 @@ template independentSubtree(code: untyped) =
   code
   ctx.current = saved
 
-template getText(ctx: var CompileCtx): string =
+template getText(ctx: Module): string =
   ctx.pt.getText()
 
-template getText(ctx: var CompileCtx, which: int): string =
+template getText(ctx: Module, which: int): string =
    ctx.pt.children[which].getText()
 
-template getText(ctx: var CompileCtx, kidIx: int, grandIx: int): string =
+template getText(ctx: Module, kidIx: int, grandIx: int): string =
   ctx.pt.children[kidIx].children[grandIx].getText()
 
-template numKids(ctx: var CompileCtx): int =
+template numKids(ctx: Module): int =
   ctx.pt.children.len()
 
-template kidKind(ctx: var CompileCtx, i: int): Con4mNodeKind =
+template kidKind(ctx: Module, i: int): Con4mNodeKind =
   ctx.pt.children[i].kind
 
-template kidKind(ctx: var CompileCtx, i, j: int): Con4mNodeKind =
+template kidKind(ctx: Module, i, j: int): Con4mNodeKind =
   ctx.pt.children[i].children[j].kind
 
-template numGrandKids(ctx: var CompileCtx, i: int): int =
+template numGrandKids(ctx: Module, i: int): int =
   ctx.pt.children[i].children.len()
 
-template parseKid(ctx: var CompileCtx, i: int): Con4mNode =
+template parseKid(ctx: Module, i: int): Con4mNode =
   ctx.pt.children[i]
 
-template parseGrandKid(ctx: var CompileCtx, i, j: int): Con4mNode =
+template parseGrandKid(ctx: Module, i, j: int): Con4mNode =
   ctx.pt.children[i].children[j]
 
 proc isConstant*(n: IrNode): bool =
@@ -311,7 +334,7 @@ proc addFalseBranch(conditional: IrNode, falseBranch: IrNode) =
 
   n.contents.falseBranch = falseBranch
 
-proc checkLabelDupe(ctx: var CompileCtx, label: string) =
+proc checkLabelDupe(ctx: Module, label: string) =
   var
     n       = ctx.current.parent
 
@@ -322,7 +345,7 @@ proc checkLabelDupe(ctx: var CompileCtx, label: string) =
       return
     n = n.parent
 
-proc convertEnum*(ctx: var CompileCtx) =
+proc convertEnum*(ctx: Module) =
   var
     usedVals: seq[int]
     nextVal = 0
@@ -358,8 +381,9 @@ proc convertEnum*(ctx: var CompileCtx) =
       if symOpt.isSome():
         let sym = symOpt.get()
         sym.constValue = some(newCbox(value, TInt))
+        sym.immutable = true
 
-proc convertIdentifier(ctx: var CompileCtx): IrNode =
+proc convertIdentifier(ctx: Module): IrNode =
   var name = ctx.pt.getText()
   var stOpt: Option[SymbolInfo]
 
@@ -378,9 +402,7 @@ proc convertIdentifier(ctx: var CompileCtx): IrNode =
   if result.contents.symbol != nil:
     result.tid = result.contents.symbol.getTid()
 
-
-
-proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
+proc convertAttrAssignment(ctx: Module): IrNode =
   result                  = ctx.irNode(IrAttrAssign)
   ctx.lhsContext          = true
   ctx.attrContext         = true
@@ -390,13 +412,12 @@ proc convertAttrAssignment(ctx: var CompileCtx): IrNode =
   result.contents.attrRhs = ctx.downNode(1)
   result.tid              = tVar()
 
-  result.tid = result.getTid().unify(result.contents.attrLhs.getTid())
-  result.tid = result.getTid().unify(result.contents.attrRhs.getTid())
+  result.tid = ctx.typeCheck(result.getTid(), result.contents.attrLhs.getTid())
 
   if result.contents.attrLhs.contents.kind notin [IrMember, IrLhsLoad]:
     ctx.irError("AttrLhs", w = result.contents.attrLhs.parseNode)
 
-proc convertMember(ctx: var CompileCtx): IrNode =
+proc convertMember(ctx: Module): IrNode =
   result = ctx.irNode(IrMember)
   var parts: seq[string]
   for i, kid in ctx.pt.children:
@@ -405,7 +426,7 @@ proc convertMember(ctx: var CompileCtx): IrNode =
       parts.add(kid.getText())
     else:
       if i != ctx.pt.children.len() - 1:
-        ctx.irError("MemberTop", w = ctx.pt.children[i + 1])
+        ctx.irError("MemberTop", w = ctx.pt)
         return
       result.contents.subaccess = ctx.downnode(i)
 
@@ -420,7 +441,7 @@ proc convertMember(ctx: var CompileCtx): IrNode =
     result.contents.attrSym = sym.get()
     result.tid              = result.contents.attrSym.getTid()
 
-proc convertVarAssignment(ctx: var CompileCtx): IrNode =
+proc convertVarAssignment(ctx: Module): IrNode =
   result = ctx.irNode(IrVarAssign)
   ctx.lhsContext = true
   let lhsIr = ctx.downNode(0)
@@ -437,9 +458,7 @@ proc convertVarAssignment(ctx: var CompileCtx): IrNode =
   result.contents.varLhs = lhsIr
   result.contents.varRhs = rhsIr
 
-
-
-proc extractSymInfo(ctx: var CompileCtx, scope: var Scope,
+proc extractSymInfo(ctx: Module, scope: var Scope,
                    isConst = false): SymbolInfo {.discardable.} =
   # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
@@ -468,7 +487,7 @@ proc extractSymInfo(ctx: var CompileCtx, scope: var Scope,
     if i == toAdd.len() - 1 and symOpt.isSome():
       result = symOpt.get()
 
-proc convertVarStmt(ctx: var CompileCtx) =
+proc convertVarStmt(ctx: Module) =
   var symbolsAreConst = false
   if ctx.pt.children[^1].kind == NodeConstStmt:
     symbolsAreConst = true
@@ -478,7 +497,7 @@ proc convertVarStmt(ctx: var CompileCtx) =
   else:
     ctx.extractSymInfo(ctx.moduleScope, symbolsAreConst)
 
-proc convertGlobalStmt(ctx: var CompileCtx) =
+proc convertGlobalStmt(ctx: Module) =
   var symbolsAreConst = false
 
   if ctx.pt.children.len() == 0:
@@ -489,7 +508,7 @@ proc convertGlobalStmt(ctx: var CompileCtx) =
 
   ctx.extractSymInfo(ctx.globalScope, symbolsAreConst)
 
-proc convertConstStmt(ctx: var CompileCtx) =
+proc convertConstStmt(ctx: Module) =
   var scope: Scope
 
   if ctx.pt.children.len() == 0:
@@ -505,7 +524,7 @@ proc convertConstStmt(ctx: var CompileCtx) =
   ctx.extractSymInfo(scope, true)
 
 
-proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
+proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
   var
     gotShort, gotLong, gotValid, gotDefault: bool
     paramInfo = ParamInfo()
@@ -542,18 +561,13 @@ proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
           ctx.irError("DupeParamProp", @["validator"], ctx.pt.children[i])
           continue
         if ctx.kidKind(i, 1) != NodeCallbackLit:
-          ctx.irError("BadParamProp", @["validator", "callback"],
+          ctx.irError("ParamType", @["validator", "callback"],
                       ctx.pt.children[i])
-        let
-          irNode = ctx.downNode(i, 1)
-          mixed  = irNode.value.get()
-          to     = irNode.getTid().idToTypeRef()
-
-        if to.items.len() != 0:
-          ctx.typeCheck(sym, to.items[^1])
-
-        paramInfo.validator = some(toVal[Callback](mixed))
-        gotValid = true
+        let irNode = ctx.downNode(i, 1)
+        ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TString]))
+        let cb              = toVal[Callback](irNode.value.get())
+        paramInfo.validator = some(cb)
+        gotValid            = true
       of "default":
         if gotDefault:
           ctx.irError("DupeParamProp", @["default"], ctx.pt.children[i])
@@ -566,7 +580,7 @@ proc convertParamBody(ctx: var CompileCtx, sym: var SymbolInfo) =
 
   sym.pinfo = paramInfo
 
-proc convertParamBlock(ctx: var CompileCtx) =
+proc convertParamBlock(ctx: Module) =
   var sym: SymbolInfo
 
   if ctx.pt.children[0].kind == NodeMember:
@@ -601,6 +615,7 @@ proc convertFormal(info: FuncInfo, n: Con4mNode) =
     formalInfo.tid = tVar()
 
   info.params.add(formalInfo)
+  info.paramNames.add(formalInfo.name) # TODO: redundant w/ formalInfo.name
 
 proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
   if n != nil:
@@ -629,30 +644,34 @@ proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
     # ACTUAL type that we'll add to the function's symbol table.
     info.params[^1].tid = tList(info.params[^1].getTid())
 
-proc handleFuncdefSymbols(ctx:   var CompileCtx,
-                          info:  var FuncInfo) =
-  var symOpt: Option[SymbolInfo]
+proc handleFuncdefSymbols(ctx:   Module,
+                          info:  FuncInfo) =
+  var
+    symOpt: Option[SymbolInfo]
+    allParams = info.params & @[info.retVal]
 
-  info.fnScope.initScope()
 
-  for item in info.params & @[info.retVal]:
-    discard ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid())
+  info.fnScope = initScope()
 
-  symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true, TBottom)
+  for i, item in allParams:
+    symOpt = ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid())
+    allParams[i].sym = symOpt.getOrElse(nil)
+
+  symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true)
 
   if symOpt.isSome():
     symOpt.get().fimpls.add(info)
 
-proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode)
+proc findDeclarations(ctx: Module, n: Con4mNode)
 
-proc convertFuncDefinition(ctx: var CompileCtx) =
+proc convertFuncDefinition(ctx: Module) =
   ## This converts the declaration portion, NOT the body. For now, the
   ## body just goes into the FuncInfo `rawImpl` parameter. Once we have
   ## found all explicitly declared symbols, we then come back to
   ## convert the tree into IR.
   var
     funcName   = ctx.getText(0)
-    info       = FuncInfo()
+    info       = FuncInfo(defModule: ctx)
     returnType = Con4mNode(nil)
 
   # Params are in the second node, and the last item there might
@@ -671,10 +690,28 @@ proc convertFuncDefinition(ctx: var CompileCtx) =
   info.rawImpl = ctx.pt.children[^1]
 
   ctx.funcScope = info.fnScope
-  ctx.findExplicitDeclarations(info.rawImpl)
+  ctx.findDeclarations(info.rawImpl)
   ctx.funcScope = nil
+  info.lockFn()
 
-proc processUseStmt(ctx: var CompileCtx) =
+  # Below, we also 'lift' this function into the global scope, unless
+  # there is a global variable that currently conflicts.
+  #
+  # In the future we may add 'private' functions that stop them from
+  # being lifted into the global symbol table.
+  var sym: SymbolInfo
+  let symOpt = ctx.globalScope.table.lookup(funcName)
+  if symOpt.isSome():
+    sym = symOpt.get()
+    if not sym.isFunc:
+      ctx.irWarn("CantLiftFunc", @[funcName], w = info.rawImpl)
+      return
+  else:
+    sym = ctx.scopeDeclare(ctx.globalScope, funcName, true).get()
+
+  sym.fimpls.add(info)
+
+proc processUseStmt(ctx: Module) =
   ## Since currently use statements both import symbols and cause
   ## execution, we want to import symbols early, but we'll also leave
   ## this in the tre, and process it in the 2nd pass w/ convertUseStmt()
@@ -682,15 +719,28 @@ proc processUseStmt(ctx: var CompileCtx) =
     moduleName = ctx.getText(0)
     moduleLoc  = if ctx.numKids() == 2: ctx.getText(1) else: ""
 
-  ctx.usedModules.add((moduleName, moduleLoc))
+  ctx.usedModules.add((moduleLoc, moduleName))
 
-proc convertUseStmt(ctx: var CompileCtx): IrNode =
+proc findAndLoadModule(ctx: var CompileCtx, location, fname, ext: string):
+                       Option[Module] {.importc, cdecl.}
+
+proc convertUseStmt(ctx: Module): IrNode =
+  var
+    modName = ctx.getText(0)
+    loc     = ""
   result                       = ctx.irNode(IrUse)
-  result.contents.targetModule = ctx.getText(0)
+  result.contents.targetModule = modName
   if ctx.numKids() == 2:
-    result.contents.targetLoc = ctx.getText(1)
+    loc                       = ctx.getText(1)
+    result.contents.targetLoc = loc
 
-proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
+  let possibleModule = ctx.compileCtx.findAndLoadModule(loc, modName, "")
+  if possibleModule.isSome():
+    result.contents.moduleObj = possibleModule.get()
+    if result.contents.moduleObj notin ctx.imports:
+      ctx.imports.add(result.contents.moduleObj)
+
+proc findDeclarations(ctx: Module, n: Con4mNode) =
   ## To make life easier for us when handling def's and uses, we will
   ## scan through either the module scope or individual function scopes
   ## in their entirety, looking just for 'var' and 'global' statements,
@@ -727,15 +777,17 @@ proc findExplicitDeclarations(ctx: var CompileCtx, n: Con4mNode) =
     of NodeUseStmt:
       ctx.processUseStmt()
     else:
-      ctx.findExplicitDeclarations(kid)
+      ctx.findDeclarations(kid)
 
   ctx.pt = saved
 
-proc findExplicitDeclarations(ctx: var CompileCtx) =
+proc findDeclarations*(ctx: Module) =
+  ctx.pt = ctx.root
+
   # First, pull declarations from the toplevel scope.
   let root = ctx.pt
 
-  ctx.findExplicitDeclarations(ctx.pt)
+  ctx.findDeclarations(ctx.pt)
 
   for item in root.children:
     case item.kind
@@ -749,9 +801,9 @@ proc findExplicitDeclarations(ctx: var CompileCtx) =
       ctx.convertFuncDefinition()
       continue
     else:
-      ctx.findExplicitDeclarations(item)
+      ctx.findDeclarations(item)
 
-proc statementsToIr(ctx: var CompileCtx): IrNode =
+proc statementsToIr(ctx: Module): IrNode =
   result = ctx.irNode(IrBlock)
 
   for i, item in ctx.pt.children:
@@ -801,7 +853,7 @@ proc statementsToIr(ctx: var CompileCtx): IrNode =
 
     result.contents.stmts.add(ctx.downNode(i))
 
-proc convertLit(ctx: var CompileCtx, st: SyntaxType): IrNode =
+proc convertLit(ctx: Module, st: SyntaxType): IrNode =
   var
     err: string
     lmod = ctx.getLitMod()
@@ -819,7 +871,7 @@ proc convertLit(ctx: var CompileCtx, st: SyntaxType): IrNode =
     else:
       result.value = some(val)
 
-proc convertCharLit(ctx: var CompileCtx): IrNode =
+proc convertCharLit(ctx: Module): IrNode =
   var
     err: string
     lmod = ctx.getLitMod()
@@ -839,7 +891,7 @@ proc convertCharLit(ctx: var CompileCtx): IrNode =
     else:
       result.value = some(val)
 
-proc convertTypeLit(ctx: var CompileCtx): IrNode =
+proc convertTypeLit(ctx: Module): IrNode =
   var
     tvars: Dict[string, TypeId]
     tinfo: TypeId
@@ -850,7 +902,7 @@ proc convertTypeLit(ctx: var CompileCtx): IrNode =
   tinfo         = ctx.pt.buildType(tvars)
   result.value  = some(tinfo.toMixed())
 
-proc convertListLit(ctx: var CompileCtx): IrNode =
+proc convertListLit(ctx: Module): IrNode =
   result                 = ctx.irNode(IrLit)
   result.contents.syntax = STList
   result.contents.litmod = ctx.getLitMod()
@@ -865,7 +917,7 @@ proc convertListLit(ctx: var CompileCtx): IrNode =
   if itemType != TBottom:
     result.tid = tList(itemType)
 
-proc convertDictLit(ctx: var CompileCtx): IrNode =
+proc convertDictLit(ctx: Module): IrNode =
   result                 = ctx.irNode(IrLit)
   result.contents.syntax = STDict
   result.contents.litmod = ctx.getLitMod()
@@ -886,7 +938,7 @@ proc convertDictLit(ctx: var CompileCtx): IrNode =
   if itemType != TBottom:
     result.tid = tDict(keyType, itemType)
 
-proc convertTupleLit(ctx: var CompileCtx): IrNode =
+proc convertTupleLit(ctx: Module): IrNode =
   result                 = ctx.irNode(IrLit)
   result.contents.syntax = STTuple
   result.contents.litmod = ctx.getLitMod()
@@ -904,7 +956,7 @@ proc convertTupleLit(ctx: var CompileCtx): IrNode =
   if not gotBottom:
     result.tid = tTuple(types)
 
-proc convertCallbackLit(ctx: var CompileCtx): IrNode =
+proc convertCallbackLit(ctx: Module): IrNode =
   var cb: Callback
 
   result = ctx.irNode(IrLit)
@@ -916,21 +968,16 @@ proc convertCallbackLit(ctx: var CompileCtx): IrNode =
     result.tid = cb.getTid()
   else:
     result.tid = tFunc(@[])
-  result.value = some(cb.toMixed())
-  # We wait to resolve any function reference until after functions
-  # have fully inferred their types from their bodies, so that we
-  # can be as accurate as possible when doing resolution.
-  ctx.funcRefs.add((cb.name, result.getTid(), result))
 
-proc convertForStmt(ctx: var CompileCtx): IrNode =
+  cb.impl = ctx.beginFunctionResolution(result, cb.name, result.tid)
 
-
+proc convertForStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
   var scope: Scope
 
-  scope.initScope()
+  scope = initScope()
 
   result.contents.scope = scope
   ctx.blockScopes = @[scope] & ctx.blockScopes
@@ -958,9 +1005,9 @@ proc convertForStmt(ctx: var CompileCtx): IrNode =
     result.contents.condition = ctx.downNode(1)
 
     if dict:
-      discard result.contents.condition.tid.unify(tDict(kt, vt))
+      ctx.typeCheck(result.contents.condition.tid, tDict(kt, vt))
     else:
-      discard result.contents.condition.tid.unify(tList(kt))
+      ctx.typeCheck(result.contents.condition.tid, tList(kt))
 
     result.contents.loopBody  = ctx.downNode(2)
   else:
@@ -975,7 +1022,7 @@ proc convertForStmt(ctx: var CompileCtx): IrNode =
   else:
     ctx.blockScopes = @[]
 
-proc convertWhileStmt(ctx: var CompileCtx): IrNode =
+proc convertWhileStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
@@ -992,7 +1039,7 @@ proc convertWhileStmt(ctx: var CompileCtx): IrNode =
                   @[result.contents.condition.getTid().toString()],
                   w = ctx.parseKid(0))
 
-proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
+proc loopExit(ctx: Module, loopExit: bool): IrNode =
   result                   = ctx.irNode(IrJump)
   result.contents.exitLoop = loopExit
   if ctx.numKids() != 0:
@@ -1014,7 +1061,7 @@ proc loopExit(ctx: var CompileCtx, loopExit: bool): IrNode =
         return
       n = n.parent
 
-proc convertConditional(ctx: var CompileCtx): IrNode =
+proc convertConditional(ctx: Module): IrNode =
   result                      = ctx.irNode(IrConditional)
   result.contents.predicate   = ctx.downNode(0)
   result.contents.trueBranch  = ctx.downNode(1)
@@ -1032,28 +1079,28 @@ proc convertConditional(ctx: var CompileCtx): IrNode =
                   @[result.contents.predicate.getTid().toString()],
                   w = ctx.parseKid(0))
 
-proc convertReturn(ctx: var CompileCtx): IrNode =
+proc convertReturn(ctx: Module): IrNode =
   result = ctx.irNode(IrRet)
   if ctx.numKids() == 1:
     let rv = ctx.downNode(0)
     result.contents.retVal = rv
     discard ctx.addVarDef("result", result, rv.getTid())
 
-proc convertUnaryPlus(ctx: var CompileCtx): IrNode =
+proc convertUnaryPlus(ctx: Module): IrNode =
   result = ctx.downNode(0)
 
-proc convertUnaryMinus(ctx: var CompileCtx): IrNode =
+proc convertUnaryMinus(ctx: Module): IrNode =
   result               = ctx.irNode(IrUMinus)
   result.contents.uRhs = ctx.downNode(0)
   result.tid           = result.contents.uRhs.getTid()
 
-proc convertNotOp(ctx: var CompileCtx): IrNode =
+proc convertNotOp(ctx: Module): IrNode =
   result               = ctx.irNode(IrNot)
   result.contents.uRhs = ctx.downNode(0)
   result.tid           = TBool
 
 
-proc convertBooleanOp(ctx: var CompileCtx): IrNode =
+proc convertBooleanOp(ctx: Module): IrNode =
   # Comparison operators.
 
   result                = ctx.irNode(IrBool)
@@ -1078,7 +1125,7 @@ proc convertBooleanOp(ctx: var CompileCtx): IrNode =
 
 const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
 
-proc convertBinaryOp(ctx: var CompileCtx): IrNode =
+proc convertBinaryOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrBinary)
   result.contents.bOp   = ctx.getText()
 
@@ -1109,7 +1156,7 @@ proc convertBinaryOp(ctx: var CompileCtx): IrNode =
       ctx.irError("U64Div")
       result.tid = TBottom
 
-proc convertLogicOp(ctx: var CompileCtx): IrNode =
+proc convertLogicOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrLogic)
   result.contents.bOp   = ctx.getText()
   let
@@ -1140,7 +1187,7 @@ proc convertLogicOp(ctx: var CompileCtx): IrNode =
   else:
       result.tid = TBool
 
-proc convertSection(ctx: var CompileCtx): IrNode =
+proc convertSection(ctx: Module): IrNode =
   var
     haveSpec     = ctx.attrSpec != nil
     savedSecSpec = ctx.curSecSpec
@@ -1182,19 +1229,20 @@ proc convertSection(ctx: var CompileCtx): IrNode =
 
 # When we are indexing into a tuple, we go ahead and constant-fold the
 # index immediately, instead of waiting till the folding pass.
-proc foldDown*(ctx: var CompileCtx, newNode: IrNode) {.importc, cdecl.}
+proc foldDown*(ctx: Module, newNode: IrNode) {.importc, cdecl.}
 
-proc convertIndex(ctx: var CompileCtx): IrNode =
+proc convertIndex(ctx: Module): IrNode =
   result = ctx.irNode(IrIndex)
   var
     toIx = ctx.downNode(0)
+    brak = ctx.pt
 
   var
     ixStart = ctx.downNode(1)
     ixEnd: IrNode
 
   if toIx.contents.kind == IrIndex:
-    ctx.irError("NDim", w = toIx.parseNode)
+    ctx.irError("NDim", w = brak)
     return
   elif toIx.contents.kind == IrMember:
     result.contents.toIxSym = toIx.contents.attrSym
@@ -1210,10 +1258,10 @@ proc convertIndex(ctx: var CompileCtx): IrNode =
       if TInt.unify(ixStart.getTid()) == TBottom:
         if not ixStart.getTid().isIntType():
           ctx.irError("ListIx")
-      discard toIx.getTid().unify(tList(result.tid)).toString()
+      ctx.typeCheck(toIx.getTid(), tList(result.tid))
     of C4Dict:
       let expected = tDict(ixStart.getTid(), result.tid)
-      let dictType = unify(toIx.getTid(), expected)
+      ctx.typeCheck(toIx.getTid(), expected)
 
     of C4Tuple:
       ctx.foldDown(ixStart)
@@ -1225,32 +1273,129 @@ proc convertIndex(ctx: var CompileCtx): IrNode =
         ctx.irError("TupleIxBound", w = ixStart.parseNode)
         return
       let to = toIx.getTid().idToTypeRef().items[v]
-      discard result.tid.unify(to)
+      ctx.typeCheck(result.tid, to)
     of C4TVar:
       # Currently, we do not try to infer the container type;
       # we instead just error that the type needs to be known
       # to index it.
-      ctx.irError("ContainerType")
+      ctx.irError("ContainerType", w = toIx.parseNode)
     else:
       if tobj.typeId == TBottom:
         return
-      unreachable
+      ctx.irError("NotIndexible", @[tobj.typeId.toString()])
   else:  # SLICE operator. *must* be a list.
     ixEnd = ctx.downNode(2)
-    result.tid = tList(tVar()).unify(toIx.getTid())
+    result.tid = ctx.typeCheck(tList(tVar()), toIx.getTid())
 
   result.contents.toIx       = toIx
   result.contents.indexStart = ixStart
   result.contents.indexEnd   = ixEnd
 
-proc convertCall(ctx: var CompileCtx): IrNode =
+proc convertCall(ctx: Module): IrNode =
   result                = ctx.irNode(IrCall)
   result.contents.fname = ctx.getText(0)
+  result.tid            = tVar()
+  result.parseNode      = ctx.parseKid(0)
+  var
+    fArgs: seq[TypeId]
 
   for i in 0 ..< ctx.numGrandKids(1):
-    result.contents.actuals.add(ctx.downNode(1, i))
+    let oneActual = ctx.downNode(1, i)
+    result.contents.actuals.add(oneActual)
+    fArgs.add(oneActual.tid)
 
-proc parseTreeToIr(ctx: var CompileCtx): IrNode =
+  fArgs.add(result.tid)
+  result.contents.toCall =
+      ctx.beginFunctionResolution(result, result.contents.fname, tFunc(fArgs))
+
+proc fmtImplementationList(fname: string, fns: seq[FuncInfo],
+                           t: TypeId, extra: seq[string] = @[]): string =
+  var
+    row:   seq[string]
+    cells: seq[seq[string]]
+    cur:   string
+    pad:   string
+    w = 0
+
+  for num, item in fns:
+    cur = "  <strong>"
+    cur &= fname & "("
+    for i, param in item.params:
+      cur &= item.paramNames[i]
+      cur &= ": "
+      if i + 1 == item.params.len() and param.va:
+        cur &= "*"
+      cur &= param.tid.toString()
+      if i + 1 < item.params.len():
+        cur &= ", "
+    cur &= ") -> "
+    cur &= item.retval.tid.toString()
+    cur &= "</strong>"
+
+    row.add(cur)
+    if cur.len() > w:
+      w = cur.len()
+
+    cur = item.defModule.modname & ":"
+    cur &= $(item.rawImpl.token.lineNo) & ":"
+    cur &= $(item.rawImpl.token.lineOffset) & "("
+    cur &= item.defModule.where & ") "
+    if extra.len() != 0:
+      cur &= extra[num]
+
+    row.add(cur)
+    cells.add(row)
+    row = @[]
+
+  pad = `$`(Rune(' ').repeat(w))
+  w += 2
+
+  result = "<ol>"
+  for row in cells:
+    result &= "<li>" & row[0]
+    result &= pad[0 .. (w - len(row[0]))]
+    result &= row[1]
+    result &= "</li>"
+  result &= "</ol>"
+
+
+proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): string =
+  return fmtImplementationList(fname, fns, t)
+
+proc resolveDeferredSymbols*(ctx: Module) =
+  for (n, t, origmatch, origfail) in ctx.funcsToResolve:
+    var
+      matches: seq[FuncInfo]
+      fails = origfail
+
+    if origmatch.len() == 0 and origfail.len() == 0:
+      ctx.irError("NoImpl", @[n.contents.fname, t.toString()], w = n.parseNode)
+      return
+
+    for possibility in origmatch:
+      withFnLock(possibility):
+        if possibility.tid.unify(t.copyType().typeId) == TBottom:
+          fails.add(possibility)
+        else:
+          matches.add(possibility)
+
+    if matches.len() == 1:
+      n.contents.toCall = matches[0]
+      withFnLock(matches[0]):
+        discard matches[0].tid.unify(t)
+      continue
+    elif matches.len() == 0:
+      let info = showCallMistakes(n.contents.fname, fails, t)
+      ctx.irError("BadSig", @[n.contents.fname, t.toString(), info, "call"],
+                  w = n.parseNode)
+    else:
+      let info = fmtImplementationList(n.contents.fname, matches, t)
+      ctx.irError("CallAmbig", @[n.contents.fname, t.toString(), info, "call"],
+                  w = n.parseNode)
+
+  ctx.funcsToResolve = @[]
+
+proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
       result = ctx.statementsToIr()
@@ -1338,24 +1483,39 @@ proc parseTreeToIr(ctx: var CompileCtx): IrNode =
     else:
       unreachable
 
-proc toIr*(ctx: var CompileCtx): bool {.discardable.} =
-  ctx.globalScope.initScope()
-  ctx.moduleScope.initScope()
-  ctx.pt = ctx.root
-  ctx.findExplicitDeclarations()
+proc finishFunctionProcessing(ctx: Module, impl: FuncInfo) =
+  # If a result was never set inside the function,
+  # then we need to change the type to void.
+  #
+  # If the return variable was never used, this should not pose a
+  # problem. However, if there are any uses of the return value, the
+  # error will get picked up when we do our def/use analysis after
+  # the folding pass, so we ignore any type error for now.
 
-  # Build IR; first the top-level module, then walk the module symbol table
-  # to find functions and parameters (where only the setting of a default
-  # value is evaluated as an expression)
+  let resSym = impl.fnScope.table["result"]
+  if resSym.defs.len() == 0:
+    discard resSym.tid.unify(TVoid)
 
-  ctx.pt     = ctx.root
-  ctx.irRoot = ctx.parseTreeToIr()
+  # Next, we go ahead and 're-lock' the function, to be safe. This
+  # ensures we, from this point forward, won't accidentally modify the
+  # type.
+  impl.lockFn()
+
+proc toIr*(ctx: Module): bool {.discardable.} =
+  # Build IR. First walk the module symbol table to find functions and
+  # parameters we haven't yet evaulated.
+  #
+  # Then, do the main body. The order doesn't really matter here,
+  # though.
 
   for (name, sym) in ctx.moduleScope.table.items():
     for impl in sym.fimpls:
+      impl.unlockFn()
       ctx.funcScope = impl.fnScope
       ctx.pt        = impl.rawImpl
       impl.implementation = ctx.parseTreeToIr() # This should be a body node.
+      ctx.finishFunctionProcessing(impl)
+
     if sym.pInfo != nil and sym.pinfo.defaultParse.isSome():
       ctx.funcScope = nil
       ctx.pt        = sym.pinfo.defaultParse.get()
@@ -1365,4 +1525,8 @@ proc toIr*(ctx: var CompileCtx): bool {.discardable.} =
       sym.pinfo.defaultIr = some(paramIr)
       ctx.typeCheck(sym, paramIr.getTid())
 
-  return ctx.errors.canProceed()
+  ctx.pt        = ctx.root
+  ctx.funcScope = nil
+  ctx.ir        = ctx.parseTreeToIr()
+
+  result = ctx.errors.canProceed()

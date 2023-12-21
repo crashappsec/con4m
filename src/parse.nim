@@ -182,30 +182,30 @@ proc addKid*(parent: Con4mNode, kid: Con4mNode) =
   parent.children.add(kid)
   kid.parent = parent
 
-template tokAt*(ctx: var CompileCtx, i: int): Con4mToken =
+template tokAt*(ctx: Module, i: int): Con4mToken =
   ctx.tokens[i]
 
 # Prototypes for things where we need the forward reference.
-proc body(ctx: var CompileCtx): Con4mNode
-proc optionalBody(ctx: var CompileCtx): Con4mNode
-proc typeSpec(ctx: var CompileCtx): Con4mNode
-proc expressionStart(ctx: var CompileCtx): Con4mNode
-proc notExpr(ctx: var CompileCtx): Option[Con4mNode]
-proc accessExpr(ctx: var CompileCtx): Con4mNode
+proc body(ctx: Module): Con4mNode
+proc optionalBody(ctx: Module): Con4mNode
+proc typeSpec(ctx: Module): Con4mNode
+proc expressionStart(ctx: Module): Con4mNode
+proc notExpr(ctx: Module): Option[Con4mNode]
+proc accessExpr(ctx: Module): Con4mNode
 
-proc inFunction(ctx: var CompileCtx): bool {.inline.} =
+proc inFunction(ctx: Module): bool {.inline.} =
   return ctx.inFunc
 
-proc inLoop(ctx: var CompileCtx): bool {.inline.} =
+proc inLoop(ctx: Module): bool {.inline.} =
   return ctx.loopDepth != 0
 
-proc curTok(ctx: var CompileCtx): Con4mToken
+proc curTok(ctx: Module): Con4mToken
 
 const stmtStartList = [NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
                        NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt,
                        NodeForStmt, NodeWhileStmt, NodeBreakStmt]
 
-proc newNode(ctx: var CompileCtx, kind: Con4mNodeKind): Con4mNode =
+proc newNode(ctx: Module, kind: Con4mNodeKind): Con4mNode =
   ctx.curNodeId += 1
 
   result = Con4mNode(id: ctx.curNodeId, kind: kind, depth: ctx.nesting,
@@ -225,13 +225,13 @@ const alwaysSkip* = [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]
 
 # When outputting errors: return "" we might want to back up a token.
 # need to skip ws when doing that.
-proc unconsume(ctx: var CompileCtx) =
+proc unconsume(ctx: Module) =
   while true:
     ctx.curTokIx -= 1
     if not alwaysSkip.contains(ctx.curTok().kind):
       return
 
-proc parseBaseError*(ctx: var CompileCtx, code: string, backup: bool,
+proc parseBaseError*(ctx: Module, code: string, backup: bool,
                      warn: bool, subs: seq[string], st: string,
                     ii: Option[InstantiationInfo]) =
   if backup:
@@ -240,9 +240,9 @@ proc parseBaseError*(ctx: var CompileCtx, code: string, backup: bool,
   let tok = ctx.curTok()
   let sev = if warn: LlWarn else: LlErr
 
-  ctx.errors.baseError(code, tok, ctx.module, ErrParse, sev, subs, st, ii)
+  ctx.errors.baseError(code, tok, ctx.modname, ErrParse, sev, subs, st, ii)
 
-template parseError*(ctx: var CompileCtx, msg: string,
+template parseError*(ctx: Module, msg: string,
                     extra: seq[string] = @[]) =
   when defined(debug):
     ctx.parseBaseError(msg, true, false, extra, getStackTrace(),
@@ -250,7 +250,7 @@ template parseError*(ctx: var CompileCtx, msg: string,
   else:
     ctx.parseBaseError(msg, true, false, extra, "", none(InstantiationInfo))
 
-template parseErrorNoBackup*(ctx: var CompileCtx, msg: string,
+template parseErrorNoBackup*(ctx: Module, msg: string,
                             extra: seq[string] = @[]) =
   when defined(debug):
     ctx.parseBaseError(msg, false, false, extra, getStackTrace(),
@@ -258,23 +258,23 @@ template parseErrorNoBackup*(ctx: var CompileCtx, msg: string,
   else:
     ctx.parseBaseError(msg, false, false, extra, "", none(InstantiationInfo))
 
-template errSkipStmt*(ctx: var CompileCtx, msg: string,
+template errSkipStmt*(ctx: Module, msg: string,
                      extra: seq[string] = @[]) =
   ctx.parseError(msg, extra)
   con4mLongJmp()
 
-template errSkipStmtNoBackup*(ctx: var CompileCtx, msg: string,
+template errSkipStmtNoBackup*(ctx: Module, msg: string,
                              extra: seq[string] = @[]) =
   ctx.parseErrorNoBackup(msg, extra)
   con4mLongJmp()
 
 template production(prodName: untyped,
                     nodeType: Con4mNodeKind, prodImpl: untyped) {.dirty.} =
-  proc `prodName`(ctx: var CompileCtx): Con4mNode =
+  proc `prodName`(ctx: Module): Con4mNode =
     result = ctx.newNode(nodeType)
     prodImpl
 
-  proc `parse prodName`*(ctx: var CompileCtx): bool =
+  proc `parse prodName`*(ctx: Module): bool =
     if ctx.tokens.len() == 0:
       if not ctx.lex():
         return false
@@ -284,10 +284,10 @@ template production(prodName: untyped,
     return ctx.errors.canProceed()
 
   proc `parse prodName`*(s: string, errs: var seq[Con4mError],
-                         module = ""): Con4mNode =
-    var ctx: CompileCtx
-    ctx.s      = s.newStringCursor()
-    ctx.module = module
+                         modname = ""): Con4mNode =
+    var ctx: Module
+    ctx.s       = s.newStringCursor()
+    ctx.modname = modname
 
     if ctx.`parse prodName`():
       result =  ctx.root
@@ -296,12 +296,12 @@ template production(prodName: untyped,
 
 template idStmtProd(prodName: untyped, nodeType: Con4mNodeKind,
                     prodImpl: untyped) {.dirty.} =
-  proc `prodName`(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
+  proc `prodName`(ctx: Module, lhs: Con4mNode): Con4mNode =
     result = ctx.newNode(nodeType)
     result.addKid(lhs)
     prodImpl
 
-  proc `parse prodName`*(ctx: var CompileCtx): bool =
+  proc `parse prodName`*(ctx: Module): bool =
     if ctx.tokens.len() == 0:
       if not ctx.lex():
         return false
@@ -312,10 +312,10 @@ template idStmtProd(prodName: untyped, nodeType: Con4mNodeKind,
     return ctx.errors.canProceed()
 
   proc `parse prodName`*(s: string, errs: var seq[Con4mError],
-                         module = ""): Con4mNode =
-    var ctx: CompileCtx
+                         modname = ""): Con4mNode =
+    var ctx: Module
     ctx.s      = s.newStringCursor()
-    ctx.module = module
+    ctx.modname = modname
 
     if ctx.`parse prodName`():
       result =  ctx.root
@@ -323,9 +323,9 @@ template idStmtProd(prodName: untyped, nodeType: Con4mNodeKind,
     errs = ctx.errors
 
 template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
-  proc prodName(ctx: var CompileCtx): Option[Con4mNode]
+  proc prodName(ctx: Module): Option[Con4mNode]
 
-  proc rhsName(ctx: var CompileCtx): Con4mNode =
+  proc rhsName(ctx: Module): Con4mNode =
     var n = ctx.expressionStart()
     while true:
       let optExpr = ctx.prodName()
@@ -337,7 +337,7 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
           r.children = @[n] & r.children
         n = r
 
-  proc prodName(ctx: var CompileCtx): Option[Con4mNode] =
+  proc prodName(ctx: Module): Option[Con4mNode] =
     var res: Con4mNode
 
     if ctx.curKind() == tokenType:
@@ -348,7 +348,7 @@ template exprProd(prodName, rhsName, chainNext, tokenType, nodeType: untyped) =
     else:
       result = ctx.chainNext()
 
-template errBail(ctx: var CompileCtx, msg: string) =
+template errBail(ctx: Module, msg: string) =
   ## When re-syncing is too likely to be error-prone, we bail from
   ## the rest of the parse.
   ctx.parseErrorNoBackup(msg)
@@ -428,7 +428,7 @@ const ignore1Nl = [TtPlus, TtMinus, TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte,
 const commentToks = [TtLineComment, TtLongComment]
 
 
-proc doNewlineSkipping(ctx: var CompileCtx) =
+proc doNewlineSkipping(ctx: Module) =
   var stopAtNextNewline = false
   while true:
     while ctx.tokens[ctx.curTokIx].kind in alwaysSkip:
@@ -446,10 +446,10 @@ proc doNewlineSkipping(ctx: var CompileCtx) =
     else:
       return
 
-template skipNextNewline(ctx: var CompileCtx) =
+template skipNextNewline(ctx: Module) =
   ctx.skipOneNewline = true
 
-proc skipOneNewlineIfAppropriate(ctx: var CompileCtx) =
+proc skipOneNewlineIfAppropriate(ctx: Module) =
 
   if ctx.skipOneNewline:
     ctx.doNewlineSkipping()
@@ -463,7 +463,7 @@ proc skipOneNewlineIfAppropriate(ctx: var CompileCtx) =
 
   ctx.doNewlineSkipping()
 
-proc curTok(ctx: var CompileCtx): Con4mToken =
+proc curTok(ctx: Module): Con4mToken =
   # when a token is consumed, we simply advance the index past it, and
   # then leave it to the next call to curTok() to advance.
   # First, we look at that last token; if it allows us to
@@ -486,22 +486,22 @@ proc curTok(ctx: var CompileCtx): Con4mToken =
 
   result = ctx.tokAt(ctx.curTokIx)
 
-template curKind(ctx: var CompileCtx): Con4mTokenKind =
+template curKind(ctx: Module): Con4mTokenKind =
   ctx.curTok().kind
 
-proc consume(ctx: var CompileCtx): Con4mToken {.inline.} =
+proc consume(ctx: Module): Con4mToken {.inline.} =
   result = ctx.curTok()
   ctx.curTokIx += 1
 
-proc advance(ctx: var CompileCtx) {.inline.} =
+proc advance(ctx: Module) {.inline.} =
   discard ctx.curTok()
   ctx.curTokIx += 1
 
-proc ignoreAllNewlines(ctx: var CompileCtx) =
+proc ignoreAllNewlines(ctx: Module) =
   while ctx.curKind() == TtNewline:
     ctx.advance()
 
-proc lookAhead(ctx: var CompileCtx, numToks: int = 1): Con4mToken =
+proc lookAhead(ctx: Module, numToks: int = 1): Con4mToken =
   let cur = ctx.curTokIx
   var n = numToks
 
@@ -512,12 +512,12 @@ proc lookAhead(ctx: var CompileCtx, numToks: int = 1): Con4mToken =
   result = ctx.curTok()
   ctx.curTokIx = cur
 
-proc atEndOfLine(ctx: var CompileCtx): bool =
+proc atEndOfLine(ctx: Module): bool =
   let kind = ctx.curKind()
   if kind in [TtSemi, TtNewLine, TtRBrace, TtRParen, TtEOF]:
     return true
 
-proc describeLastNode(ctx: var CompileCtx): string =
+proc describeLastNode(ctx: Module): string =
   var n = ctx.prevNode
   if n.kind == NodeIdentifier and
      n.parent.kind in [NodeLiteral, NodeTypeBuiltin, NodeTypeVar,
@@ -526,7 +526,7 @@ proc describeLastNode(ctx: var CompileCtx): string =
 
   return $(n)
 
-proc endOfStatement(ctx: var CompileCtx, errIfNotThere = true) =
+proc endOfStatement(ctx: Module, errIfNotThere = true) =
   if errIfNotThere and not ctx.atEndOfLine():
     ctx.errSkipStmtNoBackup("StmtEnd", @[ctx.describeLastNode()])
   else:
@@ -535,7 +535,7 @@ proc endOfStatement(ctx: var CompileCtx, errIfNotThere = true) =
   while ctx.curKind() in [TtSemi, TtNewline]:
     ctx.advance()
 
-proc expectOrErrConsuming(ctx: var CompileCtx, kind: Con4mTokenKind) =
+proc expectOrErrConsuming(ctx: Module, kind: Con4mTokenKind) =
   let tok = ctx.consume()
   if tok.kind != kind:
     case kind
@@ -555,7 +555,7 @@ proc expectOrErrConsuming(ctx: var CompileCtx, kind: Con4mTokenKind) =
       discard
     ctx.errSkipStmt("MissingTok", @[$(kind)])
 
-proc expectOrErr(ctx: var CompileCtx, kind: Con4mTokenKind) =
+proc expectOrErr(ctx: Module, kind: Con4mTokenKind) =
   let foundKind = ctx.curKind()
   if foundKind != kind:
     case kind
@@ -575,7 +575,7 @@ proc expectOrErr(ctx: var CompileCtx, kind: Con4mTokenKind) =
       discard
     ctx.errSkipStmtNoBackup("MissingTok", @[$(kind)])
 
-template expect(ctx: var CompileCtx, kind: Con4mTokenKind, consume = false) =
+template expect(ctx: Module, kind: Con4mTokenKind, consume = false) =
   if consume:
     ctx.expectOrErrConsuming(kind)
   else:
@@ -609,7 +609,7 @@ exprProd(neExpr,     neExprRHS,      binOrExpr,  TtNeq,    NodeNe)
 exprProd(andExpr,    andExprRHS,     neExpr,     TtAnd,    NodeAnd)
 exprProd(orExpr,     orExprRhs,      andExpr,    TtOr,     NodeOr)
 
-proc expression(ctx: var CompileCtx): Con4mNode =
+proc expression(ctx: Module): Con4mNode =
   let
     expr   = ctx.expressionStart()
     rhsOpt = ctx.orExpr()
@@ -632,7 +632,7 @@ proc expression(ctx: var CompileCtx): Con4mNode =
 production(identifier, NodeIdentifier):
   ctx.expect(TtIdentifier, consume = true)
 
-proc memberExpr(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
+proc memberExpr(ctx: Module, lhs: Con4mNode): Con4mNode =
   # For use from accessExpr, which peels off the first identifier.
   result = ctx.newNode(NodeMember)
   if lhs != Con4mNode(nil):
@@ -647,7 +647,7 @@ proc memberExpr(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
     if ctx.curKind() != TtPeriod:
       return
 
-proc memberExpr(ctx: var CompileCtx): Con4mNode =
+proc memberExpr(ctx: Module): Con4mNode =
   # For use in contexts like parameters where we KNOW this can only be
   # an attribute.
   result = ctx.newNode(NodeMember)
@@ -658,20 +658,20 @@ proc memberExpr(ctx: var CompileCtx): Con4mNode =
       return
     ctx.advance()
 
-proc indexExpr(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
+proc indexExpr(ctx: Module, lhs: Con4mNode): Con4mNode =
   result = ctx.newNode(NodeIndex)
 
   result.addKid(lhs)
 
   adtLiteral:
-    ctx.advance()
+    result.token = ctx.consume()
     result.addKid(ctx.expression())
     if ctx.curKind == TtColon:
       ctx.advance()
       result.addKid(ctx.expression())
     ctx.expect(TtRBracket, consume = true)
 
-proc callActuals(ctx: var CompileCtx, lhs: Con4mNode): Con4mNode =
+proc callActuals(ctx: Module, lhs: Con4mNode): Con4mNode =
   result = ctx.newNode(NodeCall)
 
   let
@@ -839,7 +839,7 @@ production(accessExpr, NodeIdentifier):
     else:
       return
 
-proc notExpr(ctx: var CompileCtx): Option[Con4mNode] =
+proc notExpr(ctx: Module): Option[Con4mNode] =
   case ctx.curKind()
   of TtNot:
     var res = ctx.newNode(NodeNot)
@@ -1422,7 +1422,7 @@ production(body, NodeBody):
           break
         ctx.advance()
 
-production(module, NodeModule):
+production(topLevel, NodeModule):
   # Instead of being under token 1, we really want Module to be bound to
   # the start-of-stream token.
   result.token = ctx.tokens[0]

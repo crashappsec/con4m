@@ -101,12 +101,12 @@ proc toStr(x: TypeRef, tvars: var Dict[TypeId, int], nvars: var int): string =
     result = typeNameFromId(x.typeId)
   of C4TVar:
     if x.localName.isSome():
-      result = "`" & x.localName.get() & "(" & toHex(cast[int](x.typeId)) & ")"
+      result = "`" & x.localName.get()
     else:
       if tvars.lookup(x.typeId).isNone():
         nvars += 1
         tvars[x.typeId] = nvars
-      result = "`" & numToTVarName(tvars[x.typeId]) & "(" & toHex(cast[int](x.typeId)) & ")"
+      result = "`" & numToTVarName(tvars[x.typeId])
   of C4List:
     result = "list[" & x.items[0].toStr(tvars, nvars) & "]"
   of C4Ref:
@@ -167,15 +167,5 @@ proc toStr*(x: TypeRef): string {.exportc, cdecl.} =
   tbl.initDict()
   return x.toStr(tbl, n)
 
-proc toString*(x: TypeId): string {.exportc, cdecl.} =
+proc toString*(x: TypeId): string {.exportc, cdecl.}=
   typeStore[x].toStr()
-
-proc showFw*(x: TypeId) =
-  let final = x.followForwards()
-
-  echo "Typeid: ", tohex(cast[int](x)), " -> ", tohex(cast[int](final)), "(", toString(final), ")"
-
-  let t = typeStore[final]
-
-  for item in t.items:
-    item.showFw()
