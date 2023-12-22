@@ -215,6 +215,18 @@ proc hasExitToOuterBlock(loop: CfgNode): bool =
   # TODO: do this
   return true
 
+proc getSectionLabel(n: IrNode): string =
+  let s = n.contents
+
+  result = "Section "
+  if s.prefix != "":
+    result &= s.prefix & "."
+
+  result &= s.sectName
+
+  if s.instance != "":
+    result &= s.instance
+
 proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
                    cur: CfgNode): CfgNode =
   result = cur
@@ -224,9 +236,14 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # block end node got inserted into the graph. This goes
     # in what is essentially a 'contents' node, so create
     # that here.
-    result = CfgNode(irNode: n, pre: @[cur])
-    cur.nextBlock = result
-    cur.post.add(result)
+    #
+    # The exception is if we're def about to create a new block
+    # ourselves, which only happens for sections; loops and
+    # conditionals get blocks made for them.
+    if n.contents.kind != IrSection:
+      result = CfgNode(irNode: n, pre: @[cur])
+      cur.nextBlock = result
+      cur.post.add(result)
 
 
   case n.contents.kind
@@ -252,6 +269,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result = ctx.handleOneNode(m, n.contents.blk, secStart)
     result.finishBlock(secStart)
     result = secStart.exitNode
+    secstart.label = n.getSectionLabel()
 
   of IrLoop:
     m.checkUses(n.contents.startIx, result)
@@ -352,6 +370,10 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
 
     var search = result
     while search.loopIrNode != n.contents.targetNode:
+      if search.pre.len() == 0:
+        print n.toRope()
+        result = nil
+        return
       search = search.pre[0]
     # The post for a break is the end of the loop (the exit node).
     # For a continue, it's the top of the loop.
@@ -402,6 +424,8 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
 
     if n.contents.toCall == nil:
       return
+
+    result.irNode = n
 
     # We go off and build the CFG for the function we're calling, if
     # it hasn't already been built. In the case where these things
@@ -480,6 +504,7 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   var top                = startBlock(nil, f.implementation)
   top.defAtStart         = start
   ctx.topExitNode        = top.exitNode
+  f.exitNode             = top.exitNode
 
   # When we add default paramers, we will want to check parameters'
   # uses, via the module's def's. For now, we just add them in to the
@@ -579,7 +604,7 @@ proc prepFirstGraph*(n: CfgNode, i: var int, fns, mods: var seq[CfgNode]) =
 
   case n.exitType
   of CFXCall:
-    if n.post[0] notin fns:
+    if n.post.len() != 0 and n.post[0] notin fns:
       fns.add(n.post[0])
     n.nextBlock.prepFirstGraph(i, fns, mods)
   of CFXUse:
@@ -602,10 +627,21 @@ proc fmtCfgLoc(n: Con4mNode, m: Con4mNode = nil): Rope =
                            $(m.token.lineNo) & ") ")
 
 proc getSeqDisplayKids(entry: CfgNode): seq[CfgNode] =
-  var cur = entry
+  var
+    cur   = entry.nextBlock
+    last  = entry.exitNode
+    depth = 0
 
-  while cur != nil:
-    result.add(cur)
+  while cur != last and cur != nil:
+    if depth == 0:
+      result.add(cur)
+    if cur.exitNode != nil:
+      depth += 1
+    elif cur.startNode != nil:
+      depth -= 1
+      if depth == 0:
+        result.add(cur)
+
     cur = cur.nextBlock
 
 proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
@@ -654,33 +690,30 @@ proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
   case cur.exitType
   of CfxUse:
     let module = cur.irNode.parseNode.children[0].getText()
-    r += fgcolor(" -> runs: " & module, "atomiclime")
+    r += fgcolor("-> runs: " & module, "atomiclime")
   of CfxCall:
-    let fname = cur.irNode.parseNode.children[0].getText()
-    r += fgcolor(" -> calls: " & fname, "atomiclime")
+    let fname = cur.irNode.contents.toCall.name
+    r += fgcolor("-> calls: " & fname, "atomiclime")
   of CfxBreak:
-    r += fgcolor(" -> breaks to #" & $(cur.post[0].nodeId), "atomiclime")
+    r += fgcolor("-> breaks to #" & $(cur.post[0].nodeId), "atomiclime")
   of CfxContinue:
-    r += fgcolor(" -> continues to #" & $(cur.post[0].nodeId), "atomiclime")
+    r += fgcolor("-> continues to #" & $(cur.post[0].nodeId), "atomiclime")
   of CfxReturn:
-    r += fgcolor(" -> exit to #" & $(cur.post[0].nodeId), "atomiclime")
+    r += fgcolor("-> exit to #" & $(cur.post[0].nodeId), "atomiclime")
   else:
     if cur.post.len() == 1 and cur.post[0] != cur.nextBlock:
-      r += fgcolor(" -> #" & $(cur.post[0].nodeId), "atomiclime")
+      r += fgcolor("-> #" & $(cur.post[0].nodeId), "atomiclime")
 
   if cur.startNode != nil:
-    r += fgColor(" for #" & $(cur.startNode.nodeId), "fandango")
+    r += fgColor(" ↑" & $(cur.startNode.nodeId), "fandango")
 
   elif cur.exitNode != nil:
-    r += fgColor(" to #" & $(cur.exitNode.nodeId), "fandango")
+    r += fgColor(" ↓" & $(cur.exitNode.nodeId), "fandango")
 
     if cur.post.len() > 1:
-      for item in cur.post:
-        item.loopTop = true
-        kids.add(item)
-
-  if cur.loopTop:
-    kids = cur.nextBlock.getSeqDisplayKids()
+      kids.add(cur.post)
+    else:
+      kids = cur.getSeqDisplayKids()
 
   return (r, kids)
 

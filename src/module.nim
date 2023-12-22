@@ -70,6 +70,7 @@
 #   If so, what's the syntax?
 # - Macros / aspects
 # - Allow arbitrary blocks within statements?
+# - Object field is never used (or set and not read)
 
 import nimutils, os, strutils, httpclient, net, uri, streams, cfg
 
@@ -283,7 +284,7 @@ proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
 
 when isMainModule:
   useCrashTheme()
-  var session = buildFromEntryPoint("ptest_tiny.c4m")
+  var session = buildFromEntryPoint("ptest.c4m")
 
   if session.entrypoint != nil:
     var module = session.entrypoint

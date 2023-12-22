@@ -336,8 +336,7 @@ type
     # go berzerk.
     nodeId*:         int
     irNode*:         IrNode
-    loopTop*:        bool
-    blockEnd*:       bool
+    makeChildren*:   bool
     label*:          string
 
   AttrDict*      = Dict[string, CBox]
