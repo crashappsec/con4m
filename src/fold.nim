@@ -477,6 +477,20 @@ proc logicFold(ctx: Module) =
 proc varAssignFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.varlhs)
   ctx.foldDown(ctx.current.contents.varrhs)
+  # For now, we only fold this if the RHS is constant and the LHS is a
+  # simple variable, not an array access (even if it's `m[4] = 12`, if
+  # `m` is a global).
+  if ctx.current.contents.varrhs.isConstant():
+    let lhs = ctx.current.contents.varlhs
+    if lhs.contents.kind == IrLhsLoad:
+      let sym = lhs.contents.symbol
+      if sym.immutable:
+        # Previous pass would catch multiple assignments.
+        var box: Cbox
+        box.t = ctx.current.contents.varlhs.tid
+        box.v = ctx.current.contents.varrhs.value.get()
+        sym.constValue = some(box)
+        ctx.current.contents = IrContents(kind: IrNop)
 
 proc attrAssignFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.attrLhs)

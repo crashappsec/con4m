@@ -1,4 +1,4 @@
-import parse, algorithm, strutils
+import parse, algorithm, strutils, specs
 
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.followForwards()
@@ -14,8 +14,8 @@ proc newModuleObj*(contents: string, name: string, where = "", ext = "",
   result.moduleScope = initScope()
   result.usedAttrs   = initScope()
 
-proc lookupOrAdd*(ctx: Module, scope: var Scope, n: string,
-                  isFunc: bool, tid = TBottom): Option[SymbolInfo] =
+proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
+                 isFunc: bool, tid = TBottom): Option[SymbolInfo] =
   # This is a helper function to look up a symbol in the given scope,
   # or create the symbol in the scope, if it is not found.
   #
@@ -42,12 +42,13 @@ proc lookupOrAdd*(ctx: Module, scope: var Scope, n: string,
     if tid != TBottom:
       ctx.typeCheck(sym, tid)
   else:
-    sym = SymbolInfo(name: n, tid: tid, isFunc: isFunc)
+    sym = SymbolInfo(name: n, tid: tid, isFunc: isFunc, module: ctx)
     scope.table[n] = sym
     result = some(sym)
 
 proc scopeDeclare*(ctx: Module, scope: var Scope, n: string,
-                   isfunc: bool, tid = TBottom, immutable = false):
+                   isfunc: bool, tid = TBottom, immutable = false,
+                  declnode = ctx.pt):
                      Option[SymbolInfo] =
  # This is meant for things that should be declared in a specific scope,
  # like enums, functions and explicitly declared variables.
@@ -63,6 +64,8 @@ proc scopeDeclare*(ctx: Module, scope: var Scope, n: string,
   # Funcs can have multiple declarations as long as signatures are disjoint.
   if sym.declaredType and not isFunc:
     ctx.irWarn("VarRedef")
+  else:
+    sym.declNode = declnode
 
   # Since local enums are always processed before defs, this check is
   # useless.
@@ -119,31 +122,59 @@ proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
 
   return curSpec
 
-proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
-                 tid = TBottom): Option[SymbolInfo] =
-  var
-    sec: SectionSpec
+proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
+  ## Look for a symbol, first in lexical scopes, then in the attribute
+  ## scope.
+
+  var sym: SymbolInfo
+
+  for scope in ctx.blockScopes:
+    result = scope.table.lookup(name)
+    if result.isSome():
+      return
+
+  if ctx.funcScope != nil:
+    result = ctx.funcScope.table.lookup(name)
+    if result.isSome():
+      return
+
+  result = ctx.moduleScope.table.lookup(name)
+  if result.isSome():
+    return
+
+  result = ctx.globalScope.table.lookup(name)
+  if result.isSome():
+    return
+
+  result = ctx.usedAttrs.table.lookup(name)
+  if result.isSome():
+    return
+
+  let
     parts = name.split(".")
-    tid = tid
+    fi    = ctx.attrSpec.getFieldInfo(parts)
 
+  case fi.fieldKind
+  of FsErrorNoSpec, FsUserDefField:
+    if parts.len() == 1:
+      return none(SymbolInfo)
+  of FsField:
+    discard
+  else:
+    return none(SymbolInfo)
 
-  if ctx.curSecSpec != nil:
-    if parts.len() > 1:
-      sec = ctx.resolveSection(parts[0 ..< 1])
-    else:
-      sec = ctx.curSecSpec
+  sym = SymbolInfo(name: name, tid: fi.tid.tCopy(), isAttr: true)
 
-    if sec != nil and tid != TBottom:
-      let expectedType = sec.typeFromSpec(parts[^1])
-      tid = tid.unify(expectedType)
-      if tid == TBottom:
-        ctx.irError("TypeVsSpec", @[tid.toString(), expectedType.toString()])
+  if fi.tid == TBottom:
+    fi.tid = tVar()
+  if fi.defaultVal.isSome():
+    sym.hasDefault = true
+  ctx.usedAttrs.table[name] = sym
 
-  result = ctx.lookupOrAdd(ctx.usedAttrs, name, false, tid)
-
+  return some(sym)
 
 proc addVarDef*(ctx: Module, name: string, loc: IRNode,
-             tid = TBottom): Option[SymbolInfo] =
+             tid: TypeId): Option[SymbolInfo] =
   ## This is the interface for *variables* used on the LHS. It should
   ## *not* be called during an explicit definition via `global` or
   ## `var` (unless we later add assignment within these statements).
@@ -158,16 +189,19 @@ proc addVarDef*(ctx: Module, name: string, loc: IRNode,
   ## 3. Function scope.
   ## 4. Block scope for loop index variables only.
   ## 5. Attribute scopes.
+
+  ## If this is called, either := was used, indicating to only try the
+  ## attr scope (this operator might go away), or we tried the attr
+  ## scope, and the variable wasn't allowed there.
   ##
-  ## While we get told when we're in an attribute scope lhs (the
-  ## assignment operator is : or =), we do want to be intelligent when
-  ## people fat-finger this (which leads to this function getting
-  ## called instead of addAttrDef).
+  ## We only stick stuff in the global scope if it was pre-declared.
   ##
-  ## To that end, if there's an attr spec available, we do not allow
-  ## assigning to variable names if they would conflict with an
-  ## attribute name (though we may add qualifiers like local:: and
-  ## root:: to override this).
+  ## So we need to make sure the name isn't conflicting w/ something
+  ## in the block scope, and if not, then we look in the function,
+  ## module and global scopes as appropriate to see if they're already
+  ## there (taking the first hit); if they aren't, then we declare it
+  ## in the function scope (if we're in a function), or the module
+  ## scope if not.
   ##
   ## For #4, if you have multiple loops that all do:
   ## `for item in somelist`
@@ -185,119 +219,33 @@ proc addVarDef*(ctx: Module, name: string, loc: IRNode,
   ##
   ## This results in unique SymbolInfo objects, giving us flexibility
   ## for code generation approaches.
-  ##
-  ## The global vs. module scope is a bit trickier given our attempts
-  ## to do as much type inferencing as possible.
-  ##
-  ## When we first construct the IR, we do not consider the variables
-  ## we might get from the global scope directly.  We need to be able
-  ## to figure that out when we go to link things together.
-  ##
-  ## Here's our approach:
-  ##
-  ## 1. The `var` statement will declare a variable to be unique to
-  ##    the scope it's in. If it's used in a function, it stays in the
-  ##    function scope. If you use it outside a function, then it's
-  ##    defined at a function level.
-  ##
-  ##    If you use this at the module level, when it's link time, any
-  ##    variable of the same name in the global scope will be
-  ##    considered different.
-  ##
-  ##    a. In the local scope, if something has been explicitly added
-  ##       to the module scope (with a var statement), then we assume
-  ##       variables inside the module's functions can use that variable,
-  ##       unless they mask it with a `var` statement.
-  ##
-  ## 2. If you explicitly declare something to be in the `global`
-  ##    scope, it's put in the global scope, no matter where you
-  ##    declare it. When we go to link this module, all globals are
-  ##    merged, so names must be of compatable type.
-  ##
-  ##    However, if you declare it global inside the function, we will
-  ##    warn about this.
-  ##
-  ## 3. If you do NOT declare a variable explicitly, then it's hard to
-  ##    do the sane thing, but here's our current attempt:
-  ##
-  ##    a. If a variable is used in the module scope, but not declared,
-  ##       and does *not* exist in the global scope, then we leave it
-  ##       in the module scope.
-  ##
-  ##    b. If it *is* in the global scope, we merge if the types are
-  ##       compatable, and leave it shadowing the global scope if not,
-  ##       giving a warning.  Explicitly declaring removes the warning,
-  ##       of course.
-  ##
-  ##    c. If you use something in the local scope, *if* we see it in the
-  ##       module scope, and we can merge it, we will. But we give a
-  ##       warning when doing so, always. Then it follows the rules
-  ##       for variables in the module scope.
-  ##
-  ##    d. At link time, we look through all function scopes in that
-  ##       module. If they've got non-declared variables, we will merge
-  ##       them with the global. This will *also* result in a warning;
-  ##       you can get rid of it by re-declaring the variables `global`
-  ##       in your function's scope.
-  ##
-  ##    e. Loop index variables can only be shaddowed by a deeper loop.
-  ##       Trying to add a `var` or `global` statement inside the loop
-  ##       to shadow the loop index will give an error.
-  ##
-  ## We want to be insensitive to code moving around, so we should
-  ## give the same results whether or not the module scope declares a
-  ## variable before or after a function. To that end, when we *do*
-  ## explicitly add a `var` or `global` statement, we will go to every
-  ## symbol in the module we've seen so far and merge them if
-  ## neccessary.
-  ##
-  ## This also means that, if we *don't* find symbols that are explicitly
-  ## declared yet, we can't assume they won't be taken out of our scope.
-  ## The var/global statements check to see what's already declared and
-  ## will conflict. This kind of stuff will give errors.
-  ##
-  ## Loops will push on new block scope frames if and only if there are
-  ## index variables. In this function, we just check block scopes to
-  ## make sure there is no masking of these vars.
-  ##
-  ## Additionally, if we get to the module or global scope and see a
-  ## SymFunc, we will act as if we are looking to shadow that symbol;
-  ## this only looks up SymVars.
 
   var sym: SymbolInfo
 
+  if name[0] == '$':
+    ctx.irError("$assign")
 
-  for scope in ctx.blockScopes:
-    if scope.table.lookup(name).isSome():
-      ctx.irError("LoopVarAssign")
+  result = ctx.searchForSymbol(name)
+
+  if result.isSome():
+    sym = result.get()
+
+    for scope in ctx.blockScopes:
+      let symOpt = scope.table.lookup(name)
+      if symOpt.isSome():
+        ctx.irError("LoopVarAssign")
+
+    if sym.isFunc:
+        ctx.irError("AlreadyAFunc")
+
+    if sym.immutable and sym.defs.len() != 0:
+      ctx.irError("Immutable")
       return
 
-  if ctx.funcScope != nil:
-    result = ctx.funcScope.table.lookup(name)
+    if sym.tid != TBottom:
+      ctx.typeCheck(sym.tid, tid)
 
-    if result.isSome():
-      sym = result.get()
-
-  if sym == nil:
-    result = ctx.moduleScope.table.lookup(name)
-
-    if result.isSome():
-      sym = result.get()
-
-  if sym == nil:
-    result = ctx.globalScope.table.lookup(name)
-
-    if result.isSome():
-      sym = result.get()
-
-      if sym.isFunc and ctx.funcScope != nil:
-        # We can shadow this symbol in the local scope.
-        sym = nil
-      elif sym.isFunc:
-        ctx.irError("AlreadyAVar")
-      return
-
-  if sym == nil:
+  else:
     var scope = if ctx.funcScope != nil: ctx.funcScope else: ctx.moduleScope
 
     result = ctx.lookupOrAdd(scope, name, false, tid)
@@ -305,87 +253,174 @@ proc addVarDef*(ctx: Module, name: string, loc: IRNode,
       return
     else:
       sym = result.get()
-  else:
-    if sym.immutable and sym.defs.len() != 0:
-      ctx.irError("Immutable")
-      return
-    if tid != TBottom:
-      sym.tid = sym.tid.unify(tid)
+
+
+  if sym.module == nil:
+    sym.module = ctx
 
   sym.defs.add(loc)
+  result = some(sym)
+
+proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
+                 tid: TypeId, canConvertToVar: bool): Option[SymbolInfo] =
+  ## `canConvertToVar` means that we used the `=` operator, which does
+  ## attribute assignment, unless the attribute isn't allowed, in which
+  ## case:
+  ##
+  ## - If we're defining a section, it warns, then sets a variable.
+  ## - Otherwise, sets the variable without complaining.
+  ##
+  ## The `:` operator currently is attribute-assignment only.
+  ##
+  ## If there's no '.' in the name, this flag is true, and we
+  ## get an error back (including the no-spec error), then we
+  ## call addVarDef().
+
+  result = ctx.usedAttrs.table.lookup(name)
+
+  if result.isSome():
+    let sym = result.get()
+    ctx.typeCheck(sym.tid, tid, loc.parseNode)
+    return
+
+  ## We *never* allow user defined fields in the root scope.
+  ## Turn it off here in case someone accidentally turns it on.
+  if ctx.attrSpec != nil:
+    ctx.attrSpec.rootSpec.userDefOk = false
+
+  var
+    fieldTid: TypeId
+    sym:      SymbolInfo
+
+  let
+    parts     = name.split(".")
+    fieldInfo = ctx.attrSpec.getFieldInfo(parts)
+
+  if len(parts) == 1:
+    if canConvertToVar and fieldInfo.fieldKind != FsField:
+      if ctx.secDefContext:
+         ctx.irWarn("VarInSecDef", loc)
+      return ctx.addVarDef(name, loc, tid)
+    if not canConvertToVar and
+       fieldInfo.fieldKind in [FsErrorFieldNotAllowed]:
+      ctx.irError("TryVarAssign", loc)
+      return ctx.addVarDef(name, loc, tid)
+  case fieldInfo.fieldKind
+  of FsUserDefField, FsErrorNoSpec:
+    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true)
+  of FsField:
+    # Don't mess up other sections if there's a type variable..
+    sym = SymbolInfo(name: name, tid: fieldInfo.tid.tCopy(), isAttr: true)
+    if fieldInfo.defaultVal.isSome():
+      sym.hasDefault = true
+  of FsObjectType:
+    ctx.irError("AssignToSec", loc, @[name])
+  of FsSingleton:
+    ctx.irError("AsgnSingleton", loc, @[name])
+  of FsObjectInstance:
+    ctx.irError("AsgnInstance", loc, @[name])
+  of FsErrorSecUnderField:
+    let subname = parts[0 .. fieldInfo.errIx].join(".")
+    ctx.irError("SecUnderField", loc, @[subname])
+  of FsErrorNoSuchSec:
+    if fieldInfo.errIx == 0:
+      ctx.irError("RootNoSec", loc, @[name])
+    else:
+      let subname = parts[0 ..< fieldInfo.errIx].join(".")
+      ctx.irError("SectionNoSpec", loc, @[subname, parts[fieldInfo.errIx]])
+  of FsErrorSecNotAllowed:
+    if fieldInfo.errIx == 0:
+      ctx.irError("RootSecDenied", loc, @[name])
+    else:
+      let subname = parts[0 ..< fieldInfo.errIx].join(".")
+      ctx.irError("SectionDenied", loc, @[subname, parts[fieldInfo.errIx]])
+  of FsErrorFieldNotAllowed:
+    ctx.irError("AttrNotSpecd", loc, @[name])
+
+  if sym == nil:
+    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
+
+  ctx.usedAttrs.table[name] = sym
+  ctx.typeCheck(sym.tid, tid)
+
+  if sym.module == nil:
+    sym.module = ctx
+
+
+  sym.defs.add(loc)
+  result = some(sym)
 
 proc addDef*(ctx: Module, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
   if ctx.attrContext:
-    return ctx.addAttrDef(name, loc, tid)
+    result = ctx.addAttrDef(name, loc, tid, ctx.ambigAssign)
   else:
-    return ctx.addVarDef(name, loc, tid)
+    result = ctx.addVarDef(name, loc, tid)
 
 proc addUse*(ctx: Module, name: string, loc: IRNode,
-             tid = TBottom): Option[SymbolInfo] =
-  ## Note that, when we're in a `def` context, we know for sure
-  ## whether or not we should be using an attribute, or a variable.
-  ##
-  ## However, in a use context, we may or may not be. If there's a
-  ## dot in the name, then it's definitely an attribute context.
-  ##
-  ## Otherwise:
-  ##
-  ## 1. If something is explicitly declared in the local function or
-  ## in the module scope, then we go with that.
-  ##
-  ## 2. If a attribute validation context exists and the name is
-  ##    explicitly named, then we assume it's that.
-  ##
-  ## 3. If we've seen it on the LHS of an attr assign in the local
-  ##    module, then okay, we'll go with it.
-  ##
-  ## 4. Otherwise, we put it in the 'unresolved' scope, which
-  ##    will possibly get merged in with the global state, or
-  ##    else will always go in the module scope.
-
+             tid: TypeId): Option[SymbolInfo] =
   var sym: SymbolInfo
 
-  for scope in ctx.blockScopes:
-    result = scope.table.lookup(name)
+  result = ctx.searchForSymbol(name)
+  if result.isSome():
+    sym = result.get()
+    ctx.typeCheck(sym.tid, tid)
+    sym.uses.add(loc)
+    return some(sym)
+  elif "." in name:
+    let
+      parts     = name.split(".")
+      fieldInfo = ctx.attrSpec.getFieldInfo(parts)
 
-    if result.isSome():
-      sym = result.get()
-      break
+    # searchForSymbol will have already tried the call to getFieldInfo,
+    # but doesn't give any error message.
+    case fieldInfo.fieldKind
+    of FsErrorNoSpec, FsUserDefField:
+      sym = SymbolInfo(name: name, tid: tid.tCopy(), isAttr: true)
+      sym.uses.add(loc)
+      ctx.usedAttrs.table[name] = sym
+      return some(sym)
+    of FsField:
+      unreachable
+    of FsObjectType, FsSingleton:
+      ctx.irError("NoSecUse", loc)
+    of FsObjectInstance:
+      ctx.irError("NoInstUse", loc)
+      # Else assume it's a variable.
+    of FsErrorSecUnderField:
+      let subname = parts[0 .. fieldInfo.errIx].join(".")
+      ctx.irError("SecUnderField", loc, @[subname])
+    of FsErrorNoSuchSec:
+      let subname = parts[0 ..< fieldInfo.errIx].join(".")
+      ctx.irError("SectionNoSpec", loc, @[subname, parts[fieldInfo.errIx]])
+    of FsErrorSecNotAllowed:
+      let subname = parts[0 ..< fieldInfo.errIx].join(".")
+      ctx.irError("SectionDenied", loc, @[subname, parts[fieldInfo.errIx]])
+    of FsErrorFieldNotAllowed:
+      ctx.irError("AttrNotSpecd", loc, @[name])
 
-  if sym == nil and ctx.funcScope != nil:
-    result = ctx.funcScope.table.lookup(name)
-    if result.isSome():
-      sym = result.get()
+    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
+    ctx.usedAttrs.table[name] = sym
+    sym.uses.add(loc)
+    return some(sym)
 
-  if sym == nil:
-    result = ctx.moduleScope.table.lookup(name)
-    if result.isSome():
-      sym = result.get()
+  else:
+    var scope: Scope
 
-  if sym == nil:
-    result = ctx.globalScope.table.lookup(name)
-    if result.isSome():
-      sym = result.get()
-
-      if sym.isFunc and ctx.funcScope != nil:
-        # We can shadow this symbol in the local scope.
-        sym = nil
-
-      elif sym.isFunc:
-        ctx.irError("AlreadyAVar")
-        return
-
-  if sym == nil:
-    var scope = if ctx.funcScope != nil: ctx.funcScope else: ctx.moduleScope
+    if ctx.funcScope != nil:
+      scope = ctx.funcScope
+    else:
+      scope = ctx.moduleScope
 
     result = ctx.lookupOrAdd(scope, name, false, tid.followForwards())
+
     if result.isNone():
       return
     else:
       sym = result.get()
-  elif tid != TBottom:
-    discard sym.tid.followForwards().unify(tid.followForwards())
+
+  if sym.module == nil:
+    sym.module = ctx
 
   sym.uses.add(loc)
 
@@ -400,7 +435,7 @@ proc toRope*(s: Scope, title = ""): Rope =
     return h4("Scope is not initialized.")
   var
     hdr   = @[atom("Symbol"), atom("Type"), atom("Decl?"),
-              atom("Const"), atom("fn?")]
+              atom("Const"), atom("fn?"), atom("#Def"), atom("#Use")]
     cells = @[hdr]
     contents = s.table.items()
 
@@ -426,12 +461,15 @@ proc toRope*(s: Scope, title = ""): Rope =
 
     if sym.fImpls.len() == 0:
       cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
-                  sym.declaredType.isDeclaredRepr(), cc, isFunc])
+                  sym.declaredType.isDeclaredRepr(), cc, isFunc,
+                  atom($(sym.uses.len())),
+                  atom($(sym.defs.len()))])
     else:
       for item in sym.fImpls:
         cells.add(@[name.atom(), item.tid.toRope(),
                   sym.declaredType.isDeclaredRepr(),
-                  fgColor("✓", "atomiclime"), fgColor("✓", "atomiclime")])
+                  fgColor("✓", "atomiclime"), fgColor("✓", "atomiclime"),
+                  atom(" "), atom(" ")])
 
 
   return quickTable(cells, title = title)

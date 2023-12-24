@@ -10,158 +10,26 @@
 import fold
 export fold
 
-proc gatherDefs(n: IrNode, defs: var seq[SymbolInfo]) =
-  if n == nil:
+proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =
+  if sym == nil or sym.immutable or sym in bb.defAtStart or
+     sym in bb.defInBlock or sym in bb.errorsInBlock:
     return
 
-  case n.contents.kind
-  of IrLhsLoad:
-    if n.contents.symbol notin defs and n.contents.symbol != nil:
-      defs.add(n.contents.symbol)
-  of IrIndex:
-    if n.contents.toIxSym notin defs and n.contents.toIxSym != nil:
-      defs.add(n.contents.toIxSym)
-    n.contents.toIx.gatherDefs(defs)
-    # Things in the indexStart and indexEnd are uses only.
-  of IrMember:
-    if n.contents.attrSym notin defs and n.contents.attrSym != nil:
-      defs.add(n.contents.attrSym)
-    n.contents.subaccess.gatherDefs(defs)
-  of IrFold, IrNop:
+  if not sym.isAttr or not sym.hasDefault:
+    ctx.irNonFatal("UseBeforeDef", w = n, @[sym.name])
+    bb.errorsInBlock.add(sym)
+
+  if n notin sym.uses:
+    sym.uses.add(n)
+
+proc addDef(sym: SymbolInfo, n: IrNode, bb: CfgNode) =
+  if sym == nil:
     return
-  of IrCall:
-    # The subnodes can only be uses.
-    return
-  # These should all be statement-level ONLY, and thus not ever in the
-  # subtree we are searching.
-  of IrBlock, IrSection, IrLoop, IrAttrAssign, IrVarAssign,
-     IrConditional, IrJump, IrRet, IrUse:
-    unreachable
-  # These aren't statement level, but should never appear on a LHS,
-  # except in the context of a use within an index or parameter,
-  # and we do not descend into those.
-  of IrLoad, IrBinary, IrBool, IrLogic, IrNot, IrUminus, IrLit:
-    unreachable
+  if sym notin bb.defAtStart and sym notin bb.defInBlock:
+    bb.defInBlock.add(sym)
 
-proc gatherDefSideUses(n: IrNode, uses: var seq[SymbolInfo],
-                       nodes: var seq[IrNode], defContext = false) =
-  if n == nil:
-    return
-
-  case n.contents.kind
-  of IrIndex:
-    if not defContext:
-      if n.contents.toIxSym notin uses and n.contents.toIxSym != nil:
-        uses.add(n.contents.toIxSym)
-        nodes.add(n)
-    n.contents.indexStart.gatherDefSideUses(uses, nodes)
-    n.contents.indexEnd.gatherDefSideUses(uses, nodes)
-  of IrMember:
-    if defContext:
-      if n.contents.attrSym notin uses and n.contents.attrSym != nil:
-        uses.add(n.contents.attrSym)
-        nodes.add(n)
-    n.contents.subaccess.gatherDefSideUses(uses, nodes, defContext)
-  of IrCall:
-    for actual in n.contents.actuals:
-      actual.gatherDefSideUses(uses, nodes)
-  of IrLoad:
-    if n.contents.symbol != nil and n.contents.symbol notin uses:
-      uses.add(n.contents.symbol)
-      nodes.add(n)
-  of IrBinary, IrBool, IrLogic:
-    n.contents.bLhs.gatherDefSideUses(uses, nodes)
-    n.contents.bRhs.gatherDefSideUses(uses, nodes)
-  of IrNot, IrUminus:
-    n.contents.uRhs.gatherDefSideUses(uses, nodes)
-  of IrLit:
-    # This is possible, but a bit crazy.  For example, you
-    # could use a dict like so...
-    # foo[{"a" : 10}["a"]] = 12
-    for item in n.contents.items:
-      item.gatherDefSideUses(uses, nodes)
-  of IrFold, IrLhsLoad, IrNop:
-    return
-  of IrBlock, IrSection, IrLoop, IrAttrAssign, IrVarAssign,
-     IrConditional, IrJump, IrRet, IrUse:
-    unreachable
-
-proc gatherUses(n: IrNode, uses: var seq[SymbolInfo],
-                nodes: var seq[IrNode]) =
-  if n == nil:
-    return
-
-  case n.contents.kind
-  of IrLit:
-    for item in n.contents.items:
-      item.gatherUses(uses, nodes)
-  of IrMember:
-    if n.contents.attrSym notin uses and n.contents.attrSym != nil:
-      uses.add(n.contents.attrSym)
-      nodes.add(n)
-    n.contents.subaccess.gatherUses(uses, nodes)
-  of IrIndex:
-    if n.contents.toIxSym notin uses and n.contents.toIxSym != nil:
-      uses.add(n.contents.toIxSym)
-      nodes.add(n)
-    n.contents.indexStart.gatherUses(uses, nodes)
-    n.contents.indexEnd.gatherUses(uses, nodes)
-  of IrCall:
-    for actual in n.contents.actuals:
-      actual.gatherUses(uses, nodes)
-  of IrNot, IrUminus:
-    n.contents.uRhs.gatherUses(uses, nodes)
-  of IrBinary, IrBool, IrLogic:
-    n.contents.bLhs.gatherUses(uses, nodes)
-    n.contents.bRhs.gatherUses(uses, nodes)
-  of IrLoad:
-    if n.contents.symbol notin uses and n.contents.symbol != nil:
-      uses.add(n.contents.symbol)
-      nodes.add(n)
-  of IrFold, IrNop:
-    return
-  of IrBlock, IrSection, IrLoop, IrAttrAssign, IrVarAssign,
-     IrConditional, IrJump, IrRet, IrUse, IrLhsLoad:
-    unreachable
-
-proc gatherDefs(n: IrNode): seq[SymbolInfo] =
-  gatherDefs(n, result)
-
-proc gatherUses(useNode: IrNode, defNode: IrNode = nil):
-               seq[(SymbolInfo, Con4mNode)] =
-  var
-    uses:  seq[SymbolInfo]
-    nodes: seq[IrNode]
-
-  useNode.gatherUses(uses, nodes)
-  if defNode != nil:
-    gatherDefSideUses(defNode, uses, nodes, true)
-
-  for i in 0 ..< uses.len():
-    result.add((uses[i], nodes[i].parseNode))
-
-proc checkUses(ctx: Module, nRhs: IrNode, nLhs: IrNode, bb: CfgNode) =
-  for (sym, node) in gatherUses(nRhs, nLhs):
-
-    if sym.immutable:
-      continue
-
-    if sym notin bb.defAtStart and sym notin bb.defInBlock:
-      if sym notin bb.errorsInBlock:
-        ctx.irNonFatal("UseBeforeDef", @[sym.name], w = node)
-        bb.errorsInBlock.add(sym)
-
-template checkUses(ctx: Module, nRhs: IrNode, bb: CfgNode) =
-  checkUses(ctx, nRhs, nil, bb)
-
-proc addDefs(ctx: Module, n: IrNode, bb: CfgNode) =
-  for sym in gatherDefs(n):
-    if sym notin bb.defAtStart and sym notin bb.defInBlock:
-      bb.defInBlock.add(sym)
-
-proc extractDefUseFromAssign(ctx: Module, lhs, rhs: IrNode, bb: CfgNode) =
-  ctx.checkUses(rhs, lhs, bb)
-  ctx.addDefs(lhs, bb)
+  if n notin sym.defs:
+    sym.uses.add(n)
 
 proc startBlock(n: CfgNode, ir: IrNode, exit: CfgNode = nil): CfgNode =
   var exit = exit
@@ -231,6 +99,9 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
                    cur: CfgNode): CfgNode =
   result = cur
 
+  if n == nil:
+    return
+
   if result.startnode != nil or result.exitnode != nil:
     # We got something after either a block start or
     # block end node got inserted into the graph. This goes
@@ -241,10 +112,11 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # ourselves, which only happens for sections; loops and
     # conditionals get blocks made for them.
     if n.contents.kind != IrSection:
+      let defs = result.defAtStart
       result = CfgNode(irNode: n, pre: @[cur])
+      result.defAtStart = defs
       cur.nextBlock = result
       cur.post.add(result)
-
 
   case n.contents.kind
   of IrBlock:
@@ -255,25 +127,25 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
         result.stmts.add(item)
       if item.tid.getTid() notin [TVoid, TBottom]:
         if item.contents.kind notin [IrAttrAssign, IrVarAssign]:
-          m.irWarn("ExprResult", @[item.tid.toString()], w = item.parseNode)
+          m.irWarn("ExprResult", item, @[item.tid.toString()])
 
       result = ctx.handleOneNode(m, item, result)
 
       if result == nil:
         if i + 1 != n.contents.stmts.len():
-          m.irWarn("DeadCode", @["statement"], w = item.parseNode)
+          m.irWarn("DeadCode", item, @["statement"])
         return # Skip dead code.
 
   of IrSection:
     let secStart = result.startBlock(n)
-    result = ctx.handleOneNode(m, n.contents.blk, secStart)
+    result       = ctx.handleOneNode(m, n.contents.blk, secStart)
     result.finishBlock(secStart)
-    result = secStart.exitNode
+    result         = secStart.exitNode
     secstart.label = n.getSectionLabel()
 
   of IrLoop:
-    m.checkUses(n.contents.startIx, result)
-    m.checkUses(n.contents.endIx, result)
+    result = ctx.handleOneNode(m, n.contents.startIx, result)
+    result = ctx.handleOneNode(m, n.contents.endIx, result)
 
     let loopTop = result.startBlock(n)
     loopTop.loopIrNode = n
@@ -282,11 +154,11 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     if n.contents.keyVar != "":
       loopTop.defInBlock &= n.contents.scope.allVars()
 
-    m.checkUses(n.contents.condition, loopTop)
+    let passDown = ctx.handleOneNode(m, n.contents.condition, loopTop)
 
     # If the below is false then we will have already warned
     # about a loop that never exits and should be quiet I guess?
-    if ctx.handleOneNode(m, n.contents.loopBody, loopTop).finishBlock(loopTop):
+    if ctx.handleOneNode(m, n.contents.loopBody, passDown).finishBlock(loopTop):
       result = loopTop.exitNode
 
       if n.contents.condition.isConstant():
@@ -297,21 +169,25 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
         # and there's no path to exit outside this loop, then we will
         # complain.
         if asBool and not loopTop.hasExitToOuterBlock():
-          m.irWarn("InfLoop", w = n.contents.condition.parseNode)
+          m.irWarn("InfLoop", w = n.contents.condition)
           result = nil
     else:
       result = nil
 
   of IrAttrAssign:
-    m.extractDefUseFromAssign(n.contents.attrLhs, n.contents.attrRhs, result)
+    result = ctx.handleOneNode(m, n.contents.attrRhs, result)
+    m.lhsContext = true
+    result = ctx.handleOneNode(m, n.contents.attrLhs, result)
   of IrVarAssign:
-    m.extractDefUseFromAssign(n.contents.varLhs, n.contents.varRhs, result)
+    result = ctx.handleOneNode(m, n.contents.varRhs, result)
+    m.lhsContext = true
+    result = ctx.handleOneNode(m, n.contents.varLhs, result)
   of IrConditional:
     var
       top    = result.startBlock(n)
       joiner = top.exitNode
 
-    m.checkUses(n.contents.predicate, result)
+    result = ctx.handleOneNode(m, n.contents.predicate, result)
 
     var
       l    = top.startBlock(n.contents.trueBranch, joiner)
@@ -368,10 +244,10 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # above us, but below the call site. So we'll get there, even
     # though it may be indirect.
 
+    result = ctx.handleOneNode(m, n.contents.targetNode, result)
     var search = result
     while search.loopIrNode != n.contents.targetNode:
       if search.pre.len() == 0:
-        print n.toRope()
         result = nil
         return
       search = search.pre[0]
@@ -391,12 +267,11 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result = nil
 
   of IrRet:
+    result = ctx.handleOneNode(m, n.contents.retVal, result)
+
     result.exitType = CFXReturn
 
-    if n.contents.retSym != nil:
-      m.checkUses(n.contents.retVal, result)
-      if n.contents.retSym notin result.defInBlock:
-        result.defInBlock.add(n.contents.retSym)
+    n.contents.retSym.addDef(n, result)
 
     # Returns can happen from nested blocks... we jump to the true
     # exit.
@@ -408,6 +283,8 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result = nil
 
   of IrCall:
+    for actual in n.contents.actuals:
+      result = ctx.handleOneNode(m, actual, result)
     # Currently, we only check a call's 'pre' state the very first time
     # we run across it in our analysis. This could lead to cases
     # where a single branch controls what is live, and leads to a use-
@@ -442,6 +319,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # for the function we're calling; it's just junk that will
     # follow around the function, and will not impact any analysis.
     # But we should clean it up someday.
+
     ctx.handleOneFunc(n.contents.toCall, result.defAtStart & result.defInBlock)
 
     # When we add ourselves as a predecessor, we want to be first,
@@ -486,9 +364,30 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result.exitType                    = CFXUse
     result                             = returnTo
 
-  of IrLit, IrMember, IrIndex, IrNot, IrUminus,
-     IrBinary, IrBool, IrLogic, IrLhsLoad, IrLoad, IrFold, IrNop:
-       m.checkUses(n, result)
+  of IrMember:
+    if m.lhsContext:
+      n.contents.attrSym.addDef(n, result)
+    else:
+      m.addUse(n.contents.attrSym, n, result)
+    result = ctx.handleOneNode(m, n.contents.subaccess, result)
+  of IrIndex:
+    let savedLhs = m.lhsContext
+    m.lhsContext = false
+    result = ctx.handleOneNode(m, n.contents.indexStart, result)
+    result = ctx.handleOneNode(m, n.contents.indexEnd, result)
+    m.lhsContext = savedLhs
+    result = ctx.handleOneNode(m, n.contents.toIx, result)
+  of IrNot, IrUMinus:
+    result = ctx.handleOneNode(m, n.contents.uRhs, result)
+  of IrBinary, IrBool, IrLogic:
+    result = ctx.handleOneNode(m, n.contents.bLhs, result)
+    result = ctx.handleOneNode(m, n.contents.bRhs, result)
+  of IrLoad:
+    m.addUse(n.contents.symbol, n, result)
+  of IrLhsLoad:
+    n.contents.symbol.addDef(n, result)
+  of IrLit, IrFold, IrNop:
+    discard
 
 proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   # For now, handle recursion by checking to see if the function's cfg
@@ -501,16 +400,17 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
 
   let m = f.defModule
 
-  var top                = startBlock(nil, f.implementation)
+  var top                = startBlock(nil, f.implementation, CfgNode())
   top.defAtStart         = start
   ctx.topExitNode        = top.exitNode
   f.exitNode             = top.exitNode
+  f.cfg                  = top
 
   # When we add default paramers, we will want to check parameters'
   # uses, via the module's def's. For now, we just add them in to the
   # list of already-defined symbols.
   for item in f.params:
-    top.defInBlock.add(item.sym)
+    top.defAtStart.add(item.sym)
 
   ctx.handleOneNode(m, f.implementation, top).finishBlock(top)
 
@@ -520,24 +420,28 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
     return
 
   # Param statements execute before the first block.
-  m.cfg            = startBlock(nil, m.ir)
+  m.cfg            = startBlock(nil, m.ir, CfgNode())
   m.cfg.defInBlock = start
   ctx.topExitNode  = m.cfg.exitNode
 
+  var cur = m.cfg
+
   for sym in m.moduleScope.allVars():
-    # We don't add the default statements to the statement list
-    # because they may or may not be executed. We do, however, check
-    # to make sure any symbols they use are defined globally.
+    # We don't want to add the default statements to the statement
+    # list because they may or may not be executed. We do, however,
+    # check to make sure any symbols they use are defined globally.
+    # the code isn't in a statement block, it won't get added to a
+    # statement list by handleOneNode.
     if sym.pInfo != nil:
       let irOpt = sym.pInfo.defaultIr
       if irOpt.isSome():
-        m.checkUses(irOpt.get(), m.cfg)
+        cur = ctx.handleOneNode(m, irOpt.get(), cur)
 
   # `handleOneNode` returns the lexically last node, or nil if
   # there was an unconditional jump.
   # `finishBlock` will add the end node if it wasn't a jump, and
   # return true if it adds the block.
-  if not ctx.handleOneNode(m, m.ir, m.cfg).finishBlock(m.cfg):
+  if not ctx.handleOneNode(m, m.ir, cur).finishBlock(m.cfg):
     var where: Con4mNode
     # Warn if the module doesn't exit out the bottom.
     # Right now that'd only happen if it ended w/ a clear infinite loop.
@@ -564,6 +468,14 @@ proc buildCfg*(ctx: CompileCtx, module: Module) =
   # that, dynamically, the value is either the constant OR
   # `undefined`, and their code counts on that. For now, we ignore.
   ctx.handleModule(module, @[])
+
+  #for function in module.allFunctions():
+  #  let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
+  #  ctx.handleOneFunc(function, startDefs)
+
+  #for m in module.imports:
+  #  let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
+  #  ctx.handleModule(m, startDefs)
 
 proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
   # If any of these functions get called from w/in the main body, then
@@ -595,38 +507,10 @@ proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
     let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
     ctx.handleOneFunc(function, startDefs)
 
-proc prepFirstGraph*(n: CfgNode, i: var int, fns, mods: var seq[CfgNode]) =
-  if n == nil or n.nodeId != 0:
-    return
-
-  i        = i + 1
-  n.nodeId = i
-
-  case n.exitType
-  of CFXCall:
-    if n.post.len() != 0 and n.post[0] notin fns:
-      fns.add(n.post[0])
-    n.nextBlock.prepFirstGraph(i, fns, mods)
-  of CFXUse:
-    if n.post[0] notin mods:
-      mods.add(n.post[0])
-    n.nextBlock.prepFirstGraph(i, fns, mods)
-  of CFXNormal:
-    for item in n.post:
-      item.prepFirstGraph(i, fns, mods)
-  of CFXStart:
-    n.nextBlock.prepFirstGraph(i, fns, mods)
-  of CFXBreak, CFXContinue, CFXReturn:
-    return
-
-proc fmtCfgLoc(n: Con4mNode, m: Con4mNode = nil): Rope =
-  if m == nil:
-    return text(" (line " & $(n.token.lineNo) & ") ")
-  else:
-    return text(" (lines " & $(n.token.lineNo) & " - " &
-                           $(m.token.lineNo) & ") ")
-
 proc getSeqDisplayKids(entry: CfgNode): seq[CfgNode] =
+  if entry == nil:
+    return
+
   var
     cur   = entry.nextBlock
     last  = entry.exitNode
@@ -644,6 +528,50 @@ proc getSeqDisplayKids(entry: CfgNode): seq[CfgNode] =
 
     cur = cur.nextBlock
 
+proc prepGraph(n: CfgNode, i: var int, fns: var seq[FuncInfo],
+                mods: var seq[Module]) =
+  var kids: seq[CfgNode]
+
+  if n == nil or n.nodeId != 0:
+    return
+
+  i        = i + 1
+  n.nodeId = i
+
+  case n.exitType
+  of CFXStart:
+    n.nextBlock.prepGraph(i, fns, mods)
+    n.nextBlock.exitNode.prepGraph(i, fns, mods)
+  of CFXCall:
+    if n.irNode.contents.toCall notin fns:
+      fns.add(n.irNode.contents.toCall)
+  of CFXUse:
+    let m = n.post[0].irNode.contents.moduleObj
+    if m notin mods:
+      mods.add(m)
+  else:
+    discard
+
+  if n.exitNode != nil:
+    if n.post.len() > 1:
+      kids.add(n.post)
+    else:
+      kids = n.getSeqDisplayKids()
+    #if n.exitType notin [CfxCall, CfxUse]:
+    #  n.exitNode.prepGraph(i, fns, mods)
+
+  for item in kids:
+    item.prepGraph(i, fns, mods)
+
+  n.nextBlock.prepGraph(i, fns, mods)
+
+proc fmtCfgLoc(n: Con4mNode, m: Con4mNode = nil): Rope =
+  if m == nil:
+    return text(" (line " & $(n.token.lineNo) & ") ")
+  else:
+    return text(" (lines " & $(n.token.lineNo) & " - " &
+                           $(m.token.lineNo) & ") ")
+
 proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
   var
     r: Rope = em($(cur.nodeId)) + text(" ")
@@ -651,8 +579,7 @@ proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
 
   if cur.exitType == CFXStart:
     r    = em("Root")
-    kids = cur.nextBlock.getSeqDisplayKids()
-
+    kids = @[cur.nextBlock, cur.nextBlock.exitNode]
     return (r, kids)
 
   if cur.loopIrNode != nil:
@@ -705,28 +632,72 @@ proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
       r += fgcolor("-> #" & $(cur.post[0].nodeId), "atomiclime")
 
   if cur.startNode != nil:
-    r += fgColor(" ↑" & $(cur.startNode.nodeId), "fandango")
+    r = fgColor("↑" & $(cur.startNode.nodeId) & " ", "fandango") + r
 
   elif cur.exitNode != nil:
-    r += fgColor(" ↓" & $(cur.exitNode.nodeId), "fandango")
+    r = fgColor("↓" & $(cur.exitNode.nodeId) & " ", "fandango") + r
 
     if cur.post.len() > 1:
       kids.add(cur.post)
     else:
       kids = cur.getSeqDisplayKids()
 
+  let innum  = $cur.defAtStart.len()
+  let outnum = $(cur.defAtStart.len() + cur.defInBlock.len())
+  r = r + text(" in: " & innum & "; out: "  & outnum)
   return (r, kids)
 
-
-# DONT FORGET ABOUT THE TODO ITEM
 proc toRope*(n: CfgNode, isModule: bool, inclCalls = true): Rope =
   var
     lastNum = 0
-    fns:  seq[CfgNode]
-    mods: seq[CfgNode]
-    dummy = CfgNode(exitType: CFXStart, nextBlock: n, post: @[n])
+    fns:   seq[FuncInfo]
+    mods:  seq[Module]
+    mouts: seq[Rope]
+    fouts: seq[Rope]
+    main:  Rope
+    dummy = CfgNode(exitType: CfxStart, nextBlock: n, post: @[n])
+    mname: string
+    i: int
 
   n.label          = "Enter"
   n.exitNode.label = "Exit"
-  prepFirstGraph(n, lastnum, fns, mods)
-  return dummy.quickTree(cfgRopeWalk)
+  prepGraph(n, lastnum, fns, mods)
+  main = dummy.quickTree(cfgRopeWalk)
+
+  while i < mods.len():
+    let module = mods[i]
+    i += 1
+    prepGraph(module.cfg, lastnum, fns, mods)
+    prepGraph(module.exitNode, lastnum, fns, mods)
+    dummy = CfgNode(exitType: CfxStart, nextBlock: module.cfg,
+                    post: @[module.cfg])
+    mouts.add(dummy.quickTree(cfgRopeWalk))
+
+  i = 0
+  while i < fns.len():
+    let fn = fns[i]
+    i += 1
+    prepGraph(fn.cfg, lastnum, fns, mods)
+    prepGraph(fn.exitNode, lastnum, fns, mods)
+    dummy = CfgNode(exitType: CfxStart, nextBlock: fn.cfg, post: @[fn.cfg])
+    fouts.add(dummy.quickTree(cfgRopeWalk))
+
+  if mouts.len() != 0 or fouts.len() != 0:
+    result = h1("Entry point:")
+
+  result += main
+
+  for i, mo in mouts:
+    let m = mods[i]
+    if m.where.len() != 0:
+      mname = m.modname & " (from: " & m.where & ")"
+    else:
+      mname = m.modname
+
+    result += h2("Module: " & mname)
+    result += mo
+
+  for i, fo in fouts:
+    let f = fns[i]
+    result += h3("Function: " & f.name & f.tid.toString())
+    result += fo

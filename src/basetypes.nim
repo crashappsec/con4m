@@ -70,9 +70,10 @@ proc typeError*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
 proc typeCheck*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
                 err = "TypeMismatch"): TypeId {.discardable.} =
 
-  result = t1.unify(t2)
+  result = t1.getTid().unify(t2.getTid())
 
-  if result == TBottom:
+  if result == TBottom and t1.getTid() != TBottom and
+     t2.getTid() != TBottom:
     ctx.typeError(t1, t2, where, err)
 
 proc typeCheck*(ctx: Module, sym: SymbolInfo, t: TypeId,

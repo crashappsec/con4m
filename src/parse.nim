@@ -285,7 +285,7 @@ template production(prodName: untyped,
 
   proc `parse prodName`*(s: string, errs: var seq[Con4mError],
                          modname = ""): Con4mNode =
-    var ctx: Module
+    var ctx = Module()
     ctx.s       = s.newStringCursor()
     ctx.modname = modname
 
@@ -1576,6 +1576,7 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
     var errs: seq[Con4mError]
 
     errs.baseError("BadTypeDecl", n, "", ErrIrGen)
+    print errs.formatErrors()
     raise newCon4mException(errs)
 
 proc buildType*(n: Con4mNode): TypeId =

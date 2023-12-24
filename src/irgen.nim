@@ -341,7 +341,7 @@ proc checkLabelDupe(ctx: Module, label: string) =
   while n != nil:
     if n.contents.kind == IrLoop and n.contents.label != nil and
        n.contents.label.getText() == label:
-      ctx.irWarn("LabelDupe", @[label], n.parseNode)
+      ctx.irWarn("LabelDupe", n, @[label])
       return
     n = n.parent
 
@@ -375,8 +375,12 @@ proc convertEnum*(ctx: Module) =
         usedVals.add(value)
         nextVal = nextVal + 1
 
+      if itemName[0] == '$':
+        ctx.irError("$assign", w = ctx.parseGrandKid(i, 0))
+
       var
-        symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false, TInt)
+        symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false, TInt,
+                  declnode = ctx.parseGrandkid(i, 0))
 
       if symOpt.isSome():
         let sym = symOpt.get()
@@ -393,9 +397,11 @@ proc convertIdentifier(ctx: Module): IrNode =
 
     result = ctx.irNode(IrLhsLoad)
     stOpt  = ctx.addDef(name, result, tVar())
+
   else:
     result = ctx.irNode(IrLoad)
     stOpt = ctx.addUse(name, result, tVar())
+
 
   result.contents.symbol = stOpt.getOrElse(nil)
 
@@ -406,16 +412,21 @@ proc convertAttrAssignment(ctx: Module): IrNode =
   result                  = ctx.irNode(IrAttrAssign)
   ctx.lhsContext          = true
   ctx.attrContext         = true
+
+  if ctx.pt.getText() == "=":
+    ctx.ambigAssign = true
+
   result.contents.attrLhs = ctx.downNode(0)
   ctx.attrContext         = false
   ctx.lhsContext          = false
+  ctx.ambigAssign         = false
   result.contents.attrRhs = ctx.downNode(1)
-  result.tid              = tVar()
 
-  result.tid = ctx.typeCheck(result.getTid(), result.contents.attrLhs.getTid())
+  result.tid = ctx.typeCheck(result.contents.attrRhs.getTid(),
+                             result.contents.attrLhs.getTid())
 
   if result.contents.attrLhs.contents.kind notin [IrMember, IrLhsLoad]:
-    ctx.irError("AttrLhs", w = result.contents.attrLhs.parseNode)
+    ctx.irError("AttrLhs", w = result.contents.attrLhs)
 
 proc convertMember(ctx: Module): IrNode =
   result = ctx.irNode(IrMember)
@@ -436,7 +447,8 @@ proc convertMember(ctx: Module): IrNode =
     if ctx.curSecPrefix != "":
       result.contents.name = ctx.curSecPrefix & "." & result.contents.name
 
-  let sym = ctx.addAttrDef(result.contents.name, result, tVar())
+  let sym = ctx.addAttrDef(result.contents.name, result, tVar(), false)
+
   if sym.isSome():
     result.contents.attrSym = sym.get()
     result.tid              = result.contents.attrSym.getTid()
@@ -451,19 +463,19 @@ proc convertVarAssignment(ctx: Module): IrNode =
   if lhsIr.contents.kind == IrLit:
     for node in lhsIr.contents.items:
       if node.contents.kind != IrLhsLoad:
-        ctx.irError("TupleLhs", w = node.parseNode)
+        ctx.irError("TupleLhs", w = node)
 
   result.tid = ctx.typeCheck(lhsIr.getTid(), rhsIr.getTid())
 
   result.contents.varLhs = lhsIr
   result.contents.varRhs = rhsIr
 
-proc extractSymInfo(ctx: Module, scope: var Scope,
-                   isConst = false): SymbolInfo {.discardable.} =
+proc extractSymInfo(ctx: Module, scope: var Scope, isConst = false,
+                    checkdollar = false): SymbolInfo {.discardable.} =
   # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
   var
-    toAdd: seq[(string, TypeId)]
+    toAdd: seq[(string, TypeId, Con4mNode)]
 
   for varNode in ctx.pt.children:
     if varNode.kind in [NodeGlobalStmt, NodeVarStmt, NodeConstStmt]:
@@ -473,29 +485,39 @@ proc extractSymInfo(ctx: Module, scope: var Scope,
       foundType: TypeId = TBottom
     for kid in varNode.children:
       if kid.kind == NodeIdentifier:
-        varNames.add(kid.getText())
+        let name = kid.getText()
+        if name[0] == '$':
+          ctx.irError("$assign", w = kid)
+        varNames.add(name)
       else:
         foundType = kid.buildType()
-    for oneVarName in varNames:
+    for i, oneVarName in varNames:
       if foundType == TBottom:
-        toAdd.add((oneVarName, tVar()))
+        toAdd.add((oneVarName, tVar(), varnode.children[i]))
       else:
-        toAdd.add((oneVarName, foundType.copyType().typeId))
+        toAdd.add((oneVarName, foundType.copyType().typeId,
+                   varnode.children[i]))
 
-  for i, (name, tid) in toAdd:
-    let symOpt = ctx.scopeDeclare(scope, name, false, tid.getTid(), isConst)
+  for i, (name, tid, kid) in toAdd:
+    let symOpt = ctx.scopeDeclare(scope, name, false, tid.getTid(), isConst,
+                                  declnode = kid)
     if i == toAdd.len() - 1 and symOpt.isSome():
       result = symOpt.get()
 
 proc convertVarStmt(ctx: Module) =
-  var symbolsAreConst = false
+  var
+    symbolsAreConst = false
+    sym: SymbolInfo
+
   if ctx.pt.children[^1].kind == NodeConstStmt:
     symbolsAreConst = true
 
   if ctx.funcScope != nil:
-    ctx.extractSymInfo(ctx.funcScope, symbolsAreConst)
+    sym = ctx.extractSymInfo(ctx.funcScope, symbolsAreConst,
+                               checkdollar = true)
   else:
-    ctx.extractSymInfo(ctx.moduleScope, symbolsAreConst)
+    sym = ctx.extractSymInfo(ctx.moduleScope, symbolsAreConst,
+                             checkdollar = true)
 
 proc convertGlobalStmt(ctx: Module) =
   var symbolsAreConst = false
@@ -506,7 +528,7 @@ proc convertGlobalStmt(ctx: Module) =
   if ctx.pt.children[^1].kind == NodeConstStmt:
     symbolsAreConst = true
 
-  ctx.extractSymInfo(ctx.globalScope, symbolsAreConst)
+  ctx.extractSymInfo(ctx.globalScope, symbolsAreConst, checkdollar = true)
 
 proc convertConstStmt(ctx: Module) =
   var scope: Scope
@@ -521,7 +543,7 @@ proc convertConstStmt(ctx: Module) =
   else:
     scope = ctx.funcScope
 
-  ctx.extractSymInfo(scope, true)
+  ctx.extractSymInfo(scope, true, checkdollar = true)
 
 
 proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
@@ -592,7 +614,7 @@ proc convertParamBlock(ctx: Module) =
   else: # will be something we can call extractSymInfo on.
     var savedPt = ctx.pt
     ctx.pt = ctx.pt.children[0]
-    sym = ctx.extractSymInfo(ctx.moduleScope)
+    sym = ctx.extractSymInfo(ctx.moduleScope, checkdollar = true)
     ctx.pt = savedPt
 
   var savedPt = ctx.pt
@@ -605,9 +627,12 @@ proc convertFormal(info: FuncInfo, n: Con4mNode) =
 
   if n.children[0].kind == NodeIdentifier:
     formalInfo.name = n.children[0].getText()
+    formalInfo.loc  = n.children[0]
+
   else:
-    formalInfo.va = true
+    formalInfo.va   = true
     formalInfo.name = n.children[0].children[0].getText()
+    formalInfo.loc  = n.children[0].children[0]
 
   if n.children.len() == 2:
     formalInfo.tid = n.children[1].buildType()
@@ -654,10 +679,12 @@ proc handleFuncdefSymbols(ctx:   Module,
   info.fnScope = initScope()
 
   for i, item in allParams:
-    symOpt = ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid())
+    symOpt = ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid(),
+                              declNode = item.loc)
     allParams[i].sym = symOpt.getOrElse(nil)
 
   symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true)
+
 
   if symOpt.isSome():
     symOpt.get().fimpls.add(info)
@@ -681,7 +708,7 @@ proc convertFuncDefinition(ctx: Module) =
     info.convertFormal(item)
 
   if ctx.numKids() == 4:
-    returnType = ctx.pt.children[2]
+    returnType = ctx.pt.children[2].children[0]
 
   info.setupTypeSignature(returnType)
   info.name = funcName
@@ -1117,7 +1144,8 @@ proc convertBooleanOp(ctx: Module): IrNode =
      bRhs.getTid().isNumericBuiltin():
     operandType = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
 
-  if operandType == TBottom:
+  if operandType == TBottom and bLhs.getTid() != TBottom and
+    bRhs.getTid() != TBottom:
     ctx.irError("BinaryOpCompat",
                 @[bLhs.getTid().toString(), bRhs.getTid().toString()])
 
@@ -1145,7 +1173,8 @@ proc convertBinaryOp(ctx: Module): IrNode =
     if result.getTid() == TFloat and result.contents.bOp in notFloatOps:
         result.tid = TBottom
 
-  if result.getTid() == TBottom:
+  if result.getTid() == TBottom and bLhs.getTid() != TBottom and
+    bRhs.getTid() != TBottom:
     ctx.irError("BinaryOpCompat", @[bLhs.getTid().toString(),
                                     bRhs.getTid().toString()])
   elif result.contents.bOp == "/":
@@ -1195,6 +1224,9 @@ proc convertSection(ctx: Module): IrNode =
   result.contents.prefix   = ctx.curSecPrefix
   result.contents.sectName = ctx.getText(0)
 
+  var savedInSection = ctx.secDefContext
+  ctx.secDefContext  = true
+
   if haveSpec:
     let specOpt = ctx.attrSpec.secSpecs.lookup(result.contents.sectName)
     if specOpt.isNone():
@@ -1224,8 +1256,9 @@ proc convertSection(ctx: Module): IrNode =
   else:
     result.contents.blk = ctx.downNode(1)
 
-  ctx.curSecPrefix = result.contents.prefix
-  ctx.curSecSpec   = savedSecSpec
+  ctx.curSecPrefix  = result.contents.prefix
+  ctx.curSecSpec    = savedSecSpec
+  ctx.secDefContext = savedInSection
 
 # When we are indexing into a tuple, we go ahead and constant-fold the
 # index immediately, instead of waiting till the folding pass.
@@ -1266,11 +1299,11 @@ proc convertIndex(ctx: Module): IrNode =
     of C4Tuple:
       ctx.foldDown(ixStart)
       if not ixStart.isConstant():
-        ctx.irError("TupleConstIx", w = ixStart.parseNode)
+        ctx.irError("TupleConstIx", w = ixStart)
         return
       let v = toVal[int](ixStart.value.get())
       if v < 0 or v >= tobj.items.len():
-        ctx.irError("TupleIxBound", w = ixStart.parseNode)
+        ctx.irError("TupleIxBound", w = ixStart)
         return
       let to = toIx.getTid().idToTypeRef().items[v]
       ctx.typeCheck(result.tid, to)
@@ -1278,7 +1311,7 @@ proc convertIndex(ctx: Module): IrNode =
       # Currently, we do not try to infer the container type;
       # we instead just error that the type needs to be known
       # to index it.
-      ctx.irError("ContainerType", w = toIx.parseNode)
+      ctx.irError("ContainerType", w = toIx)
     else:
       if tobj.typeId == TBottom:
         return
@@ -1369,7 +1402,7 @@ proc resolveDeferredSymbols*(ctx: Module) =
       fails = origfail
 
     if origmatch.len() == 0 and origfail.len() == 0:
-      ctx.irError("NoImpl", @[n.contents.fname, t.toString()], w = n.parseNode)
+      ctx.irError("NoImpl", n, @[n.contents.fname, t.toString()])
       return
 
     for possibility in origmatch:
@@ -1386,12 +1419,11 @@ proc resolveDeferredSymbols*(ctx: Module) =
       continue
     elif matches.len() == 0:
       let info = showCallMistakes(n.contents.fname, fails, t)
-      ctx.irError("BadSig", @[n.contents.fname, t.toString(), info, "call"],
-                  w = n.parseNode)
+      ctx.irError("BadSig", n, @[n.contents.fname, t.toString(), info, "call"])
     else:
       let info = fmtImplementationList(n.contents.fname, matches, t)
-      ctx.irError("CallAmbig", @[n.contents.fname, t.toString(), info, "call"],
-                  w = n.parseNode)
+      ctx.irError("CallAmbig",n,
+                  @[n.contents.fname, t.toString(), info, "call"])
 
   ctx.funcsToResolve = @[]
 
@@ -1447,10 +1479,8 @@ proc parseTreeToIr(ctx: Module): IrNode =
     of NodeReturnStmt:
       result = ctx.convertReturn()
     of NodeAttrAssign:
-      discard
       result = ctx.convertAttrAssignment()
     of NodeSection:
-      discard
       result = ctx.convertSection()
     of NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt:
       result = ctx.convertBooleanOp()
@@ -1502,11 +1532,9 @@ proc finishFunctionProcessing(ctx: Module, impl: FuncInfo) =
   impl.lockFn()
 
 proc toIr*(ctx: Module): bool {.discardable.} =
-  # Build IR. First walk the module symbol table to find functions and
-  # parameters we haven't yet evaulated.
-  #
-  # Then, do the main body. The order doesn't really matter here,
-  # though.
+  ctx.pt        = ctx.root
+  ctx.funcScope = nil
+  ctx.ir        = ctx.parseTreeToIr()
 
   for (name, sym) in ctx.moduleScope.table.items():
     for impl in sym.fimpls:
@@ -1524,9 +1552,5 @@ proc toIr*(ctx: Module): bool {.discardable.} =
 
       sym.pinfo.defaultIr = some(paramIr)
       ctx.typeCheck(sym, paramIr.getTid())
-
-  ctx.pt        = ctx.root
-  ctx.funcScope = nil
-  ctx.ir        = ctx.parseTreeToIr()
 
   result = ctx.errors.canProceed()

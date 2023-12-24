@@ -1,78 +1,5 @@
-# TODO:
-# === High priority ===
-# - When folding, set items in the symbol table if in an assign node,
-#   and the symbol is marked as constant.
-# - Fix function declaration return type syntax
-# - Defined-but-never-used across whole program
-# - Add post-IR check that const things have been assigned.
-#   elsewhere.
-# - Implement _ as a 'discard' variable.
-# - Deal with the rhs ambiguity better.
-# - C-level interface to attributes
-# - Execution from IR (possibly compressing IR more)
-# - Stack traces during execution.
-# - Spec checking after execution.
-# - Checkpointing runtime state.
-# - Module state caching for re-linking when conf files change.
-# - FFI
-# - Swap in hatrack lists (and add rings?).
-# - No-side-effect prop for funcs to allow calling functions at compile time.
-# - Allow assignment inside var / global / const statements.
-# - Component logic
-# - ConvertCallbackLit type secolution.
-# - In showCallMistakes(), show which functions have the wrong # of args,
-#   and which parameters are right / wrong.
-# - Base types should be treated more like proper classes?
-# - Case statement / typecase
-# - Re-implement standard library / wrappings.
-
-# == Medium ==
-# - C api and bindings to other languages.
-# - Doc API.
-# - Hook getopt back up.
-# - Update the pretty printer.
-# - Extra lines in error messages shouldn't get the huge table indent.
-# - Sort errors by file / line (they come out by phase in IR portion).
-# - REPL
-# - Default parameters
-# - Litmods for common rope types
-# - Restrict $i and $i_label symbols
-# - Give names to enums / turn them into int subtypes
-# - Fold for list indexes when the length is fixed size.
-# - Add 'error' to functions.
-# - Add global enum
-# - :: module scope operator; root::, module::, local:: I think?
-# - Unreachable funciton analysis
-# - Keyword arguments
-# - treat assignment to '_' as 'discard'.
-# - Move temporary compile state to a throw-away reference obj that's
-#   carried in the module state.
-# - Debug mode.
-# - Enumerate function pointer literals and assume they're always live
-#   and called as part of the entry point.
-# - Properly handle
-
-# == Lower priority ==
-# - Error msg squelching and colating
-# - GUI for repl; show trees, etc.
-# - let all the IO stuff be themeable
-# - Add objects, with typevars that can bind to all fields...
-# - Add maybe
-# - Add oneof
-# - Add ref
-# - for x in <container>: generate a call to items() if the object is
-#   not one of the built-in types.
-# - Todo-- index for non-base types should generate a rewrite func
-# - Validation routines need routines to validate their inputs.
-# - For dicts and lists: capture the value when possible and perform folding
-# - Support litmods for containers.
-# - TODO: should there be an option to leave functions in the module scope?
-#   If so, what's the syntax?
-# - Macros / aspects
-# - Allow arbitrary blocks within statements?
-# - Object field is never used (or set and not read)
-
-import nimutils, os, strutils, httpclient, net, uri, streams, cfg
+import nimutils, os, strutils, httpclient, net, uri, streams, stchecks
+export nimutils, os, net, uri, streams, stchecks
 
 proc loadSourceFromFile(ctx: CompileCtx, url: string): Option[string] =
   try:
@@ -160,7 +87,13 @@ proc findAndLoadModule(ctx: CompileCtx, url: string): Option[Module] =
   return ctx.findAndLoadModule(loc, name, ext)
 
 proc loadModule(ctx: CompileCtx, module: Module) =
-  module.globalScope = ctx.globalScope
+  # The module's global scope is for its own view on what symbols
+  # it will use as a global, whether it imports them or exports them.
+  #
+  # We will check global variables against each other when we do our
+  # internal linking pass.
+
+  module.globalScope = initScope()
   module.attrSpec    = ctx.attrSpec
 
   var err = not parseTopLevel(module)
@@ -207,18 +140,27 @@ proc handleFolding(ctx: CompileCtx, module: Module) =
 
   module.foldingPass()
 
-proc buildFromEntryPoint*(entrypointName: string): CompileCtx =
-  result = CompileCtx()
+proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
+                        bool {.discardable.} =
+  let modOpt        = ctx.findAndLoadModule(entrypointName)
+
+  ctx.entrypoint = modOpt.getOrElse(nil)
+
+  ctx.buildIr(ctx.entrypoint)
+  ctx.handleFolding(ctx.entrypoint)
+  ctx.buildCfg(ctx.entrypoint)
+  ctx.buildAllUnbuiltCfgs(ctx.entrypoint) # TODO: do for all modules
+  ctx.wholeProgramChecks()
+  return ctx.errors.canProceed()
+
+proc newCompileContext*(spec: ValidationSpec = nil,
+                        path                 = @[".", "https://chalkdust.io/"],
+                        ext                  = ".c4m"): CompileCtx =
+
+  result = CompileCtx(modulePath: path, defaultExt: ext, attrSpec: spec)
+
   result.globalScope = initScope()
   result.modules.initDict()
-
-  let modOpt        = result.findAndLoadModule(entrypointName)
-  result.entrypoint = modOpt.getOrElse(nil)
-
-  result.buildIr(result.entrypoint)
-  result.handleFolding(result.entrypoint)
-
-  result.buildCfg(result.entrypoint)
 
 proc printTokens*(ctx: Module, start = 0, endix = 0) =
   var
@@ -250,12 +192,15 @@ proc printIr*(ctx: Module) =
 
 proc printGlobalScope*(ctx: CompileCtx) =
   print ctx.globalScope.toRope("Globals used")
+
 proc printModuleScope*(ctx: Module) =
   print ctx.moduleScope.toRope("Module scope")
+
 proc printFuncScope*(fn: FuncInfo) =
   print fn.fnScope.toRope("Scope for function " & fn.name)
   if fn.implementation != nil:
     print fn.implementation.toRope()
+
 proc printAllFuncScopes*(ctx: Module) =
   if ctx.moduleScope == nil:
     print h4("No functions found due to parse failure.")
@@ -282,20 +227,19 @@ proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
 
   print errsToPrint.formatErrors(verbose)
 
-when isMainModule:
-  useCrashTheme()
-  var session = buildFromEntryPoint("ptest.c4m")
+proc printProgramCfg*(ctx: CompileCtx) =
+  print ctx.entrypoint.cfg.toRope(true)
 
-  if session.entrypoint != nil:
-    var module = session.entrypoint
-    module.printTokens()
-    module.printParseTree()
-    module.printIr()
-    module.printErrors()
-    module.printAttrsUsed()
-    module.printAllFuncScopes()
-    module.printModuleScope()
-    session.printGlobalScope()
-    print module.cfg.toRope(true)
-  else:
-    print em("Could not find module 'ptest.c4m'")
+proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone) =
+  var errsToPrint: seq[Con4mError]
+
+  for (_, m) in ctx.modules.items():
+    for item in m.errors:
+      if cast[int](item.severity) >= cast[int](ll):
+        errsToPrint.add(item)
+
+  for item in ctx.errors:
+    if cast[int](item.severity) >= cast[int](ll):
+      errsToPrint.add(item)
+
+  print errsToPrint.formatErrors(verbose)

@@ -404,7 +404,7 @@ proc tFunc*(items: seq[TypeId], va = false): TypeId =
   return newFuncType(items, va).typeId
 
 proc copyType*(t: TypeRef): TypeRef =
-  var id = t.typeid
+  var id = t.typeid.followForwards()
 
   if id.isConcrete():
     return t
@@ -435,6 +435,9 @@ proc copyType*(t: TypeRef): TypeRef =
   else:
     discard
   typeStore[result.typeId] = result
+
+template tCopy*(t: TypeId): TypeId =
+  idToTypeRef(t).copyType().typeId
 
 proc baseunify(id1, id2: TypeId): TypeId
 

@@ -9,7 +9,7 @@ template toBox*[T](item: T, tid: TypeId): CBox =
 
 proc unBox*[T](b: CBox): T =
   # Currently unchecked.
-  return toVal[T](b.v.toVal)
+  return toVal[T](b.v)
 
 template getType*(x: CBox): TypeId =
   x.t.followForwards()

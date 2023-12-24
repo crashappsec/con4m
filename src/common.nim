@@ -272,6 +272,7 @@ type
     tid*:  TypeId
     va*:   bool
     sym*:  SymbolInfo
+    loc*:  Con4mNode
 
   FuncInfo* = ref object
     # One module can have multiple instantiations of a function, as
@@ -305,14 +306,19 @@ type
   SymbolInfo* = ref object
     name*:         string
     isFunc*:       bool
+    isAttr*:       bool
+    hasDefault*:   bool # Only for attrs
+    declaredType*: bool
+    immutable*:    bool
     tid*:          TypeId
     uses*:         seq[IrNode]
     defs*:         seq[IrNode]
-    declaredType*: bool
-    immutable*:    bool
     fimpls*:       seq[FuncInfo]
     pInfo*:        ParamInfo
     constValue*:   Option[CBox]
+    module*:       Module # Ignored for non-func global vars and attrs.
+    err*:          bool
+    declNode*:     Con4mNode
 
   CfgExitType* = enum
     CFXNormal, CFXCall, CFXUse, CFXBreak, CFXContinue, CFXReturn, CFXStart
@@ -358,10 +364,14 @@ type
     fn*:          ValidationFn
     params*:      seq[CBox]
 
+  FsKind* = enum
+    FsField, FsObjectType, FsSingleton, FsUserDefField, FsObjectInstance,
+    FsErrorNoSpec, FsErrorSecUnderField, FsErrorNoSuchsec,
+    FsErrorSecNotAllowed, FsErrorFieldNotAllowed
+
   FieldSpec* = ref object
     name*:                 string
     tid*:                  TypeId
-    section*:              bool
     lockOnWrite*:          bool
     defaultVal*:           Option[CBox]
     addDefaultsBeforeRun*: bool = true
@@ -369,6 +379,8 @@ type
     hidden*:               bool
     doc*:                  Rope
     shortdoc*:             Rope
+    fieldKind*:            FsKind
+    errIx*:                int
 
   SectionSpec* = ref object
     ## This specification is only applied to attributes.  It is used
@@ -468,6 +480,8 @@ type
     blockScopes*:    seq[Scope]   # Stack of loop iteration vars.
     lhsContext*:     bool         # To determine when this might be a def.
     attrContext*:    bool         # True when we are def processing an attr.
+    ambigAssign*:    bool
+    secDefContext*:  bool
     curSym*:         SymbolInfo
     usedModules*:    seq[(string, string)]
     funcsToResolve*: seq[(IrNode, TypeId, seq[FuncInfo], seq[FuncInfo])]

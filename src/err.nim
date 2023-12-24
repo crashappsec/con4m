@@ -88,7 +88,6 @@ const errorMsgs = [
   ("AlreadyAVar",    "Already found a top-level variable with the same " &
                      "name as this function; this is not allowed within a " &
                      "module."),
-  ("Immutable",      "Cannot modify immutable values."),
   ("VarRedef",       "Variable <em>$1</em> declared multiple times in " &
                      "the same scope."),
   ("LabelDupe",      "Nested loops have the same label (<em>$1</em>)."),
@@ -121,19 +120,44 @@ const errorMsgs = [
   ("TyDiffValue",    "Value type is not consistent with other values (" &
                      "Previous values were <em>$1</em>; this is a " &
                      "<em>$2</em>)"),
+  ("VarInSecDef",    "In explicit section declarations, the `=` is " &
+                     "expecting valid attributes only on the LHS, but " &
+                     "<em>$1</em> is not allowed as a top-level attribute." &
+                     "Assuming this is a variable, not an attribute. " &
+                     "If it should be an attribute, fix the specification. " &
+                     "Otherwise, to get rid of this warning, either move " &
+                     "the assignment outside the section block, or " &
+                     "Use the <em>:=</em> assignment operator, which " &
+                     "forces variable assignment."),
+  ("TryVarAssign",   "The attribute specifcation doesn't allow this field. " &
+                     "If you'd like a variable with this name, you can " &
+                     "use the <em>:=</em> operator."),
+  ("AssignToSec",    "Cannot assign directly to <em>$1</em>; it is a " &
+                     "section that supports multiple instances, not a " &
+                     "field within a section."),
+  ("AsgnSingleton",  "Cannot assign directly to <em>$1</em>; it is a single" &
+                     "section that contains fields, not a field within " &
+                     "a section."),
+  ("AsgnInstance",   "Cannot assign directly to <em>$1</em>; the parent " &
+                     "section supports multiple instances, so this name " &
+                     "would be an instance, to which you can then add fields."),
+
+  ("SecUnderField",  "Cannot assign; <em>$1</em> is a field, so may not " &
+                     "contain sub-fields."),
+  ("SectionNoSpec",  "While <em>$1</em> is a valid section, there is no " &
+                     "known section type named <em>$2</em>."),
+  ("RootNoSec",      "There is no allowed section or attribute named: " &
+                     "<em>$1</em>"),
+  ("SectionDenied",  "While <em>$2</em> is a known section type, it is not " &
+                     "permitted within <em>$1</em>."),
+  ("RootSecDenied",  "The root attribute scope doesn't allow <em>$1<em> " &
+                     "sections."),
+  ("AttrNotSpecd",   "<em>$1</em> is not an allowed attribute name."),
   ("BadSectionType", "There isn't an allowed section type named <em>$1</em>."),
   ("SecNotAllowed",  "A <em>$1</em> section is not allowed from within $2."),
   ("NotASingleton",  "The <em>$1</em> section expects an instance name."),
   ("IsASingleton",   "A <em>$1</em> section does not allow named instances;" &
                      " there is only one unnamed section."),
-  ("SecNotAllowed",  "The section type <em>$1</em> does not allow the " &
-                     "section type <em>$2</em> in its contents."),
-  ("NotASection",    "The specification doesn't have a defined section type " &
-                     "named <em>$1</em>"),
-  ("4gotObjName?",   "$1 appeared where a section name was expected, which " &
-                     "is not a valid section name here. But the previous " &
-                     "object name, <em>$2</em> would be a valid section " &
-                     "here. This means you probably forgot an object name."),
   ("TypeVsSpec",     "The type of this use (<em>$1</em>) is not compatible " &
                      "with the specified type (<em>$2</em>)"),
   ("UnsignedUMinus", "Unary minus would turn an unsigned value to a signed " &
@@ -150,7 +174,8 @@ const errorMsgs = [
   ("MemberTop",      "Attribute member access (.) can only be applied " &
                      "to attributes, not to values."),
   ("AttrLhs",        "Currently, the left hand side of the attribute " &
-                     "assignment operator can only be a named attribute."),
+                     "assignment operator can only be a named attribute or " &
+                     "variable."),
   ("NDim",           "Multi-dimensional arrays are not yet supported."),
   ("TupleConstIx",   "When indexing a tuple, the index must evaluate to " &
                      "a constant integer."),
@@ -177,8 +202,17 @@ const errorMsgs = [
   ("ExprResult",     "Result of expression is unused. Expression result is " &
                      "of type <em>$1</em>. Please assign to _ to discard."),
   ("InfLoop",        "While loop does not exit."),
-  ("UseBeforeDef",   "This use of <em>$1</em> can happen before a value is " &
-                     "assigned to the variable."),
+  ("UseBeforeDef",   "Likely use of <em>$1</em> before assignment;" &
+                     " If you think this is wrong, set a default value " &
+                     "at the top of this scope."),
+  ("ConstReassign",  "This variable has been declared constant, and was " &
+                     "previously assigned."),
+  ("Immutable",      "Cannot modify immutable values."),
+  ("DefWoUse",       "Variable <em>$1</em> is defined, but never used."),
+  ("ConstNotSet",    "Constant <em>$1</em> was declared, but no value was " &
+                     "set."),
+  ("$assign",        "Variables starting with <em>$</em> are set by the " &
+                     "system, and cannot be otherwise assigned."),
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
@@ -247,6 +281,11 @@ template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra)
 
+template irError*(ctx: Module, msg: string, w: IrNode,
+                  extra: seq[string] = @[]) =
+  var where = if w == nil: ctx.pt else: w.parseNode
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra)
+
 template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   # Things we consider errors, but we may end up allowing. Currently, this
@@ -254,14 +293,32 @@ template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
 
+template irNonFatal*(ctx: Module, msg: string, w: IrNode,
+                     extra: seq[string] = @[]) =
+  # Things we consider errors, but we may end up allowing. Currently, this
+  # is just for use-before-def errors.
+  var where = if w == nil: ctx.pt else: w.parseNode
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
+
 template irWarn*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
 
+template irWarn*(ctx: Module, msg: string, w: IrNode,
+                 extra: seq[string] = @[]) =
+  var where = if w == nil: ctx.pt else: w.parseNode
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
+
+
 template irInfo*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   var where = if w == nil: ctx.pt else: w
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
+
+template irInfo*(ctx: Module, msg: string, w: IrNode,
+                 extra: seq[string] = @[]) =
+  var where = if w == nil: ctx.pt else: w.parseNode
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
 
 template loadError*(ctx: CompileCtx, msg: string, modname: string,
@@ -318,11 +375,13 @@ proc getVerboseInfo(err: Con4mError): Rope =
     lines   = src.split("\n")
     locator = em(repeat((' '), err.offset) & "^")
 
+  if lines.len() == 0 or err.line == 0:
+    return text("(source unavailable)")
   result = text(lines[err.line - 1]) + newBreak() + locator + newBreak()
 
 proc getLocWidth(errs: seq[Con4mError]): int =
   for err in errs:
-    let r = 2 + `$`(err.line + 1).len() + `$`(err.offset + 1).len()
+    let r = 2 + `$`(err.line).len() + `$`(err.offset + 1).len()
 
     if r > result:
       result = r
@@ -339,7 +398,9 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
     mw = errs.getModuleWidth() + 1
     lw = errs.getLocWidth() + 1
 
-  for error in errs:
+  for i, error in errs:
+    if i == 30: # TODO; make this a configurable limit.
+      break
     var msg = error.lookupMsg()
     error.performSubs(msg)
     errList.add(error.oneErrToRopeList(msg))
