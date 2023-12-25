@@ -161,7 +161,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     if ctx.handleOneNode(m, n.contents.loopBody, passDown).finishBlock(loopTop):
       result = loopTop.exitNode
 
-      if n.contents.condition.isConstant():
+      if n.contents.condition != nil and n.contents.condition.isConstant():
         let
           asMixed = n.contents.condition.value.get()
           asBool  = toVal[bool](asMixed)
@@ -244,7 +244,6 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # above us, but below the call site. So we'll get there, even
     # though it may be indirect.
 
-    result = ctx.handleOneNode(m, n.contents.targetNode, result)
     var search = result
     while search.loopIrNode != n.contents.targetNode:
       if search.pre.len() == 0:

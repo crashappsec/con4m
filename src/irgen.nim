@@ -1427,6 +1427,21 @@ proc resolveDeferredSymbols*(ctx: Module) =
 
   ctx.funcsToResolve = @[]
 
+  # Also take a pass looking for overlapping signatures.
+  for (name, sym) in ctx.moduleScope.table.items():
+    if sym.isFunc and sym.fimpls.len() > 1:
+      for i in 0 ..< (sym.fimpls.len() - 1):
+        let oneFuncType = sym.fimpls[i].tid
+        for j in i + 1 .. (sym.fimpls.len() - 1):
+          if oneFuncType.unify(sym.fimpls[j].tid) != TBottom:
+            let
+              t1 = sym.fimpls[i].tid.toString()
+              t2 = sym.fimpls[j].tid.toString()
+              l1 = $(sym.fimpls[i].implementation.parseNode.token.lineNo)
+            ctx.irError("SigOverlap", w = sym.fimpls[j].implementation,
+                                      @[name, t1, t2, l1])
+
+
 proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:

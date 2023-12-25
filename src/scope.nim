@@ -7,12 +7,15 @@ proc initScope*(): Scope =
   result = Scope()
   result.table.initDict()
 
-proc newModuleObj*(contents: string, name: string, where = "", ext = "",
-                   url = ""): Module =
+proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
+                   ext, url, key: string): Module =
   result = Module(url: url, where: where, modname: name, ext: ext,
                   s: newStringCursor(contents))
   result.moduleScope = initScope()
-  result.usedAttrs   = initScope()
+  result.usedAttrs   = ctx.usedAttrs
+  result.globalScope = ctx.globalScope
+  result.attrSpec    = ctx.attrSpec
+  ctx.modules[key]   = result
 
 proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
                  isFunc: bool, tid = TBottom): Option[SymbolInfo] =

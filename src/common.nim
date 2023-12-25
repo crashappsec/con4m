@@ -497,6 +497,7 @@ type
     attrSpec*:    ValidationSpec
     errors*:      seq[Con4mError]
     globalScope*: Scope
+    usedAttrs*:   Scope
     modules*:     Dict[string, Module]
     entrypoint*:  Module
     fatal*:       bool

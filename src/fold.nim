@@ -168,11 +168,6 @@ template opReplace(ctx: Module, o, f: string) =
     ctx.replaceCall(n, f, sig, actuals)
     return
 
-template opReplace(ctx: Module, o, f: string) =
-  if n.contents.bOp == o:
-    ctx.replaceCall(n, f, sig, actuals)
-    return
-
 proc replaceBinOpWithCall(ctx: Module, n: IrNode) =
   if n.contents.kind != IrBinary:
     return

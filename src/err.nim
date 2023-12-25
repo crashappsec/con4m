@@ -213,6 +213,11 @@ const errorMsgs = [
                      "set."),
   ("$assign",        "Variables starting with <em>$</em> are set by the " &
                      "system, and cannot be otherwise assigned."),
+  ("SigOverlap",     "In this module, for the function name <em>$1</em>, " &
+                     "implementations have overlapping signatures:<br>" &
+                     "2. <strong>$3</strong><br>" &
+                     "1. <strong>$2</strong> (line $4).")
+
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,

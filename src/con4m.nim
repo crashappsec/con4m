@@ -1,9 +1,7 @@
 # TODO:
 #
 # === High priority ===
-# - Have to merge global scopes (including attr scopes) BEFORE we do
-#   the def/use check. Heck, we can do it after the declaration pass.
-# - Second pass on function arg resolution before erroring:
+# - Second pass on function cfarg resolution before erroring:
 #   When we're done w/ a module we need to look for overlapping function
 #   definitions within the module.
 # - Code generation to some basic form and execution from it.
@@ -35,6 +33,7 @@
 # == Medium ==
 # - C api and bindings to other languages.
 # - Doc API.
+# - Merge mixed / cbox
 # - Hook getopt back up.
 # - Update the pretty printer.
 # - Extra lines in error messages shouldn't get the huge table indent.
@@ -42,15 +41,13 @@
 # - REPL
 # - Default parameters
 # - Litmods for common rope types
-# - Restrict $i and $i_label symbols?
-# - Give names to enums / turn them into int subtypes
+# - Add $len, $last
+# - Give names to enums / turn them into int subtypes.
 # - Fold for list indexes when the length is fixed size.
 # - Add 'error' to functions.
 # - Add global enum
 # - :: module scope operator; root::, module::, local:: I think?
-# - Unreachable funciton analysis
 # - Keyword arguments
-# - treat assignment to '_' as 'discard'.
 # - Move temporary compile state to a throw-away reference obj that's
 #   carried in the module state.
 # - Debug mode.
@@ -58,7 +55,7 @@
 #   and called as part of the entry point.
 # - Properly handle
 # - += and similar.
-# - Some sort of mixed type.
+# - Some sort of mixed type in the language itself.
 # - What's wrong w/ hatrack add??
 
 # == Lower priority ==
@@ -98,7 +95,6 @@ import module, specs
 export module
 
 when isMainModule:
-  import strutils
   useCrashTheme()
 
   proc buildTestSpec(): ValidationSpec =

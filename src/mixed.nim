@@ -16,7 +16,7 @@ type
 proc toMixed*[T](item: T): Mixed =
   when T is Mixed:
     return item
-  when T is SomeOrdinal or T is SomeFloat or T is Rune or T is bool:
+  elif T is SomeOrdinal or T is SomeFloat or T is Rune or T is bool:
     result = Mixed(kind: MixedValue, byVal: cast[pointer](item))
   else:
     result = Mixed(kind: MixedReference, byRef: MixedContainer[T](item: item))

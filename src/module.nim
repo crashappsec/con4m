@@ -63,8 +63,8 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
   if source.isNone():
     return none(Module)
 
-  var module = newModuleObj(source.get(), fname, location, ext, url)
-  ctx.modules[moduleKey] = module
+  var module = ctx.newModuleObj(source.get(), fname, location, ext, url,
+                                moduleKey)
 
   ctx.loadModule(module)
   return some(module)
@@ -92,9 +92,6 @@ proc loadModule(ctx: CompileCtx, module: Module) =
   #
   # We will check global variables against each other when we do our
   # internal linking pass.
-
-  module.globalScope = initScope()
-  module.attrSpec    = ctx.attrSpec
 
   var err = not parseTopLevel(module)
 
@@ -160,6 +157,7 @@ proc newCompileContext*(spec: ValidationSpec = nil,
   result = CompileCtx(modulePath: path, defaultExt: ext, attrSpec: spec)
 
   result.globalScope = initScope()
+  result.usedAttrs   = initScope()
   result.modules.initDict()
 
 proc printTokens*(ctx: Module, start = 0, endix = 0) =
