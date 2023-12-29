@@ -144,15 +144,11 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     secstart.label = n.getSectionLabel()
 
   of IrLoop:
-    result = ctx.handleOneNode(m, n.contents.startIx, result)
-    result = ctx.handleOneNode(m, n.contents.endIx, result)
-
     let loopTop = result.startBlock(n)
     loopTop.loopIrNode = n
 
     # No scope for while loops, which have no loop variable.
-    if n.contents.keyVar != "":
-      loopTop.defInBlock &= n.contents.scope.allVars()
+    loopTop.defInBlock &= n.contents.loopVars
 
     let passDown = ctx.handleOneNode(m, n.contents.condition, loopTop)
 
@@ -182,6 +178,10 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result = ctx.handleOneNode(m, n.contents.varRhs, result)
     m.lhsContext = true
     result = ctx.handleOneNode(m, n.contents.varLhs, result)
+  of IrRange:
+    result = ctx.handleOneNode(m, n.contents.rangeStart, result)
+    result = ctx.handleOneNode(m, n.contents.rangeEnd, result)
+
   of IrConditional:
     var
       top    = result.startBlock(n)
@@ -210,8 +210,33 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     else:
       result = joiner
 
-    assert top.nextBlock == joiner
+  of IrSwitch:
+    var
+      top    = result.startBlock(n)
+      joiner = top.exitNode
 
+    if n notin n.contents.targetSym.uses:
+      n.contents.targetSym.uses.add(n)
+
+    if not n.contents.typeCase:
+      result = ctx.handleOneNode(m, n.contents.switchTarget, result)
+
+    for branch in n.contents.branches:
+      var
+        cfblock = top.startBlock(branch, joiner)
+        cfend   = ctx.handleOneNode(m, branch, cfblock)
+        cfret   = cfend.finishBlock(cfblock)
+
+      if cfend != nil:
+        cfend.nextBlock = nil
+
+    result = joiner
+
+  of IrSwitchBranch:
+    for i, item in n.contents.conditions:
+      result = ctx.handleOneNode(m, item, result)
+
+    result = ctx.handleOneNode(m, n.contents.action, result)
 
   of IrJump:
     # Because our jumps are structured, we don't have to worry about
@@ -385,7 +410,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     m.addUse(n.contents.symbol, n, result)
   of IrLhsLoad:
     n.contents.symbol.addDef(n, result)
-  of IrLit, IrFold, IrNop:
+  of IrLit, IrFold, IrNop, IrNil:
     discard
 
 proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
@@ -405,7 +430,7 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   f.exitNode             = top.exitNode
   f.cfg                  = top
 
-  # When we add default paramers, we will want to check parameters'
+  # When we add default parameters, we will want to check parameters'
   # uses, via the module's def's. For now, we just add them in to the
   # list of already-defined symbols.
   for item in f.params:

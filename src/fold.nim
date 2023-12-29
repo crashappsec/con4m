@@ -52,8 +52,6 @@ proc foldDown*(ctx: Module, newNode: IrNode) {.cdecl, exportc.} =
 proc loopFold(ctx: Module) =
   let n = ctx.current
 
-  ctx.foldDown(n.contents.startIx)
-  ctx.foldDown(n.contents.endIx)
   ctx.foldDown(n.contents.condition)
   ctx.foldDown(n.contents.loopBody)
   if n.contents.condition != nil and n.contents.condition.isConstant():
@@ -530,6 +528,10 @@ proc foldIr(ctx: Module) =
     ctx.logicFold()
   of IrSection:
     ctx.foldDown(ctx.current.contents.blk)
+  of IrSwitch, IrSwitchBranch, IrRange:
+    discard
+  of IrNil:
+    discard
   of IrLoad, IrLhsLoad, IrNop, IrFold, IrUse, IrJump, IrMember:
     discard
 

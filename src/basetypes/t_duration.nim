@@ -144,6 +144,5 @@ let
   TDuration* = addBasicType(name        = "duration",
                             repr        = repr,
                             kind        = stdOtherKind,
-                            litMods     = @["duration"],
                             fromRawLit  = constructDuration,
                             eqFn        = durEq)

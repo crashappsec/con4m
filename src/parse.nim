@@ -27,16 +27,31 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   case n.kind
   of NodeModule:         toPrint = n.ropeNt("Module")
   of NodeBody:           toPrint = n.ropeNt("Body")
+  of NodeDocString:      toPrint = n.ropeNt("DocString")
   of NodeParamBlock:     toPrint = n.ropeNt("ParamBlock")
+  of NodeExternBlock:    toPrint = n.ropeNt("ExternBlock")
+  of NodeExternSig:      toPrint = n.ropeNt("ExternSig")
+  of NodeExternParam:    toPrint = n.ropeNt("ExternParam")
+  of NodeExternLocal:    toPrint = n.ropeNt("ExternLocal")
+  of NodeExternDll:      toPrint = n.ropeNt("ExternDll")
+  of NodeExternPure:     toPrint = n.ropeNt("ExternPure")
+  of NodeExternHolds:    toPrint = n.ropeNt("ExternHolds")
+  of NodeExternAllocs:   toPrint = n.ropeNt("ExternAllocs")
+  of NodeExternReturn:   toPrint = n.ropeNt("ExternReturn")
   of NodeAttrAssign:     toPrint = n.ropeNt("AttrAssign")
   of NodeAttrSetLock:    toPrint = n.ropeNt("AttrSetLock")
   of NodeVarAssign:      toPrint = n.ropeNt("VarAssign")
   of NodeSection:        toPrint = n.ropeNt("Section")
   of NodeIfStmt:         toPrint = n.ropeNt("If")
+  of NodeTypeOfStmt:     toPrint = n.ropeNt("TypeOf")
+  of NodeValueOfStmt:    toPrint = n.ropeNt("ValueOf")
+  of NodeCaseCondition:  toPrint = n.ropeNt("CaseCondition")
+  of NodeCase:           toPrint = n.ropeNt("Case")
   of NodeWhileStmt:      toPrint = n.ropeNt("While")
   of NodeElifStmt:       toPrint = n.ropeNt("Elif")
   of NodeElseStmt:       toPrint = n.ropeNt("Else")
   of NodeForStmt:        toPrint = n.ropeNt("For")
+  of NodeRange:          toPrint = n.ropeNt("Range")
   of NodeReturnStmt:     toPrint = n.ropeNt("Return")
   of NodeNot:            toPrint = n.ropeNt("Not")
   of NodeMember:         toPrint = n.ropeNt("Member")
@@ -85,6 +100,7 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeHexLit:         toPrint = n.ropeNtNamed("Hex")
   of NodeFloatLit:       toPrint = n.ropeNtNamed("Float")
   of NodeBoolLit:        toPrint = n.ropeNtNamed("Bool")
+  of NodeNilLit:         toPrint = n.ropeNtNamed("Nil")
   of NodeFuncDef:        toPrint = n.ropeNtNamed("FuncDef")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
@@ -112,12 +128,27 @@ proc `$`*(n: Con4mNode): string =
   case n.kind
   of NodeModule:         "a module"
   of NodeBody:           "a block of statements"
+  of NodeDocString:      "Documentation"
   of NodeParamBlock:     "a parameter block"
+  of NodeExternBlock:    "an extern block"
+  of NodeExternSig:      "an external function signature"
+  of NodeExternParam:    "an external function parameter"
+  of NodeExternLocal:    "the local interface to an external function"
+  of NodeExternDll:      "an external function's expected DLL"
+  of NodeExternPure:     "an external function's <em>pure</em> property"
+  of NodeExternHolds:    "an external function's <em>holds</em> spec"
+  of NodeExternAllocs:   "an external function's <em>allocs</em> spec"
+  of NodeExternReturn:   "spec of the <em>return</em> for an external func"
   of NodeAttrAssign:     "an assignment"
   of NodeAttrSetLock:    "a lock operation"
   of NodeVarAssign:      "a variable assignment"
   of NodeSection:        "a section declaration"
   of NodeIfStmt:         "an <em>if</em> block"
+  of NodeTypeOfStmt:     "a <em>typeof</em> statement"
+  of NodeValueOfStmt:    "a <em>valueof</em> statement"
+  of NodeCaseCondition:  "a <em>case</em> condition"
+  of NodeCase:           "a <em>case</em> branch"
+  of NodeRange:          "a numeric range"
   of NodeWhileStmt:      "a <em>while</em> loop"
   of NodeElifStmt:       "an <em>elif</em> block"
   of NodeElseStmt:       "an <em>else</em> block"
@@ -170,6 +201,7 @@ proc `$`*(n: Con4mNode): string =
   of NodeHexLit:         "a <em>hex<em> literal"
   of NodeFloatLit:       "a <em>float</em> literal"
   of NodeBoolLit:        "a <em>boolean</em> literal"
+  of NodeNilLit:         "the <em>nil</em> value"
   of NodeFuncDef:        "a <em>function</em> declaration"
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
@@ -192,6 +224,22 @@ proc typeSpec(ctx: Module): Con4mNode
 proc expressionStart(ctx: Module): Con4mNode
 proc notExpr(ctx: Module): Option[Con4mNode]
 proc accessExpr(ctx: Module): Con4mNode
+proc typeOfStmt(ctx: Module): Con4mNode
+proc valueOfStmt(ctx: Module): Con4mNode
+proc forStmt(ctx: Module): Con4mNode
+proc whileStmt(ctx: Module): Con4mNode
+proc continueStmt(ctx: Module): Con4mNode
+proc breakStmt(ctx: Module): Con4mNode
+proc returnStmt(ctx: Module): Con4mNode
+proc varStmt(ctx: Module): Con4mNode
+proc globalStmt(ctx: Module): Con4mNode
+proc constStmt(ctx: Module): Con4mNode
+proc labelStmt(ctx: Module): Con4mNode
+proc useStmt(ctx: Module): Con4mNode
+proc parameterBlock(ctx: Module): Con4mNode
+proc varAssign(ctx: Module, lhs: Con4mNode): Con4mNode
+proc attrAssign(ctx: Module, lhs: Con4mNode): Con4mNode
+proc section(ctx: Module, lhs: Con4mNode): Con4mNode
 
 proc inFunction(ctx: Module): bool {.inline.} =
   return ctx.inFunc
@@ -203,7 +251,8 @@ proc curTok(ctx: Module): Con4mToken
 
 const stmtStartList = [NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
                        NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt,
-                       NodeForStmt, NodeWhileStmt, NodeBreakStmt]
+                       NodeForStmt, NodeWhileStmt, NodeBreakStmt,
+                       NodeTypeOfStmt, NodeValueOfStmt]
 
 proc newNode(ctx: Module, kind: Con4mNodeKind): Con4mNode =
   ctx.curNodeId += 1
@@ -809,6 +858,9 @@ production(charlit, NodeCharLit):
 production(boolLit, NodeBoolLit):
   ctx.advance()
 
+production(nilLit, NodeNilLit):
+  ctx.advance()
+
 production(otherLit, NodeOtherLit):
   ctx.expect(TtOtherLit, consume = true)
 
@@ -879,6 +931,8 @@ production(literal, NodeLiteral):
     result.addKid(ctx.charLit())
   of TtTrue, TtFalse:
     result.addKid(ctx.boolLit())
+  of TtNil:
+    result.addKid(ctx.nilLit())
   of TtOtherLit:
     result.addKid(ctx.otherLit())
   of TtLBrace:
@@ -900,7 +954,8 @@ production(literal, NodeLiteral):
 production(expressionStart, NodeExpression):
   case ctx.curKind()
   of TtIntLit, TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse,
-     TtLBrace, TtLBracket, TtLParen, TtOtherLit, TtFunc, TtBacktick, TtObject:
+     TtLBrace, TtLBracket, TtLParen, TtOtherLit, TtFunc, TtBacktick, TtObject,
+     TtNil:
        result.addKid(ctx.literal())
   of TtIdentifier:
     let txt = ctx.curTok().getText()
@@ -970,6 +1025,219 @@ production(ifStmt, NodeIfStmt):
   if ctx.curKind() == TtElse:
     result.addKid(ctx.elseStmt())
 
+production(caseBody, NodeBody):
+  ctx.advance()
+  while true:
+    try:
+      let kind = ctx.curKind()
+      case kind
+      of TtCase, TtRBrace, TtElse:
+        return
+      of TtSemi, TtNewLine:
+        ctx.advance()
+        continue
+      of TtEnum, TtFunc:
+        ctx.errSkipStmtNoBackup("TopLevelOnly", @[$(ctx.curKind())])
+      of TtLockAttr:
+        result.addKid(ctx.attrAssign(ctx.expression()))
+        continue
+      of TtIf:
+        result.addKid(ctx.ifStmt())
+        continue
+      of TtFor:
+        result.addKid(ctx.forStmt())
+        continue
+      of TtWhile:
+        result.addKid(ctx.whileStmt())
+        continue
+      of TtTypeOf:
+        result.addKid(ctx.typeOfStmt())
+        continue
+      of TtValueOf:
+        result.addKid(ctx.valueOfStmt())
+        continue
+      of TtContinue:
+        if not ctx.inLoop():
+          ctx.errSkipStmtNoBackup("InLoopsOnly", @["continue"])
+        else:
+          result.addKid(ctx.continueStmt())
+        continue
+      of TtBreak:
+        if not ctx.inLoop():
+          ctx.errSkipStmtNoBackup("InLoopsOnly", @["break"])
+        else:
+          result.addKid(ctx.breakStmt())
+        continue
+      of TtReturn:
+        if not ctx.inFunction():
+          ctx.errSkipStmtNoBackup("RetOutOfFunc")
+        else:
+          result.addKid(ctx.returnStmt())
+        continue
+      of TtVar:
+        result.addKid(ctx.varStmt())
+        continue
+      of TtGlobal:
+        result.addKid(ctx.globalStmt())
+        continue
+      of TtConst:
+        result.addKid(ctx.constStmt())
+        continue
+      of TtIdentifier:
+        case ctx.curTok.getText()
+        of "label":
+          result.addKid(ctx.labelStmt())
+          continue
+        of "use":
+          result.addKid(ctx.useStmt())
+          continue
+        of "parameter":
+          ctx.errSkipStmtNoBackup("TopLevelPlural",
+                                  @["<em>'parameter'</em> blocks"])
+        of "extern":
+          ctx.errSkipStmtNoBackup("TopLevelPlural",
+                                  @["<em>'extern'</em> blocks"])
+        else:
+          discard
+      else:
+        discard
+
+      let x = ctx.expression()
+      case ctx.curKind()
+      of TtLocalAssign:
+        result.addKid(ctx.varAssign(x))
+        continue
+      of TtColon, TtAttrAssign:
+        result.addKid(ctx.attrAssign(x))
+        continue
+      of TtIdentifier, TtStringLit, TtLBrace:
+        result.addKid(ctx.section(x))
+        continue
+      else:
+        result.addKid(x)
+        ctx.endOfStatement()
+        continue
+    except:
+      if getCurrentException().msg == "BAIL":
+        raise
+      while true:
+        if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
+          ctx.advance()
+          break
+        ctx.advance()
+
+production(caseElseBlock, NodeElseStmt):
+  ctx.advance()
+  case ctx.curKind()
+  of TtColon:
+    result.addKid(ctx.caseBody())
+  else:
+    ctx.skipNextNewLine()
+    if ctx.curKind() != TtLBrace:
+      ctx.errBail("CaseBodyStart")
+    else:
+      result.addKid(ctx.body())
+
+production(typeCaseCondition, NodeCaseCondition):
+  while true:
+    result.addKid(ctx.typeSpec())
+    if ctx.curKind() == TtComma:
+      ctx.advance()
+    else:
+      return
+
+production(valueCaseCondition, NodeCaseCondition):
+  while true:
+    let n = ctx.expression()
+    if ctx.curKind() == TtTo:
+      let r = ctx.newNode(NodeRange)
+      r.addKid(n)
+      ctx.advance()
+      r.addKid(ctx.expression())
+      result.addKid(r)
+    else:
+      result.addKid(n)
+    if ctx.curKind() == TtComma:
+      ctx.advance()
+    else:
+      return
+
+production(oneTypeCase, NodeCase):
+  ctx.advance()
+  let condition = ctx.typeCaseCondition()
+
+  assert condition != nil
+  result.addKid(condition)
+  case ctx.curKind()
+  of TtColon:
+    result.addKid(ctx.caseBody())
+  else:
+    ctx.skipNextNewLine()
+    if ctx.curKind() != TtLBrace:
+      ctx.errBail("CaseBodyStart")
+    else:
+      result.addKid(ctx.body())
+
+production(oneValueCase, NodeCase):
+  ctx.advance()
+  result.addKid(ctx.valueCaseCondition())
+  case ctx.curKind()
+  of TtColon:
+    result.addKid(ctx.caseBody())
+  else:
+    ctx.skipNextNewLine()
+    if ctx.curKind() != TtLBrace:
+      ctx.errBail("CaseBodyStart")
+    else:
+      result.addKid(ctx.body())
+
+production(typeofStmt, NodeTypeOfStmt):
+  ctx.advance()
+  result.addKid(ctx.memberExpr())
+  ctx.skipNextNewLine()
+  ctx.expect(TtLBrace, consume = true)
+  ctx.expect(TtCase)
+
+  while true:
+    result.addKid(ctx.oneTypeCase())
+
+    case ctx.curKind()
+    of TtCase:
+      continue
+    of TtRBrace:
+      ctx.advance()
+      ctx.ignoreAllNewlines()
+      return
+    of TtElse:
+      result.addKid(ctx.caseElseBlock())
+      ctx.expect(TtRBrace, consume = true)
+      return
+    else:
+      ctx.errBail("NextCase")
+
+production(valueofStmt, NodeValueOfStmt):
+  ctx.advance()
+  result.addKid(ctx.expression())
+  ctx.skipNextNewLine()
+  ctx.expect(TtLBrace, consume = true)
+  ctx.expect(TtCase)
+
+  while true:
+    result.addKid(ctx.oneValueCase())
+    case ctx.curKind()
+    of TtCase:
+      continue
+    of TtRBrace:
+      ctx.advance()
+      ctx.ignoreAllNewlines()
+      return
+    of TtElse:
+      result.addKid(ctx.caseElseBlock())
+      ctx.expect(TtRBrace, consume = true)
+      return
+    else:
+      ctx.errBail("NextCase")
+
 production(forVarList, NodeVarSymInfo):
   result.addKid(ctx.identifier())
   if ctx.curKind() == TtComma:
@@ -981,15 +1249,25 @@ production(forStmt, NodeForStmt):
   result.addKid(ctx.forVarList()) # 1
   if ctx.curKind() == TtIn:
     ctx.advance()
-    result.addKid(ctx.expression()) # 2
+    let n = ctx.expression() # 2
+    if ctx.curKind() == TtTo:
+      let r = ctx.newNode(NodeRange)
+      r.addKid(n)
+      ctx.advance()
+      r.addKid(ctx.expression())
+      result.addKid(r)
+    else:
+      result.addKid(n)
   else:
-    if result.children[0].children.len() != 1:
-      ctx.errSkipStmt("ForFromIx")
-
     ctx.expect(TtFrom, consume = true)
-    result.addKid(ctx.expression()) # 2
-    ctx.expect(TtTo, consume = true)
-    result.addKid(ctx.expression()) # 3
+    let n = ctx.expression()
+    ctx.expect(TtTo)
+    let r = ctx.newNode(NodeRange)
+    r.addKid(n)
+    ctx.advance()
+    r.addKid(ctx.expression())
+    result.addKid(r)
+
   ctx.loopDepth += 1
   result.addKid(ctx.body()) # ^1
   ctx.loopDepth -= 1
@@ -1281,6 +1559,144 @@ production(parameterBlock, NodeParamBlock):
     ctx.errBail("BadParamName")
   result.addKid(ctx.optionalBody())
 
+production(docString, NodeDocString):
+  result.addKid(ctx.stringLit())
+  ctx.skipNextNewline()
+  if ctx.curKind() == TtStringLit:
+    result.addKid(ctx.stringLit())
+    ctx.skipNextNewline()
+
+proc commonExternStart(ctx: Module) =
+  ctx.advance()
+  case ctx.curKind()
+  of TtColon, TtAttrAssign:
+    ctx.advance()
+  else:
+    ctx.errSkipStmtNoBackup("MissingTok", @["a <em>:</em>"])
+
+production(externLocalDef, NodeExternLocal):
+  ctx.commonExternStart()
+  result.addKid(ctx.identifier())
+  if ctx.curKind() != TtLParen:
+    ctx.errSkipStmtNoBackup("NeedSig")
+  result.addKid(ctx.typeSpec())
+  ctx.endOfStatement()
+
+production(externDllName, NodeExternDll):
+  ctx.commonExternStart()
+  result.addKid(ctx.stringLit())
+  ctx.endOfStatement()
+
+production(externPure, NodeExternPure):
+  ctx.commonExternStart()
+  if ctx.curKind() notin [TtTrue, TtFalse]:
+    ctx.errSkipStmtNoBackup("PureBool")
+  result.addKid(ctx.boolLit())
+  ctx.endOfStatement()
+
+production(externRetLit, NodeExternReturn):
+  ctx.advance()
+
+production(externHolds, NodeExternHolds):
+  ctx.commonExternStart()
+  while true:
+    if ctx.curKind() == TtIdentifier:
+      result.addKid(ctx.identifier())
+    else:
+      ctx.errSkipStmtNoBackup("BadRCParam")
+    if ctx.curKind() == TtComma:
+      ctx.advance()
+    else:
+      ctx.endOfStatement()
+      return
+
+production(externAllocs, NodeExternAllocs):
+  ctx.commonExternStart()
+  while true:
+    case ctx.curKind()
+    of TtIdentifier:
+      result.addKid(ctx.identifier())
+    of TtReturn:
+      result.addKid(ctx.externRetLit())
+    else:
+      ctx.errSkipStmtNoBackup("BadRCParam")
+    if ctx.curKind() == TtComma:
+      ctx.advance()
+    else:
+      ctx.endOfStatement()
+      return
+
+production(externParam, NodeExternParam):
+  # If there's a colon, the first param is a variable name instead of
+  # a CType spec. When we see the colon, we will swap out its node w/
+  # a NodeMember so that we can easily capture the intent without more
+  # superfluous node types, or checking against the FFI type names.
+
+  var
+    asId = ctx.identifier()
+
+  if ctx.curKind() == TtColon:
+    let fnameNode = ctx.newNode(NodeMember)
+    fnameNode.addKid(asId)
+    result.addKid(fNameNode)
+    ctx.advance()
+    result.addKid(ctx.identifier())
+  else:
+    result.addKid(asId)
+
+  let ctype = result.children[^1].getText()
+  if ctype notin cTypeNames:
+    ctx.errSkipStmtNoBackup("BadCType", @[ctype])
+
+  while result.children[^1].getText() in cTypeTakesParam:
+    if ctx.curKind() != TtIdentifier:
+      break
+    result.addKid(ctx.identifier())
+    if result.children[^1].getText() notin cTypeNames:
+      ctx.errSkipStmtNoBackup("BadCType")
+
+production(externSignature, NodeExternSig):
+  ctx.expect(TtLParen, consume = true)
+  if ctx.curKind() == TtRParen:
+    ctx.advance()
+  else:
+    while true:
+      result.addKid(ctx.externParam())
+      if ctx.curKind() == TtComma:
+        ctx.advance()
+      else:
+        ctx.expect(TtRParen, consume = true)
+        break
+
+    ctx.expect(TtArrow, consume = true)
+    result.addKid(ctx.externParam())
+
+production(externBlock, NodeExternBlock):
+  ctx.advance()
+  result.addKid(ctx.identifier())
+  result.addKid(ctx.externSignature())
+  ctx.expect(TtLBrace, consume = true)
+  if ctx.curKind() == TtStringLit:
+    result.addKid(ctx.docString())
+
+  while true:
+    if ctx.curKind() == TtRBrace:
+      ctx.advance()
+      return
+    case ctx.curTok.getText()
+    of "local":
+      result.addKid(ctx.externLocalDef())
+    of "dll":
+      result.addKid(ctx.externDllName())
+    of "pure":
+      result.addKid(ctx.externPure())
+    of "holds":
+      result.addKid(ctx.externHolds())
+    of "allocs":
+      result.addKid(ctx.externAllocs())
+    else:
+      ctx.errSkipStmtNoBackup("BadExternField")
+
 idStmtProd(varAssign, NodeVarAssign):
   # The := has already been validated by the caller.
   ctx.advance()
@@ -1322,6 +1738,8 @@ production(continueStmt, NodeContinueStmt):
 production(body, NodeBody):
   ctx.skipNextNewline()
   ctx.expect(TtLBrace, consume = true)
+  if ctx.curKind() == TtStringLit:
+    result.addKid(ctx.docString())
 
   ctx.nesting += 1
   let savedIx = ctx.curTokIx
@@ -1336,7 +1754,6 @@ production(body, NodeBody):
         ctx.nesting -= 1
         ctx.advance()
         ctx.ignoreAllNewlines()
-
         return
       of TtSemi, TtNewline:
         ctx.advance()
@@ -1354,6 +1771,12 @@ production(body, NodeBody):
         continue
       of TtWhile:
         result.addKid(ctx.whileStmt())
+        continue
+      of TtTypeOf:
+        result.addKid(ctx.typeOfStmt())
+        continue
+      of TtValueOf:
+        result.addKid(ctx.valueOfStmt())
         continue
       of TtContinue:
         if not ctx.inLoop():
@@ -1391,8 +1814,11 @@ production(body, NodeBody):
           result.addKid(ctx.useStmt())
           continue
         of "parameter":
-          result.addKid(ctx.parameterBlock())
-          continue
+          ctx.errSkipStmtNoBackup("TopLevelPlural",
+                                  @["<em>'parameter'</em> blocks"])
+        of "extern":
+          ctx.errSkipStmtNoBackup("TopLevelPlural",
+                                  @["<em>'extern'</em> blocks"])
         else:
           discard
       else:
@@ -1450,6 +1876,12 @@ production(topLevel, NodeModule):
       of TtWhile:
         result.addKid(ctx.whileStmt())
         continue
+      of TtTypeOf:
+        result.addKid(ctx.typeOfStmt())
+        continue
+      of TtValueOf:
+        result.addKid(ctx.valueOfStmt())
+        continue
       of TtContinue:
         ctx.errSkipStmt("InLoopsOnly", @["continue"])
       of TtBreak:
@@ -1478,6 +1910,9 @@ production(topLevel, NodeModule):
           continue
         of "parameter":
           result.addKid(ctx.parameterBlock())
+          continue
+        of "extern":
+          result.addKid(ctx.externBlock())
           continue
         else:
           discard

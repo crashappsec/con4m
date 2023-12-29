@@ -42,7 +42,7 @@ proc getAllScopes(ctx: CompileCtx, attrs: bool): seq[Scope] =
     for (_, sym) in m.moduleScope.table.items():
       if sym.isFunc:
         for fimpl in sym.fimpls:
-          if fimpl.fnScope notin result:
+          if fimpl.fnScope != nil and fimpl.fnScope notin result:
             result.add(fimpl.fnScope)
 
 proc defWoUseCheck(ctx: CompileCtx) =
@@ -57,7 +57,7 @@ proc defWoUseCheck(ctx: CompileCtx) =
         continue
       if name.startswith("$i"):
         continue
-      if sym.defs.len() != 0:
+      if sym.uses.len() != 0:
         continue
       ctx.programWarn("DefWoUse", sym, @[name])
 

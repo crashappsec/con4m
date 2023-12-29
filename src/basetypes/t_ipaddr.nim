@@ -85,12 +85,11 @@ let
   TIPv4* = addBasicType(name        = "ipv4",
                         repr        = repr4,
                         kind        = stdOtherKind,
-                        litMods     = @["ipv4", "ip"],
+                        litMods     = @["ip"],
                         fromRawLit  = constructIPV4,
                         eqFn        = ipv4Eq)
   TIPv6* = addBasicType(name        = "ipv6",
                         repr        = repr6,
                         kind        = stdOtherKind,
-                        litMods     = @["ipv6"],
                         fromRawLit  = constructIPV6,
                         eqFn        = ipv6Eq)

@@ -20,6 +20,5 @@ let
   TUrl* = addBasicType(name        = "url",
                        repr        = repr,
                        kind        = stdStrKind,
-                       litMods     = @["url"],
                        fromRawLit  = constructUrl,
                        eqFn        = urlEqFn)

@@ -3,8 +3,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import unicode, nimutils, mixed, options
-export unicode, nimutils, mixed, options
+import unicode, nimutils, mixed, options, ffi
+export unicode, nimutils, mixed, options, ffi
 
 const
   noRepr*       = 0
@@ -37,7 +37,8 @@ type
     STOther     = euroQuotesOk,
     STList      = 128,
     STDict      = 256,
-    STTuple     = 512
+    STTuple     = 512,
+    StNull      = 1024
 
   C4TypeKind* = enum
     C4TVar, C4List, C4Dict, C4Tuple, C4TypeSpec, C4Ref, C4Maybe,
@@ -127,11 +128,11 @@ type
     TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
     TtPeriod, TtLBrace, TtRBrace, TtRBraceMod, TtLBracket, TtRBracket,
     TtRBracketMod, TtLParen, TtRParen, TtRParenMod, TtAnd, TtOr, TtIntLit,
-    TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TTIf,
+    TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TtNil, TTIf,
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtConst, TtOtherLit,
     TtBacktick, TtArrow, TtObject, TtWhile, TtIn, TtBitAnd, TtBitOr, TtBitXor,
-    TtShl, TtShr, TtSof, TtEof, ErrorTok
+    TtShl, TtShr, TtTypeOf, TtValueOf, TtCase, TtSof, TtEof, ErrorTok
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -162,32 +163,36 @@ type
     commentLocs*:  seq[int]
     err*:          bool
 
-
   Con4mNodeKind* = enum
     ## Parse tree nodes types. Really no reason for these to be
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
     NodeModule, NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
-    NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, NodeForStmt,
-    NodeWhileStmt, NodeBreakStmt,  NodeContinueStmt, NodeReturnStmt,
-    NodeStringLit, NodeIntLit, NodeHexLit, NodeFloatLit, NodeBoolLit, NodeNot,
-    NodeMember, NodeLiteral, NodeIndex, NodeActuals, NodeCall, NodeDictLit,
-    NodeKVPair, NodeListLit, NodeOtherLit, NodeTupleLit, NodeCharLit,
-    NodeCallbackLit, NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte,
-    NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
-    NodeEnumStmt, NodeEnumItem, NodeIdentifier, NodeFuncDef, NodeFormalList,
-    NodeVarargsFormal, NodeTypeOneOf, NodeTypeMaybe, NodeTypeVar, NodeTypeFunc,
-    NodeTypeTuple, NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeRef,
-    NodeTypeTypeSpec, NodeTypeBuiltin, NodeReturnType, NodeTypeVararg,
-    NodeType, NodeParenExpr, NodeGlobalStmt, NodeConstStmt, NodeVarStmt,
-    NodeVarSymInfo, NodeUseStmt, NodeParamBlock, NodeExpression, NodeFormal,
-    NodeLabelStmt, NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr
+    NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, NodeTypeOfStmt,
+    NodeValueOfStmt, NodeForStmt, NodeWhileStmt, NodeBreakStmt,
+    NodeContinueStmt, NodeReturnStmt, NodeStringLit, NodeIntLit, NodeHexLit,
+    NodeFloatLit, NodeBoolLit, NodeNot, NodeMember, NodeLiteral, NodeIndex,
+    NodeActuals, NodeCall, NodeDictLit, NodeKVPair, NodeListLit, NodeOtherLit,
+    NodeTupleLit, NodeCharLit, NodeCallbackLit, NodeOr, NodeAnd, NodeNe,
+    NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt, NodePlus, NodeMinus, NodeMod,
+    NodeMul, NodeDiv, NodeEnumStmt, NodeEnumItem, NodeIdentifier, NodeFuncDef,
+    NodeFormalList, NodeVarargsFormal, NodeTypeOneOf, NodeTypeMaybe,
+    NodeTypeVar, NodeTypeFunc, NodeTypeTuple, NodeTypeList, NodeTypeDict,
+    NodeTypeObj, NodeTypeRef, NodeTypeTypeSpec, NodeTypeBuiltin,
+    NodeReturnType, NodeTypeVararg, NodeType, NodeParenExpr, NodeGlobalStmt,
+    NodeConstStmt, NodeVarStmt, NodeVarSymInfo, NodeUseStmt, NodeParamBlock,
+    NodeExternBlock, NodeExternSig, NodeExternParam, NodeExternLocal,
+    NodeExternDll, NodeExternPure, NodeExternHolds, NodeExternAllocs,
+    NodeExternReturn, NodeExpression, NodeFormal, NodeLabelStmt, NodeBitOr,
+    NodeBitXor, NodeBitAnd, NodeShl, NodeShr, NodeNilLit, NodeCase,
+    NodeCaseCondition, NodeRange, NodeDocString
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrConditional,
     IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUMinus, IrNot,
-    IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection
+    IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection,
+    IrNil, IrSwitch, IrSwitchBranch, IrRange
     #IrCast
 
   IrNode* = ref object
@@ -196,6 +201,7 @@ type
     value*:     Option[Mixed]
     parent*:    IrNode
     contents*:  IrContents
+    scope*:     Scope
 
   IrContents* = ref object
     case kind*: IrNodeType
@@ -209,13 +215,11 @@ type
       spec*:     SectionSpec
     of IrLoop:
       label*:      Con4mNode # Any type of loop.
-      keyVar*:     string    # Both types of for loops.
-      valVar*:     string    # for k, v in dict
-      startIx*:    IrNode    # for x from 0 to 10
-      endIx*:      IrNode    # for x from 0 to 10
-      condition*:  IrNode    # While loop condition or object to iterate over.
+      loopVars*:   seq[SymbolInfo]
+      whileLoop*:  bool
+      condition*:  IrNode    # For loops, this is the range or a container.
+                             # For while loops, the loop condition.
       loopBody*:   IrNode
-      scope*:      Scope
     of IrAttrAssign:
       attrlhs*: IrNode
       attrrhs*: IrNode
@@ -227,6 +231,17 @@ type
       predicate*:   IrNode
       trueBranch*:  IrNode
       falseBranch*: IrNode
+    of IrSwitch:
+      typeCase*:     bool
+      switchTarget*: IrNode
+      targetSym*:    SymbolInfo
+      branches*:     seq[IrNode]
+    of IrSwitchBranch:
+      conditions*: seq[IrNode]
+      action*:     IrNode
+    of IrRange:
+      rangeStart*: IrNode
+      rangeEnd*:   IrNode
     of IrJump:
       exitLoop*:   bool
       targetNode*: IrNode
@@ -264,7 +279,7 @@ type
       bRhs*: IrNode
     of IrLhsLoad, IrLoad:
       symbol*: SymbolInfo
-    of IrFold, IrNop:
+    of IrFold, IrNop, IrNil:
       discard
 
   FormalInfo* = ref object
@@ -274,6 +289,17 @@ type
     sym*:  SymbolInfo
     loc*:  Con4mNode
 
+  ExternFnInfo* = ref object
+    externName*:    string
+    cArgTypes*:     seq[seq[string]]
+    binPtr*:        pointer
+    cParamNames*:   seq[string]
+    heldParams*:    seq[int]
+    allocedParams*: seq[int]
+    dll*:           string
+    ffiArgTypes*:   array[100, FfiType] # Will store arg info.
+    ffiInfo*:       CallerInfo
+
   FuncInfo* = ref object
     # One module can have multiple instantiations of a function, as
     # long as the type signatures of the parameters are not
@@ -281,6 +307,7 @@ type
     #
     # So for functions, we ignore SymbolInfo's tid field and
     # come here.
+    externInfo*:     ExternFnInfo
     name*:           string
     rawImpl*:        Con4mNode
     implementation*: IrNode
@@ -293,6 +320,9 @@ type
     defModule*:      Module
     cfg*:            CfgNode
     exitNode*:       CfgNode
+    pure*:           bool
+    doc1*:           string
+    doc2*:           string
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -319,6 +349,15 @@ type
     module*:       Module # Ignored for non-func global vars and attrs.
     err*:          bool
     declNode*:     Con4mNode
+    # As we implement SSA and type casing, these are for managing
+    # different instances of the same logical symbol. The 'actual'
+    # symbol will have actualSym be `nil`, and the count will hand out
+    # IDs to sub-symbols.
+    #
+    # For now, we're just going to use this for typecase, because what
+    # I want to do is more of a rework than I've got time for.
+    actualSym*:    SymbolInfo
+    variantId*:    int
 
   CfgExitType* = enum
     CFXNormal, CFXCall, CFXUse, CFXBreak, CFXContinue, CFXReturn, CFXStart

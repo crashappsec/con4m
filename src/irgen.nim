@@ -61,7 +61,6 @@ proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
               fails.add(fimpl)
             else:
               matches.add(fimpl)
-
   if matches.len() == 1:
     result = matches[0]
 
@@ -85,6 +84,8 @@ proc getTypeIdFromSyntax*(ctx: Module, st: SyntaxType,
 
   if litmod == "":
     case st
+    of StNull:
+      return TVoid
     of STBase10:
       return TInt
     of STHex:
@@ -103,7 +104,7 @@ proc getTypeIdFromSyntax*(ctx: Module, st: SyntaxType,
   var errType: string = ""
 
   for v in basicTypes:
-    if litMod in v.litMods:
+    if litMod in v.litMods or litMod == v.name:
       if v.kind != 0 and uint(st) != 0:
         return v.typeId
       else:
@@ -171,19 +172,18 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrLoop:
     if ctx.contents.label != nil:
       moreinfo = "label: " & ctx.contents.label.getText()
-    if ctx.contents.keyVar == "":
+    if ctx.contents.whileLoop:
       descriptor = "while"
     else:
       descriptor = "for / "
-      if ctx.contents.startIx != nil:
+      if ctx.contents.condition.contents.kind == IrRange:
         descriptor &= " from"
       else:
         descriptor &= " in"
-      if ctx.contents.valVar != "":
-        moreinfo &= "key: " & ctx.contents.keyVar
-        moreinfo &= "val: " & ctx.contents.valVar
-      else:
-        moreinfo &= "ix: " & ctx.contents.keyVar
+      var loopvars: seq[string]
+      for item in ctx.contents.loopVars:
+        loopvars.add(item.name)
+      moreInfo &= " var(s): " & loopvars.join(", ")
 
     return (fmt("Loop", descriptor, moreinfo),
             @[ctx.contents.condition, ctx.contents.loopBody])
@@ -215,6 +215,8 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     if ctx.getTid().isBasicType():
       moreinfo = ctx.reprBasicLiteral()
     return (fmt("Literal", "", moreinfo, ctx.getTid()), ctx.contents.items)
+  of IrNil:
+    return (fmt("Nil", "", "", ctx.getTid()), @[])
   of IrFold:
     return (fmt("Folded", "", ctx.reprBasicLiteral(), ctx.getTid()), @[])
   of IrNop:
@@ -250,6 +252,17 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("LhsLoad", ctx.contents.symbol.name, "", ctx.getTid()), @[])
   of IrLoad:
     return (fmt("Load", ctx.contents.symbol.name, "", ctx.getTid()), @[])
+  of IrSwitch:
+    if ctx.contents.typecase:
+      moreinfo = "type"
+    else:
+      moreinfo = "value"
+    return (fmt("Switch", moreinfo, ""), @[ctx.contents.switchTarget] &
+            ctx.contents.branches)
+  of IrSwitchBranch:
+    return (fmt("Branch"), ctx.contents.conditions & @[ctx.contents.action])
+  of IrRange:
+    return (fmt("Range"), @[ctx.contents.rangeStart, ctx.contents.rangeEnd])
 
 proc toRope*(ctx: IrNode): Rope =
   if ctx == nil:
@@ -283,6 +296,15 @@ proc downNode(ctx: Module, kid, grandkid: int): IrNode =
   ctx.pt      = savedpt
   ctx.current = saved
 
+proc downNode(ctx: Module, kid, gk, ggk: int): IrNode =
+  var saved = ctx.current
+  var savedpt = ctx.pt
+
+  ctx.pt      = ctx.pt.children[kid].children[gk].children[ggk]
+  result      = ctx.parseTreeToIr()
+  ctx.pt      = savedpt
+  ctx.current = saved
+
 template independentSubtree(code: untyped) =
   var saved = ctx.current
 
@@ -302,20 +324,26 @@ template getText(ctx: Module, kidIx: int, grandIx: int): string =
 template numKids(ctx: Module): int =
   ctx.pt.children.len()
 
+template numKids(ctx: Module, i: int): int =
+  ctx.pt.children[i].children.len()
+
+template numKids(ctx: Module, i, j: int): int =
+  ctx.pt.children[i].children[j].children.len()
+
 template kidKind(ctx: Module, i: int): Con4mNodeKind =
   ctx.pt.children[i].kind
 
 template kidKind(ctx: Module, i, j: int): Con4mNodeKind =
   ctx.pt.children[i].children[j].kind
 
-template numGrandKids(ctx: Module, i: int): int =
-  ctx.pt.children[i].children.len()
-
 template parseKid(ctx: Module, i: int): Con4mNode =
   ctx.pt.children[i]
 
-template parseGrandKid(ctx: Module, i, j: int): Con4mNode =
+template parseKid(ctx: Module, i, j: int): Con4mNode =
   ctx.pt.children[i].children[j]
+
+template parseKid(ctx: Module, i, j, k: int): Con4mNode =
+  ctx.pt.children[i].children[j].children[k]
 
 proc isConstant*(n: IrNode): bool =
   # Doesn't capture everything that's constant, just things we
@@ -355,7 +383,7 @@ proc convertEnum*(ctx: Module) =
     for i in 0 ..< ctx.numKids():
       let itemName = ctx.getText(i, 0)
 
-      if ctx.numGrandKids(i) == 2:
+      if ctx.numKids(i) == 2:
         let v = ctx.downNode(i, 1)
         if not v.isConstant():
           ctx.irError("EnumDeclConst", w = ctx.parseKid(i))
@@ -376,11 +404,11 @@ proc convertEnum*(ctx: Module) =
         nextVal = nextVal + 1
 
       if itemName[0] == '$':
-        ctx.irError("$assign", w = ctx.parseGrandKid(i, 0))
+        ctx.irError("$assign", w = ctx.parseKid(i, 0))
 
       var
         symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false, TInt,
-                  declnode = ctx.parseGrandkid(i, 0))
+                  declnode = ctx.parseKid(i, 0))
 
       if symOpt.isSome():
         let sym = symOpt.get()
@@ -400,8 +428,7 @@ proc convertIdentifier(ctx: Module): IrNode =
 
   else:
     result = ctx.irNode(IrLoad)
-    stOpt = ctx.addUse(name, result, tVar())
-
+    stOpt  = ctx.addUse(name, result, tVar())
 
   result.contents.symbol = stOpt.getOrElse(nil)
 
@@ -447,7 +474,7 @@ proc convertMember(ctx: Module): IrNode =
     if ctx.curSecPrefix != "":
       result.contents.name = ctx.curSecPrefix & "." & result.contents.name
 
-  let sym = ctx.addAttrDef(result.contents.name, result, tVar(), false)
+  let sym = ctx.addDef(result.contents.name, result, tVar())
 
   if sym.isSome():
     result.contents.attrSym = sym.get()
@@ -545,7 +572,6 @@ proc convertConstStmt(ctx: Module) =
 
   ctx.extractSymInfo(scope, true, checkdollar = true)
 
-
 proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
   var
     gotShort, gotLong, gotValid, gotDefault: bool
@@ -622,13 +648,222 @@ proc convertParamBlock(ctx: Module) =
   ctx.convertParamBody(sym)
   ctx.pt = savedPt
 
+proc extractCTypes(ctx: Module, n: Con4mNode, fn: var FuncInfo) =
+  var info = ExternFnInfo()
+
+  for i, kid in n.children:
+    var
+      l: seq[string] # All type info for C parameter.
+      s: string
+
+    for j, item in kid.children:
+      if j == 0:
+        if item.kind == NodeMember:
+          s = item.children[0].getText()
+          if s in info.cParamNames:
+            ctx.irError("DupeCTypeParam", @[s], w = item)
+          else:
+            info.cParamNames.add(s)
+            continue
+        else:
+          info.cParamNames.add("")
+
+      s = item.getText()
+      l.add(s)
+
+    case l[0]
+    of "cvoid":
+      info.ffiArgTypes[i] = ffiVoid
+    of "cu8", "cbool":
+      info.ffiArgTypes[i] = ffiU8
+    of "ci8":
+      info.ffiArgTypes[i] = ffiI8
+    of "cu16":
+      info.ffiArgTypes[i] = ffiU16
+    of "ci16":
+      info.ffiArgTypes[i] = ffiI16
+    of "cu32":
+      info.ffiArgTypes[i] = ffiU32
+    of "ci32":
+      info.ffiArgTypes[i] = ffiI32
+    of "cu64":
+      info.ffiArgTypes[i] = ffiU64
+    of "ci64":
+      info.ffiArgTypes[i] = ffiI64
+    of "cfloat":
+      info.ffiArgTypes[i] = ffiFloat
+    of "cdouble":
+      info.ffiArgTypes[i] = ffiDouble
+    of "cuchar":
+      info.ffiArgTypes[i] = ffiUChar
+    of "cchar":
+      info.ffiArgTypes[i] = ffiChar
+    of "cshort":
+      info.ffiArgTypes[i] = ffiShort
+    of "cushort":
+      info.ffiArgTypes[i] = ffiUShort
+    of "cint":
+      info.ffiArgTypes[i] = ffiInt
+    of "cuint":
+      info.ffiArgTypes[i] = ffiUint
+    of "clong":
+      info.ffiArgTypes[i] = ffiLong
+    of "culong":
+      info.ffiArgTypes[i] = ffiULong
+    of "csize":
+      info.ffiArgTypes[i] = ffiSizeT
+    of "cssize":
+      info.ffiArgTypes[i] = ffiSSizeT
+    of "ptr", "cstring", "carray":
+      info.ffiArgTypes[i] = ffiPtr
+    else:
+      unreachable
+    info.cArgTypes.add(l)
+
+  let sz = n.children.len()
+
+  ffi_prep_cif(info.ffiInfo, ffiAbi, cuint(sz - 1), info.ffiArgTypes[sz - 1],
+               addr info.ffiArgTypes[0])
+
+  fn.externInfo = info
+
+proc extractLocalSym(n: Con4mNode, info: FuncInfo) =
+  info.name = n.children[0].getText()
+  info.tid  = n.children[1].buildType()
+
+proc checkHolds(ctx: Module, n: Con4mNode, info: var ExternFnInfo) =
+  var argNames: seq[string]
+
+  for item in n.children:
+    let s = item.getText()
+    if s in argNames:
+      ctx.irWarn("DupeVal", @[s, "holds"], w = item)
+    argNames.add(s)
+
+    let n = info.cParamNames.find(s)
+    if n == -1:
+      ctx.irError("ExtNotSpecd", @[s], w = item)
+    elif n in info.allocedParams:
+      ctx.irError("ExtAllocNHold", @[s], w = item)
+    elif n < info.cArgTypes.len() and
+         info.cArgTypes[n][0] notin ["ptr", "cstring", "carray"]:
+      ctx.irError("NoMemMan", @[s], item)
+    else:
+      info.heldParams.add(n)
+
+proc checkAllocs(ctx: Module, n: Con4mNode, info: var ExternFnInfo) =
+  var argNames: seq[string]
+
+  for item in n.children:
+    var s: string
+    if item.kind == NodeExternReturn:
+      s = "result"
+    else:
+      s = item.getText()
+    if s in argNames:
+      ctx.irWarn("DupeVal", @[s, "allocs"], w = item)
+    argNames.add(s)
+
+    if s == "result":
+      info.allocedParams.add(info.cParamNames.len())
+      continue
+
+    let n = info.cParamNames.find(s)
+    if n == -1:
+      ctx.irError("ExtNotSpecd", @[s], w = item)
+    elif n in info.heldParams:
+      ctx.irError("ExtAllocNHold", @[s], w = item)
+    else:
+      info.allocedParams.add(n)
+
+proc convertExternBlock(ctx: Module) =
+  var
+    sym: SymbolInfo
+    info     = ExternFnInfo(externName: ctx.getText(0))
+    fn       = FuncInfo(externInfo: info)
+
+    gotLocal = false
+    gotDll   = false
+    gotPure  = false
+    gotHold  = false
+    gotAlloc = false
+
+  ctx.extractCTypes(ctx.pt.children[1], fn)
+
+  for i in 2 ..< ctx.numKids():
+    let k = ctx.pt.children[i]
+    case k.kind
+    of NodeDocString:
+      fn.doc1 = ctx.getText(i, 0)
+      if ctx.numKids(i) > 1:
+        fn.doc2 = ctx.getText(i, 1)
+    of NodeExternLocal:
+      if gotLocal:
+        ctx.irError("DupeExtField", @["local"])
+        continue
+      gotLocal = true
+      k.extractLocalSym(fn)
+    of NodeExternDll:
+      if gotDll:
+        ctx.irError("DupeExtField", @["dll"])
+        continue
+      gotDll   = true
+      fn.externInfo.dll = ctx.getText(i, 0)
+    of NodeExternPure:
+      if gotPure:
+        ctx.irError("DupeExtField", @["pure"])
+        continue
+      gotPure = true
+      if ctx.getText(i, 0) == "true":
+        fn.pure = true
+    of NodeExternHolds:
+      if gotHold:
+        ctx.irWarn("DupeExtField", @["holds"])
+      gotHold = true
+      ctx.checkHolds(k, fn.externInfo)
+    of NodeExternAllocs:
+      if gotAlloc:
+        ctx.irWarn("DupeExtField", @["allocs"])
+      gotAlloc = true
+      ctx.checkAllocs(k, fn.externInfo)
+    else:
+      unreachable
+  if gotDll:
+    fn.externInfo.binPtr = findSymbol(info.externName, [fn.externInfo.dll])
+  else:
+    fn.externInfo.binPtr = findSymbol(info.externName, [])
+
+  if fn.externInfo.binPtr == nil:
+    ctx.irWarn("WontLink", @[info.externName], w = ctx.pt.children[0])
+
+  if not gotPure:
+    once:
+      ctx.irWarn("PurePlz", @[info.externName], w = ctx.pt.children[0])
+  ## To do:
+  ## 1. Check that the local signature is compat w/ the external one.
+  ## 2. Error / warn on alloc / hold for non-object / ptr fields.
+
+  var symOpt = ctx.scopeDeclare(ctx.moduleScope, fn.name, true)
+  if symOpt.isSome():
+    symOpt.get().fimpls.add(fn)
+
+  symOpt = ctx.globalScope.table.lookup(fn.name)
+  if symOpt.isSome():
+    sym = symOpt.get()
+    if not sym.isFunc:
+      ctx.irWarn("CantLiftFunc", @[fn.name], w = ctx.pt)
+      return
+  else:
+    sym = ctx.scopeDeclare(ctx.globalScope, fn.name, true).get()
+
+  sym.fimpls.add(fn)
+
 proc convertFormal(info: FuncInfo, n: Con4mNode) =
   var formalInfo = FormalInfo()
 
   if n.children[0].kind == NodeIdentifier:
     formalInfo.name = n.children[0].getText()
     formalInfo.loc  = n.children[0]
-
   else:
     formalInfo.va   = true
     formalInfo.name = n.children[0].children[0].getText()
@@ -801,6 +1036,8 @@ proc findDeclarations(ctx: Module, n: Con4mNode) =
       ctx.convertConstStmt()
     of NodeParamBlock:
       ctx.convertParamBlock()
+    of NodeExternBlock:
+      ctx.convertExternBlock()
     of NodeUseStmt:
       ctx.processUseStmt()
     else:
@@ -846,7 +1083,7 @@ proc statementsToIr(ctx: Module): IrNode =
         return # Don't process that dead code.
     of NodeLabelStmt:
       if i != ctx.numKids() - 1 and ctx.parseKid(i + 1).kind in ntLoops:
-        ctx.labelNode = ctx.parseGrandKid(i, 0)
+        ctx.labelNode = ctx.parseKid(i, 0)
         ctx.checkLabelDupe(ctx.labelNode.getText())
         continue
       else:
@@ -873,7 +1110,7 @@ proc statementsToIr(ctx: Module): IrNode =
     # further processing, but that happens before the main body is
     # processed; this function gets called for those nodes seprately.
     of NodeEnumStmt, NodeFuncDef, NodeParamBlock, NodeVarStmt, NodeGlobalStmt,
-         NodeConstStmt:
+         NodeConstStmt, NodeExternBlock:
       continue
     else:
       discard  # An expression.
@@ -918,6 +1155,20 @@ proc convertCharLit(ctx: Module): IrNode =
     else:
       result.value = some(val)
 
+proc convertNilLit(ctx: Module): IrNode =
+  var
+    lmod = ctx.getLitMod()
+    tid  = ctx.getTypeIdFromSyntax(StNull, lmod)
+
+  result = ctx.irNode(IrNil)
+
+  if tid == TVoid:
+    result.tid = tMaybe(tVar())
+  else:
+    result.tid = tMaybe(tid)
+  # We could explicitly add a value, but this node's mere presence implies
+  # the value.
+
 proc convertTypeLit(ctx: Module): IrNode =
   var
     tvars: Dict[string, TypeId]
@@ -954,10 +1205,10 @@ proc convertDictLit(ctx: Module): IrNode =
 
   for i in 0 ..< ctx.numKids():
     let oneKey = ctx.downNode(i, 0)
-    ctx.typeCheck(keyType, oneKey.getTid(), ctx.parseGrandKid(i, 0),
+    ctx.typeCheck(keyType, oneKey.getTid(), ctx.parseKid(i, 0),
                   "TyDiffKey")
     let oneVal = ctx.downNode(i, 1)
-    ctx.typeCheck(itemType, oneVal.getTid(), ctx.parseGrandKid(i, 1),
+    ctx.typeCheck(itemType, oneVal.getTid(), ctx.parseKid(i, 1),
                   "TyDiffVal")
     result.contents.items.add(oneKey)
     result.contents.items.add(oneVal)
@@ -1006,43 +1257,37 @@ proc convertForStmt(ctx: Module): IrNode =
 
   scope = initScope()
 
-  result.contents.scope = scope
+  result.scope    = scope
   ctx.blockScopes = @[scope] & ctx.blockScopes
 
-  var
-    kt   = tVar()
-    vt   = tVar()
-    dict = false
+  for item in ctx.pt.children[0].children:
+    let sym = ctx.scopeDeclare(scope, item.getText(), false, tVar(), true)
+    result.contents.loopVars.add(sym.get())
 
-  if ctx.numKids() == 3:
-    result.contents.keyVar = ctx.getText(0, 0)
+  result.contents.condition = ctx.downNode(1)
 
-    discard ctx.scopeDeclare(scope, result.contents.keyVar, false, kt, true)
-    if ctx.numGrandKids(0) == 2:
-      result.contents.valVar = ctx.getText(0, 1)
-      discard ctx.scopeDeclare(scope, result.contents.valVar, false, vt, true)
-
-
+  if result.contents.condition.contents.kind == IrRange:
     # Declare phantom variables.
     discard ctx.scopeDeclare(scope, "$i", false, TInt, true)
+    discard ctx.scopeDeclare(scope, "$len", false, TInt, true)
+    discard ctx.scopeDeclare(scope, "$last", false, TInt, true)
     if result.contents.label != nil:
       discard ctx.scopeDeclare(scope, "$i_" & result.contents.label.getText(),
                                               false, TInt, true)
+      discard ctx.scopeDeclare(scope, "$len_" & result.contents.label.getText(),
+                                              false, TInt, true)
+      discard ctx.scopeDeclare(scope, "$last_" &
+                       result.contents.label.getText(), false, TInt, true)
 
-    result.contents.condition = ctx.downNode(1)
+  result.contents.loopBody  = ctx.downNode(2)
 
-    if dict:
-      ctx.typeCheck(result.contents.condition.tid, tDict(kt, vt))
-    else:
-      ctx.typeCheck(result.contents.condition.tid, tList(kt))
-
-    result.contents.loopBody  = ctx.downNode(2)
+  if result.contents.loopVars.len() == 2:
+    ctx.typeCheck(result.contents.condition.tid,
+                  tDict(result.contents.loopVars[0].tid,
+                        result.contents.loopVars[1].tid))
   else:
-    result.contents.keyVar   = ctx.getText(0, 0)
-    discard ctx.scopeDeclare(scope, result.contents.keyVar, false, kt, true)
-    result.contents.startIx  = ctx.downNode(1)
-    result.contents.endIx    = ctx.downNode(2)
-    result.contents.loopBody = ctx.downNode(3)
+      ctx.typeCheck(result.contents.condition.tid,
+                    tList(result.contents.loopVars[0].tid))
 
   if ctx.blockScopes.len() > 1:
     ctx.blockScopes = ctx.blockScopes[1 .. ^1]
@@ -1055,6 +1300,7 @@ proc convertWhileStmt(ctx: Module): IrNode =
   ctx.labelNode             = nil
   result.contents.condition = ctx.downNode(0)
   result.contents.loopBody  = ctx.downNode(1)
+  result.contents.whileLoop = true
 
   if unify(TBool, result.contents.condition.getTid()) == TBottom:
     if result.contents.condition.getTid().canCastToBool():
@@ -1065,6 +1311,127 @@ proc convertWhileStmt(ctx: Module): IrNode =
       ctx.irError("NoBoolCast",
                   @[result.contents.condition.getTid().toString()],
                   w = ctx.parseKid(0))
+
+proc makeVariant(parent: SymbolInfo): SymbolInfo =
+  # We really don't need to copy everything we copy here.
+  result              = SymbolInfo()
+  result.name         = parent.name
+  result.isAttr       = parent.isAttr
+  result.hasDefault   = parent.hasDefault
+  result.declaredType = parent.declaredType
+  result.tid          = tVar()
+  result.constValue   = parent.constValue
+  result.module       = parent.module
+  result.declNode     = parent.declNode
+  result.actualSym    = parent
+  result.variantId    = parent.variantId
+  parent.variantId   += 1
+
+proc convertTypeOfStmt(ctx: Module): IrNode =
+  ## Todo... detect overlap between cases, and check for coverage.
+  let target                   = ctx.downNode(0)
+  result                       = ctx.irNode(IrSwitch)
+  result.contents.typeCase     = true
+  result.contents.switchTarget = target
+  var sym: SymbolInfo
+
+  case target.contents.kind
+  of IrMember:
+    sym = target.contents.attrSym
+  of IrLoad, IrLhsload:
+    sym = target.contents.symbol
+  else:
+    unreachable
+
+  result.contents.targetSym = sym
+
+  # All remaining kids will be Case nodes; at least one will have two
+  # prongs; the last could be an `else`, which has only one prong.
+  for i in 1 ..< ctx.numKids():
+
+    let n = ctx.irNode(IrSwitchBranch)
+    var
+      scope    = initScope()
+      symCopy  = sym.makeVariant()
+      actionBranch: int
+
+    if ctx.numKids(i) == 2:
+      var branchType: TypeId
+      actionBranch = 1
+
+      # If multiple type options share the same branch, we use a OneOf
+      if ctx.numKids(i, 0) > 1:
+        var opts: seq[TypeId]
+        for j in 0 ..< ctx.numKids(i, 0):
+          opts.add(ctx.parseKid(i, 0, j).buildType())
+        try:
+          branchType = tOneOf(opts)
+        except:
+          ctx.irError("TCaseOverlap", w = ctx.parseKid(i, 0, 0))
+      else:
+        branchType = ctx.parseKid(i, 0, 0).buildType()
+
+      symCopy.tid = branchType
+    else:
+      symCopy.tid  = tVar()
+      actionBranch = 0
+
+    scope.table[sym.name] = symCopy
+    ctx.blockScopes       = @[scope] & ctx.blockScopes
+    n.tid                 = symCopy.tid
+
+    if unify(symCopy.tid.tCopy(), sym.tid.tCopy()) == TBottom:
+      ctx.irWarn("DeadTypeCase", @[symCopy.tid.toString()])
+
+    n.contents.action = ctx.downNode(i, actionBranch)
+    result.contents.branches.add(n)
+
+    if ctx.blockScopes.len() > 1:
+      ctx.blockScopes = ctx.blockScopes[1 .. ^1]
+    else:
+      ctx.blockScopes = @[]
+
+proc convertValueOfStmt(ctx: Module): IrNode =
+  # TODO, check overlap, completeness, etc.
+  result                       = ctx.irNode(IrSwitch)
+  result.contents.switchTarget = ctx.downNode(0)
+
+
+  for i in 1 ..< ctx.numKids():
+    # All except a potential else block will have left side be
+    # conditions, right side be a block.
+    let n = ctx.irNode(IrSwitchBranch)
+    if ctx.numKids(i) == 2:
+      for j in 0 ..< ctx.numKids(i, 0):
+        let branch = ctx.downNode(i, 0, j)
+        n.contents.conditions.add(branch)
+        case branch.contents.kind
+        of IrRange:
+          let targetType = tList(result.contents.switchTarget.tid)
+          ctx.typeCheck(branch.tid, targetType)
+        else:
+          ctx.typeCheck(branch.tid, result.contents.switchTarget.tid)
+      n.contents.action = ctx.downNode(i, 1)
+    else:
+      n.contents.action = ctx.downNode(i, 0)
+    result.contents.branches.add(n)
+
+proc convertRange(ctx: Module): IrNode =
+  result                     = ctx.irNode(IrRange)
+  result.contents.rangeStart = ctx.downNode(0)
+  result.contents.rangeEnd   = ctx.downNode(1)
+
+  if not result.contents.rangeStart.tid.isIntType():
+    ctx.irError("BadCxRange", w = result.contents.rangeStart)
+  elif not result.contents.rangeEnd.tid.isIntType():
+    ctx.irError("BadCxRange", w = result.contents.rangeEnd)
+  else:
+    let
+      t1 = result.contents.rangeStart.tid
+      t2 = result.contents.rangeEnd.tid
+    result.tid = unify(t1, t2)
+    if result.tid == TBottom:
+      result.tid = ctx.resultingNumType(t1, t2)
 
 proc loopExit(ctx: Module, loopExit: bool): IrNode =
   result                   = ctx.irNode(IrJump)
@@ -1332,7 +1699,7 @@ proc convertCall(ctx: Module): IrNode =
   var
     fArgs: seq[TypeId]
 
-  for i in 0 ..< ctx.numGrandKids(1):
+  for i in 0 ..< ctx.numKids(1):
     let oneActual = ctx.downNode(1, i)
     result.contents.actuals.add(oneActual)
     fArgs.add(oneActual.tid)
@@ -1441,7 +1808,6 @@ proc resolveDeferredSymbols*(ctx: Module) =
             ctx.irError("SigOverlap", w = sym.fimpls[j].implementation,
                                       @[name, t1, t2, l1])
 
-
 proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
@@ -1464,10 +1830,14 @@ proc parseTreeToIr(ctx: Module): IrNode =
       result = ctx.convertLit(StBoolLit)
     of NodeOtherLit:
       result = ctx.convertLit(StOther)
+    of NodeNilLit:
+      result = ctx.convertNilLit()
     of NodeCharLit:
       result = ctx.convertCharLit()
     of NodeType:
       result = ctx.convertTypeLit()
+    of NodeRange:
+      result = ctx.convertRange()
     of NodeDictLit:
       result = ctx.convertDictLit()
     of NodeListLit:
@@ -1482,6 +1852,10 @@ proc parseTreeToIr(ctx: Module): IrNode =
       result = ctx.convertForStmt()
     of NodeWhileStmt:
       result = ctx.convertWhileStmt()
+    of NodeTypeOfStmt:
+      result = ctx.convertTypeOfStmt()
+    of NodeValueOfStmt:
+      result = ctx.convertValueOfStmt()
     of NodeBreakStmt:
       result = ctx.loopExit(true)
     of NodeContinueStmt:
@@ -1536,7 +1910,6 @@ proc finishFunctionProcessing(ctx: Module, impl: FuncInfo) =
   # problem. However, if there are any uses of the return value, the
   # error will get picked up when we do our def/use analysis after
   # the folding pass, so we ignore any type error for now.
-
   let resSym = impl.fnScope.table["result"]
   if resSym.defs.len() == 0:
     discard resSym.tid.unify(TVoid)
@@ -1553,11 +1926,13 @@ proc toIr*(ctx: Module): bool {.discardable.} =
 
   for (name, sym) in ctx.moduleScope.table.items():
     for impl in sym.fimpls:
-      impl.unlockFn()
-      ctx.funcScope = impl.fnScope
-      ctx.pt        = impl.rawImpl
-      impl.implementation = ctx.parseTreeToIr() # This should be a body node.
-      ctx.finishFunctionProcessing(impl)
+      if impl.rawImpl != nil:
+        impl.unlockFn()
+        ctx.funcScope       = impl.fnScope
+        ctx.pt              = impl.rawImpl
+        let nodes           = ctx.parseTreeToIr() # This should be a body node.
+        impl.implementation = nodes
+        ctx.finishFunctionProcessing(impl)
 
     if sym.pInfo != nil and sym.pinfo.defaultParse.isSome():
       ctx.funcScope = nil

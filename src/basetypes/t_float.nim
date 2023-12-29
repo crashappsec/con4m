@@ -80,7 +80,7 @@ let
   TFloat* = addBasicType(name        = "float",
                          repr        = repr,
                          kind        = stdFloatKind,
-                         litMods     = @["f", "float"],
+                         litMods     = @["f"],
                          signed      = true,
                          castToBool  = floatToBool,
                          fromRawLit  = constructFloat,

@@ -56,7 +56,6 @@ let
   TSize*     = addBasicType(name        = "size",
                             repr        = repr,
                             kind        = stdOtherKind,
-                            litMods     = @["size"],
                             castToBool  = normalSizeIntToBool,
                             fromRawLit  = constructSize,
                             eqFn        = basicEq)

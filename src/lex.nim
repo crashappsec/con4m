@@ -701,6 +701,9 @@ proc lex_impl(ctx: Module) =
       of "False", "false":
         tok(TtFalse)
         handleLitMod()
+      of "nil":
+        tok(TtNil)
+        handleLitMod()
       of "in":             tok(TtIn)
       of "var":            tok(TtVar)
       of "global":         tok(TtGlobal)
@@ -712,6 +715,7 @@ proc lex_impl(ctx: Module) =
       of "if":             tok(TtIf)
       of "elif":           tok(TtElIf)
       of "else":           tok(TtElse)
+      of "case":           tok(TtCase)
       of "for":            tok(TtFor)
       of "while":          tok(TtWhile)
       of "from":           tok(TtFrom)
@@ -722,6 +726,8 @@ proc lex_impl(ctx: Module) =
       of "enum":           tok(TtEnum)
       of "func":           tok(TtFunc)
       of "struct":         tok(TtObject)
+      of "typeof":         tok(TtTypeOf)
+      of "valueof":        tok(TtValueOf)
       else:                tok(TtIdentifier)
 
   unreachable
@@ -786,7 +792,7 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().charLitColor)
   of TtIntLit, TtFloatLit, TtHexLit:
     result.fgColor(getCurrentCodeStyle().numericLitColor)
-  of TtTrue, TtFalse:
+  of TtTrue, TtFalse, TtNil:
     result.fgColor(getCurrentCodeStyle().boolLitColor)
   of TtOtherLit:
     result.fgColor(getCurrentCodeStyle().otherLitColor)
@@ -802,7 +808,7 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().otherDelimColor)
   of TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
-     TtWhile, TtGlobal, TtConst:
+     TtWhile, TtGlobal, TtConst, TtValueOf, TtTypeOf, TtCase:
     result.fgColor(getCurrentCodeStyle().keywordColor)
   of TtIdentifier:
     result.fgColor(getCurrentCodeStyle().identColor)
@@ -904,12 +910,20 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "true"
     of TtFalse:
       return "false"
+    of TtNil:
+      return "nil"
     of TtIf:
       return "if"
     of TtElif:
       return "elif"
     of TtElse:
       return "else"
+    of TtCase:
+      return "case"
+    of TtTypeOf:
+       return "typeof"
+    of TtValueOf:
+      return "valueof"
     of TtFor:
       return "for"
     of TtBreak:

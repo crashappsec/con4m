@@ -27,6 +27,16 @@ template isIntType*(t: TypeId): bool =
   let tprime = t.followForwards()
   tprime != TFloat and tprime in allNumericTypes
 
+template isMaybeType*(t: TypeId): bool =
+  let to = t.idToTypeRef()
+
+  to.kind == C4Maybe
+
+template isTypeSpec*(t: TypeId): bool =
+  let to = t.idToTypeRef()
+
+  to.kind == C4TypeSpec
+
 proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =
   var
     t1  = t1.followForwards()

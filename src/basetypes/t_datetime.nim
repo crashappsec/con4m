@@ -461,18 +461,15 @@ let
   TDateTime* = addBasicType(name        = "datetime",
                             repr        = reprDt,
                             kind        = stdOtherKind,
-                            litMods     = @["datetime"],
                             fromRawLit  = constructDateTime,
                             eqFn        = dteq)
   TDate*     = addBasicType(name        = "date",
                             repr        = reprD,
                             kind        = stdOtherKind,
-                            litMods     = @["date"],
                             fromRawLit  = constructDate,
                             eqfn        = dteq)
   TTime*     = addBasicType(name        = "time",
                             repr        = reprT,
                             kind        = stdOtherKind,
-                            litMods     = @["time"],
                             fromRawLit  = constructTime,
                             eqFn        = dteq)

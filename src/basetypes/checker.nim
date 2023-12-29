@@ -506,13 +506,14 @@ proc baseunify(ref1, ref2: TypeRef): TypeId =
   # Before we do any deeper work, we can check the kind to see if
   # we can quickly rule out compatability.
   if type1.kind notin [type2.kind, C4TVar] and type2.kind != C4TVar:
-    if type1.kind != C4OneOf:
+    if type1.kind notin [C4OneOf, C4Maybe]:
       return TBottom
 
-  # Also, if only one of these things is a type variable, it makes
-  # our life easier if it's always on the same side.
+  # Also, if only one of these things is a type variable, etc, it
+  # makes our life easier if it's always on the same side.
   if (type2.kind == C4TVar and type1.kind != C4TVar) or
-    (type2.kind == C4OneOf and type1.kind != C4OneOf):
+    (type2.kind == C4OneOf and type1.kind != C4OneOf) or
+    (type2.kind == C4Maybe and type1.kind != C4Maybe):
     let tmp = type1
     type1   = type2
     type2   = tmp
@@ -718,7 +719,6 @@ proc unify*(origtype1, origtype2: TypeRef): TypeId =
     type2 = origtype2
 
   result = type1.baseunify(type2)
-
 
 template unify*(t1, t2: TypeId): TypeId =
   let

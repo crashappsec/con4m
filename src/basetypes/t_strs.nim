@@ -85,14 +85,14 @@ let
                             repr        = reprBuf,
                             kind        = stdStrKind,
                             castToBool  = basicStrToBool,
-                            litMods     = @["b"],
+                            litMods     = @["bin"],
                             fromRawLit  = constructBuf,
                             eqFn        = strEq)
   TString*   = addBasicType(name        = "string",
                             repr        = reprUtf8,
                             kind        = stdStrKind,
                             castToBool  = basicStrToBool,
-                            litMods     = @["u"],
+                            litMods     = @["u", "utf8"],
                             fromRawLit  = constructUtf8,
                             eqFn        = strEq)
   TUtf32*    = addBasicType(name        = "utf32",
@@ -105,7 +105,7 @@ let
   TPath*     = addBasicType(name        = "path",
                             repr        = reprutf8,
                             kind        = stdStrKind,
-                            litMods     = @["p", "path"],
+                            litMods     = @["p"],
                             castToBool  = basicStrToBool,
                             fromRawLit  = constructUtf8,
                             eqFn        = strEq)

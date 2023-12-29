@@ -1,17 +1,17 @@
 # TODO:
 #
 # === High priority ===
-# - Second pass on function cfarg resolution before erroring:
-#   When we're done w/ a module we need to look for overlapping function
-#   definitions within the module.
-# - Code generation to some basic form and execution from it.
+# - Rework cfg for switches and loop changes.
+# - Basic execution.
+# - Code generation.
+# - Doc strings
 # - Implement _ as a 'discard' variable.
+# - dlclose stuff.
 # - C-level interface to attributes
 # - Stack traces during execution.
 # - Spec checking after execution.
 # - Checkpointing runtime state.
 # - Module state caching for re-linking when conf files change.
-# - FFI
 # - Swap in hatrack lists (and add rings?).
 # - No-side-effect prop for funcs to allow calling functions at compile time.
 # - Allow assignment inside var / global / const statements.
@@ -20,20 +20,19 @@
 # - In showCallMistakes(), show which functions have the wrong # of args,
 #   and which parameters are right / wrong.
 # - Base types should be treated more like proper classes?
-# - Case statement / typecase
 # - Re-implement standard library / wrappings.
 # - finish hasExitToOuterBlock in CFG.
-# - Merge views of global scope.
 # - Issue with validators
 # - For errors, make it easy to see "previous instance", and remove
 #   table for 2nd line
-# - Don't allow 'var' declarations or 'global' declarations if the
-#   name is allowed in the top-level of attribute specs.
 
 # == Medium ==
+# - Access controls around extern and extensibility features
+# - Rename to 0cool
 # - C api and bindings to other languages.
 # - Doc API.
 # - Merge mixed / cbox
+# - Add some sort of mixed type
 # - Hook getopt back up.
 # - Update the pretty printer.
 # - Extra lines in error messages shouldn't get the huge table indent.
@@ -46,6 +45,7 @@
 # - Fold for list indexes when the length is fixed size.
 # - Add 'error' to functions.
 # - Add global enum
+# - string enums
 # - :: module scope operator; root::, module::, local:: I think?
 # - Keyword arguments
 # - Move temporary compile state to a throw-away reference obj that's
@@ -55,15 +55,14 @@
 #   and called as part of the entry point.
 # - Properly handle
 # - += and similar.
-# - Some sort of mixed type in the language itself.
 # - What's wrong w/ hatrack add??
+# - Add maybe / null checking
 
 # == Lower priority ==
 # - Error msg squelching and colating
 # - GUI for repl; show trees, etc.
 # - let all the IO stuff be themeable
 # - Add objects, with typevars that can bind to all fields...
-# - Add maybe
 # - Add oneof
 # - Add ref
 # - for x in <container>: generate a call to items() if the object is

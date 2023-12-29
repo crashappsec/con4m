@@ -44,7 +44,7 @@ const errorMsgs = [
   ("LitExpected",    "Expected a literal value here."),
   ("NotAttrAssign",  "Left hand side of assignment was an attribute, " &
                      "not a variable. Therefore, expected either " &
-                     "<em>':'</em>  or <em>'='</em> for the assignment " &
+                     "<em>':'</em> or <em>'='</em> for the assignment " &
                      "operator."),
   ("BadLock",        "Expected an attribute after <em>'~'</em> (the " &
                      "attribute lock operator.)"),
@@ -66,9 +66,39 @@ const errorMsgs = [
                      "an attribute (which can be dotted), or the " &
                      "<em>'var'</em> keyword followed by a local variable " &
                      "name. The variable can be optionally typed."),
+  ("BadExternField", "Bad field for <em>'extern'</em> block."),
+  ("NeedSig",        "Field requires a function type signature."),
+  ("BadRCParam",     "Reference counting specs must either be identifiers " &
+                     "that match the names given in the function signature, " &
+                     "or the special value <em>return</em> (for incref only)"),
+  ("BadCType",       "Invalid C type for external parameter: <em>$1</em>"),
+  ("PureBool",       "The <em>'pure'</em> property for external functions " &
+                     "must be a boolean value (<em>true</em> or " &
+                     "<em>false</em>)"),
+  ("DupeCTypeParam", "Duplicate parameter name for an external function " &
+                     "specification (<em>$1</em>)"),
+  ("DupeExtField",   "Duplicate field <em>$1</em> provided for an <em>" &
+                     "extern</em> block."),
+  ("DupeVal",        "Duplicate parameter value <em>$1</em> in the " &
+                     "<em>$2</em> property of the <em>extern</em> spec."),
+  ("ExtNotSpecd",    "None of the external function parameters were given" &
+                     " the name <em>$1</em>"),
+  ("ExtAllocNHold",  "Extern function parameter <em>$1</em> cannot be " &
+                     "spec'd to have the external function hold memory " &
+                     "we pass, and to allocate that memory."),
+  ("NoMemMan",       "Since <em>$1</em> is not a pointer or array type, " &
+                     "memory management will not be performend, and this " &
+                     "annotation will be ignored."),
+  ("WontLink",       "Was not able to locate the external symbol <em>$1</em>" &
+                     ", which is required for running."),
+  ("PurePlz",        "Please provide a value for the <em>pure</em> property " &
+                     "for extern functions. Pure functions always " &
+                     "return the same output for the same input, and do " &
+                     "not do any I/O, allowing us to pre-execute."),
   ("EofInBlock",     "Block was not closed when end-of-file was found."),
   ("TopLevelOnly",   "<em>'$1'</em> is only allowed at the top-level of a " &
                      "module."),
+  ("TopLevelPlural", "$1 are only allowed at the top-level of a module."),
   ("InLoopsOnly",    "<em>'$1'</em> is only allowed inside loops."),
   ("RetOutOfFunc",   "<em>'return'</em> is only allowed inside functions."),
   ("SignToUnsign",   "Automatic conversion of unsigned value of type " &
@@ -141,7 +171,6 @@ const errorMsgs = [
   ("AsgnInstance",   "Cannot assign directly to <em>$1</em>; the parent " &
                      "section supports multiple instances, so this name " &
                      "would be an instance, to which you can then add fields."),
-
   ("SecUnderField",  "Cannot assign; <em>$1</em> is a field, so may not " &
                      "contain sub-fields."),
   ("SectionNoSpec",  "While <em>$1</em> is a valid section, there is no " &
@@ -188,7 +217,7 @@ const errorMsgs = [
   ("InsecureUrl",    "Warning: loading file from an insecure URL. " &
                      "The contents could be injected by an attacker."),
   ("NoImpl",         "Could not find any function implementations in scope " &
-                     "named <em>$1</em>.  Full signature: <em>$1$2</em>"),
+                     "named <em>$1</em>. Full signature: <em>$1$2</em>"),
   ("BadSig",         "No implementation of <em>$1</em> matched the $4." &
                      "The $4 had the type: <em>$1$2</em> But available " &
                      "functions were: <br>$3"),
@@ -216,8 +245,15 @@ const errorMsgs = [
   ("SigOverlap",     "In this module, for the function name <em>$1</em>, " &
                      "implementations have overlapping signatures:<br>" &
                      "2. <strong>$3</strong><br>" &
-                     "1. <strong>$2</strong> (line $4).")
-
+                     "1. <strong>$2</strong> (line $4)."),
+  ("NextCase",       "Statement seemed to end, and was expecting " &
+                     "another <em>case</em> branch, an <em>else</em>, " &
+                     " or <em>}</em> to end the cases."),
+  ("CaseBodyStart",  "Case bodies may either be regular blocks (i.e., " &
+                     "<em>{ ... }</em>) or can be a colon followed by a list " &
+                     "of statements."),
+  ("DeadTypeCase",   "Variable can never be of type <em>$1</em>; case cannot " &
+                     "be taken.")
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
@@ -365,7 +401,7 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
 
   if err.modname.len() != 0:
     let modname = fgColor(err.modname, "jazzberry") + text(":")
-    let offset = td(text(`$`(err.line + 1) & ":" & `$`(err.offset + 1) & ":"))
+    let offset = td(text(`$`(err.line) & ":" & `$`(err.offset + 1) & ":"))
     result.add(modname.overflow(OTruncate))
     result.add(offset.overflow(OTruncate))
   else:

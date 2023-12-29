@@ -1,5 +1,5 @@
-import nimutils, os, strutils, httpclient, net, uri, streams, stchecks
-export nimutils, os, net, uri, streams, stchecks
+import nimutils, os, strutils, httpclient, net, uri, streams, stchecks, builtins
+export nimutils, os, net, uri, streams, stchecks, builtins
 
 proc loadSourceFromFile(ctx: CompileCtx, url: string): Option[string] =
   try:
