@@ -239,6 +239,7 @@ type
     of IrSwitchBranch:
       conditions*: seq[IrNode]
       action*:     IrNode
+      branchSym*:  SymbolInfo
     of IrRange:
       rangeStart*: IrNode
       rangeEnd*:   IrNode
@@ -323,6 +324,7 @@ type
     pure*:           bool
     doc1*:           string
     doc2*:           string
+    maxOffset*:      int
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -347,8 +349,12 @@ type
     pInfo*:        ParamInfo
     constValue*:   Option[CBox]
     module*:       Module # Ignored for non-func global vars and attrs.
+    global*:       bool
     err*:          bool
     declNode*:     Con4mNode
+    heapAlloc*:    bool  # The below are not used for attributes.
+    offset*:       int
+    size*:         int
     # As we implement SSA and type casing, these are for managing
     # different instances of the same logical symbol. The 'actual'
     # symbol will have actualSym be `nil`, and the count will hand out
@@ -442,8 +448,11 @@ type
     secSpecs*: Dict[string, SectionSpec]
 
   Scope* = ref object
-    table*:  Dict[string, SymbolInfo]
-    attr*:   bool
+    table*:     Dict[string, SymbolInfo]
+    scopeSize*: int
+    attr*:      bool
+    numSyms*:   int
+    parent*:    Scope
 
   Module* = ref object
     # This is the compilation context for a single module. It includes
@@ -458,7 +467,7 @@ type
     modname*:     string
     ext*:         string
     errors*:      seq[Con4mError]
-    s*:           StringCursor      # Sourcee
+    s*:           StringCursor      # Source
     tokens*:      seq[Con4mToken]
     root*:        Con4mNode         # Parse tree root
     ir*:          IrNode
@@ -515,6 +524,7 @@ type
     # Used for IR generation only.
     # This should move to a tmp object.
     pt*:             Con4mNode
+    definingFn*:     FuncInfo
     current*:        IrNode
     blockScopes*:    seq[Scope]   # Stack of loop iteration vars.
     lhsContext*:     bool         # To determine when this might be a def.
@@ -527,8 +537,9 @@ type
     labelNode*:      Con4mNode
     curSecPrefix*:   string
     curSecSpec*:     SectionSpec
+    didFoldingPass*: bool # Might not be using this anymore.
+    maxOffset*:      int
 
-    didFoldingPass*: bool
 
   CompileCtx* = ref object
     modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]

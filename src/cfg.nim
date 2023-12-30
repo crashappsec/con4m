@@ -102,6 +102,16 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
   if n == nil:
     return
 
+  if n.scope != nil:
+    n.scope.calculateOffsets()
+
+    if m.definingFn != nil:
+      if n.scope.scopeSize > m.definingFn.maxOffset:
+        m.definingFn.maxOffset = n.scope.scopeSize
+    else:
+      if n.scope.scopeSize > m.maxOffset:
+        m.maxOffset = n.scope.scopeSize
+
   if result.startnode != nil or result.exitnode != nil:
     # We got something after either a block start or
     # block end node got inserted into the graph. This goes
@@ -319,12 +329,23 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # not done yet, and isn't in my high priority bucket.
     #
     # Note that because we're currently proceeding through this phase
-    # even if there are errors, the toCall field might not be set,
-    # in which case we will just pretend there was no impact,
+    # even if there are errors, we pretend the call doesn't happen
     # and the call graph will NOT show this guy.
-
     if n.contents.toCall == nil:
       return
+
+    # For external functions, we create dummy entry and exit nodes
+    # here.
+    if n.contents.toCall.externInfo != nil:
+      let
+        dummyStart = CfgNode()
+        dummyEnd   = CfgNode(pre: @[dummyStart])
+
+      n.contents.toCall.cfg       = dummyStart
+      dummyStart.exitNode         = dummyEnd
+      dummyEnd.startNode          = dummyStart
+      n.contents.toCall.cfg       = dummyStart
+      n.contents.toCall.exitNode  = dummyEnd
 
     result.irNode = n
 
@@ -419,8 +440,11 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   # intelligently analyze. But we'll do that when we get to converting
   # to a SSA form.
 
-  if f.cfg != nil:
+  if f.cfg != nil or f.externInfo != nil:
     return
+
+  f.fnScope.calculateOffsets()
+  f.maxOffset = f.fnScope.scopeSize # This can get bigger as we descend.
 
   let m = f.defModule
 
@@ -442,6 +466,10 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
   # This can be called recursively, so don't re-process.
   if m.cfg != nil:
     return
+
+  m.moduleScope.calculateOffsets()
+  if m.globalScope.scopeSize == 0:
+    m.globalScope.calculateOffsets()
 
   # Param statements execute before the first block.
   m.cfg            = startBlock(nil, m.ir, CfgNode())
@@ -529,7 +557,10 @@ proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
 
   for function in module.allFunctions():
     let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
+
+    module.definingFn = function
     ctx.handleOneFunc(function, startDefs)
+    module.definingFn = nil
 
 proc getSeqDisplayKids(entry: CfgNode): seq[CfgNode] =
   if entry == nil:

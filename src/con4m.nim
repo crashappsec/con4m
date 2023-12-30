@@ -1,10 +1,15 @@
 # TODO:
 #
 # === High priority ===
+# - Getting AttrAssign node when it should be VarAssign node
+# - No matching sig error for function calls
+# - Offset isn't right for sym copies in a typecase. Check lineage.
+# - Return variable
 # - Rework cfg for switches and loop changes.
 # - Basic execution.
 # - Code generation.
 # - Doc strings
+# - i128 issue.
 # - Implement _ as a 'discard' variable.
 # - dlclose stuff.
 # - C-level interface to attributes
@@ -25,6 +30,7 @@
 # - Issue with validators
 # - For errors, make it easy to see "previous instance", and remove
 #   table for 2nd line
+# - Handle result variable properly in offsets.
 
 # == Medium ==
 # - Access controls around extern and extensibility features

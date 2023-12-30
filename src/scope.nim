@@ -4,8 +4,9 @@ template getTid*(s: SymbolInfo): TypeId =
   s.tid.followForwards()
 
 proc initScope*(): Scope =
-  result = Scope()
+  result        = Scope()
   result.table.initDict()
+
 
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
@@ -47,7 +48,11 @@ proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
   else:
     sym = SymbolInfo(name: n, tid: tid, isFunc: isFunc, module: ctx)
     scope.table[n] = sym
+    scope.numSyms += 1
     result = some(sym)
+    if scope == ctx.moduleScope or
+       (ctx.funcScope == nil and scope != ctx.usedAttrs):
+      sym.heapAlloc = true
 
 proc scopeDeclare*(ctx: Module, scope: var Scope, n: string,
                    isfunc: bool, tid = TBottom, immutable = false,
@@ -173,6 +178,7 @@ proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
   if fi.defaultVal.isSome():
     sym.hasDefault = true
   ctx.usedAttrs.table[name] = sym
+  ctx.usedAttrs.numSyms    += 1
 
   return some(sym)
 
@@ -311,9 +317,11 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
   case fieldInfo.fieldKind
   of FsUserDefField, FsErrorNoSpec:
     sym = SymbolInfo(name: name, tid: tVar(), isAttr: true)
+    ctx.usedattrs.numSyms += 1
   of FsField:
     # Don't mess up other sections if there's a type variable..
     sym = SymbolInfo(name: name, tid: fieldInfo.tid.tCopy(), isAttr: true)
+    ctx.usedattrs.numSyms += 1
     if fieldInfo.defaultVal.isSome():
       sym.hasDefault = true
   of FsObjectType:
@@ -342,6 +350,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
 
   if sym == nil:
     sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
+    ctx.usedattrs.numSyms += 1
 
   ctx.usedAttrs.table[name] = sym
   ctx.typeCheck(sym.tid, tid)
@@ -382,6 +391,7 @@ proc addUse*(ctx: Module, name: string, loc: IRNode,
       sym = SymbolInfo(name: name, tid: tid.tCopy(), isAttr: true)
       sym.uses.add(loc)
       ctx.usedAttrs.table[name] = sym
+      ctx.usedAttrs.numSyms    += 1
       return some(sym)
     of FsField:
       unreachable
@@ -404,6 +414,7 @@ proc addUse*(ctx: Module, name: string, loc: IRNode,
 
     sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
     ctx.usedAttrs.table[name] = sym
+    ctx.usedAttrs.numSyms    += 1
     sym.uses.add(loc)
     return some(sym)
 
@@ -437,10 +448,10 @@ proc toRope*(s: Scope, title = ""): Rope =
   if s == nil:
     return h4("Scope is not initialized.")
   var
-    hdr   = @[atom("Symbol"), atom("Type"), atom("Decl?"),
+    hdr   = @[atom("Symbol"), atom("Type"), atom("Offset"), atom("Decl?"),
               atom("Const"), atom("fn?"), atom("#Def"), atom("#Use")]
     cells = @[hdr]
-    contents = s.table.items()
+    contents = s.table.items(sort = true)
 
   if contents.len() == 0:
     if title != "":
@@ -448,7 +459,6 @@ proc toRope*(s: Scope, title = ""): Rope =
     else:
       return h4("Scope contains no contents.")
 
-  contents.sort()
   for (name, sym) in contents:
     var
       cc     = fgColor("✗", "red")
@@ -464,21 +474,22 @@ proc toRope*(s: Scope, title = ""): Rope =
 
     if sym.fImpls.len() == 0:
       cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
+                  atom($(sym.offset)),
                   sym.declaredType.isDeclaredRepr(), cc, isFunc,
                   atom($(sym.uses.len())),
                   atom($(sym.defs.len()))])
     else:
       for item in sym.fImpls:
-        cells.add(@[name.atom(), item.tid.toRope(),
+        cells.add(@[name.atom(), item.tid.toRope(), atom("n/a"),
                   sym.declaredType.isDeclaredRepr(),
                   fgColor("✓", "atomiclime"), fgColor("✓", "atomiclime"),
-                  atom(" "), atom(" ")])
+                  atom("n/a"), atom("n/a")])
 
 
-  return quickTable(cells, title = title)
+  return quickTable(cells, title = title, caption = $(s.numSyms) & " symbols")
 
 proc allFunctions*(s: Scope): seq[FuncInfo] =
-  for (_, v) in s.table.items():
+  for (_, v) in s.table.items(sort = true):
     if v.isFunc:
       result &= v.fimpls
 
@@ -486,12 +497,35 @@ proc allFunctions*(m: Module): seq[FuncInfo] =
   return m.moduleScope.allFunctions()
 
 proc allParams*(m: Module): seq[SymbolInfo] =
-  for (_, v) in m.moduleScope.table.items():
+  for (_, v) in m.moduleScope.table.items(sort = true):
     if v.pInfo != nil:
       result.add(v)
 
 
 proc allVars*(s: Scope): seq[SymbolInfo] =
-  for (_, v) in s.table.items():
+  for (_, v) in s.table.items(sort = true):
     if not v.isFunc:
       result.add(v)
+
+proc calculateOffsets*(s: Scope) =
+  # For now, we just allocate everything 8 bytes on the stack,
+  # regardless of type.
+  if s == nil:
+    return
+
+  let symInfo = s.table.items(sort = true)
+  var
+    sz = 0
+    i  = 0
+
+  if s.parent != nil:
+    sz = s.parent.scopeSize
+
+  for (n, sym) in symInfo:
+    if sym.isFunc:
+      continue
+    sym.offset = sz
+    sym.size   = 8
+    sz        += 8
+
+  s.scopeSize = sz

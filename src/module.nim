@@ -148,6 +148,7 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.buildCfg(ctx.entrypoint)
   ctx.buildAllUnbuiltCfgs(ctx.entrypoint) # TODO: do for all modules
   ctx.wholeProgramChecks()
+  ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
 
 proc newCompileContext*(spec: ValidationSpec = nil,

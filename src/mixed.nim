@@ -28,6 +28,13 @@ proc toVal*[T](item: Mixed): T =
   else:
     if item.kind == MixedReference:
       result = MixedContainer[T](item.byRef).item
+
+proc toPtr*(item: Mixed): pointer =
+  if item.kind == MixedValue:
+    return item.byVal
+  else:
+    return (cast[MixedContainer[pointer]](item.byRef)).item
+
 when isMainModule:
   let
     f = toMixed("foo bar")

@@ -1258,6 +1258,13 @@ proc convertForStmt(ctx: Module): IrNode =
   scope = initScope()
 
   result.scope    = scope
+  if ctx.blockScopes.len() != 0:
+    scope.parent = ctx.blockScopes[^1]
+  elif ctx.funcScope != nil:
+    scope.parent = ctx.funcScope
+  else:
+    scope.parent = ctx.moduleScope
+
   ctx.blockScopes = @[scope] & ctx.blockScopes
 
   for item in ctx.pt.children[0].children:
@@ -1348,12 +1355,18 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
   # All remaining kids will be Case nodes; at least one will have two
   # prongs; the last could be an `else`, which has only one prong.
   for i in 1 ..< ctx.numKids():
-
     let n = ctx.irNode(IrSwitchBranch)
     var
       scope    = initScope()
       symCopy  = sym.makeVariant()
       actionBranch: int
+
+    if ctx.blockScopes.len() != 0:
+      scope.parent = ctx.blockScopes[^1]
+    elif ctx.funcScope != nil:
+      scope.parent = ctx.funcScope
+    else:
+      scope.parent = ctx.moduleScope
 
     if ctx.numKids(i) == 2:
       var branchType: TypeId
@@ -1376,7 +1389,9 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
       symCopy.tid  = tVar()
       actionBranch = 0
 
+    n.contents.branchSym  = symCopy
     scope.table[sym.name] = symCopy
+    scope.numSyms        += 1
     ctx.blockScopes       = @[scope] & ctx.blockScopes
     n.tid                 = symCopy.tid
 
@@ -1918,6 +1933,8 @@ proc finishFunctionProcessing(ctx: Module, impl: FuncInfo) =
   # ensures we, from this point forward, won't accidentally modify the
   # type.
   impl.lockFn()
+  ctx.funcScope  = nil
+  ctx.definingFn = nil
 
 proc toIr*(ctx: Module): bool {.discardable.} =
   ctx.pt        = ctx.root
@@ -1928,6 +1945,7 @@ proc toIr*(ctx: Module): bool {.discardable.} =
     for impl in sym.fimpls:
       if impl.rawImpl != nil:
         impl.unlockFn()
+        ctx.definingFn      = impl
         ctx.funcScope       = impl.fnScope
         ctx.pt              = impl.rawImpl
         let nodes           = ctx.parseTreeToIr() # This should be a body node.
