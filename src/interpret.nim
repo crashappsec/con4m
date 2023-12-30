@@ -158,6 +158,7 @@ proc interpretCode(ctx: var InterpreterState, n: IrNode) =
     else:
       ctx.callLitConstructor(nil, 0)
   of IrMember:
+
   of IrIndex:
   of IrNot:
   of IrUminus:
