@@ -1,4 +1,4 @@
-import basetypes, cbox, strutils, parse
+import strutils, parse
 
 proc newSpec*(): ValidationSpec =
   result = ValidationSpec()
@@ -15,7 +15,7 @@ proc getRootSection*(spec: ValidationSpec): SectionSpec =
 
 proc addField*(sec: SectionSpec, name: string, typeInfo: string,
                doc: Rope = nil, shortDoc: Rope = nil,
-              lockOnWrite = false, default = none(CBox),
+              lockOnWrite = false, default = none(pointer),
               addDefaultsBeforeRun = true, validators = seq[Validator](@[]),
               hidden = false) =
 
@@ -132,10 +132,9 @@ proc baseNewSection(spec: ValidationSpec, n: string,
     spec.allow(result, item)
 
 proc newSingleton*(spec: ValidationSpec, n: string,
-                       allowed = seq[string](@[]),
-                       validators = seq[Validator](@[]), hidden = false,
-                       doc = Rope(nil), shortdoc = Rope(nil),
-                       userDefOk = false): SectionSpec =
+                   allowed = seq[string](@[]),validators = seq[Validator](@[]),
+                   hidden = false, doc = Rope(nil), shortdoc = Rope(nil),
+                   userDefOk = false): SectionSpec =
   result = baseNewSection(spec, n, allowed, validators, hidden, doc,
                           shortdoc, userDefOk)
   result.singleton = true
@@ -149,43 +148,42 @@ proc newInstanceSection*(spec: ValidationSpec, n: string,
   result = baseNewSection(spec, n, allowed, validators, hidden, doc,
                           shortdoc, userDefOk)
 
-proc oneChoiceValidator*(attrs: AttrDict, path: string, val: Option[CBox],
-                         args: seq[CBox]): Rope {.cdecl.} =
+proc oneChoiceValidator*(attrs: AttrDict, path: string, t: TypeId,
+                         val: Option[pointer], args: seq[pointer]):
+                           Rope {.cdecl.} =
   # This validator doesn't care about whether fields are required.
   if val.isNone():
     return nil
 
-  var
-    box = val.get()
-    t   = box.getType()
+  var box = val.get()
 
   if not t.isBasicType():
     raise newException(ValueError,
                        "Choice validator only works with primitive types.")
 
-  # Otherwise, types should be validated already.
   for item in args:
-    if item.baseValueEq(box):
+    if item.call_eq(box, t):
       return nil
 
   result = atom("Invalid choice for field: ") + em(path) +
-           atom(". Got value: ") + em(box.builtinRepr()) +
+           atom(". Got value: ") + em(box.call_repr(t)) +
            atom(", but valid choices are: ")
 
   for i, item in args:
-    result += em(item.builtinRepr())
+    result += em(item.call_repr(t))
     if i != args.len() - 1:
       result += atom(", ")
 
 
-proc requiredValidator*(attrs: var AttrDict, path: string, val: Option[CBox],
-                        args: seq[CBox]): Rope {.cdecl.} =
+proc requiredValidator*(attrs: var AttrDict, path: string, t: TypeId,
+                        val: Option[pointer],
+                        args: seq[pointer]): Rope {.cdecl.} =
   if val.isNone():
     return atom("Field ") + em(path) +
            atom(" is a required value, but was not provided.")
 
-proc mutexValidator*(attrs: var AttrDict, path: string, val: Option[CBox],
-                     args: seq[CBox]): Rope {.cdecl.} =
+proc mutexValidator*(attrs: var AttrDict, path: string, t: TypeId,
+                     val: Option[pointer], args: seq[pointer]): Rope {.cdecl.} =
   let
     parts = path.split(".")
     base  = if len(parts) == 1: "" else: parts[0 ..< 1].join(".") & "."
@@ -197,7 +195,7 @@ proc mutexValidator*(attrs: var AttrDict, path: string, val: Option[CBox],
 
   for item in args:
     let
-      toCmp      = unbox[string](item)
+      toCmp      = extractRef[string](item)
       toCmpFull  = base & toCmp
       valOpt     = attrs.lookup(toCmpFull)
 

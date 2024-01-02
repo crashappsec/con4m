@@ -3,46 +3,90 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import unicode, nimutils, mixed, options, ffi
-export unicode, nimutils, mixed, options, ffi
+import unicode, nimutils, options, ffi
+export unicode, nimutils, options, ffi
 
 const
-  noRepr*       = 0
-  scalarOk*     = 1
-  hexOk*        = 2
-  floatOk*      = 4
-  boolOk*       = 8
-  strQuotesOk*  = 16
-  charQuotesOk* = 32
-  euroQuotesOk* = 64
-  stdBoolKind*  = (boolOk)
-  stdIntKind*   = (scalarOk or hexOk)
-  stdFloatKind* = (scalarOk or floatOk)
-  stdStrKind*   = strQuotesOk
-  stdChrKind*   = (scalarOk or hexOk or charQuotesOk)
-  stdOtherKind* = (strQuotesOk or euroQuotesOk)
+  FRepr*         = 0
+  FCastFn*       = 1
+  FEq*           = 2
+  FLt*           = 3
+  FGt*           = 4
+  FAdd*          = 5
+  FSub*          = 6
+  FMul*          = 7
+  FFDiv*         = 8
+  FIDiv*         = 9
+  FMod*          = 10
+  FShl*          = 11
+  FShr*          = 12
+  FBand*         = 13
+  FBor*          = 14
+  FBxor*         = 15
+  FIndex*        = 16
+  FDictIndex*    = 17
+  FSlice*        = 18
+  FAssignIx*     = 19
+  FAssignDIx*    = 20
+  FassignSlice*  = 21
+  FNewLit*       = 22
+  FContainerLit* = 23
+  FCopy*         = 24
+  FLen*          = 25
+  FPlusEqRef*    = 26
+  FGetFFIAddr*   = 27 # Of what? Already don't rememebr.
+  FInitialize*   = 28 # Stuff we're not using yet.
+  FCleanup*      = 29
+  FAlloc*        = 30
+  FDealloc*      = 31
+  FMax*          = 40
 
 type
+  SyntaxType* = enum
+    STNone      = -1,
+    STBase10    = 0,
+    STHex       = 1,
+    STFloat     = 2,
+    STBoolLit   = 3,
+    STStrQuotes = 4,
+    STChrQuotes = 5,
+    STOther     = 6,
+    STList      = 7,
+    STDict      = 8,
+    STTuple     = 9,
+    StNull      = 10,
+    StMax       = 11
+
+  DTFunc* = range[0 .. FMax]
+
+  DataType* = ref object
+    name*:          string
+    dtid*:          TypeId
+    concrete*:      bool
+    isBool*:        bool
+    ckind*:         C4TypeKind
+    intW*:          int
+    signed*:        bool
+    signedVariant*: DataType
+    fTy*:           bool
+    aliases*:       seq[string]
+    byValue*:       bool
+    ops*:           seq[pointer]
+
+  RefValue*[T] = ref object of RootRef
+    dtInfo*:   DataType
+    refcount*: int
+    item*:     T
+
   StringCursor* = ref object
     runes*: seq[Rune]
     i*:     int
 
-  SyntaxType* = enum
-    STBase10    = scalarOk,
-    STHex       = hexOk,
-    STFloat     = floatOk,
-    STBoolLit   = boolOk,
-    STStrQuotes = strQuotesOk,
-    STChrQuotes = charQuotesOk,
-    STOther     = euroQuotesOk,
-    STList      = 128,
-    STDict      = 256,
-    STTuple     = 512,
-    StNull      = 1024
-
   C4TypeKind* = enum
-    C4TVar, C4List, C4Dict, C4Tuple, C4TypeSpec, C4Ref, C4Maybe,
+    C4None, C4TVar, C4List, C4Dict, C4Tuple, C4TypeSpec, C4Ref, C4Maybe,
     C4Func, C4Struct, C4OneOf, C4Primitive
+
+  TypeId*   = uint64
 
   TypeRef*  = ref object
     typeid*:   TypeId
@@ -64,40 +108,6 @@ type
     name*: string
     tid*:  TypeId
     impl*: FuncInfo
-
-  TypeConstructor* = proc (i0: string, i1: var Mixed, i2: SyntaxType):
-                         string {.cdecl.}
-  # i0 -> the starting type; modifiable.
-  # i1 -> the literal to update.
-  ContainerConstructor* = proc (i0: var TypeId, i1: var Mixed): string {.cdecl.}
-  CharInitFn*           = proc (i0: uint, i1: var Mixed): string {.cdecl.}
-  ReprFn*               = proc (i0: TypeId, i1: Mixed): string {.cdecl.}
-  BoolCastFn*           = proc (i0: Mixed): bool {.cdecl.}
-  U128CastFn*           = proc (i0: Mixed): uint128 {.cdecl.}
-  I128CastFn*           = proc (i0: Mixed): int128 {.cdecl.}
-  EqFn*                 = proc (i0: CBox, i2: Cbox): bool {.cdecl.}
-
-  TypeId*               = uint64
-  TypeInfo* = ref object
-    name*:        string
-    kind*:        uint
-    litmods*:     seq[string]
-    typeId*:      TypeId
-    intBits*:     int
-    signed*:      bool
-    signVariant*: TypeId
-    isLocked*:    bool
-    repr*:        ReprFn
-    fromRawLit*:  TypeConstructor
-    fromCharLit*: CharInitFn
-    castToBool*:  BoolCastFn
-    castToU128*:  U128CastFn
-    castToI128*:  I128CastFn
-    eqFn*:        EqFn
-
-  CBox* = object
-    v*: Mixed
-    t*: TypeId
 
   Con4mErrPhase* = enum ErrLoad, ErrLex, ErrParse, ErrIrgen
   Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr, LlFatal
@@ -198,7 +208,7 @@ type
   IrNode* = ref object
     parseNode*: Con4mNode
     tid*:       TypeId
-    value*:     Option[Mixed]
+    value*:     Option[pointer]
     parent*:    IrNode
     contents*:  IrContents
     scope*:     Scope
@@ -250,8 +260,6 @@ type
       retVal*: IrNode
       retSym*: SymbolInfo
     of IrLit:
-      syntax*: SyntaxType
-      litmod*: string
       items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
     of IrMember:
       name*:      string
@@ -333,7 +341,7 @@ type
     validator*:     Option[Callback]
     defaultParse*:  Option[Con4mNode]
     defaultIr*:     Option[IrNode]
-    startValue*:    Option[Mixed]
+    startValue*:    Option[pointer]
 
   SymbolInfo* = ref object
     name*:         string
@@ -347,7 +355,7 @@ type
     defs*:         seq[IrNode]
     fimpls*:       seq[FuncInfo]
     pInfo*:        ParamInfo
-    constValue*:   Option[CBox]
+    constValue*:   Option[pointer]
     module*:       Module # Ignored for non-func global vars and attrs.
     global*:       bool
     err*:          bool
@@ -390,24 +398,24 @@ type
     makeChildren*:   bool
     label*:          string
 
-  AttrDict*      = Dict[string, CBox]
+  AttrDict*      = Dict[string, pointer]
 
   # Some specification info is checked during compilation, but most of
   # it is validation done at points where the validation is supposed
   # to be consistent... for instance, after a config executes, and
   # then after subsequent callbacks.
   #
-  # Validator gets passed the attr dict, the attribute, the value at
-  # the end of execution, and then any parameters (like a set of valid
-  # options).
+  # Validator gets passed the attr dict, the attribute, the type, the
+  # value at the end of execution, and then any parameters (like a set
+  # of valid options).
   #
   # Each validation routine should indicate what params it can accept.
-  ValidationFn* = proc (i0: AttrDict, i1: string, i2: Option[CBox],
-                        i3: seq[CBox]): Rope {.cdecl.}
+  ValidationFn* = proc (i0: AttrDict, i1: string, i2: TypeId,
+                        i3: Option[pointer], i4: seq[pointer]): Rope {.cdecl.}
 
   Validator*     = object
     fn*:          ValidationFn
-    params*:      seq[CBox]
+    params*:      seq[pointer]
 
   FsKind* = enum
     FsField, FsObjectType, FsSingleton, FsUserDefField, FsObjectInstance,
@@ -418,7 +426,7 @@ type
     name*:                 string
     tid*:                  TypeId
     lockOnWrite*:          bool
-    defaultVal*:           Option[CBox]
+    defaultVal*:           Option[pointer]
     addDefaultsBeforeRun*: bool = true
     validators*:           seq[Validator]
     hidden*:               bool
@@ -552,169 +560,6 @@ type
     entrypoint*:  Module
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
-var
-  basicTypes*: seq[TypeInfo]
-  tiMap*:      Dict[TypeId, TypeInfo]
-  nameMap*:    Dict[string, TypeInfo]
-
-proc lockType*(tid: TypeId) =
-  tiMap[tid].isLocked = true
-
-proc unlockType*(tid: TypeId) =
-  tiMap[tid].isLocked = false
-
-proc addBasicType*(name:        string,
-                   kind:        uint,
-                   litmods:     seq[string] = @[],
-                   intBits:     int = 0,
-                   signed:      bool = false,
-                   repr:        ReprFn,
-                   castToBool:  BoolCastFn = nil,
-                   castToU128:  U128CastFn = nil,
-                   castToI128:  I128CastFn = nil,
-                   fromRawLit:  TypeConstructor = nil,
-                   fromCharLit: CharInitFn = nil,
-                   eqFn:        EqFn = nil): TypeId  =
-
-  var tInfo = TypeInfo(name: name, repr: repr, kind: kind, litMods: litMods,
-                       intBits: intBits, signed: signed, castToBool: castToBool,
-                       castToU128: castToU128, castToI128: castToI128,
-                       fromRawLit: fromRawLit, fromCharLit: fromCharLit,
-                       eqFn: eqFn)
-
-  result        = TypeId(basicTypes.len())
-  tinfo.typeId  = result
-  tiMap[result] = tInfo
-  nameMap[name] = tInfo
-
-  basicTypes.add(tInfo)
-
-proc getBuiltinTypeIdFromName*(name: string, err: var string): TypeId =
-  let opt = nameMap.lookup(name)
-  if opt.isNone():
-    err = "Unknown built-in type: '" & name & "'"
-  else:
-    result = opt.get().typeId
-
-var
-  listMods: Dict[string, ContainerConstructor]
-  dictMods: Dict[string, ContainerConstructor]
-  tupMods:  Dict[string, ContainerConstructor]
-
-listMods.initDict()
-dictMods.initDict()
-tupMods.initDict()
-
-proc registerListMod*(name: string, cons: ContainerConstructor) =
-  listMods[name] = cons
-
-proc registerDictMod*(name: string, cons: ContainerConstructor) =
-  dictMods[name] = cons
-
-proc registerTupMod*(name: string, cons: ContainerConstructor) =
-  tupMods[name] = cons
-
-proc listModExists*(name: string): bool =
-  return listMods.lookup(name).isSome()
-
-proc dictModExists*(name: string): bool =
-  return dictMods.lookup(name).isSome()
-
-proc tupModExists*(name: string): bool =
-  return tupMods.lookup(name).isSome()
-
-proc applyListMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
-  return listMods[name](tinfo, val)
-
-proc applyDictMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
-  return dictMods[name](tinfo, val)
-
-proc applyTupMod*(name: string, tinfo: var TypeId, val: var Mixed): string =
-  return tupMods[name](tinfo, val)
-
-proc basicRepr(tid: TypeId, m: Mixed): string {.cdecl.} =
-  return "error: type has no representation"
-
-let
-  TBottom* = addBasicType(name = "none (type error)",
-                          repr = basicRepr,
-                          kind = noRepr)
-  TVoid*   = addBasicType(name = "void",
-                          repr = basicRepr,
-                          kind = noRepr)
-
-proc parseLiteral*(typeId: int, raw: string, err: var string,
-                  st: SyntaxType): Mixed =
-  ## Returns the parsed literal wrapped in an `Mixed`.
-  ## Assumes you know your typeId definitively by now.
-  ##
-  ## If `err` is not empty, then ignore the return value.
-  var ti = basicTypes[typeId]
-
-  err = ti.fromRawLit(raw, result, st)
-
-proc initializeCharLiteral*(typeId: int, cp: uint, err: var string): Mixed =
-  ## Returns the initialized, error-checked literal wrapped in an `Mixed`.
-  ## Assumes you know your typeId definitively by now.
-  ##
-  ## If `err` is not empty, then ignore the return value.
-
-  var ti = basicTypes[typeId]
-
-  err = ti.fromCharLit(cp, result)
-
-var
-  biTypeNames: seq[string]
-  allTypeIds:  seq[string]
-
-proc typeNameFromId*(id: TypeId): string =
-  return biTypeNames[int(id)]
-
-proc idFromTypeName*(n: string): TypeId =
-  return TypeId(biTypeNames.find(n))
-
-proc getAllBuiltinTypeNames*(): seq[string] =
-  if biTypeNames.len() > 0:
-    return biTypeNames
-
-  for item in basicTypes:
-    biTypeNames.add(item.name)
-
-  allTypeIds = biTypeNames
-  allTypeIds &= ["list", "dict", "tuple", "struct", "ref", "set", "maybe",
-                 "oneof", "typespec"]
-
-  return biTypeNames
-
-proc getAllTypeIdentifiers*(): seq[string] =
-  if allTypeIds.len() == 0:
-    discard getAllBuiltinTypeNames()
-
-  return allTypeIds
-
-proc numBuiltinTypes*(): int =
-  return biTypeNames.len()
-
-proc getTypeInfoObject*(id: TypeId): TypeInfo =
-  return basicTypes[int(id)]
-
-proc normalSizeIntToBool*(n: Mixed): bool {.cdecl.} =
-  return toVal[uint64](n) != 0
-
-proc normalSizeIntToU128*(n: Mixed): uint128 {.cdecl.} =
-  return iToU128(toVal[uint64](n))
-
-proc normalSizeIntToI128*(n: Mixed): int128 {.cdecl.} =
-  return iToI128(toVal[int64](n))
-
-proc basicEq*(a, b: CBox): bool {.cdecl.} =
-  # Only meant to work for by-value storage.
-  return toVal[int64](a.v) == toVal[int64](b.v)
-
-proc pointerEq*(a, b: CBox): bool {.cdecl.} =
-  # Should work with anything stored by reference in Nim.
-  # So NOT seqs, etc.
-  return toVal[pointer](a.v) == toVal[pointer](b.v)
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

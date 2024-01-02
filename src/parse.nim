@@ -5,8 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import lex, basetypes
-export lex, basetypes
+import lex, ztypes/api
+export lex, api
 
 proc tokenId(n: Con4mNode): Rope =
   return atom(" (tokid:" & `$`(n.token.id) & ")").fgColor("jazzberry")
@@ -117,8 +117,12 @@ proc getText*(token: Con4mToken, adjust: static[bool] = false): string =
   when adjust:
     return $(token)
   else:
-      if token.kind == TtStringLit: return token.unescaped
-      else:                         return $(token)
+      if token.kind == TtStringLit:
+        return token.unescaped
+      elif token.kind == TtOtherLit:
+        return $(token.cursor.slice(token.startPos, token.endPos))
+      else:
+        return $(token)
 
 proc getText*(node: Con4mNode, adjust: static[bool] = false): string =
   ## This returns the raw string associated with a token.  Internal.
@@ -944,7 +948,7 @@ production(literal, NodeLiteral):
   of TtIdentifier:
     let txt = ctx.curTok().getText()
 
-    if txt in getAllTypeIdentifiers():
+    if txt in getAllBuiltinTypeNames():
       result.addKid(ctx.typeSpec())
     else:
       ctx.errSkipStmt("LitExpected")
@@ -959,7 +963,7 @@ production(expressionStart, NodeExpression):
        result.addKid(ctx.literal())
   of TtIdentifier:
     let txt = ctx.curTok().getText()
-    if txt in getAllTypeIdentifiers():
+    if txt in getAllBuiltinTypeNames():
       result.addKid(ctx.literal())
     else:
       result.addKid(ctx.accessExpr())

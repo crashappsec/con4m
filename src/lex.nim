@@ -185,7 +185,7 @@ template tok(k: Con4mTokenKind, eatNewLines: static[bool] = false) =
                0, eatNewLines)
 
 # The adjustment is to chop off start/end delimiters for
-# literals... strings, tristrings, and 'other' literals: << >>
+# literals... strings, tristrings, and 'other' literals: <- ->
 template tok(k: Con4mTokenKind, adjustValue: static[int],
              frontOnly: static[bool] = false) =
 
@@ -306,7 +306,7 @@ proc lex_impl(ctx: Module) =
                             lineOffSet: -1)]
 
   while true:
-    let
+    var
       startPos = ctx.s.getPosition()
       tokenLine = ctx.lineNo
       tokenLineOffset = startPos - ctx.lineStart
@@ -394,12 +394,6 @@ proc lex_impl(ctx: Module) =
             tok(ErrorTok)
             lexError("OtherTerm")
             return
-          of Rune('-'):
-            if ctx.s.read() != Rune('>'):
-              continue
-            tok(TtOtherLit, 2)
-            handleLitMod()
-            break
           else:
             continue
       elif ctx.s.peek() == Rune('='):
@@ -430,7 +424,16 @@ proc lex_impl(ctx: Module) =
     of Rune(':'):
       if ctx.s.peek() == Rune('='):
         ctx.s.advance()
-        tok(TtLocalAssign, true)
+        tok(TtAttrAssign, true)
+        startpos        = ctx.s.getPosition()
+        tokenLine       = ctx.lineNo
+        tokenLineOffset = startPos - ctx.lineStart
+        while true:
+          if ctx.s.peek() in [Rune('\x00'), Rune('\n')]:
+            tok(TtOtherLit)
+            break
+          else:
+            discard ctx.s.read()
       else:
         tok(TtColon, true)
     of Rune('='):
@@ -772,7 +775,7 @@ proc `$`*(tok: Con4mToken): string =
   of TtEof:            result = "~eof~"
   of ErrorTok:         result = "~err~"
   of TtOtherLit:
-    result = "<< " & $(tok.cursor.slice(tok.startPos, tok.endPos)) & " >>"
+    result = `$`(tok.cursor.slice(tok.startPos, tok.endPos)).strip()
   else:
     if tok.cursor == nil:
       return ""
@@ -945,7 +948,7 @@ proc `$`*(kind: Con4mTokenKind): string =
     of TtConst:
       return "const"
     of TtOtherLit:
-      return "a << literal >>"
+      return "a literal"
     of TtBacktick:
       return "`"
     of TtArrow:

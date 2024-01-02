@@ -1,4 +1,4 @@
-import parse, algorithm, strutils, specs
+import parse, strutils, specs
 
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.followForwards()
@@ -297,9 +297,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
   if ctx.attrSpec != nil:
     ctx.attrSpec.rootSpec.userDefOk = false
 
-  var
-    fieldTid: TypeId
-    sym:      SymbolInfo
+  var sym: SymbolInfo
 
   let
     parts     = name.split(".")
@@ -465,8 +463,7 @@ proc toRope*(s: Scope, title = ""): Rope =
       isFunc = fgColor("✗", "red")
     if sym.constValue.isSome():
       let box = sym.constValue.get()
-      # TODO: This only works for base types.  Need to build CBox to Rope
-      cc = fgColor(rawBuiltinRepr(box.t, box.v), "atomiclime")
+      cc = fgColor(call_repr(box, sym.tid), "atomiclime")
     elif sym.immutable:
       cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")
     if sym.fImpls.len() != 0:
@@ -516,7 +513,6 @@ proc calculateOffsets*(s: Scope) =
   let symInfo = s.table.items(sort = true)
   var
     sz = 0
-    i  = 0
 
   if s.parent != nil:
     sz = s.parent.scopeSize

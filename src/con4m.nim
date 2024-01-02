@@ -5,11 +5,9 @@
 # - No matching sig error for function calls
 # - Offset isn't right for sym copies in a typecase. Check lineage.
 # - Return variable
-# - Rework cfg for switches and loop changes.
 # - Basic execution.
 # - Code generation.
 # - Doc strings
-# - i128 issue.
 # - Implement _ as a 'discard' variable.
 # - dlclose stuff.
 # - C-level interface to attributes
@@ -110,7 +108,7 @@ when isMainModule:
       r    = result.newInstanceSection("r")
     root.addField("x", "int")
     result.allow(root, "q", "r")
-    q.addField("z", "int", default = some(toBox[int](12, TInt)))
+    q.addField("z", "int", default = some(cast[pointer](12)))
 
   let
     params = commandLineParams()

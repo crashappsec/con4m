@@ -2,8 +2,8 @@
 ## Ideally, we will keep refining the nodes until we can use them essentially
 ## as fat VM instructions that we can directly marshal.
 
-import parse, scope, cbox, strutils
-export parse, scope, cbox
+import parse, scope, strutils
+export parse, scope
 
 template getTid*(n: untyped): TypeId =
   n.tid.followForwards()
@@ -72,66 +72,6 @@ proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
     # with type errors.
     ctx.funcsToResolve.add((n, callType, matches, fails))
 
-proc getTypeIdFromSyntax*(ctx: Module, st: SyntaxType,
-                          litMod = ""): TypeId =
-
-  ## If called w/ an empty litmod, returns the primary type
-  ## associated with the syntax.
-  ##
-  ## Doesn't work with 'other' literals, obviously.
-  ##
-  ## Assumes the parse node is correct.
-
-  if litmod == "":
-    case st
-    of StNull:
-      return TVoid
-    of STBase10:
-      return TInt
-    of STHex:
-      return TInt
-    of STFloat:
-      return TFloat
-    of STBoolLit:
-      return TBool
-    of STStrQuotes:
-      return TString
-    of StChrQuotes:
-      return TChar
-    else: # Don't do these. Internal errors, not user errors.
-      return TBottom
-
-  var errType: string = ""
-
-  for v in basicTypes:
-    if litMod in v.litMods or litMod == v.name:
-      if v.kind != 0 and uint(st) != 0:
-        return v.typeId
-      else:
-        case st
-        of STBase10:
-          errType = "integer"
-        of STHex:
-          errType = "hex"
-        of STFloat:
-          errType = "float"
-        of STBoolLit:
-          errType = "boolean"
-        of STStrQuotes:
-          errType = "string"
-        of STChrQuotes:
-          errType = "character"
-        of STOther:
-          errType = "specialized"
-        else:
-          unreachable # Not supposed to call this w/ complex types
-
-  if errType == "":
-    ctx.irError("BadLitMod", @[litMod])
-  else:
-    ctx.irError("LitModTypeErr", @[litMod, errType])
-
-  return TBottom
 proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
   result = atom(s).fgColor("atomiclime")
   if x != "":
@@ -147,7 +87,7 @@ template reprBasicLiteral(ctx: IrNode): string =
   if ctx.value.isNone():
     ""
   else:
-    rawBuiltinRepr(ctx.tid, ctx.value.get())
+    callRepr(ctx.value.get(), ctx.tid)
 
 proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   var
@@ -348,7 +288,7 @@ template parseKid(ctx: Module, i, j, k: int): Con4mNode =
 proc isConstant*(n: IrNode): bool =
   # Doesn't capture everything that's constant, just things we
   # are currently folding.
-  return n.getTid() != TBottom and n.getTid().isBuiltinType() and
+  return n.getTid() != TBottom and n.getTid().isBasicType() and
                                                        n.value.isSome()
 
 const
@@ -391,7 +331,7 @@ proc convertEnum*(ctx: Module) =
         if not v.getTid().isIntType():
           ctx.irError("EnumInt", w = ctx.parseKid(i))
           continue
-        value = toVal[int64](v.value.get())
+        value = cast[int64](v.value.get())
         if value in usedVals:
           ctx.irWarn("EnumReuse", @[$value], w = ctx.parseKid(i))
         else:
@@ -412,7 +352,7 @@ proc convertEnum*(ctx: Module) =
 
       if symOpt.isSome():
         let sym = symOpt.get()
-        sym.constValue = some(newCbox(value, TInt))
+        sym.constValue = some(cast[pointer](value))
         sym.immutable = true
 
 proc convertIdentifier(ctx: Module): IrNode =
@@ -439,9 +379,8 @@ proc convertAttrAssignment(ctx: Module): IrNode =
   result                  = ctx.irNode(IrAttrAssign)
   ctx.lhsContext          = true
   ctx.attrContext         = true
-
-  if ctx.pt.getText() == "=":
-    ctx.ambigAssign = true
+  if ctx.pt.getText() != ":":
+    ctx.ambigAssign         = true
 
   result.contents.attrLhs = ctx.downNode(0)
   ctx.attrContext         = false
@@ -613,7 +552,7 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
                       ctx.pt.children[i])
         let irNode = ctx.downNode(i, 1)
         ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TString]))
-        let cb              = toVal[Callback](irNode.value.get())
+        let cb              = extractRef[Callback](irNode.value.get())
         paramInfo.validator = some(cb)
         gotValid            = true
       of "default":
@@ -1117,59 +1056,114 @@ proc statementsToIr(ctx: Module): IrNode =
 
     result.contents.stmts.add(ctx.downNode(i))
 
-proc convertLit(ctx: Module, st: SyntaxType): IrNode =
+proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
   var
     err: string
     lmod = ctx.getLitMod()
 
-  result = ctx.irNode(IrLit)
-
-  result.contents.syntax = st
-
-  result.tid = ctx.getTypeIdFromSyntax(st, lmod)
+  result     = ctx.irNode(IrLit)
+  result.tid = getTidForSimpleLit(st, lmod)
 
   if result.tid != TBottom:
-    let val = parseLiteral(cast[int](result.getTid()), ctx.getText(), err, st)
-    if err != "":
-      ctx.irError(err)
-    else:
+    let
+      s   = ctx.getText()
+      lit = cast[pointer](s)
+      val = instantiateBasicLit(result.tid, lit, st, lmod, err)
+
+
+    if val != nil:
       result.value = some(val)
+
+  if err != "":
+    ctx.irError(err)
+
+proc convertOtherLit(ctx: Module): IrNode =
+  let
+    modifier = ctx.getLitMod()
+    parent   = ctx.current
+    symNode  = parent.contents.attrlhs.contents
+
+  var
+    sym: SymbolInfo
+    err: string
+
+  if modifier notin ["", "auto"]:
+    return ctx.convertSimpleLit(STOther)
+
+  case symNode.kind
+  of IrLhsLoad:
+    sym = symNode.symbol
+  of IrMember:
+    sym = symNode.attrSym
+  else:
+    discard
+
+  let
+    text = ctx.getText()
+    p    = cast[pointer](text)
+
+  if sym != nil and sym.tid.isConcrete():
+    let val = instantiateBasicLit(sym.tid, p, StOther, "", err)
+    if err == "":
+      result       = ctx.irNode(IrLit)
+      result.tid   = sym.tid
+      result.value = some(val)
+      return
+    else:
+      ctx.irError(err)
+      return
+
+
+  if text.len() >= 2:
+    if (text[0] == text[^1] and text[0] in ['"', '\'']):
+      ctx.irWarn("OtherQuotes")
+    elif (text[0] == '[' and text[^1] == ']') or
+         (text[0] == '{' and text[^1] == '}') or
+         (text[0] == '(' and text[^1] == ')'):
+      ctx.irWarn("OtherBrak")
+
+  for (_, dt) in syntaxInfo[int(STOther)].litmods:
+    err = ""
+
+    let val = instantiateBasicLit(dt.dtid, p, STOther, "", err)
+    if err == "":
+      result       = ctx.irNode(IrLit)
+      result.tid   = dt.dtid
+      result.value = some(val)
+      ctx.irInfo("OtherLit", @[dt.name])
+      return
+
+  ctx.irError("InvalidOther")
 
 proc convertCharLit(ctx: Module): IrNode =
   var
     err: string
     lmod = ctx.getLitMod()
 
-  result = ctx.irNode(IrLit)
-  result.tid = ctx.getTypeIdFromSyntax(StChrQuotes, lmod)
+  result     = ctx.irNode(IrLit)
+  result.tid = getTidForSimpleLit(STChrQuotes, lmod)
 
-  if err != "":
-      ctx.irError(err)
-  else:
+  if result.tid != TBottom:
     let
-      codepoint = ctx.pt.token.codepoint
-      val       = initializeCharLiteral(cast[int](result.getTid()), codepoint,
-                                        err)
-    if err != "":
-      ctx.irError(err)
-    else:
+      codepoint = cast[pointer](ctx.pt.token.codepoint)
+      val       = instantiateBasicLit(result.tid, codepoint, StChrQuotes,
+                                      lmod, err)
+
+    if val != nil:
       result.value = some(val)
 
-proc convertNilLit(ctx: Module): IrNode =
-  var
-    lmod = ctx.getLitMod()
-    tid  = ctx.getTypeIdFromSyntax(StNull, lmod)
+  if err != "":
+    ctx.irError(err)
 
+proc convertNilLit(ctx: Module): IrNode =
   result = ctx.irNode(IrNil)
 
-  if tid == TVoid:
-    result.tid = tMaybe(tVar())
-  else:
-    result.tid = tMaybe(tid)
+  result.tid = tMaybe(tVar())
   # We could explicitly add a value, but this node's mere presence implies
   # the value.
 
 proc convertTypeLit(ctx: Module): IrNode =
+  # TODO, this should move into a base type.
   var
     tvars: Dict[string, TypeId]
     tinfo: TypeId
@@ -1178,30 +1172,31 @@ proc convertTypeLit(ctx: Module): IrNode =
   result        = ctx.irNode(IrLit)
   result.tid    = tTypeSpec()
   tinfo         = ctx.pt.buildType(tvars)
-  result.value  = some(tinfo.toMixed())
+  result.value  = some(tinfo.newRefValue(TTSpec))
 
 proc convertListLit(ctx: Module): IrNode =
-  result                 = ctx.irNode(IrLit)
-  result.contents.syntax = STList
-  result.contents.litmod = ctx.getLitMod()
   var
-    itemType             = tVar()
+    err: bool
+    lmod     = ctx.getLitMod()
+    itemType = tVar()
 
   for i in 0 ..< ctx.numKids:
     let oneItem = ctx.downNode(i)
     ctx.typeCheck(itemType, oneItem.getTid(), ctx.parseKid(i), "TyDiffListItem")
     result.contents.items.add(oneItem)
 
-  if itemType != TBottom:
-    result.tid = tList(itemType)
+  result     = ctx.irNode(IrLit)
+  result.tid = getTidForContainerLit(STList, lmod, @[itemType], err)
+
+  if err:
+    ctx.irError("BadLitMod", @[lmod, "list"])
 
 proc convertDictLit(ctx: Module): IrNode =
-  result                 = ctx.irNode(IrLit)
-  result.contents.syntax = STDict
-  result.contents.litmod = ctx.getLitMod()
   var
-    keyType              = tVar()
-    itemType             = tVar()
+    err: bool
+    lmod     = ctx.getLitMod()
+    keyType  = tVar()
+    itemType = tVar()
 
   for i in 0 ..< ctx.numKids():
     let oneKey = ctx.downNode(i, 0)
@@ -1213,16 +1208,20 @@ proc convertDictLit(ctx: Module): IrNode =
     result.contents.items.add(oneKey)
     result.contents.items.add(oneVal)
 
-  if itemType != TBottom:
-    result.tid = tDict(keyType, itemType)
+  result     = ctx.irNode(IrLit)
+  result.tid = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
+
+  if err:
+    ctx.irError("BadLitMod", @[lmod, "dict"])
 
 proc convertTupleLit(ctx: Module): IrNode =
-  result                 = ctx.irNode(IrLit)
-  result.contents.syntax = STTuple
-  result.contents.litmod = ctx.getLitMod()
   var
-    types:    seq[TypeId]
+    err:   bool
+    types: seq[TypeId]
+    lmod      = ctx.getLitMod()
     gotBottom = false
+
+  result = ctx.irNode(IrLit)
 
   for i in 0 ..< ctx.numKids():
     let oneItem = ctx.downNode(i)
@@ -1232,7 +1231,10 @@ proc convertTupleLit(ctx: Module): IrNode =
     result.contents.items.add(oneItem)
 
   if not gotBottom:
-    result.tid = tTuple(types)
+    result.tid = getTidForContainerLit(StTuple, lmod, types, err)
+
+  if err:
+    ctx.irError("BadLitMod", @[lmod, "tuple"])
 
 proc convertCallbackLit(ctx: Module): IrNode =
   var cb: Callback
@@ -1683,7 +1685,7 @@ proc convertIndex(ctx: Module): IrNode =
       if not ixStart.isConstant():
         ctx.irError("TupleConstIx", w = ixStart)
         return
-      let v = toVal[int](ixStart.value.get())
+      let v = cast[int64](ixStart.value.get())
       if v < 0 or v >= tobj.items.len():
         ctx.irError("TupleIxBound", w = ixStart)
         return
@@ -1834,17 +1836,17 @@ proc parseTreeToIr(ctx: Module): IrNode =
     of NodeExpression, NodeLiteral, NodeElseStmt, NodeParenExpr:
       result = ctx.downNode(0)
     of NodeStringLit:
-      result = ctx.convertLit(StStrQuotes)
+      result = ctx.convertSimpleLit(StStrQuotes)
     of NodeIntLit:
-      result = ctx.convertLit(STBase10)
+      result = ctx.convertSimpleLit(STBase10)
     of NodeHexLit:
-      result = ctx.convertLit(StHex)
+      result = ctx.convertSimpleLit(StHex)
     of NodeFloatLit:
-      result = ctx.convertLit(STFloat)
+      result = ctx.convertSimpleLit(STFloat)
     of NodeBoolLit:
-      result = ctx.convertLit(StBoolLit)
+      result = ctx.convertSimpleLit(StBoolLit)
     of NodeOtherLit:
-      result = ctx.convertLit(StOther)
+      result = ctx.convertOtherLit()
     of NodeNilLit:
       result = ctx.convertNilLit()
     of NodeCharLit:

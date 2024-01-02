@@ -1,10 +1,41 @@
-import posix, parseutils, ../common
+import posix, parseutils, base
 
 type Duration* = Timeval
 
-proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
-                      string {.cdecl.} =
-  const err = "Invalid duration literal."
+var durOps = newVTable()
+
+proc new_duration(s: string, st: SyntaxType, lmod: string,
+                  err: var string): pointer {.cdecl.}
+
+proc repr_duration(pre: pointer): string {.cdecl.} =
+  # TODO: do better.
+  var dur = extractRef[Duration](pre)
+
+  result = $(cast[int32](dur.tv_sec)) & " sec"
+
+  if dur.tv_usec != 0:
+    result &= " " & $(dur.tv_usec) & " usec"
+
+proc eq_duration(a, b: pointer): bool {.cdecl.} =
+  var
+    d1 = extractRef[Duration](a)
+    d2 = extractRef[Duration](b)
+
+  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Timeval)))
+
+  return r == 0
+
+durOps[FRepr]   = cast[pointer](repr_duration)
+durOps[FEq]     = cast[pointer](eq_duration)
+durOps[FNewLit] = cast[pointer](new_duration)
+
+let TDuration* = addDataType(name = "duration", concrete = true, ops = durOps)
+registerSyntax(TDuration, STOther, @[])
+registerSyntax(TDuration, STStrQuotes, @[])
+
+
+proc new_duration(s: string, st: SyntaxType, lmod: string,
+                  err: var string): pointer =
   var
     parts: seq[(string, string)] = @[]
     s                            = s.strip()
@@ -29,11 +60,13 @@ proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
         break
       ix += 1
     if startix == ix:
-      return err
+      err = "BadDuration"
+      return
     numPart = s[startix ..< ix]
     while ix < len(s) and s[ix] == ' ': ix += 1
     if ix == len(s):
-      return err
+      err = "BadDuration"
+      return
     startix = ix
     while ix < len(s):
       case s[ix]
@@ -42,7 +75,8 @@ proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
       else:
         break
     if startix == ix:
-      return err
+      err = "BadDuration"
+      return
     parts.add((numPart, s[startix ..< ix]))
     while ix < len(s):
       case s[ix]
@@ -51,98 +85,86 @@ proc constructDuration(s: string, outObj: var Mixed, st: SyntaxType):
       of '0'..'9', ' ':
         break
       else:
-        return err
+        err = "BadDuration"
+        return
     if startix == ix:
-      return err
+      err = "BadDuration"
+      return
     while ix < len(s) and s[ix] == ' ':
       ix = ix + 1
   if len(parts) == 0:
-    return err
+    err = "BadDuration"
+    return
   for (numAsString, unitStr) in parts:
     try:
       discard numAsString.parseInt(parsedInt, 0)
     except:
-      return err
+      err = "BadDuration"
+      return
     case unitStr.toLower()
     of "us", "usec", "usecs":
       if seenUsec:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenUsec = true
       duration += uint64(parsedInt)
     of "ms", "msec", "msecs":
       if seenMsec:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenMSec = true
       duration += uint64(parsedInt * 1000)
     of "s", "sec", "secs", "seconds":
       if seenSec:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenSec = true
       duration += uint64(parsedInt * 1000000)
     of "m", "min", "mins", "minutes":
       if seenMin:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenMin = true
       duration += uint64(parsedInt * 1000000 * 60)
     of "h", "hr", "hrs", "hours":
       if seenHr:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenHr = true
       duration += uint64(parsedInt * 1000000 * 60 * 60)
     of "d", "day", "days":
       if seenDay:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenDay = true
       duration += uint64(parsedInt * 1000000 * 60 * 60 * 24)
     of "w", "wk", "wks", "week", "weeks":
       if seenWeek:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenWeek = true
       duration += uint64(parsedInt * 1000000 * 60 * 60 * 24 * 7)
     of "y", "yr", "yrs", "year", "years":
       if seenYear:
-        return err
+        err = "BadDuration"
+        return
       else:
         seenYear = true
       duration += uint64(parsedInt * 1000000 * 60 * 60 * 24 * 365)
     else:
-      return err
+      err = "BadDuration"
+      return
 
   var res: Duration
 
   res.tv_usec = int32(duration mod 1000000)
   res.tv_sec  = Time(duration div 1000000)
 
-  outObj = res.toMixed()
-
-proc repr(id: TypeId, m: Mixed): string {.cdecl.} =
-  # TODO: do better.
-  var dur = toVal[Duration](m)
-
-  result = $(cast[int32](dur.tv_sec)) & " sec"
-
-  if dur.tv_usec != 0:
-    result &= " " & $(dur.tv_usec) & " usec"
-
-proc durEq(a, b: CBox): bool {.cdecl.} =
-  var
-    d1 = toVal[Duration](a.v)
-    d2 = toVal[Duration](b.v)
-
-  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Timeval)))
-
-  return r == 0
-
-let
-  TDuration* = addBasicType(name        = "duration",
-                            repr        = repr,
-                            kind        = stdOtherKind,
-                            fromRawLit  = constructDuration,
-                            eqFn        = durEq)
+  return newRefValue[Duration](res, TDuration)

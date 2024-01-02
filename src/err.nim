@@ -1,4 +1,4 @@
-import nimutils, options, strutils, strcursor, unicode, tables
+import nimutils, options, strutils, strcursor, unicode, tables, common
 
 ## If we have to bail on control flow, we'll do so here.
 proc newCon4mException*(errs: seq[Con4mError] = @[]): Con4mException =
@@ -30,7 +30,8 @@ const errorMsgs = [
   ("BadChar",        "Invalid character found in token"),
   ("StmtEnd",        "Expected end of a statement after $1."),
   ("NotALit",        "Not a literal; literal modifier not allowed here."),
-  ("BadLitMod",      "Unknown literal modifier: <em>$1</em>"),
+  ("BadLitMod",      "Unknown literal modifier <em>$1</em> for <em>$2</em>" &
+                     " syntax."),
   ("LitModTypeErr",  "Literal modifier <em>$1</em> can't be used with " &
                       "$2 literals"),
   ("MissingTok",     "Expected $1 here."),
@@ -101,15 +102,34 @@ const errorMsgs = [
   ("TopLevelPlural", "$1 are only allowed at the top-level of a module."),
   ("InLoopsOnly",    "<em>'$1'</em> is only allowed inside loops."),
   ("RetOutOfFunc",   "<em>'return'</em> is only allowed inside functions."),
-  ("SignToUnsign",   "Automatic conversion of unsigned value of type " &
-                     "<em>$1</em> to a signed type can have unintended " &
-                     "consequences, like making large numbers negative. " &
-                     "Explicitly cast to another type if possible, if " &
-                     "you want to avoid loss of precision."),
-  ("SignChange",     "Operand type <em>$1</em> is signed, but <em>$2</em> " &
-                     "is unsigned. Since $1 is larger, result will be " &
-                     "signed. While no precision is lost, this might be " &
-                     "unexpected (cast explictly to squelch message)"),
+  ("UToSSmaller",    "Conversion of unsigned value to a smaller signed type" &
+                     "can lead to both sign changes and truncated values."),
+  ("UToSSameSz",     "Conversion of same-typed unsized values" &
+                     "will turn large numbers negative. Explicitly cast " &
+                     "to a bigger type if possible to avoid this scenario."),
+  ("CanTruncate",    "Conversion to a smaller type can result in values " &
+                     "getting truncated."),
+  ("StoU",           "Conversion of signed integer to unsigned type turns " &
+                     "negative values into larger integers."),
+  ("SToSmallerU",    "Conversion of signed integer to unsigned type turns " &
+                     "negative values into larger integers, and the " &
+                     "smaller type may truncate."),
+  ("HexTooLarge",    "Hex number is too large for type <em>$1</em>"),
+  ("IntTooLarge",    "Integer literal is too large for type <em>$1</em>"),
+  ("FloatTooLarge",  "Integer portion of float is too large; " &
+                     "use <em>'e'</em> notation."),
+  ("ExpTooLarge",    "Exponent portion of float is too large."),
+  ("BadHex",         "Invalid hex literal"),
+  ("BadInt",         "Invalid int literal"),
+  ("BadBool",        "Invalid <em>bool</em> literal."),
+  ("BadByte",        "Invalid value for a byte (cannot be above 0xff)"),
+  ("BadCodepoint",   "Invalid character; unicode values may not be " &
+                     "above U+10FFFF."),
+  ("BadCP2",         "Invalid character; the unicode standard does not " &
+                     "allow values from U+D800 to U+DFFF"),
+  ("LoseFormat",     "Conversion discards string formatting information."),
+  ("TypeNotSigned",  "Literal is negative, but the specified type " &
+                     "is unsigned."),
   ("TypeMismatch",   "<em>$1</em> and <em>$2</em> are incompatible types."),
   ("LoopVarAssign",  "Cannot assign to (or re-declare) loop iteration " &
                      "variables."),
@@ -141,6 +161,8 @@ const errorMsgs = [
   ("NoBoolCast",     "The condition cannot be automatically converted to " &
                      "a true / false value; provide a specific check. " &
                      "Type of condition is: <em>$1</em>"),
+  ("CannotCast",     "Cannot convert from type <em>$1</em> to " &
+                     "type <em>$2</em>"),
   ("BoolAutoCast",   "This condition (of type <em>$1</em> is not a " &
                      "boolean value, but is being auto-cast."),
   ("TyDiffListItem", "List item type is not consistent with other items (" &
@@ -157,11 +179,13 @@ const errorMsgs = [
                      "If it should be an attribute, fix the specification. " &
                      "Otherwise, to get rid of this warning, either move " &
                      "the assignment outside the section block, or " &
-                     "Use the <em>:=</em> assignment operator, which " &
+                     "Use the <em>=</em> assignment operator, which " &
                      "forces variable assignment."),
   ("TryVarAssign",   "The attribute specifcation doesn't allow this field. " &
                      "If you'd like a variable with this name, you can " &
-                     "use the <em>:=</em> operator."),
+                     "use the <em>=</em> operator, which creates a" &
+                     "variable, even when there's an attribute of the " &
+                     "same name."),
   ("AssignToSec",    "Cannot assign directly to <em>$1</em>; it is a " &
                      "section that supports multiple instances, not a " &
                      "field within a section."),
@@ -253,7 +277,34 @@ const errorMsgs = [
                      "<em>{ ... }</em>) or can be a colon followed by a list " &
                      "of statements."),
   ("DeadTypeCase",   "Variable can never be of type <em>$1</em>; case cannot " &
-                     "be taken.")
+                     "be taken."),
+  ("BadIPv4",        "Invalid <em>IPv4</em> address."),
+  ("BadPort",        "Invalid <em>port</em> number."),
+  ("BadDuration",    "Invalid <em>duration</em> literal."),
+  ("BadSize",        "Invalid <em>size</em> literal."),
+  ("BadUrl",         "Invalid <em>URL</em> literal."),
+  ("BadDateTime",    "Invalid literal value for <em>datetime</em> type."),
+  ("BadDate",        "Invalid literal value for <em>date</em> type."),
+  ("BadTime",        "Invalid literal value for <em>time</em> type."),
+  ("InvalidOther",   "Invalid literal, did not match any known literal type."),
+  ("OtherLit",       "Inferred type of literal is <em>$1</em>. If incorrect, " &
+                     "place in quotes and provide an explicit literal " &
+                     "modifier after (e.g., <em>\"2 gb\"'size</em> for " &
+                     "a size literal.)"),
+  ("OtherQuotes",    "The <em>:=</em> operator is used for values of special " &
+                     "types, where the system takes all input till the end of " &
+                     "the line, then tries to treat it as a primitive type. " &
+                     "The quotes here are treated like they're inside the " &
+                     "data you're providing, which may not be what you want."),
+  ("OtherBrak",      "The <em>:=</em> operator does not process brackets " &
+                     "or parentheses of any kind; this will be treated as " &
+                     "a single string."),
+  ("OtherNum",       "The <em>:=</em> operator does not result in numeric " &
+                     "types; it asks the system to guess from a number of " &
+                     "specialized types. Use <em>=</em> or add a modifier " &
+                     "that's appropriate for the type of value you're trying " &
+                     "to create."),
+
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,

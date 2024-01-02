@@ -22,14 +22,14 @@
 # in the year 10,000, but I don't think there are enough cases where
 # someone needs to specify "200 AD" in a config file to deal w/ the
 # challenges with not fixing the length of the year field.
-import posix, parseutils, ../common
+import posix, parseutils, base
 
 type
   DTFlags* = enum
     DTHaveTime, DtHaveSecond, DTHaveFracSec, DTHaveMonth, DTHaveYear,
     DTHaveDay, DTHaveDoy, DTHaveDST, DTHaveOffset
 
-  DateTime* = object
+  DateTime* = ref object
     dt*:       Tm
     fracsec*:  uint
     tzoffset*: int
@@ -398,32 +398,16 @@ proc otherLitToNativeDateTime*(lit: string, res: var DateTime): bool =
 
   return true
 
-proc constructDateTime*(s: string, outObj: var Mixed, st: SyntaxType):
-                      string {.cdecl.} =
-  var dt: DateTime
+proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer {.cdecl.}
 
-  if not otherLitToNativeDateTime(s.strip(), dt):
-    return "Invalid literal value for 'datetime' type."
-  else:
-    outObj = dt.toMixed()
 
-proc constructDate*(s: string, outObj: var Mixed, st: SyntaxType):
-                  string {.cdecl.} =
-  var dt: DateTime
+proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer {.cdecl.}
 
-  if not otherLitToNativeDate(s.strip(), dt):
-    return "Invalid literal value for 'date' type."
-  else:
-    outObj = dt.toMixed()
+proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer {.cdecl.}
 
-proc constructTime*(s: string, outObj: var Mixed, st: SyntaxType):
-                  string {.cdecl.} =
-  var dt: DateTime
-
-  if not otherLitToNativeTime(s.strip(), dt):
-    return "Invalid literal value for 'time' type."
-  else:
-    outObj = dt.toMixed()
 
 proc baseDtRepr(fmt: string, dt: var DateTime): string =
   var buf = cast[cstring](alloc(128))
@@ -432,24 +416,24 @@ proc baseDtRepr(fmt: string, dt: var DateTime): string =
 
   return $buf
 
-proc reprDt(id: TypeId, m: Mixed): string {.cdecl.} =
-  var dt = toVal[DateTime](m)
+proc repr_date_time(m: pointer): string {.cdecl.} =
+  var dt = extractRef[DateTime](m)
   return baseDtRepr("%Y-%m-%dT%H:%M:%S", dt)
 
-proc reprD(id: TypeId, m: Mixed): string {.cdecl.} =
-  var dt = toVal[DateTime](m)
+proc repr_date(m: pointer): string {.cdecl.} =
+  var dt = extractRef[DateTime](m)
 
   return baseDtRepr("%Y-%m-%d", dt)
 
-proc reprT(id: TypeId, m: Mixed): string {.cdecl.} =
-  var dt = toVal[DateTime](m)
+proc repr_time(m: pointer): string {.cdecl.} =
+  var dt = extractRef[DateTime](m)
 
   return baseDtRepr("%H:%M:%S", dt)
 
-proc dteq(a, b: CBox): bool {.cdecl.} =
+proc eq_dt(a, b: pointer): bool {.cdecl.} =
   var
-    d1 = toVal[DateTime](a.v)
-    d2 = toVal[DateTime](b.v)
+    d1 = extractRef[DateTime](a)
+    d2 = extractRef[DateTime](b)
 
   let r = memcmp(cast[pointer](d1.dt),
                  cast[pointer](d2.dt),
@@ -457,19 +441,56 @@ proc dteq(a, b: CBox): bool {.cdecl.} =
 
   return r == 0
 
+var
+  dtOps = newVtable()
+  dOps  = newVtable()
+  tOps  = newVtable()
+
+dtOps[FRepr]   = cast[pointer](repr_date_time)
+dtOps[Feq]     = cast[pointer](eq_dt)
+dtOps[FNewLit] = cast[pointer](new_date_time)
+dOps[FRepr]    = cast[pointer](repr_date)
+dOps[Feq]      = cast[pointer](eq_dt)
+dOps[FNewLit]  = cast[pointer](new_date)
+tOps[FRepr]    = cast[pointer](repr_time)
+tOps[Feq]      = cast[pointer](eq_dt)
+tOps[FNewLit]  = cast[pointer](new_time)
+
 let
-  TDateTime* = addBasicType(name        = "datetime",
-                            repr        = reprDt,
-                            kind        = stdOtherKind,
-                            fromRawLit  = constructDateTime,
-                            eqFn        = dteq)
-  TDate*     = addBasicType(name        = "date",
-                            repr        = reprD,
-                            kind        = stdOtherKind,
-                            fromRawLit  = constructDate,
-                            eqfn        = dteq)
-  TTime*     = addBasicType(name        = "time",
-                            repr        = reprT,
-                            kind        = stdOtherKind,
-                            fromRawLit  = constructTime,
-                            eqFn        = dteq)
+  TDateTime* = addDataType(name = "datetime", concrete = true, ops = dtOps)
+  TDate*     = addDataType(name = "date", concrete = true, ops = dOps)
+  TTime*     = addDataType(name = "time", concrete = true, ops = tOps)
+
+registerSyntax(TDateTime, STOther, @[])
+registerSyntax(TDateTime, STStrQuotes, @[])
+registerSyntax(TDate, STOther, @[])
+registerSyntax(TDate, STStrQuotes, @[])
+registerSyntax(TTime, STOther, @[])
+registerSyntax(TTime, STStrQuotes, @[])
+
+proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer =
+  var dt: DateTime = DateTime()
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadDateTime"
+  else:
+    return newRefValue[DateTime](dt, TDateTime)
+
+proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer =
+  var dt: DateTime = DateTime()
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadDate"
+  else:
+    return newRefValue[DateTime](dt, TDate)
+
+proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
+                      pointer =
+  var dt: DateTime = DateTime()
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadTime"
+  else:
+    return newRefValue[DateTime](dt, TTime)

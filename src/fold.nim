@@ -9,37 +9,7 @@ export irgen
 
 proc fold[T](n: IrNode, val: T) =
   n.contents = IrContents(kind: IrFold)
-  n.value    = some(toMixed[T](val))
-
-proc foldI128(n: IrNode, value: int128, tid: TypeId) =
-  case tid.intBits()
-  of 8:
-    fold[int8](n, i128toI8(value))
-  of 16:
-    fold[int16](n, i128toI16(value))
-  of 32:
-    fold[int32](n, i128toI32(value))
-  of 64:
-    fold[int64](n, i128toI64(value))
-  of 128:
-    fold[int128](n, value)
-  else:
-    unreachable
-
-proc foldU128(n: IrNode, value: uint128, tid: TypeId) =
-  case tid.intBits()
-  of 8:
-    fold[uint8](n, u128toU8(value))
-  of 16:
-    fold[uint16](n, u128toU16(value))
-  of 32:
-    fold[uint32](n, u128toU32(value))
-  of 64:
-    fold[uint64](n, u128toU64(value))
-  of 128:
-    fold[uint128](n, value)
-  else:
-    unreachable
+  n.value    = some(box[T](val, n.tid))
 
 proc foldIr(ctx: Module)
 
@@ -55,11 +25,16 @@ proc loopFold(ctx: Module) =
   ctx.foldDown(n.contents.condition)
   ctx.foldDown(n.contents.loopBody)
   if n.contents.condition != nil and n.contents.condition.isConstant():
-    let
-      valToCast = n.contents.condition.value.get()
-      val       = valToCast.castToBool(n.contents.condition.tid).get()
+    var err: string
 
-    if not val:
+    let
+      pre  = n.contents.condition.value.get()
+      post = callCast(pre, n.contents.condition.tid, TBool, err)
+      val  = cast[bool](post)
+
+    if err != "":
+      ctx.irError(err, w = n)
+    elif not val:
       n.contents = IrContents(kind: IrNop)
 
 proc conditionalFold(ctx: Module) =
@@ -69,11 +44,16 @@ proc conditionalFold(ctx: Module) =
   ctx.foldDown(n.contents.trueBranch)
   ctx.foldDown(n.contents.falseBranch)
   if n.contents.predicate.isConstant():
-    let
-      valToCast = n.contents.predicate.value.get()
-      val       = valToCast.castToBool(n.contents.predicate.tid).get()
+    var err: string
 
-    if val:
+    let
+      pre  = n.contents.predicate.value.get()
+      post = callCast(pre, n.contents.predicate.tid, TBool, err)
+      val  = cast[bool](post)
+
+    if err != "":
+      ctx.irError(err, w = n)
+    elif val:
       n.contents = n.contents.trueBranch.contents
     elif n.contents.falseBranch != nil:
       n.contents = n.contents.falseBranch.contents
@@ -84,21 +64,42 @@ proc retFold(ctx: Module) =
   discard
 
 proc listLitFold(ctx: Module) =
-  var values: seq[Mixed]
+  var
+    values: seq[pointer]
+    err:    string
 
-  for item in ctx.current.contents.items:
+  let n = ctx.current
+
+  for item in n.contents.items:
     ctx.foldDown(item)
     if not item.isConstant():
       return
     values.add(item.value.get())
 
-  # TODO: finish this.
+  let c = instantiateContainer(n.tid, STList, "", values, err)
+  if err == "":
+    n.fold(c)
+  else:
+    ctx.irError(err, w = n)
 
-proc dictFold(ctx: Module) =
+proc dictLitFold(ctx: Module) =
+  discard
+  # TODO... this, tuples, ...
+
+proc tupLitFold(ctx: Module) =
   discard
 
 proc litFold(ctx: Module) =
-  discard
+  let t = ctx.current.tid.idToTypeRef()
+  case t.kind
+  of C4List:
+    ctx.listLitFold()
+  of C4Dict:
+    ctx.dictLitFold()
+  of C4Tuple:
+    ctx.tupLitFold()
+  else:
+    discard
 
 proc indexFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.indexStart)
@@ -135,25 +136,28 @@ proc uminusFold(ctx: Module) =
       if n.tid.isIntType():
         let
           rhs = n.contents.uRhs
-          v   = rhs.value.get().castToI128(rhs.tid).get()
-          neg = itoI128(-1) * v
-
-        foldI128(n, neg, n.tid)
+          v   = cast[int64](rhs.value.get())
+        fold[int64](n, -v)
       else:
         let
           rhs = n.contents.uRhs
-          v   = toVal[float](rhs.value.get())
+          v   = cast[float](rhs.value.get())
         fold[float](n, -v)
 
 proc notFold(ctx: Module) =
+  var err: string
+
   let n = ctx.current
 
   if n.contents.uRhs.tid.canCastToBool():
     if n.contents.uRhs.isConstant():
       let
-        box = n.contents.uRhs.value.get()
-        v   = castToBool(box, n.contents.uRhs.tid).get()
-      n.fold(not v)
+        pre  = n.contents.uRhs.value.get()
+        post = callCast(pre, n.contents.uRhs.tid, TBool, err)
+      if err != "":
+        ctx.irError(err)
+      else:
+        n.fold(not cast[bool](post))
   else:
     let
       sig     = tFunc(@[n.contents.uRhs.tid, TBool])
@@ -223,46 +227,46 @@ proc boolFold(ctx: Module) =
     if node.tid.isIntType():
       if node.tid.isSigned():
         let
-          v1: int128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          v2: int128 = bRhs.value.get().castToI128(bRhs.tid).get()
+          v1 = cast[int64](bLhs.value.get())
+          v2 = cast[int64](bRhs.value.get())
         case node.contents.bOp
         of "<":
-          node.fold(int128_t.`<`(v1, v2))
+          node.fold(v1 < v2)
         of ">":
-          node.fold(int128_t.`>`(v1, v2))
+          node.fold(v1 > v2)
         of "<=":
-          node.fold(int128_t.`<=`(v1, v2))
+          node.fold(v1 <= v2)
         of ">=":
-          node.fold(int128_t.`>=`(v1, v2))
+          node.fold(v1 >= v2)
         of "==":
-          node.fold(int128_t.`eq`(v1, v2))
+          node.fold(v1 == v2)
         of "!=":
-          node.fold(int128_t.`neq`(v1, v2))
+          node.fold(v1 != v2)
         else:
           unreachable
       else:
         let
-          v1 = bLhs.value.get().castToU128(bLhs.tid).get()
-          v2 = bRhs.value.get().castToU128(bRhs.tid).get()
+          v1 = cast[uint64](bLhs.value.get())
+          v2 = cast[uint64](bRhs.value.get())
         case node.contents.bOp
         of "<":
-          node.fold(int128_t.`<`(v1, v2))
+          node.fold(v1 < v2)
         of ">":
-          node.fold(int128_t.`>`(v1, v2))
+          node.fold(v1 > v2)
         of "<=":
-          node.fold(int128_t.`<=`(v1, v2))
+          node.fold(v1 <= v2)
         of ">=":
-          node.fold(int128_t.`>=`(v1, v2))
+          node.fold(v1 >= v2)
         of "==":
-          node.fold(int128_t.`eq`(v1, v2))
+          node.fold(v1 == v2)
         of "!=":
-          node.fold(int128_t.`neq`(v1, v2))
+          node.fold(v1 != v2)
         else:
           unreachable
     else:
       let
-        v1 = toVal[float](bLhs.value.get())
-        v2 = toVal[float](bRhs.value.get())
+        v1 = cast[float](bLhs.value.get())
+        v2 = cast[float](bRhs.value.get())
       case node.contents.bOp
       of "<":
         node.fold(v1 < v2)
@@ -302,23 +306,20 @@ proc binFold(ctx: Module) =
           var lhf, rhf: float
 
           if bLhs.tid == TFloat:
-            lhf = toVal[float](bLhs.value.get())
+            lhf = cast[float](bLhs.value.get())
           else:
-            let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
-            lhf        = float(i128ToI64(asI128))
+            lhf = float(cast[int64](bLhs.value.get()))
 
           if bRhs.tid == TFloat:
-            rhf = toVal[float](bRhs.value.get())
+            rhf = cast[float](bRhs.value.get())
           else:
-            let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
-            rhf = float(i128ToI64(asI128))
+            rhf = float(cast[int64](bRhs.value.get()))
 
           node.fold(lhf / rhf)
         let
-          l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          r128 = bLhs.value.get().castToI128(bRhs.tid).get()
-          l    = i128ToI64(l128)
-          r    = i128ToI64(r128)
+          l = cast[int64](bLhs.value.get())
+          r = cast[int64](bLhs.value.get())
+
         node.fold(l / r)
       node.tid = TFloat
     else:
@@ -331,15 +332,13 @@ proc binFold(ctx: Module) =
         var lhf, rhf: float
 
         if bLhs.tid == TFloat:
-          lhf = toVal[float](bLhs.value.get())
+          lhf = cast[float](bLhs.value.get())
         else:
-          let asI128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          lhf = float(i128ToI64(asI128))
+          lhf = float(cast[int64](bLhs.value.get()))
         if bRhs.tid == TFloat:
-          rhf = toVal[float](bRhs.value.get())
+          rhf = cast[float](bRhs.value.get())
         else:
-          let asI128 = bRhs.value.get().castToI128(bRhs.tid).get()
-          rhf = float(i128ToI64(asI128))
+          rhf = float(cast[int64](bRhs.value.get()))
 
         case node.contents.bOp
         of "+":
@@ -352,28 +351,28 @@ proc binFold(ctx: Module) =
           unreachable
       elif node.tid.isSigned():
         let
-          l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          r128 = bRhs.value.get().castToI128(bRhs.tid).get()
+          li = cast[int64](bLhs.value.get())
+          ri = cast[int64](bRhs.value.get())
         case node.contents.bOp
         of "+":
-          node.foldI128(int128_t.`+`(l128, r128), node.tid)
+          node.fold(li + ri)
         of "-":
-          node.foldI128(int128_t.`-`(l128, r128), node.tid)
+          node.fold(li - ri)
         of "*":
-          node.foldI128(int128_t.`*`(l128,  r128), node.tid)
+          node.fold(li * ri)
         else:
           unreachable
       else:
         let
-          l128 = bLhs.value.get().castToU128(bLhs.tid).get()
-          r128 = bRhs.value.get().castToU128(bRhs.tid).get()
+          li = cast[uint64](bLhs.value.get())
+          ri = cast[uint64](bRhs.value.get())
         case node.contents.bOp
         of "+":
-          node.foldU128(l128 + r128, node.tid)
+          node.fold(li + ri)
         of "-":
-          node.foldU128(l128 - r128, node.tid)
+          node.fold(li - ri)
         of "*":
-          node.foldU128(l128 * r128, node.tid)
+          node.fold(li * ri)
         else:
           unreachable
 
@@ -383,50 +382,53 @@ proc binFold(ctx: Module) =
     elif bLhs.isConstant() and bRhs.isConstant():
       if node.tid.isSigned():
         let
-          l128 = bLhs.value.get().castToI128(bLhs.tid).get()
-          r128 = bRhs.value.get().castToI128(bRhs.tid).get()
+          li = cast[int64](bLhs.value.get())
+          ri = cast[int64](bRhs.value.get())
         case node.contents.bop
              of "<<":
-               node.foldI128(l128 shl r128, node.tid)
+               node.fold(li shl ri)
              of ">>":
-               node.foldI128(l128 shr r128, node.tid)
+               node.fold(li shr ri)
              of "div":
-               node.foldI128(l128 div r128, node.tid)
+               node.fold(li div ri)
              of "&":
-               node.foldI128(l128 and r128, node.tid)
+               node.fold(li and ri)
              of "|":
-               node.foldI128(l128 or r128, node.tid)
+               node.fold(li or ri)
              of "^":
-               node.foldI128(l128 xor r128, node.tid)
+               node.fold(li xor ri)
              of "%":
-               node.foldI128(l128 mod r128, node.tid)
+               node.fold(li mod ri)
              else:
                unreachable
       else:
         let
-          l128 = bLhs.value.get().castToU128(bLhs.tid).get()
-          r128 = bRhs.value.get().castToU128(bRhs.tid).get()
+          li = cast[uint64](bLhs.value.get())
+          ri = cast[uint64](bRhs.value.get())
         case node.contents.bop
              of "<<":
-               node.foldU128(l128 shl r128, node.tid)
+               node.fold(li shl ri)
              of ">>":
-               node.foldU128(l128 shr r128, node.tid)
+               node.fold(li shr ri)
              of "div":
-               node.foldU128(l128 div r128, node.tid)
+               node.fold(li div ri)
              of "&":
-               node.foldU128(l128 and r128, node.tid)
+               node.fold(li and ri)
              of "|":
-               node.foldU128(l128 or r128, node.tid)
+               node.fold(li or ri)
              of "^":
-               node.foldU128(l128 xor r128, node.tid)
+               node.fold(li xor ri)
              of "%":
-               node.foldU128(l128 mod r128, node.tid)
+               node.fold(li mod ri)
              else:
                unreachable
   else:
     unreachable
 
 proc logicFold(ctx: Module) =
+  var
+    err: string
+
   let
     node        = ctx.current
     operandType = node.contents.bOp
@@ -440,29 +442,34 @@ proc logicFold(ctx: Module) =
     return
 
   if bLhs.isConstant():
-    if bLhs.value.get().castToBool(bLhs.tid).get() == false:
+    if cast[bool](callCast(bLhs.value.get(), bLhs.tid, TBool, err)) == false:
       if node.contents.bOp == "and":
         node.fold(false)
       elif bRhs.isConstant():
-        node.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
+
+        node.fold(callCast(bRhs.value.get(), bRhs.tid, TBool, err))
+        if err != "":
+          ctx.irError(err)
       else:
         node.contents = bRhs.contents
     else:
       if node.contents.bOp == "or":
         node.fold(true)
       elif bRhs.isConstant():
-        node.fold(toMixed(bRhs.value.get().castToBool(bRhs.tid).get()))
+        node.fold(callCast(bRhs.value.get(), bRhs.tid, TBool, err))
+        if err != "":
+          ctx.irError(err)
       else:
         node.contents = bRhs.contents
   elif bRhs.isConstant():
-    let val = bRhs.value.get().castToBool(bRhs.tid).get()
+    let val = callCast(bRhs.value.get(), bRhs.tid, TBool, err)
     if node.contents.bOp == "and":
-      if val == false:
+      if cast[bool](val) == false:
         node.fold(false)
       else:
         node.contents = bLhs.contents
     else:
-      if val == true:
+      if cast[bool](val) == true:
         node.fold(true)
       else:
         node.contents = bLhs.contents
@@ -479,10 +486,7 @@ proc varAssignFold(ctx: Module) =
       let sym = lhs.contents.symbol
       if sym.immutable:
         # Previous pass would catch multiple assignments.
-        var box: Cbox
-        box.t = ctx.current.contents.varlhs.tid
-        box.v = ctx.current.contents.varrhs.value.get()
-        sym.constValue = some(box)
+        sym.constValue       = ctx.current.contents.varrhs.value
         ctx.current.contents = IrContents(kind: IrNop)
 
 proc attrAssignFold(ctx: Module) =
