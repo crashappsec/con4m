@@ -79,7 +79,7 @@ proc findAndLoadModule*(ctx: CompileCtx, location, fname, ext: string):
     if possibly.isSome():
       return possibly
 
-  ctx.loadError("NotFound", fname)
+  ctx.loadError("FileNotFound", fname)
   return none(Module)
 
 proc findAndLoadModule(ctx: CompileCtx, url: string): Option[Module] =
@@ -112,7 +112,7 @@ proc loadModule(ctx: CompileCtx, module: Module) =
   module.fatalErrors = err
 
 proc buildIr(ctx: CompileCtx, module: Module) =
-  if module.ir != nil:
+  if module == nil or module.ir != nil:
     # Already been done.
     return
 
@@ -129,7 +129,7 @@ proc buildIr(ctx: CompileCtx, module: Module) =
   module.foldingPass()
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
-  if module.didFoldingPass:
+  if module == nil or module.didFoldingPass:
     return
 
   for item in module.imports:
@@ -229,7 +229,8 @@ proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
 proc printProgramCfg*(ctx: CompileCtx) =
   print ctx.entrypoint.cfg.toRope(true)
 
-proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone) =
+proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone):
+  bool {.discardable.} =
   var errsToPrint: seq[Con4mError]
 
   for (_, m) in ctx.modules.items():
@@ -242,3 +243,5 @@ proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone) =
       errsToPrint.add(item)
 
   print errsToPrint.formatErrors(verbose)
+
+  return errsToPrint.canProceed()

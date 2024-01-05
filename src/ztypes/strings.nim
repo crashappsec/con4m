@@ -20,26 +20,41 @@ proc rich_add(a, b: pointer): pointer {.cdecl.}
 proc str_slice(a: pointer, b, c: int): pointer {.cdecl.}
 proc buf_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
 proc u32_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
-proc new_str_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.}
-proc new_buf_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.}
-proc new_u32_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.}
-proc new_rich_lit(s: string, st: SyntaxType, lmod: string,
-                  err: var string): pointer {.cdecl.}
+proc rich_load_lit(cstr: cstring, l: cint): pointer {.cdecl.}
 proc str_copy(p: pointer): pointer {.cdecl.}
 proc buf_copy(p: pointer): pointer {.cdecl.}
 proc u32_copy(p: pointer): pointer {.cdecl.}
 proc rich_copy(p: pointer): pointer {.cdecl.}
 
 
-
+let richLitMods = @["r", "md", "html", "h1", "h2", "h3",
+                    "h4", "h5", "h6", "p", "em", "i", "b",
+                    "strong", "underline", "pre", "code",
+                    "inv"]
 var
   strOps   = newVTable()
   bufOps   = newVTable()
   utf32Ops = newVTable()
   richOps  = newVTable()
+
+
+proc str_new_lit(s: string, st: SyntaxType, lmod: string, l: var int,
+                 err: var string): pointer {.cdecl.} =
+  l = s.len()
+  result = alloc0(l)
+  copyMem(result, addr s[0], l - 1)
+
+
+proc rich_new_lit(s: string, st: SyntaxType, lmod: string,
+                  l: var int, err: var string): pointer {.cdecl.} =
+  var toStore: string
+
+  toStore = lmod & ":" & s
+
+  l      = toStore.len() + 1
+  result = alloc0(l)
+
+  copyMem(result, addr toStore[0], l - 1)
 
 proc str_repr(pre: pointer): string {.cdecl.} =
   let s = extractRef[string](pre)
@@ -147,7 +162,7 @@ strOps[FGt]         = cast[pointer](str_gt)
 strOps[FAdd]        = cast[pointer](str_add)
 strOps[FIndex]      = cast[pointer](str_index)
 strOps[FSlice]      = cast[pointer](str_slice)
-strOps[FNewLit]     = cast[pointer](new_str_lit)
+strOps[FNewLit]     = cast[pointer](str_new_lit)
 strOps[FCopy]       = cast[pointer](str_copy)
 strOps[FLen]        = cast[pointer](str_len)
 bufOps[FRepr]       = cast[pointer](str_repr)
@@ -158,7 +173,7 @@ bufOps[FGt]         = cast[pointer](str_gt)
 bufOps[FAdd]        = cast[pointer](buf_add)
 bufOps[FIndex]      = cast[pointer](str_index)
 bufOps[FSlice]      = cast[pointer](buf_slice)
-bufOps[FNewLit]     = cast[pointer](new_buf_lit)
+bufOps[FNewLit]     = cast[pointer](str_new_lit)
 bufOps[FCopy]       = cast[pointer](buf_copy)
 bufOps[FLen]        = cast[pointer](str_len)
 utf32Ops[FRepr]     = cast[pointer](u32_repr)
@@ -169,31 +184,32 @@ utf32Ops[FGt]       = cast[pointer](u32_gt)
 utf32Ops[FAdd]      = cast[pointer](u32_add)
 utf32Ops[FIndex]    = cast[pointer](u32_index)
 utf32Ops[FSlice]    = cast[pointer](u32_slice)
-utf32Ops[FNewLit]   = cast[pointer](new_u32_lit)
+utf32Ops[FNewLit]   = cast[pointer](str_new_lit)
 utf32Ops[FCopy]     = cast[pointer](u32_copy)
 utf32Ops[FLen]      = cast[pointer](u32_len)
 richOps[FRepr]      = cast[pointer](rich_repr)
 richOps[FCastFn]    = cast[pointer](get_cast_from_rich)
 richOps[FEq]        = cast[pointer](value_eq)
 richOps[FAdd]       = cast[pointer](rich_add)
-richOps[FNewLit]    = cast[pointer](new_rich_lit)
+richOps[FNewLit]    = cast[pointer](rich_new_lit)
+richOps[FLoadLit]   = cast[pointer](rich_load_lit)
 richOps[FCopy]      = cast[pointer](rich_copy)
 richOps[FLen]       = cast[pointer](rich_len)
 richOps[FPlusEqRef] = cast[pointer](rich_pluseq)
 
 let
-  TString* = addDataType(name = "string", concrete = true, ops = strOps)
-  TBuffer* = addDataType(name = "buffer", concrete = true, ops = bufOps)
-  TUtf32*  = addDataType(name = "utf32",  concrete = true, ops = utf32Ops)
+  TString* = addDataType(name = "string", concrete = true,
+                                strTy = true, ops = strOps)
+  TBuffer* = addDataType(name = "buffer", concrete = true,
+                                strTy = true, ops = bufOps)
+  TUtf32*  = addDataType(name = "utf32",  concrete = true,
+                                strTy = true, ops = utf32Ops)
   TRich*   = addDataType(name = "rich",   concrete = true, ops = richOps)
 
 registerSyntax(TString, STStrQuotes, @["u", "u8"], primary = true)
 registerSyntax(TBuffer, STStrQuotes, @["bin"])
 registerSyntax(TUtf32,  STStrQuotes, @["u32"])
-registerSyntax(TRich,   STStrQuotes, @["r", "md", "html", "h1", "h2", "h3",
-                                       "h4", "h5", "h6", "p", "em", "i", "b",
-                                       "strong", "underline", "pre", "code",
-                                       "inv"])
+registerSyntax(TRich,   STStrQuotes, richLitMods)
 
 proc str_add(a, b: pointer): pointer =
   let
@@ -367,20 +383,14 @@ proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
 
   return newRefValue[seq[Rune]](x[b .. c], TUtf32)
 
-proc new_str_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer =
-  return newRefValue[string](s, TString)
+proc rich_load_lit(cstr: cstring, l: cint): pointer =
 
-proc new_buf_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer =
-  return newRefValue[string](s, TBuffer)
+  let
+    full = $cstr
+    f    = full.find(':')
+    lmod = full[0 ..< f]
+    s    = full[f + 1 ..< ^1]
 
-proc new_u32_lit(s: string, st: SyntaxType, lmod: string,
-                 err: var string): pointer =
-  return newRefValue[seq[Rune]](s.toRunes(), TUtf32)
-
-proc new_rich_lit(s: string, st: SyntaxType, lmod: string,
-                  err: var string): pointer =
   var r: Rope
 
   case lmod

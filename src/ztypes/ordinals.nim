@@ -596,7 +596,7 @@ proc construct_int(s: string, st: SyntaxType, err: var string, width: int,
   of STBase10:
     parsedwidth = s.parseInt128(num, sign)
     if parsedWidth == -1 or parsedWidth > width:
-      err = "IntLooLarge"
+      err = "IntTooLarge"
       return
     elif parsedWidth < 0:
       err = "BadInt"
@@ -612,7 +612,9 @@ proc construct_int(s: string, st: SyntaxType, err: var string, width: int,
   result = cast[pointer](val)
 
 proc new_bool_lit(s: string, st: SyntaxType, lmod: string,
-                  err: var string): pointer {.cdecl.} =
+                  l: var int,  err: var string): pointer {.cdecl.} =
+  l = 8
+
   case s
   of "True", "true":
     return cast[pointer](1)
@@ -622,7 +624,9 @@ proc new_bool_lit(s: string, st: SyntaxType, lmod: string,
     err = "BadBool"
 
 proc new_byte_lit(lit: pointer, st: SyntaxType, lmod: string,
-                  err: var string): pointer {.cdecl.} =
+                  l: var int, err: var string): pointer {.cdecl.} =
+  l = 8
+
   if st == STChrQuotes:
     var cp = cast[uint](lit)
     if cp > 0xff:
@@ -638,7 +642,10 @@ proc new_byte_lit(lit: pointer, st: SyntaxType, lmod: string,
       return nil
 
 proc new_char_lit(lit: pointer, st: SyntaxType, lmod: string,
-                  err: var string): pointer {.cdecl.} =
+                  l: var int, err: var string): pointer {.cdecl.} =
+
+  l = 8
+
   if st == STChrQuotes:
     result = lit
   else:
@@ -654,24 +661,30 @@ proc new_char_lit(lit: pointer, st: SyntaxType, lmod: string,
     return nil
 
 proc new_i8_lit(lit: pointer, st: SyntaxType, lmod: string,
-                err: var string): pointer {.cdecl.} =
+                l: var int, err: var string): pointer {.cdecl.} =
   var sign: bool
+
+  l = 8
 
   result = construct_int(cast[string](lit), st, err, 1, sign)
   if sign:
     result = cast[pointer](-cast[int64](result))
 
 proc new_i32_lit(lit: pointer, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.} =
+                 l: var int, err: var string): pointer {.cdecl.} =
   var sign: bool
+
+  l = 8
 
   result = construct_int(cast[string](lit), st, err, 4, sign)
   if sign:
     result = cast[pointer](-cast[int64](result))
 
 proc new_u32_lit(lit: pointer, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.} =
+                 l: var int, err: var string): pointer {.cdecl.} =
   var sign: bool
+
+  l = 8
 
   result = construct_int(cast[string](lit), st, err, 4, sign)
   if sign:
@@ -679,16 +692,20 @@ proc new_u32_lit(lit: pointer, st: SyntaxType, lmod: string,
     return nil
 
 proc new_i64_lit(lit: pointer, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.} =
+                 l: var int, err: var string): pointer {.cdecl.} =
   var sign: bool
+
+  l = 8
 
   result = construct_int(cast[string](lit), st, err, 8, sign)
   if sign:
     result = cast[pointer](-cast[int64](result))
 
 proc new_u64_lit(lit: pointer, st: SyntaxType, lmod: string,
-                 err: var string): pointer {.cdecl.} =
+                 l: var int, err: var string): pointer {.cdecl.} =
   var sign: bool
+
+  l = 8
 
   result = construct_int(cast[string](lit), st, err, 8, sign)
   if sign:

@@ -10,54 +10,6 @@ export base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
 
 registerSyntax(TString, STOther, @[])
 
-var
-  typeStore*:      Dict[TypeId, TypeRef]
-  primitiveTypes*: Dict[string, TypeRef]
-
-proc followForwards*(id: TypeId): TypeId =
-  # When we resolve generic types, we change the type ID field to
-  # forward it to it's new (refined) type. Therefore, every check
-  # involving an ID for a generic type should check to see if the
-  # type has been updated.
-  #
-  # The stack detects recursive types; we probably should disallow
-  # those, but right now, just shrugging it off.
-
-  var
-    stack = @[id]
-    refs: seq[TypeRef]
-
-  while true:
-    let trefOpt = typeStore.lookup(stack[^1])
-    if trefOpt.isNone():
-      return id
-    let tref = trefOpt.get()
-    if tref.typeId in stack:
-      for i, item in refs:
-        item.typeId = tref.typeId
-        typeStore[stack[i]] = tref
-
-      return tref.typeId
-
-    stack.add(tref.typeId)
-    refs.add(tref)
-
-proc followForwards*(x: TypeRef): TypeRef =
-  let optObj = typestore.lookup(x.typeId)
-  if optObj.isSome():
-    return typestore[x.typeId.followForwards()]
-  else:
-    return x
-
-template getTid*(x: TypeId): TypeId =
-  x.followForwards()
-
-proc typeNameFromId*(id: TypeId): string =
-  let n = cast[int](id.followForwards())
-  # Assumes it's definitely a builtin type.
-  let dtinfo = datatypeInfo[n]
-  return dtinfo.name
-
 proc isConcrete*(id: TypeId): bool =
   return id.followForwards() < TypeId(0x8000000000000000'u64)
 
@@ -73,13 +25,11 @@ proc isConcrete*(tRef: TypeRef): bool =
 template isGeneric*(x: untyped): bool =
   not x.isConcrete()
 
-proc isBasicType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
+proc isValueType*(id: TypeId): bool =
+  let n = id.followForwards()
+  if not n.isBasicType():
     return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.concrete
+  return dataTypeInfo[cast[int](n)].byValue
 
 proc isIntType*(id: TypeId): bool =
   let n = cast[int](id.followForwards())
@@ -88,6 +38,22 @@ proc isIntType*(id: TypeId): bool =
   let dtinfo = dataTypeInfo[n]
 
   return dtinfo.intW != 0
+
+proc isFloatType*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.fTy
+
+proc isBoolType*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.isBool
 
 proc isSigned*(id: TypeId): bool =
   let n = cast[int](id.followForwards())
@@ -195,9 +161,6 @@ proc initTypeStore*() =
                       isLocked: true)
     typeStore[TypeId(i)] = obj
     primitiveTypes[item] = obj
-
-proc idToTypeRef*(t: TypeId): TypeRef {.exportc, cdecl.} =
-  return typeStore[t].followForwards()
 
 proc copyType*(t: TypeRef): TypeRef
 proc copyType*(t: TypeId): TypeRef =

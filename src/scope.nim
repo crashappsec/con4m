@@ -11,7 +11,7 @@ proc initScope*(): Scope =
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
   result = Module(url: url, where: where, modname: name, ext: ext,
-                  s: newStringCursor(contents))
+                  key: key, s: newStringCursor(contents))
   result.moduleScope = initScope()
   result.usedAttrs   = ctx.usedAttrs
   result.globalScope = ctx.globalScope
@@ -175,8 +175,8 @@ proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
 
   if fi.tid == TBottom:
     fi.tid = tVar()
-  if fi.defaultVal.isSome():
-    sym.hasDefault = true
+
+  sym.defaultVal = fi.defaultVal
   ctx.usedAttrs.table[name] = sym
   ctx.usedAttrs.numSyms    += 1
 
@@ -320,8 +320,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
     # Don't mess up other sections if there's a type variable..
     sym = SymbolInfo(name: name, tid: fieldInfo.tid.tCopy(), isAttr: true)
     ctx.usedattrs.numSyms += 1
-    if fieldInfo.defaultVal.isSome():
-      sym.hasDefault = true
+    sym.defaultVal = fieldInfo.defaultVal
   of FsObjectType:
     ctx.irError("AssignToSec", loc, @[name])
   of FsSingleton:
@@ -525,3 +524,6 @@ proc calculateOffsets*(s: Scope) =
     sz        += 8
 
   s.scopeSize = sz
+  if s.parent != nil:
+    if s.parent.scopeSize < s.scopeSize:
+      s.parent.scopeSize = s.scopeSize

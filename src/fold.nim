@@ -9,7 +9,7 @@ export irgen
 
 proc fold[T](n: IrNode, val: T) =
   n.contents = IrContents(kind: IrFold)
-  n.value    = some(box[T](val, n.tid))
+  n.value    = some(cast[pointer](val))
 
 proc foldIr(ctx: Module)
 
@@ -63,6 +63,7 @@ proc conditionalFold(ctx: Module) =
 proc retFold(ctx: Module) =
   discard
 
+#[
 proc listLitFold(ctx: Module) =
   var
     values: seq[pointer]
@@ -100,6 +101,7 @@ proc litFold(ctx: Module) =
     ctx.tupLitFold()
   else:
     discard
+]#
 
 proc indexFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.indexStart)
@@ -178,19 +180,17 @@ proc replaceBinOpWithCall(ctx: Module, n: IrNode) =
     sig     = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
     actuals = @[n.contents.bLhs, n.contents.bRhs]
 
-  ctx.opReplace("/",    "__slash__")
-  ctx.opReplace("*",    "__star__")
+  ctx.opReplace("/",    "__fdiv__")
+  ctx.opReplace("*",    "__mul__")
   ctx.opReplace("+",    "__plus__")
   ctx.opReplace("-",    "__minus__")
-  ctx.opReplace("%",    "__percent__")
+  ctx.opReplace("%",    "__mod__")
   ctx.opReplace("<<",   "__shl__")
   ctx.opReplace(">>",   "__shr__")
-  ctx.opReplace("div",  "__div__")
+  ctx.opReplace("div",  "__idiv__")
   ctx.opReplace("&",    "__bitand__")
   ctx.opReplace("|",    "__bitor__")
   ctx.opReplace("^",    "__bitxor__")
-  ctx.opReplace("shl",  "__shl__")
-  ctx.opReplace("shr",  "__shr__")
 
 proc replaceBoolOpWithCall(ctx: Module, n: IrNode) =
   if n.contents.kind != IrBool:
@@ -515,8 +515,11 @@ proc foldIr(ctx: Module) =
   of IrRet:
     ctx.retFold()
   of IrLit:
-    ctx.litFold()
-  of IrIndex:
+    # ctx.litFold()
+    # Currently, our code generation doesn't pre-initialize container types;
+    # it builds them at runtime.  Then you can freeze them...
+    discard
+  of IrIndex, IrIndexLhs:
     ctx.indexFold()
   of IrCall:
     ctx.callFold()
@@ -536,7 +539,7 @@ proc foldIr(ctx: Module) =
     discard
   of IrNil:
     discard
-  of IrLoad, IrLhsLoad, IrNop, IrFold, IrUse, IrJump, IrMember:
+  of IrLoad, IrLhsLoad, IrNop, IrFold, IrUse, IrJump, IrMember, IrMemberLhs:
     discard
 
 proc foldingPass*(ctx: Module) =

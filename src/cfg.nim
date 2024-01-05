@@ -15,7 +15,7 @@ proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =
      sym in bb.defInBlock or sym in bb.errorsInBlock:
     return
 
-  if not sym.isAttr or not sym.hasDefault:
+  if not sym.isAttr or sym.defaultVal.isNone():
     ctx.irNonFatal("UseBeforeDef", w = n, @[sym.name])
     bb.errorsInBlock.add(sym)
 
@@ -182,11 +182,9 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
 
   of IrAttrAssign:
     result = ctx.handleOneNode(m, n.contents.attrRhs, result)
-    m.lhsContext = true
     result = ctx.handleOneNode(m, n.contents.attrLhs, result)
   of IrVarAssign:
     result = ctx.handleOneNode(m, n.contents.varRhs, result)
-    m.lhsContext = true
     result = ctx.handleOneNode(m, n.contents.varLhs, result)
   of IrRange:
     result = ctx.handleOneNode(m, n.contents.rangeStart, result)
@@ -409,18 +407,15 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     result.exitType                    = CFXUse
     result                             = returnTo
 
-  of IrMember:
-    if m.lhsContext:
-      n.contents.attrSym.addDef(n, result)
-    else:
-      m.addUse(n.contents.attrSym, n, result)
+  of IrMemberLhs:
+    n.contents.attrSym.addDef(n, result)
     result = ctx.handleOneNode(m, n.contents.subaccess, result)
-  of IrIndex:
-    let savedLhs = m.lhsContext
-    m.lhsContext = false
+  of IrMember:
+    m.addUse(n.contents.attrSym, n, result)
+    result = ctx.handleOneNode(m, n.contents.subaccess, result)
+  of IrIndex, IrIndexLhs:
     result = ctx.handleOneNode(m, n.contents.indexStart, result)
     result = ctx.handleOneNode(m, n.contents.indexEnd, result)
-    m.lhsContext = savedLhs
     result = ctx.handleOneNode(m, n.contents.toIx, result)
   of IrNot, IrUMinus:
     result = ctx.handleOneNode(m, n.contents.uRhs, result)
@@ -464,7 +459,7 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
 
 proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
   # This can be called recursively, so don't re-process.
-  if m.cfg != nil:
+  if m == nil or m.cfg != nil:
     return
 
   m.moduleScope.calculateOffsets()
@@ -507,6 +502,9 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
     m.irWarn("DoesntExit", @["module"], w = where)
 
 proc buildCfg*(ctx: CompileCtx, module: Module) =
+  if ctx == nil or module == nil:
+    return
+
   # Generally, this build the Control Flow Graph for a module under
   # the assumption that it's the entry point (and thus no global
   # variables are set).
@@ -530,6 +528,9 @@ proc buildCfg*(ctx: CompileCtx, module: Module) =
   #  ctx.handleModule(m, startDefs)
 
 proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
+  if ctx == nil or module == nil:
+    return
+
   # If any of these functions get called from w/in the main body, then
   # they will already be built. We come back so that we can do
   # checking on things that *aren't* yet called when doing our whole

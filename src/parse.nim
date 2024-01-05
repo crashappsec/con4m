@@ -999,15 +999,7 @@ idStmtProd(attrAssign, NodeAttrAssign):
 
 production(lockAttr, NodeAttrSetLock):
   ctx.advance()
-  if ctx.curKind() != TtIdentifier:
-    ctx.errSkipStmt("BadLock")
-  let x = ctx.expression()
-  case ctx.curKind()
-  of TtColon, TtAttrAssign:
-    ctx.advance()
-    result.addKid(ctx.attrAssign(x))
-  else:
-    ctx.errSkipStmt("BadLock")
+  result.addKid(ctx.attrAssign(ctx.expression()))
 
 production(elseStmt, NodeElseStmt):
   ctx.advance()
@@ -1043,7 +1035,7 @@ production(caseBody, NodeBody):
       of TtEnum, TtFunc:
         ctx.errSkipStmtNoBackup("TopLevelOnly", @[$(ctx.curKind())])
       of TtLockAttr:
-        result.addKid(ctx.attrAssign(ctx.expression()))
+        result.addKid(ctx.lockAttr())
         continue
       of TtIf:
         result.addKid(ctx.ifStmt())
@@ -1765,7 +1757,7 @@ production(body, NodeBody):
       of TtEnum, TtFunc:
         ctx.errSkipStmtNoBackup("TopLevelOnly", @[$(ctx.curKind())])
       of TtLockAttr:
-        result.addKid(ctx.attrAssign(ctx.expression()))
+        result.addKid(ctx.lockAttr())
         continue
       of TtIf:
         result.addKid(ctx.ifStmt())
@@ -1869,7 +1861,7 @@ production(topLevel, NodeModule):
         result.addKid(ctx.enumStmt())
         continue
       of TtLockAttr:
-        result.addKid(ctx.attrAssign(ctx.expression()))
+        result.addKid(ctx.lockAttr())
         continue
       of TtIf:
         result.addKid(ctx.ifStmt())

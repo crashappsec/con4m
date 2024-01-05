@@ -161,10 +161,11 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("Folded", "", ctx.reprBasicLiteral(), ctx.getTid()), @[])
   of IrNop:
     return (fmt("Nop"), @[])
-  of IrMember:
+  of IrMember, IrMemberLhs:
     return (fmt("Member", ctx.contents.name, "", ctx.getTid()), @[])
-  of IrIndex:
-    return (fmt("Index"), @[ctx.contents.indexStart, ctx.contents.indexEnd])
+  of IrIndex, IrIndexLhs:
+    return (fmt("Index"), @[ctx.contents.toIx, ctx.contents.indexStart,
+                            ctx.contents.indexEnd])
   of IrCall:
     descriptor = ctx.contents.fname
     if ctx.contents.module != "":
@@ -286,10 +287,9 @@ template parseKid(ctx: Module, i, j, k: int): Con4mNode =
   ctx.pt.children[i].children[j].children[k]
 
 proc isConstant*(n: IrNode): bool =
-  # Doesn't capture everything that's constant, just things we
+  # Doesn't capture everything that can be constant, just things we
   # are currently folding.
-  return n.getTid() != TBottom and n.getTid().isBasicType() and
-                                                       n.value.isSome()
+  return n.getTid() != TBottom and n.value.isSome()
 
 const
   ntLoops        = [ NodeForStmt, NodeWhileStmt ]
@@ -391,23 +391,28 @@ proc convertAttrAssignment(ctx: Module): IrNode =
   result.tid = ctx.typeCheck(result.contents.attrRhs.getTid(),
                              result.contents.attrLhs.getTid())
 
-  if result.contents.attrLhs.contents.kind notin [IrMember, IrLhsLoad]:
-    ctx.irError("AttrLhs", w = result.contents.attrLhs)
-
 proc convertMember(ctx: Module): IrNode =
-  result = ctx.irNode(IrMember)
+  var subaccess: IrNode
+
   var parts: seq[string]
   for i, kid in ctx.pt.children:
     case kid.kind:
     of NodeIdentifier:
       parts.add(kid.getText())
     else:
+      # For now, this whole branch should be unreachable actually.
       if i != ctx.pt.children.len() - 1:
         ctx.irError("MemberTop", w = ctx.pt)
         return
-      result.contents.subaccess = ctx.downnode(i)
+      subaccess = ctx.downnode(i)
 
-  result.contents.name = parts.join(".")
+  if ctx.lhsContext and subaccess == nil:
+    result = ctx.irNode(IrMemberLhs)
+  else:
+    result = ctx.irNode(IrMember)
+
+  result.contents.name      = parts.join(".")
+  result.contents.subaccess = subaccess
 
   if ctx.attrContext:
     if ctx.curSecPrefix != "":
@@ -1058,7 +1063,10 @@ proc statementsToIr(ctx: Module): IrNode =
 
 proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
   var
-    err: string
+    err:   string
+    val:   pointer
+    byVal: bool
+    l:     int
     lmod = ctx.getLitMod()
 
   result     = ctx.irNode(IrLit)
@@ -1068,14 +1076,20 @@ proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
     let
       s   = ctx.getText()
       lit = cast[pointer](s)
-      val = instantiateBasicLit(result.tid, lit, st, lmod, err)
 
-
-    if val != nil:
-      result.value = some(val)
+    val = layoutLiteral(result.tid, lit, st, lmod, byVal, l, err)
 
   if err != "":
     ctx.irError(err)
+  else:
+    if val == nil:
+      # TODO-- currently, some(nil) errors, which means why the F are we
+      # using option types??
+      result.value          = none(pointer)
+    else:
+      result.value          = some(val)
+    result.contents.byVal = byVal
+    result.contents.sz    = l
 
 proc convertOtherLit(ctx: Module): IrNode =
   let
@@ -1084,8 +1098,11 @@ proc convertOtherLit(ctx: Module): IrNode =
     symNode  = parent.contents.attrlhs.contents
 
   var
-    sym: SymbolInfo
-    err: string
+    sym:   SymbolInfo
+    err:   string
+    val:   pointer
+    byVal: bool
+    l:     int
 
   if modifier notin ["", "auto"]:
     return ctx.convertSimpleLit(STOther)
@@ -1103,11 +1120,14 @@ proc convertOtherLit(ctx: Module): IrNode =
     p    = cast[pointer](text)
 
   if sym != nil and sym.tid.isConcrete():
-    let val = instantiateBasicLit(sym.tid, p, StOther, "", err)
+    val = layoutLiteral(sym.tid, p, StOther, "", byVal, l, err)
+
     if err == "":
-      result       = ctx.irNode(IrLit)
-      result.tid   = sym.tid
-      result.value = some(val)
+      result                = ctx.irNode(IrLit)
+      result.tid            = sym.tid
+      result.value          = some(val)
+      result.contents.byVal = byVal
+      result.contents.sz    = l
       return
     else:
       ctx.irError(err)
@@ -1125,11 +1145,13 @@ proc convertOtherLit(ctx: Module): IrNode =
   for (_, dt) in syntaxInfo[int(STOther)].litmods:
     err = ""
 
-    let val = instantiateBasicLit(dt.dtid, p, STOther, "", err)
+    val = layoutLiteral(dt.dtid, p, STOther, "", byVal, l, err)
     if err == "":
-      result       = ctx.irNode(IrLit)
-      result.tid   = dt.dtid
-      result.value = some(val)
+      result                = ctx.irNode(IrLit)
+      result.tid            = dt.dtid
+      result.value          = some(val)
+      result.contents.byVal = byVal
+      result.contents.sz    = l
       ctx.irInfo("OtherLit", @[dt.name])
       return
 
@@ -1137,7 +1159,9 @@ proc convertOtherLit(ctx: Module): IrNode =
 
 proc convertCharLit(ctx: Module): IrNode =
   var
-    err: string
+    err:   string
+    byVal: bool
+    l:     int
     lmod = ctx.getLitMod()
 
   result     = ctx.irNode(IrLit)
@@ -1146,14 +1170,14 @@ proc convertCharLit(ctx: Module): IrNode =
   if result.tid != TBottom:
     let
       codepoint = cast[pointer](ctx.pt.token.codepoint)
-      val       = instantiateBasicLit(result.tid, codepoint, StChrQuotes,
-                                      lmod, err)
-
-    if val != nil:
-      result.value = some(val)
-
-  if err != "":
-    ctx.irError(err)
+      val       = layoutLiteral(result.tid, codepoint, StChrQuotes, lmod,
+                                byVal, l, err)
+    if err == "":
+        result.value          = some(val)
+        result.contents.byVal = byVal
+        result.contents.sz    = l
+    else:
+      ctx.irError(err)
 
 proc convertNilLit(ctx: Module): IrNode =
   result = ctx.irNode(IrNil)
@@ -1180,12 +1204,13 @@ proc convertListLit(ctx: Module): IrNode =
     lmod     = ctx.getLitMod()
     itemType = tVar()
 
-  for i in 0 ..< ctx.numKids:
+  result = ctx.irNode(IrLit)
+
+  for i in 0 ..< ctx.numKids():
     let oneItem = ctx.downNode(i)
     ctx.typeCheck(itemType, oneItem.getTid(), ctx.parseKid(i), "TyDiffListItem")
     result.contents.items.add(oneItem)
 
-  result     = ctx.irNode(IrLit)
   result.tid = getTidForContainerLit(STList, lmod, @[itemType], err)
 
   if err:
@@ -1198,6 +1223,8 @@ proc convertDictLit(ctx: Module): IrNode =
     keyType  = tVar()
     itemType = tVar()
 
+  result = ctx.irNode(IrLit)
+
   for i in 0 ..< ctx.numKids():
     let oneKey = ctx.downNode(i, 0)
     ctx.typeCheck(keyType, oneKey.getTid(), ctx.parseKid(i, 0),
@@ -1208,7 +1235,6 @@ proc convertDictLit(ctx: Module): IrNode =
     result.contents.items.add(oneKey)
     result.contents.items.add(oneVal)
 
-  result     = ctx.irNode(IrLit)
   result.tid = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
 
   if err:
@@ -1255,7 +1281,9 @@ proc convertForStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
-  var scope: Scope
+  var
+    scope:       Scope
+    v1, v2, c3: SymbolInfo
 
   scope = initScope()
 
@@ -1269,25 +1297,25 @@ proc convertForStmt(ctx: Module): IrNode =
 
   ctx.blockScopes = @[scope] & ctx.blockScopes
 
+
+  # Declare phantom variables.
+  if result.contents.label != nil:
+    v1 = ctx.scopeDeclare(scope, "$" & result.contents.label.getText(),
+                                         false, TInt, true).get()
+    v2 = ctx.scopeDeclare(scope, "$" & result.contents.label.getText() &
+                                     "_len", false, TInt, true).get()
+  else:
+    v1 = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
+    v2 = ctx.scopeDeclare(scope, "$len", false, TInt, true).get()
+
+  result.contents.loopVars.add(v1)
+  result.contents.loopVars.add(v2)
+
   for item in ctx.pt.children[0].children:
     let sym = ctx.scopeDeclare(scope, item.getText(), false, tVar(), true)
     result.contents.loopVars.add(sym.get())
 
   result.contents.condition = ctx.downNode(1)
-
-  if result.contents.condition.contents.kind == IrRange:
-    # Declare phantom variables.
-    discard ctx.scopeDeclare(scope, "$i", false, TInt, true)
-    discard ctx.scopeDeclare(scope, "$len", false, TInt, true)
-    discard ctx.scopeDeclare(scope, "$last", false, TInt, true)
-    if result.contents.label != nil:
-      discard ctx.scopeDeclare(scope, "$i_" & result.contents.label.getText(),
-                                              false, TInt, true)
-      discard ctx.scopeDeclare(scope, "$len_" & result.contents.label.getText(),
-                                              false, TInt, true)
-      discard ctx.scopeDeclare(scope, "$last_" &
-                       result.contents.label.getText(), false, TInt, true)
-
   result.contents.loopBody  = ctx.downNode(2)
 
   if result.contents.loopVars.len() == 2:
@@ -1307,9 +1335,25 @@ proc convertWhileStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
-  result.contents.condition = ctx.downNode(0)
-  result.contents.loopBody  = ctx.downNode(1)
-  result.contents.whileLoop = true
+
+  var
+    scope:       Scope
+
+  scope = initScope()
+
+  result.scope    = scope
+  if ctx.blockScopes.len() != 0:
+    scope.parent = ctx.blockScopes[^1]
+  elif ctx.funcScope != nil:
+    scope.parent = ctx.funcScope
+  else:
+    scope.parent = ctx.moduleScope
+
+  ctx.blockScopes = @[scope] & ctx.blockScopes
+
+  let loopVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
+
+  result.contents.loopVars.add(loopVar)
 
   if unify(TBool, result.contents.condition.getTid()) == TBottom:
     if result.contents.condition.getTid().canCastToBool():
@@ -1321,12 +1365,17 @@ proc convertWhileStmt(ctx: Module): IrNode =
                   @[result.contents.condition.getTid().toString()],
                   w = ctx.parseKid(0))
 
+  result.contents.condition = ctx.downNode(0)
+  result.contents.loopBody  = ctx.downNode(1)
+  result.contents.whileLoop = true
+
+
 proc makeVariant(parent: SymbolInfo): SymbolInfo =
   # We really don't need to copy everything we copy here.
   result              = SymbolInfo()
   result.name         = parent.name
   result.isAttr       = parent.isAttr
-  result.hasDefault   = parent.hasDefault
+  result.defaultVal  = parent.defaultVal
   result.declaredType = parent.declaredType
   result.tid          = tVar()
   result.constValue   = parent.constValue
@@ -1535,6 +1584,22 @@ proc convertBooleanOp(ctx: Module): IrNode =
 
   result.tid = TBool
 
+  case ctx.pt.kind
+  of NodeNe:
+    result.contents.opId = OpNeq
+  of NodeCmp:
+    result.contents.opId = FEq
+  of NodeGte:
+    result.contents.opId = OpGte
+  of NodeLte:
+    result.contents.opId = OpLte
+  of NodeGt:
+    result.contents.opId = FGt
+  of NodeLt:
+    result.contents.opId = FLt
+  else:
+    unreachable
+
 const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
 
 proc convertBinaryOp(ctx: Module): IrNode =
@@ -1569,6 +1634,32 @@ proc convertBinaryOp(ctx: Module): IrNode =
       ctx.irError("U64Div")
       result.tid = TBottom
 
+  case ctx.pt.kind
+  of NodePlus:
+    result.contents.opId = FAdd
+  of NodeMinus:
+    result.contents.opId = FSub
+  of NodeMod:
+    result.contents.opId = FMod
+  of NodeMul:
+    result.contents.opId = FMul
+  of NodeDiv:
+    result.contents.opId = FFDiv
+    # TODO: Add integer division as well.
+  of NodeBitOr:
+    result.contents.opId = FBor
+  of NodeBitXor:
+    result.contents.opId = FBxor
+  of NodeBitAnd:
+    result.contents.opId = FBand
+  of NodeShl:
+    result.contents.opId = FShl
+  of NodeShr:
+    result.contents.opId = FShr
+  else:
+    unreachable
+
+
 proc convertLogicOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrLogic)
   result.contents.bOp   = ctx.getText()
@@ -1577,6 +1668,11 @@ proc convertLogicOp(ctx: Module): IrNode =
     bRhs                = ctx.downNode(1)
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
+
+  if ctx.pt.kind == NodeOr:
+    result.contents.opId = OpLogicOr
+  else:
+    result.contents.opId = OpLogicAnd
 
   if unify(TBool, bLhs.getTid()) == TBottom:
     if bLhs.getTid().canCastToBool():
@@ -1649,21 +1745,32 @@ proc convertSection(ctx: Module): IrNode =
 proc foldDown*(ctx: Module, newNode: IrNode) {.importc, cdecl.}
 
 proc convertIndex(ctx: Module): IrNode =
-  result = ctx.irNode(IrIndex)
-  var
-    toIx = ctx.downNode(0)
-    brak = ctx.pt
+  # The logic for when to generate address loads instead of value
+  # loads (the LHS flag) will need to be redone once we add object
+  # types with fields.
 
   var
-    ixStart = ctx.downNode(1)
-    ixEnd: IrNode
+    onLhs = ctx.lhsContext
+    brak  = ctx.pt
+    toIx, ixStart, ixEnd: IrNode
 
-  if toIx.contents.kind == IrIndex:
-    ctx.irError("NDim", w = brak)
-    return
-  elif toIx.contents.kind == IrMember:
+  if onLhs and ctx.pt.children[0].kind == NodeIndex:
+      ctx.lhsContext = false
+
+  toIx = ctx.downNode(0)
+
+  ctx.lhsContext = false
+  ixStart = ctx.downNode(1)
+
+  if onLhs:
+    result = ctx.irNode(IrIndexLhs)
+  else:
+    result = ctx.irNode(IrIndex)
+
+  if toIx.contents.kind in [IrMember, IrMemberLhs]:
+    # This is tracked in case we can fold.
     result.contents.toIxSym = toIx.contents.attrSym
-  elif toIx.contents.kind != IrCall:
+  elif toIx.contents.kind in [IrLoad, IrLhsLoad]:
     result.contents.toIxSym = toIx.contents.symbol
 
   result.tid = tVar()
@@ -1707,6 +1814,8 @@ proc convertIndex(ctx: Module): IrNode =
   result.contents.toIx       = toIx
   result.contents.indexStart = ixStart
   result.contents.indexEnd   = ixEnd
+
+  ctx.lhsContext = onLhs  # Totally wasteful, this.
 
 proc convertCall(ctx: Module): IrNode =
   result                = ctx.irNode(IrCall)
@@ -1908,13 +2017,10 @@ proc parseTreeToIr(ctx: Module): IrNode =
     of NodeNot:
       result = ctx.convertNotOp()
     of NodeMember:
-      discard
       result = ctx.convertMember()
     of NodeIndex:
-      discard
       result = ctx.convertIndex()
     of NodeCall:
-      discard
       result = ctx.convertCall()
     else:
       unreachable

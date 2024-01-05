@@ -29,7 +29,7 @@ const
   FAssignIx*     = 19
   FAssignDIx*    = 20
   FassignSlice*  = 21
-  FNewLit*       = 22
+  FLoadLit*      = 22
   FContainerLit* = 23
   FCopy*         = 24
   FLen*          = 25
@@ -37,9 +37,28 @@ const
   FGetFFIAddr*   = 27 # Of what? Already don't rememebr.
   FInitialize*   = 28 # Stuff we're not using yet.
   FCleanup*      = 29
-  FAlloc*        = 30
-  FDealloc*      = 31
-  FMax*          = 40
+
+  # This is not meant for the IR, just for the compiler / interpreter.
+  FNewLit*       = 30
+  FMax*          = 31
+
+
+
+  # These don't generate function calls but get used in a slot for
+  # operator numbers, so they are distinct from the above #'s.
+  OpLogicOr*     = 33
+  OpLogicAnd*    = 34
+
+  # These also do not generate ops directly, they generate a NOT and
+  # the corresponding op. They're the same number as their negation,
+  #  except with 128 added. Since gte means "not less than" we
+  # get OpGte by adding to the value associated w/ 'less-than'.
+
+  OpNeq*         = 130
+  OpGte*         = 131
+  OpLte*         = 132
+
+
 
 type
   SyntaxType* = enum
@@ -68,15 +87,18 @@ type
     intW*:          int
     signed*:        bool
     signedVariant*: DataType
-    fTy*:           bool
+    fTy*:           bool        # Float type
+    strTy*:         bool        # A string type.
     aliases*:       seq[string]
     byValue*:       bool
     ops*:           seq[pointer]
 
   RefValue*[T] = ref object of RootRef
-    dtInfo*:   DataType
-    refcount*: int
-    item*:     T
+    refcount*:  int
+    staticVal*: bool
+    dtInfo*:    DataType
+    fullType*:  TypeId
+    item*:      T
 
   StringCursor* = ref object
     runes*: seq[Rune]
@@ -200,9 +222,9 @@ type
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrConditional,
-    IrJump, IrRet, IrLit, IrMember, IrIndex, IrCall, IrUse, IrUMinus, IrNot,
-    IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad, IrFold, IrNop, IrSection,
-    IrNil, IrSwitch, IrSwitchBranch, IrRange
+    IrJump, IrRet, IrLit, IrMember, IrMemberLhs, IrIndex, IrIndexLhs, IrCall,
+    IrUse, IrUMinus, IrNot, IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad,
+    IrFold, IrNop, IrSection, IrNil, IrSwitch, IrSwitchBranch, IrRange
     #IrCast
 
   IrNode* = ref object
@@ -261,11 +283,13 @@ type
       retSym*: SymbolInfo
     of IrLit:
       items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
-    of IrMember:
+      byVal*:  bool
+      sz*:     int
+    of IrMember, IrMemberLhs:
       name*:      string
       subaccess*: IrNode
       attrSym*:   SymbolInfo
-    of IrIndex:
+    of IrIndex, IrIndexLhs:
       toIx*:       IrNode
       indexStart*: IrNode
       indexEnd*:   IrNode
@@ -284,6 +308,7 @@ type
       uRhs*: IrNode
     of IrBinary, IrBool, IrLogic:
       bOp*:  string
+      opId*: int
       bLhs*: IrNode
       bRhs*: IrNode
     of IrLhsLoad, IrLoad:
@@ -333,6 +358,7 @@ type
     doc1*:           string
     doc2*:           string
     maxOffset*:      int
+    internalId*:     int
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -341,13 +367,12 @@ type
     validator*:     Option[Callback]
     defaultParse*:  Option[Con4mNode]
     defaultIr*:     Option[IrNode]
-    startValue*:    Option[pointer]
 
   SymbolInfo* = ref object
     name*:         string
     isFunc*:       bool
     isAttr*:       bool
-    hasDefault*:   bool # Only for attrs
+    defaultVal*:   Option[pointer] # Only for attributes.
     declaredType*: bool
     immutable*:    bool
     tid*:          TypeId
@@ -360,9 +385,23 @@ type
     global*:       bool
     err*:          bool
     declNode*:     Con4mNode
+    # heapalloc is only true for global variables and
+    # indicates that the offset generated won't be relative to the
+    # stack, but from some start offset associated with the module
+    # the variable lives in.
     heapAlloc*:    bool  # The below are not used for attributes.
-    offset*:       int
-    size*:         int
+    arena*:        int   # The index into modules; the set of offsets
+                         # is calculated per-'memory arena', but
+                         # during compilation, we don't care how
+                         # that's implemented.
+    offset*:       int   # offset within the arena.
+    size*:         int   # Size that needs to be allocated. Currently,
+                         # this should always be 8 bytes, because we do
+                         # not yet support non-64-bit aligned layout, and
+                         # we implement all container types as pointers
+                         # in this arena, with no sense of where the
+                         # backing store is (we might do more optimized
+                         # arrays when the size is known later).
     # As we implement SSA and type casing, these are for managing
     # different instances of the same logical symbol. The 'actual'
     # symbol will have actualSym be `nil`, and the count will hand out
@@ -473,6 +512,7 @@ type
     url*:         string
     where*:       string
     modname*:     string
+    key*:         string
     ext*:         string
     errors*:      seq[Con4mError]
     s*:           StringCursor      # Source

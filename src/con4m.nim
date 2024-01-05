@@ -1,40 +1,51 @@
 # TODO:
 #
 # === High priority ===
-# - Getting AttrAssign node when it should be VarAssign node
 # - No matching sig error for function calls
 # - Offset isn't right for sym copies in a typecase. Check lineage.
 # - Return variable
 # - Basic execution.
-# - Code generation.
-# - Doc strings
-# - Implement _ as a 'discard' variable.
-# - dlclose stuff.
+# - Load default values at beginning of program.
+# - Dictionary and tuple implementations
 # - C-level interface to attributes
 # - Stack traces during execution.
 # - Spec checking after execution.
 # - Checkpointing runtime state.
 # - Module state caching for re-linking when conf files change.
 # - Swap in hatrack lists (and add rings?).
-# - No-side-effect prop for funcs to allow calling functions at compile time.
+# - Use No-side-effect prop for funcs to allow calling functions at compile time.
+# - Keep spec around in object file.
 # - Allow assignment inside var / global / const statements.
-# - Component logic
+# - Component logic in runtime.
 # - ConvertCallbackLit type secolution.
 # - In showCallMistakes(), show which functions have the wrong # of args,
 #   and which parameters are right / wrong.
 # - Base types should be treated more like proper classes?
 # - Re-implement standard library / wrappings.
 # - finish hasExitToOuterBlock in CFG.
-# - Issue with validators
 # - For errors, make it easy to see "previous instance", and remove
 #   table for 2nd line
 # - Handle result variable properly in offsets.
+# - Auto-generation of type-checking C interface API?
+# - Copy operations for all ref builtin types.
+# - Handle negative indexes in call_...index
+# - explicit casts
+# - Callback objects
 
 # == Medium ==
+# - Merge var/attr assign nodes.
 # - Access controls around extern and extensibility features
+# - ~ operator should be renamed to 'lock' and not require an assignment,
+#   but if there's no assignment it should error / warn if one might be
+#   locking something that isn't assigned.
+# - Built in print statement??
+# - Doc strings
+# - Implement _ as a 'discard' variable.
 # - Rename to 0cool
 # - C api and bindings to other languages.
+# - Code generation.
 # - Doc API.
+# - dlclose stuff.
 # - Merge mixed / cbox
 # - Add some sort of mixed type
 # - Hook getopt back up.
@@ -42,6 +53,7 @@
 # - Extra lines in error messages shouldn't get the huge table indent.
 # - Sort errors by file / line (they come out by phase in IR portion).
 # - REPL
+# - Error if any variables not within a function do not have a concrete type (after REPL is done)
 # - Default parameters
 # - Litmods for common rope types
 # - Add $len, $last
@@ -61,6 +73,7 @@
 # - += and similar.
 # - What's wrong w/ hatrack add??
 # - Add maybe / null checking
+# - Should add variable aliases for $i and $label
 
 # == Lower priority ==
 # - Error msg squelching and colating
@@ -94,7 +107,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import module, specs
+import module, specs, codegen
 export module
 
 when isMainModule:
@@ -110,18 +123,27 @@ when isMainModule:
     result.allow(root, "q", "r")
     q.addField("z", "int", default = some(cast[pointer](12)))
 
-  let
+  var
     params = commandLineParams()
+    debug  = false
     spec   = buildTestSpec()
-    session = newCompileContext(spec)
+    session = newCompileContext(nil)
 
-  if len(params) != 1:
+  if "--debug" in params:
+    debug = true
+    var newParams: seq[string]
+    for item in params:
+      if item != "--debug":
+        newParams.add(item)
+    params = newParams
+
+  if params.len() != 1:
     print h2("Cannot con4m")
     print fgColor("error: ", "red") + text("For now, provide only one arg.")
     quit()
 
   discard session.buildFromEntryPoint(params[0])
-  if true:
+  if debug:
     var module = session.entrypoint
 
     module.printTokens()
@@ -132,6 +154,10 @@ when isMainModule:
     module.printModuleScope()
     session.printGlobalScope()
     session.printProgramCfg()
-    session.printErrors()
+
+  if session.printErrors():
+    let generatedCode = session.generateCode()
+    print generatedCode.disassembly()
+
   else:
-    print em("Could not find module 'ptest.c4m'")
+    print h2("Program loading failed.")

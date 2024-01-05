@@ -34,7 +34,9 @@ proc get_cast_func_float(dt, ot: DataType, err: var string): pointer {.cdecl.} =
     return cast[pointer](cast_f_to_u)
 
 proc new_float_lit(lit: pointer, st: SyntaxType, lmod: string,
-                   err: var string): pointer {.cdecl.} =
+                   l: var int, err: var string): pointer {.cdecl.} =
+  l = 8
+
   var
     s      = cast[string](lit)
     dotLoc = s.find('.')

@@ -18,7 +18,7 @@ type
   SetDixFn*   = proc(c, v, i: pointer, err: var bool) {.cdecl.}
   ASliceFn*   = proc(c, v: pointer, i, j: int, err: var bool) {.cdecl.}
   NewLitFn*   = proc(s: pointer, st: SyntaxType, litmod: string,
-                     err: var string): pointer {.cdecl.}
+                     l: var int, err: var string): pointer {.cdecl.}
   ClitFn*     = proc(st: SyntaxType, litmod: string, t: TypeId,
                      contents: seq[pointer], err: var string):
                      pointer {.cdecl.}
@@ -35,6 +35,10 @@ var
   dtNameMap*:    Dict[string, DataType]
   refCount*:     int
   syntaxInfo*:   array[int(StMax), SyntaxInfo]
+  typeStore*:      Dict[TypeId, TypeRef]
+  primitiveTypes*: Dict[string, TypeRef]
+  TList*, TDict*, TTuple*: TypeId
+
   allBiNames =   @["dict", "tuple", "struct", "ref", "set", "maybe", "oneof",
                    "typespec"]
   numConcrete:   int
@@ -53,7 +57,7 @@ proc getAllBuiltinTypeNames*(): seq[string] =
 
 proc addDataType*(name: string, concrete: bool, ops: seq[pointer],
                   byValue = false, intW = 0, signed = false, fTy = false,
-                  isBool = false, aliases: seq[string] = @[],
+                  strTy = false, isBool = false, aliases: seq[string] = @[],
                   ckind = C4None, signedVariant = TypeId(0)): TypeId {.cdecl.} =
   result = TypeId(dataTypeInfo.len())
 
@@ -64,7 +68,7 @@ proc addDataType*(name: string, concrete: bool, ops: seq[pointer],
 
   var dt = DataType(name: name, dtid: result, concrete: concrete,
                     isBool: isBool, intW: intW, signed: signed,
-                    signedVariant: v, fTy: fTy, aliases: aliases,
+                    signedVariant: v, fTy: fTy, strTy: strTy, aliases: aliases,
                     byValue: byValue, ops: ops, ckind: ckind)
 
   dtNameMap[name] = dt
@@ -96,28 +100,13 @@ let
   TBottom* = addDataType("none (type error)", true, @[])
   TVoid*   = addDataType("void", true, @[])
 
-
-proc newRefValue*[T](item: T, dtid: TypeId): pointer =
-  let o = RefValue[T](dtInfo: dataTypeInfo[dtid], item: item,
-                      refCount: 1)
-
-  GC_ref(o)
-
-  return cast[pointer](o)
+proc newRefValue*[T](item: T, tid: TypeId): pointer
 
 proc extractRef*[T](item: pointer, decref = false): T =
   let o = cast[RefValue[T]](item)
   if decref:
     GC_unref(o)
   return o.item
-
-proc incref*[T](item: T) =
-  item.refCount += 1
-  GC_ref(item)
-
-proc decref*[T](item: T) =
-  item.refCount -= 1
-  GC_unref(item)
 
 template newVTable*(): seq[pointer] =
   newSeq[pointer](int(FMax))
@@ -200,16 +189,105 @@ proc box*[T](item: T, t: TypeId): pointer =
   else:
     return cast[pointer](item)
 
-proc call_repr*(value: pointer, t: TypeId): string =
+proc followForwards*(id: TypeId): TypeId =
+  # When we resolve generic types, we change the type ID field to
+  # forward it to it's new (refined) type. Therefore, every check
+  # involving an ID for a generic type should check to see if the
+  # type has been updated.
+  #
+  # The stack detects recursive types; we probably should disallow
+  # those, but right now, just shrugging it off.
+
+  var
+    stack = @[id]
+    refs: seq[TypeRef]
+
+  while true:
+    let trefOpt = typeStore.lookup(stack[^1])
+    if trefOpt.isNone():
+      return id
+    let tref = trefOpt.get()
+    if tref.typeId in stack:
+      for i, item in refs:
+        item.typeId = tref.typeId
+        typeStore[stack[i]] = tref
+
+      return tref.typeId
+
+    stack.add(tref.typeId)
+    refs.add(tref)
+
+proc followForwards*(x: TypeRef): TypeRef =
+  let optObj = typestore.lookup(x.typeId)
+  if optObj.isSome():
+    return typestore[x.typeId.followForwards()]
+  else:
+    return x
+
+template getTid*(x: TypeId): TypeId =
+  x.followForwards()
+
+proc typeNameFromId*(id: TypeId): string =
+  let n = int(id.followForwards())
+  # Assumes it's definitely a builtin type.
+  let dtinfo = datatypeInfo[n]
+  return dtinfo.name
+
+proc idToTypeRef*(t: TypeId): TypeRef {.exportc, cdecl.} =
+  return typeStore[t].followForwards()
+
+proc getContainerInfo*(t: TypeId): DataType {.exportc, cdecl.}=
+  let to = t.idToTypeRef()
+
+  case to.kind
+  of C4List:
+    return tinfo(TList)
+  of C4Dict:
+    return tinfo(TDict)
+  of C4Tuple:
+    return tinfo(TTuple)
+  else:
+    unreachable
+
+proc isBasicType*(id: TypeId): bool =
+  var n = cast[int](id.followForwards())
+
+  if n >= 0 and n < len(dataTypeInfo):
+    return true
+
+proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
+  var t = t.followForwards()
+
+  if t.isBasicType():
+    return t.tinfo()
+
+  return t.getContainerInfo()
+
+proc newRefValue*[T](item: T, tid: TypeId): pointer =
+  var dt = tid.getDataType()
+
+  let o = RefValue[T](dtInfo: dt, item: item,
+                      fullType: tid.followForwards(), refCount: 1)
+
+  GC_ref(o)
+
+  return cast[pointer](o)
+
+
+proc call_repr*(value: pointer, t: TypeId): string {.exportc, cdecl.} =
   let
-    info = tinfo(t)
+    info = getDataType(t)
+
+  if info.ops.len() == 0:
+    return "void"
+
+  let
     op   = cast[ReprFn](info.ops[FRepr])
 
   if op == nil:
     return "?"
 
   return op(value)
-
 
 # proc call_get_val_for_ffi*(p: pointer, ffitype: int)
 

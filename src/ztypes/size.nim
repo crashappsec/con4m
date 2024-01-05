@@ -4,27 +4,14 @@ type Size* = uint64
 
 var szOps = newVTable()
 
-proc new_size(s: string, st: SyntaxType, lmod: string, err: var string):
-           pointer {.cdecl.}
-
 proc repr_size(m: pointer): string {.cdecl.} =
   # TODO: do better!
   return $(cast[uint64](m)) & " bytes"
 
-szOps[FRepr]   = cast[pointer](repr_size)
-szOps[FEq]     = cast[pointer](value_eq)
-szOps[FLt]     = cast[pointer](value_lt)
-szOps[FGt]     = cast[pointer](value_gt)
-szOps[FNewLit] = cast[pointer](new_size)
+proc new_size(s: string, st: SyntaxType, lmod: string,
+              l: var int, err: var string): pointer {.exportc, cdecl.} =
+  l = 8
 
-let TSize* = addDataType(name = "size", concrete = true, byValue = true,
-                         ops = szOps)
-
-registerSyntax(TSize, STOther, @["sz"])
-registerSyntax(TSize, STStrQuotes, @["sz"])
-
-proc new_size(s: string, st: SyntaxType, lmod: string, err: var string):
-           pointer =
   var
     letterix = 0
     multiple = 1'u64
@@ -74,3 +61,15 @@ proc new_size(s: string, st: SyntaxType, lmod: string, err: var string):
   except:
     err = "BadSize"
     return
+
+szOps[FRepr]   = cast[pointer](repr_size)
+szOps[FEq]     = cast[pointer](value_eq)
+szOps[FLt]     = cast[pointer](value_lt)
+szOps[FGt]     = cast[pointer](value_gt)
+szOps[FNewLit] = cast[pointer](new_size)
+
+let TSize* = addDataType(name = "size", concrete = true, byValue = true,
+                         ops = szOps)
+
+registerSyntax(TSize, STOther, @["sz"])
+registerSyntax(TSize, STStrQuotes, @["sz"])

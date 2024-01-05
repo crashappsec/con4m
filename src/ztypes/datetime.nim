@@ -29,11 +29,13 @@ type
     DTHaveTime, DtHaveSecond, DTHaveFracSec, DTHaveMonth, DTHaveYear,
     DTHaveDay, DTHaveDoy, DTHaveDST, DTHaveOffset
 
-  DateTime* = ref object
+  DateTimeObj* = object
     dt*:       Tm
     fracsec*:  uint
     tzoffset*: int
     flags*:    set[DTFlags]
+
+  DateTime* = ref DateTimeObj
 
 proc usWrittenDate(lit: string, res: var DateTime): bool =
   var
@@ -398,14 +400,17 @@ proc otherLitToNativeDateTime*(lit: string, res: var DateTime): bool =
 
   return true
 
-proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
+proc new_date_time(s: string, st: SyntaxType, lmod: string,
+                   l: var int, err: var string):
                       pointer {.cdecl.}
 
 
-proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
+proc new_date(s: string, st: SyntaxType, lmod: string,
+              l: var int, err: var string):
                       pointer {.cdecl.}
 
-proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
+proc new_time(s: string, st: SyntaxType, lmod: string,
+              l: var int, err: var string):
                       pointer {.cdecl.}
 
 
@@ -446,6 +451,46 @@ var
   dOps  = newVtable()
   tOps  = newVtable()
 
+
+proc new_date_time(s: string, st: SyntaxType, lmod: string,
+                   l: var int, err: var string):
+                      pointer =
+  l      = sizeof(DateTimeObj)
+  result = alloc(l)
+
+  var dt: DateTime = cast[DateTime](result)
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadDateTime"
+    dealloc(result)
+    return nil
+
+proc new_date(s: string, st: SyntaxType, lmod: string,
+              l: var int, err: var string):
+                      pointer =
+  l      = sizeof(DateTimeObj)
+  result = alloc(l)
+
+  var dt: DateTime = cast[DateTime](result)
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadDate"
+    dealloc(result)
+    return nil
+
+proc new_time(s: string, st: SyntaxType, lmod: string,
+              l: var int, err: var string):
+                      pointer =
+  l      = sizeof(DateTimeObj)
+  result = alloc(l)
+
+  var dt: DateTime = cast[DateTime](result)
+
+  if not otherLitToNativeDateTime(s.strip(), dt):
+    err = "BadTime"
+    dealloc(result)
+    return nil
+
 dtOps[FRepr]   = cast[pointer](repr_date_time)
 dtOps[Feq]     = cast[pointer](eq_dt)
 dtOps[FNewLit] = cast[pointer](new_date_time)
@@ -467,30 +512,3 @@ registerSyntax(TDate, STOther, @[])
 registerSyntax(TDate, STStrQuotes, @[])
 registerSyntax(TTime, STOther, @[])
 registerSyntax(TTime, STStrQuotes, @[])
-
-proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
-                      pointer =
-  var dt: DateTime = DateTime()
-
-  if not otherLitToNativeDateTime(s.strip(), dt):
-    err = "BadDateTime"
-  else:
-    return newRefValue[DateTime](dt, TDateTime)
-
-proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
-                      pointer =
-  var dt: DateTime = DateTime()
-
-  if not otherLitToNativeDateTime(s.strip(), dt):
-    err = "BadDate"
-  else:
-    return newRefValue[DateTime](dt, TDate)
-
-proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
-                      pointer =
-  var dt: DateTime = DateTime()
-
-  if not otherLitToNativeDateTime(s.strip(), dt):
-    err = "BadTime"
-  else:
-    return newRefValue[DateTime](dt, TTime)

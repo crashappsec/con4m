@@ -1,11 +1,8 @@
 import posix, parseutils, base
 
-type Duration* = Timeval
+type Duration* = ref Timeval
 
 var durOps = newVTable()
-
-proc new_duration(s: string, st: SyntaxType, lmod: string,
-                  err: var string): pointer {.cdecl.}
 
 proc repr_duration(pre: pointer): string {.cdecl.} =
   # TODO: do better.
@@ -25,17 +22,8 @@ proc eq_duration(a, b: pointer): bool {.cdecl.} =
 
   return r == 0
 
-durOps[FRepr]   = cast[pointer](repr_duration)
-durOps[FEq]     = cast[pointer](eq_duration)
-durOps[FNewLit] = cast[pointer](new_duration)
-
-let TDuration* = addDataType(name = "duration", concrete = true, ops = durOps)
-registerSyntax(TDuration, STOther, @[])
-registerSyntax(TDuration, STStrQuotes, @[])
-
-
-proc new_duration(s: string, st: SyntaxType, lmod: string,
-                  err: var string): pointer =
+proc new_duration(s: string, st: SyntaxType, lmod: string, l: var int,
+                  err: var string): pointer {.cdecl.} =
   var
     parts: seq[(string, string)] = @[]
     s                            = s.strip()
@@ -162,9 +150,17 @@ proc new_duration(s: string, st: SyntaxType, lmod: string,
       err = "BadDuration"
       return
 
-  var res: Duration
+  result  = alloc(sizeof(TimeVal))
+  var res = cast[Duration](result)
 
   res.tv_usec = int32(duration mod 1000000)
   res.tv_sec  = Time(duration div 1000000)
+  l           = sizeof(TimeVal)
 
-  return newRefValue[Duration](res, TDuration)
+durOps[FRepr]   = cast[pointer](repr_duration)
+durOps[FEq]     = cast[pointer](eq_duration)
+durOps[FNewLit] = cast[pointer](new_duration)
+
+let TDuration* = addDataType(name = "duration", concrete = true, ops = durOps)
+registerSyntax(TDuration, STOther, @[])
+registerSyntax(TDuration, STStrQuotes, @[])

@@ -13,6 +13,7 @@ template con4mLongJmp*(msg = "") =
   raise newCon4mLongJmp(msg)
 
 const errorMsgs = [
+  ("FileNotFound",   "Module could not be located."),
   ("StrayCr",        "Carriage return (<em>\r</em>) without newline."),
   ("BadEscape",      "Unterminated escape sequence in literal."),
   ("UnicodeEscape",  "Invalid unicode escape character found in literal."),
@@ -47,8 +48,6 @@ const errorMsgs = [
                      "not a variable. Therefore, expected either " &
                      "<em>':'</em> or <em>'='</em> for the assignment " &
                      "operator."),
-  ("BadLock",        "Expected an attribute after <em>'~'</em> (the " &
-                     "attribute lock operator.)"),
   ("ForFromIx",      "<em>for ... from</em> loops must have a single index " &
                      "variable."),
   ("NameInTypeSpec", "<em>'$1'</em> is not a builtin type. " &
@@ -226,16 +225,12 @@ const errorMsgs = [
                      "cannot currently be attributes."),
   ("MemberTop",      "Attribute member access (.) can only be applied " &
                      "to attributes, not to values."),
-  ("AttrLhs",        "Currently, the left hand side of the attribute " &
-                     "assignment operator can only be a named attribute or " &
-                     "variable."),
-  ("NDim",           "Multi-dimensional arrays are not yet supported."),
   ("TupleConstIx",   "When indexing a tuple, the index must evaluate to " &
                      "a constant integer."),
   ("TupleIxBound",   "Constant index is out of bounds for the tuple being " &
                      "indexed."),
-  ("ContainerType",  "Cannot determine the type of the container used " &
-                     "In this indexing operation (e.g., list, dict, tuple)." &
+  ("ContainerType",  "Cannot distinguish what kind of container type this " &
+                     "is (could be a dict, list, tuple, etc. " &
                      " Please explicitly declare this type."),
   ("BadUrl",         "Invalid URL for loading con4m source code."),
   ("InsecureUrl",    "Warning: loading file from an insecure URL. " &
@@ -304,6 +299,8 @@ const errorMsgs = [
                      "specialized types. Use <em>=</em> or add a modifier " &
                      "that's appropriate for the type of value you're trying " &
                      "to create."),
+  ("AttrUse",        "Attempted to use an attribute <em>$1</em> that has not " &
+                     "been set."),
 
  ]
 
@@ -361,6 +358,10 @@ proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
                 extra = seq[string](@[]), trace = "",
                 ii = none(InstantiationInfo)) =
+  if node == nil:
+    list.baseError(code, nil, modname, 0, 0, phase, severity, extra, trace, ii)
+    return
+
   if node.err and severity != LlInfo:
     return
   if severity in [LlErr, LlFatal]:
@@ -462,14 +463,19 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
   result.add(s.htmlStringToRope(markdown = false, add_div = false))
 
 proc getVerboseInfo(err: Con4mError): Rope =
-  let
-    src     = $(err.cursor.runes)
-    lines   = src.split("\n")
-    locator = em(repeat((' '), err.offset) & "^")
+  var noSource = false
+  if err.cursor == nil:
+    return nil
+  else:
+    let
+      src     = $(err.cursor.runes)
+      lines   = src.split("\n")
+      locator = em(repeat((' '), err.offset) & "^")
 
-  if lines.len() == 0 or err.line == 0:
-    return text("(source unavailable)")
-  result = text(lines[err.line - 1]) + newBreak() + locator + newBreak()
+    if lines.len() == 0 or err.line == 0:
+      return nil
+    else:
+      result = text(lines[err.line - 1]) + newBreak() + locator + newBreak()
 
 proc getLocWidth(errs: seq[Con4mError]): int =
   for err in errs:
