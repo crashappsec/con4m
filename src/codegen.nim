@@ -217,6 +217,8 @@ type
   # This is all the data that will be in an "object" file; we'll
   # focus on being able to marshal and load these only.
   ZObject* = ref object
+    zeroMagic*:      int = 0x0c001deac001dea
+    zeroCoolVers*:   int = 0x01
     moduleContents*: Dict[string, ModuleInfo] # Order is important.
     types*:          Dict[int64, string]
     entrypoint*:     int64
@@ -226,13 +228,17 @@ type
     staticData*:     string
 
   ModuleInfo* = ref object
-    processed*:      bool
+    syms*:           Dict[int, string]
+    source*:         StringCursor
     arenaId*:        int
+
+    # The above items get marshalled into the ZObject; the rest does not.
+    processed*:      bool
     moduleRef*:      Module
     loopLocs*:       seq[(IrNode, int)]
     backpatchLocs*:  seq[(IrNode, int)]
     instructions*:   seq[ZInstruction]
-    syms*:           Dict[int, string]
+
 
   CodeGenState* = object
     cc*:             CompileCtx

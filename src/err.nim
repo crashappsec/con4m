@@ -162,7 +162,7 @@ const errorMsgs = [
                      "Type of condition is: <em>$1</em>"),
   ("CannotCast",     "Cannot convert from type <em>$1</em> to " &
                      "type <em>$2</em>"),
-  ("BoolAutoCast",   "This condition (of type <em>$1</em> is not a " &
+  ("BoolAutoCast",   "This condition (of type <em>$1</em>) is not a " &
                      "boolean value, but is being auto-cast."),
   ("TyDiffListItem", "List item type is not consistent with other items (" &
                      "Previous items were <em>$1</em>; this is a <em>$2</em>)"),
