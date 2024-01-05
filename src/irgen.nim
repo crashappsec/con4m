@@ -861,6 +861,12 @@ proc handleFuncdefSymbols(ctx:   Module,
     symOpt = ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid(),
                               declNode = item.loc)
     allParams[i].sym = symOpt.getOrElse(nil)
+    if i != allParams.len() - 1:
+      # This will give these variables negative stack offsets; the space for
+      # the return value doesn't get that treatment; it is the only
+      # thing we currently pass in a register, and will live like any
+      # other variable on the stack until it's time to return.
+      allParams[i].sym.formal = true
 
   symOpt = ctx.scopeDeclare(ctx.moduleScope, info.name, true)
 
@@ -1318,13 +1324,13 @@ proc convertForStmt(ctx: Module): IrNode =
   result.contents.condition = ctx.downNode(1)
   result.contents.loopBody  = ctx.downNode(2)
 
-  if result.contents.loopVars.len() == 2:
+  if result.contents.loopVars.len() == 4:
     ctx.typeCheck(result.contents.condition.tid,
-                  tDict(result.contents.loopVars[0].tid,
-                        result.contents.loopVars[1].tid))
+                  tDict(result.contents.loopVars[2].tid,
+                        result.contents.loopVars[3].tid))
   else:
       ctx.typeCheck(result.contents.condition.tid,
-                    tList(result.contents.loopVars[0].tid))
+                    tList(result.contents.loopVars[2].tid))
 
   if ctx.blockScopes.len() > 1:
     ctx.blockScopes = ctx.blockScopes[1 .. ^1]
@@ -1355,6 +1361,8 @@ proc convertWhileStmt(ctx: Module): IrNode =
 
   result.contents.loopVars.add(loopVar)
 
+  result.contents.condition = ctx.downNode(0)
+
   if unify(TBool, result.contents.condition.getTid()) == TBottom:
     if result.contents.condition.getTid().canCastToBool():
       ctx.irWarn("BoolAutoCast",
@@ -1365,7 +1373,6 @@ proc convertWhileStmt(ctx: Module): IrNode =
                   @[result.contents.condition.getTid().toString()],
                   w = ctx.parseKid(0))
 
-  result.contents.condition = ctx.downNode(0)
   result.contents.loopBody  = ctx.downNode(1)
   result.contents.whileLoop = true
 

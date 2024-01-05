@@ -10,6 +10,10 @@ proc initScope*(): Scope =
 
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
+
+  echo "In scope, @ for dict when setting: ",
+          toHex(cast[int](cast[pointer](ctx.modules)))
+
   result = Module(url: url, where: where, modname: name, ext: ext,
                   key: key, s: newStringCursor(contents))
   result.moduleScope = initScope()
@@ -503,15 +507,16 @@ proc allVars*(s: Scope): seq[SymbolInfo] =
     if not v.isFunc:
       result.add(v)
 
-proc calculateOffsets*(s: Scope) =
+proc calculateOffsets*(s: Scope, startOffset = 0) =
   # For now, we just allocate everything 8 bytes on the stack,
-  # regardless of type.
+  # regardless of type. Formal parameters get negative offsets.
   if s == nil:
     return
 
   let symInfo = s.table.items(sort = true)
   var
-    sz = 0
+    sz           = startOffset
+    formalOffset = -16 # -8 is the return address.
 
   if s.parent != nil:
     sz = s.parent.scopeSize
@@ -519,11 +524,20 @@ proc calculateOffsets*(s: Scope) =
   for (n, sym) in symInfo:
     if sym.isFunc:
       continue
+    if sym.formal:
+      sym.offset = formalOffset
+      formalOffset -= 8
+      continue
+
     sym.offset = sz
     sym.size   = 8
     sz        += 8
 
   s.scopeSize = sz
-  if s.parent != nil:
+
+  # Recursively update.
+  var s = s
+  while s.parent != nil:
     if s.parent.scopeSize < s.scopeSize:
       s.parent.scopeSize = s.scopeSize
+    s = s.parent

@@ -142,8 +142,13 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
       result = ctx.handleOneNode(m, item, result)
 
       if result == nil:
+        print h1("Possible dead code")
+        print n.toRope()
+        print h2("Let's see.")
         if i + 1 != n.contents.stmts.len():
           m.irWarn("DeadCode", item, @["statement"])
+          for m in i + 1 ..< n.contents.stmts.len():
+            print n.contents.stmts[m].toRope()
         return # Skip dead code.
 
   of IrSection:
@@ -165,8 +170,6 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # If the below is false then we will have already warned
     # about a loop that never exits and should be quiet I guess?
     if ctx.handleOneNode(m, n.contents.loopBody, passDown).finishBlock(loopTop):
-      result = loopTop.exitNode
-
       if n.contents.condition != nil and n.contents.condition.isConstant():
         let
           asMixed = n.contents.condition.value.get()
@@ -177,8 +180,16 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
         if asBool and not loopTop.hasExitToOuterBlock():
           m.irWarn("InfLoop", w = n.contents.condition)
           result = nil
+
     else:
-      result = nil
+      var b = passdown
+      while b.nextBlock != nil:
+        b = b.nextBlock
+
+
+      b.nextBlock = loopTop.exitNode
+
+    result = loopTop.exitNode
 
   of IrAttrAssign:
     result = ctx.handleOneNode(m, n.contents.attrRhs, result)
@@ -438,7 +449,8 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   if f.cfg != nil or f.externInfo != nil:
     return
 
-  f.fnScope.calculateOffsets()
+  # Leave a word for the samed base pointer.
+  f.fnScope.calculateOffsets(startOffset = 8)
   f.maxOffset = f.fnScope.scopeSize # This can get bigger as we descend.
 
   let m = f.defModule
@@ -642,7 +654,8 @@ proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
     r += fgColor("Loop", "atomiclime")
 
     if cur.loopIrNode.contents.label != nil:
-      r += strong(cur.loopIrNode.contents.label.getText()) + text(" ")
+      r += text(" ") + strong(cur.loopIrNode.contents.label.getText()) +
+           text(" ")
     r += cur.loopIrNode.parseNode.fmtCfgLoc()
   elif cur.label != "":
     r += fgColor(cur.label, "atomiclime")

@@ -25,12 +25,12 @@
 # - finish hasExitToOuterBlock in CFG.
 # - For errors, make it easy to see "previous instance", and remove
 #   table for 2nd line
-# - Handle result variable properly in offsets.
 # - Auto-generation of type-checking C interface API?
 # - Copy operations for all ref builtin types.
 # - Handle negative indexes in call_...index
 # - explicit casts
 # - Callback objects
+# - Warning when your declared type is more generic than the inferred type.
 
 # == Medium ==
 # - Merge var/attr assign nodes.
@@ -46,7 +46,7 @@
 # - Code generation.
 # - Doc API.
 # - dlclose stuff.
-# - Merge mixed / cbox
+# - Redo the CFG for SSA (cleaning up the existing bug)
 # - Add some sort of mixed type
 # - Hook getopt back up.
 # - Update the pretty printer.

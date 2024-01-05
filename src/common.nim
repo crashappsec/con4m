@@ -122,7 +122,7 @@ type
       va*: bool
     of C4Struct:
       name*:  string
-      props*: Dict[string, TypeId]
+      props*: DictRef[string, TypeId]
     else:
       discard
 
@@ -359,6 +359,7 @@ type
     doc2*:           string
     maxOffset*:      int
     internalId*:     int
+    codeOffset*:     int # Measured in bytes.
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -384,6 +385,7 @@ type
     module*:       Module # Ignored for non-func global vars and attrs.
     global*:       bool
     err*:          bool
+    formal*:       bool
     declNode*:     Con4mNode
     # heapalloc is only true for global variables and
     # indicates that the offset generated won't be relative to the
@@ -437,7 +439,7 @@ type
     makeChildren*:   bool
     label*:          string
 
-  AttrDict*      = Dict[string, pointer]
+  AttrDict*      = DictRef[string, pointer]
 
   # Some specification info is checked during compilation, but most of
   # it is validation done at points where the validation is supposed
@@ -482,7 +484,7 @@ type
 
     name*:             string
     singleton*:        bool
-    fields*:           Dict[string, FieldSpec]
+    fields*:           DictRef[string, FieldSpec]
     userDefOk*:        bool
     validators*:       seq[Validator]
     hidden*:           bool
@@ -492,10 +494,10 @@ type
 
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
-    secSpecs*: Dict[string, SectionSpec]
+    secSpecs*: DictRef[string, SectionSpec]
 
   Scope* = ref object
-    table*:     Dict[string, SymbolInfo]
+    table*:     DictRef[string, SymbolInfo]
     scopeSize*: int
     attr*:      bool
     numSyms*:   int
@@ -596,7 +598,7 @@ type
     errors*:      seq[Con4mError]
     globalScope*: Scope
     usedAttrs*:   Scope
-    modules*:     Dict[string, Module]
+    modules*:     DictRef[string, Module]
     entrypoint*:  Module
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
