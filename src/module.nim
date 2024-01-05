@@ -42,16 +42,8 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
 
   var moduleKey = joinPath(location, fname)
 
-  echo "In module.nim: ", moduleKey
-  echo "Module dict @: ", toHex(cast[int](cast[pointer](ctx.modules)))
-  echo getStackTrace()
-
-  for (k, v) in ctx.modules.items():
-    echo "Found module key: ", k
-
   let moduleOpt = ctx.modules.lookup(moduleKey)
   if moduleOpt.isSome():
-    echo "Got it."
     # It might not be loaded at this point (recursive imports), but that's okay.
     return moduleOpt
   var ext = if ext == "": ctx.defaultExt else: ext
@@ -69,7 +61,6 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
     return none(Module)
 
   if source.isNone():
-    echo "Uh-oh."
     return none(Module)
 
   var module = ctx.newModuleObj(source.get(), fname, location, ext, url,

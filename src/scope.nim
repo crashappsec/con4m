@@ -11,9 +11,6 @@ proc initScope*(): Scope =
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
 
-  echo "In scope, @ for dict when setting: ",
-          toHex(cast[int](cast[pointer](ctx.modules)))
-
   result = Module(url: url, where: where, modname: name, ext: ext,
                   key: key, s: newStringCursor(contents))
   result.moduleScope = initScope()

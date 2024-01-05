@@ -40,7 +40,7 @@ var
 
 proc str_new_lit(s: string, st: SyntaxType, lmod: string, l: var int,
                  err: var string): pointer {.cdecl.} =
-  l = s.len()
+  l = s.len() + 1
   result = alloc0(l)
   copyMem(result, addr s[0], l - 1)
 
@@ -57,29 +57,29 @@ proc rich_new_lit(s: string, st: SyntaxType, lmod: string,
   copyMem(result, addr toStore[0], l - 1)
 
 proc str_repr(pre: pointer): string {.cdecl.} =
-  let s = extractRef[string](pre)
-  return s
+  let s = cast[cstring](pre)
+  return $(s)
 
 proc u32_repr(pre: pointer): string {.cdecl.} =
-  let s = extractRef[seq[Rune]](pre)
+  let s = cast[seq[Rune]](pre)
   return $(s)
 
 proc rich_repr(pre: pointer): string {.cdecl.} =
-  let s = extractRef[Rope](pre)
+  let s = cast[Rope](pre)
   return s.toUtf8()
 
 
 proc str_eq(a, b: pointer): bool {.cdecl.} =
   let
-    x = extractRef[string](a)
-    y = extractRef[string](b)
+    x = cast[string](a)
+    y = cast[string](b)
 
   return x == y
 
 proc u32_eq(a, b: pointer): bool {.cdecl.} =
   let
-    x = extractRef[seq[Rune]](a)
-    y = extractRef[seq[Rune]](b)
+    x = cast[seq[Rune]](a)
+    y = cast[seq[Rune]](b)
 
   return x == y
 
@@ -89,42 +89,42 @@ proc u32_eq(a, b: pointer): bool {.cdecl.} =
 
 proc str_lt(a, b: pointer): bool {.cdecl.} =
   let
-    x = extractRef[string](a)
-    y = extractRef[string](b)
+    x = cast[string](a)
+    y = cast[string](b)
 
   return x < y
 
 proc str_gt(a, b: pointer): bool {.cdecl.} =
   let
-    x = extractRef[string](a)
-    y = extractRef[string](b)
+    x = cast[string](a)
+    y = cast[string](b)
 
   return x > y
 
 proc u32_lt(a, b: pointer): bool {.cdecl.} =
   ## Todo... faster comparisons here.
   let
-    x = extractRef[seq[Rune]](a)
-    y = extractRef[seq[Rune]](b)
+    x = cast[seq[Rune]](a)
+    y = cast[seq[Rune]](b)
 
   return $(x) < $(y)
 
 proc u32_gt(a, b: pointer): bool {.cdecl.} =
   let
-    x = extractRef[seq[Rune]](a)
-    y = extractRef[seq[Rune]](b)
+    x = cast[seq[Rune]](a)
+    y = cast[seq[Rune]](b)
 
   return $(x) > $(y)
 
 proc rich_pluseq(a, b: pointer): void {.cdecl.} =
   var
-    x = extractRef[Rope](a)
-    y = extractRef[Rope](b)
+    x = cast[Rope](a)
+    y = cast[Rope](b)
 
   x += y
 
 proc str_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
-  var x = extractRef[string](a)
+  var x = cast[string](a)
 
   if b < 0 or b >= x.len():
     err = true
@@ -133,7 +133,7 @@ proc str_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
   return cast[pointer](int64(x[b]))
 
 proc u32_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
-  var x = extractRef[seq[Rune]](a)
+  var x = cast[seq[Rune]](a)
 
   if b < 0 or b >= x.len():
     err = true
@@ -143,15 +143,15 @@ proc u32_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
 
 
 proc str_len(p: pointer): int {.cdecl.} =
-  let s = extractRef[string](p)
+  let s = cast[string](p)
   return s.len()
 
 proc u32_len(p: pointer): int {.cdecl.} =
-  let s = extractRef[seq[Rune]](p)
+  let s = cast[seq[Rune]](p)
   return s.len()
 
 proc rich_len(p: pointer): int {.cdecl.} =
-  let r = extractRef[string](p)
+  let r = cast[string](p)
   return r.runeLength()
 
 strOps[FRepr]       = cast[pointer](str_repr)
@@ -213,46 +213,46 @@ registerSyntax(TRich,   STStrQuotes, richLitMods)
 
 proc str_add(a, b: pointer): pointer =
   let
-    x = extractRef[string](a)
-    y = extractRef[string](b)
+    x = cast[string](a)
+    y = cast[string](b)
 
   return newRefValue[string](x & y, TString)
 
 proc buf_add(a, b: pointer): pointer =
   let
-    x = extractRef[string](a)
-    y = extractRef[string](b)
+    x = cast[string](a)
+    y = cast[string](b)
 
   return newRefValue[string](x & y, TBuffer)
 
 proc cast_str_to_u32(pre: pointer): pointer =
-  let s = extractRef[string](pre)
+  let s = cast[string](pre)
 
   return newRefValue[seq[Rune]](s.toRunes(), TUtf32)
 
 proc cast_str_to_rich(pre: pointer): pointer =
-  let s = extractRef[string](pre)
+  let s = cast[string](pre)
 
   return newRefValue[Rope](text(s), TRich)
 
 proc cast_u32_to_rich(pre: pointer): pointer =
-  let runes = extractRef[seq[Rune]](pre)
+  let runes = cast[seq[Rune]](pre)
 
   return newRefValue[Rope](text(`$`(runes)), TRich)
 
 proc cast_u32_to_u8(pre: pointer): pointer =
-  let s = extractRef[seq[Rune]](pre)
+  let s = cast[seq[Rune]](pre)
 
   return newRefValue[string](`$`(s), TBuffer)
 
 proc cast_u32_to_str(pre: pointer): pointer =
-  let s = extractRef[seq[Rune]](pre)
+  let s = cast[seq[Rune]](pre)
 
   return newRefValue[string](`$`(s), TString)
 
 proc cast_rich_to_u32(pre: pointer): pointer =
   let
-    r = extractRef[Rope](pre)
+    r = cast[Rope](pre)
     s = r.toUtf8(r.runeLength())
     u = s.toRunes()
 
@@ -260,14 +260,14 @@ proc cast_rich_to_u32(pre: pointer): pointer =
 
 proc cast_rich_to_u8(pre: pointer): pointer =
   let
-    r = extractRef[Rope](pre)
+    r = cast[Rope](pre)
     s = r.toUtf8(r.runeLength())
 
   return newRefValue[string](s, TBuffer)
 
 proc cast_rich_to_str(pre: pointer): pointer =
   let
-    r = extractRef[Rope](pre)
+    r = cast[Rope](pre)
     s = r.toUtf8(r.runeLength())
 
   return newRefValue[string](s, TString)
@@ -313,22 +313,22 @@ proc get_cast_from_rich(dt: Datatype, err: var string): pointer =
 
 proc u32_add(a, b: pointer): pointer =
   let
-    x = extractRef[seq[Rune]](a)
-    y = extractRef[seq[Rune]](b)
+    x = cast[seq[Rune]](a)
+    y = cast[seq[Rune]](b)
 
   return newRefValue[seq[Rune]](x & y, TUtf32)
 
 proc rich_add(a, b: pointer): pointer =
   let
-    x = extractRef[Rope](a)
-    y = extractRef[Rope](b)
+    x = cast[Rope](a)
+    y = cast[Rope](b)
 
   return newRefValue[Rope](x + y, TRich)
 
 
 proc str_slice(a: pointer, b, c: int): pointer =
   let
-    x = extractRef[string](a)
+    x = cast[string](a)
     l = x.len()
 
   var
@@ -347,7 +347,7 @@ proc str_slice(a: pointer, b, c: int): pointer =
 
 proc buf_slice(a: pointer, b, c: int, err: var bool): pointer =
   let
-    x = extractRef[string](a)
+    x = cast[string](a)
     l = x.len()
 
   var
@@ -366,7 +366,7 @@ proc buf_slice(a: pointer, b, c: int, err: var bool): pointer =
 
 proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
   let
-    x = extractRef[seq[Rune]](a)
+    x = cast[seq[Rune]](a)
     l = x.len()
 
   var
@@ -431,20 +431,24 @@ proc rich_load_lit(cstr: cstring, l: cint): pointer =
   else:
     r = atom(s)
 
-  return newRefValue[Rope](r, TRich)
+  GC_ref(r)
+
+  return cast[pointer](r)
 
 proc str_copy(p: pointer): pointer =
-  let s = extractRef[string](p)
-  return newRefValue[string](s, TString)
+  let s = cast[cstring](p)
+  return cast[pointer](s)
 
 proc buf_copy(p: pointer): pointer =
-  let s = extractRef[string](p)
-  return newRefValue[string](s, TBuffer)
+  let s = cast[cstring](p)
+  return cast[pointer](s)
 
 proc u32_copy(p: pointer): pointer =
-  let s = extractRef[seq[Rune]](p)
-  return newRefValue[seq[Rune]](s, TUtf32)
+  # TODO; fix these.
+  let s = cast[seq[Rune]](p)
+  return cast[pointer](s)
 
 proc rich_copy(p: pointer): pointer =
-  let r = extractRef[Rope](p)
-  return newRefValue[Rope](r.copy(), TRich)
+  let r = cast[Rope](p)
+  GC_ref(r)
+  return cast[pointer](r)

@@ -3,7 +3,6 @@
 # === High priority ===
 # - No matching sig error for function calls
 # - Offset isn't right for sym copies in a typecase. Check lineage.
-# - Return variable
 # - Basic execution.
 # - Load default values at beginning of program.
 # - Dictionary and tuple implementations
@@ -14,6 +13,9 @@
 # - Module state caching for re-linking when conf files change.
 # - Swap in hatrack lists (and add rings?).
 # - Use No-side-effect prop for funcs to allow calling functions at compile time.
+# Builtin funcs are a bit wrong about data storage etc.
+# - Print statement?
+#
 # - Keep spec around in object file.
 # - Allow assignment inside var / global / const statements.
 # - Component logic in runtime.

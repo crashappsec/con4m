@@ -122,7 +122,7 @@ type
       va*: bool
     of C4Struct:
       name*:  string
-      props*: DictRef[string, TypeId]
+      props*: Dict[string, TypeId]
     else:
       discard
 
@@ -439,7 +439,7 @@ type
     makeChildren*:   bool
     label*:          string
 
-  AttrDict*      = DictRef[string, pointer]
+  AttrDict*      = Dict[string, pointer]
 
   # Some specification info is checked during compilation, but most of
   # it is validation done at points where the validation is supposed
@@ -484,7 +484,7 @@ type
 
     name*:             string
     singleton*:        bool
-    fields*:           DictRef[string, FieldSpec]
+    fields*:           Dict[string, FieldSpec]
     userDefOk*:        bool
     validators*:       seq[Validator]
     hidden*:           bool
@@ -494,10 +494,10 @@ type
 
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
-    secSpecs*: DictRef[string, SectionSpec]
+    secSpecs*: Dict[string, SectionSpec]
 
   Scope* = ref object
-    table*:     DictRef[string, SymbolInfo]
+    table*:     Dict[string, SymbolInfo]
     scopeSize*: int
     attr*:      bool
     numSyms*:   int
@@ -598,10 +598,10 @@ type
     errors*:      seq[Con4mError]
     globalScope*: Scope
     usedAttrs*:   Scope
-    modules*:     DictRef[string, Module]
     entrypoint*:  Module
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
+    modules*:     Dict[string, Module]
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

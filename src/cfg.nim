@@ -142,9 +142,6 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
       result = ctx.handleOneNode(m, item, result)
 
       if result == nil:
-        print h1("Possible dead code")
-        print n.toRope()
-        print h2("Let's see.")
         if i + 1 != n.contents.stmts.len():
           m.irWarn("DeadCode", item, @["statement"])
           for m in i + 1 ..< n.contents.stmts.len():
