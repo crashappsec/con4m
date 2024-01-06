@@ -6,6 +6,8 @@
 import unicode, nimutils, options, ffi
 export unicode, nimutils, options, ffi
 
+# These consts are for calls in our internal Type API. It's meant to be
+# used both during compilation and interpretation.
 const
   FRepr*         = 0
   FCastFn*       = 1
@@ -57,8 +59,6 @@ const
   OpNeq*         = 130
   OpGte*         = 131
   OpLte*         = 132
-
-
 
 type
   SyntaxType* = enum
@@ -550,7 +550,6 @@ type
     funcScope*:      Scope
     usedAttrs*:      Scope
     fatalErrors*:    bool
-    processed*:      bool
 
     # Used in lexical analysis only.
     # This should move to a tmp object.
@@ -590,6 +589,10 @@ type
     didFoldingPass*: bool # Might not be using this anymore.
     maxOffset*:      int
 
+    # Used in code generation.
+    processed*:     bool
+    loopLocs*:      seq[(IrNode, int)]
+    backpatchLocs*: seq[(IrNode, int)]
 
   CompileCtx* = ref object
     modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
@@ -602,6 +605,283 @@ type
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
     modules*:     Dict[string, Module]
+
+  # The remaining data structures are used in code generation and / or
+  # runtime. Any type here with a Z in front is intended to get
+  # marshaled into the object file.
+
+  ZOp* {.size: 1.} = enum
+     # The first pushes are all pushes from variables to the stack.
+     # So if we were explicitly going through registers, this would be
+     # load + push.
+     #
+     # The 64-bit argument to the instruction will contain the address
+     # from which to load.
+     #
+     # These first item indicates that the operand is definitely typed
+     # to one of the integer types, and is being held in a 64-bit
+     # bounary.
+     #
+     # This way, when we're building a runtime, we can minimize work
+     # in figuring out how to implement ZTCalls (internal calls) if
+     # we don't
+     ZPushVal       = 0x10, # Push a primitive value that is
+                            # passed by value (e.g., a size object)
+
+     # Push a pointer relative to the offset of the scope start.  This
+     # might be a data object pointer, or it might be an attribute
+     # name, as we call this before assigning or loading attributes.
+     ZPushPtr       = 0x11,
+
+     # Push a pointer relative to our static data.
+     ZPushStaticPtr = 0x12,
+
+     # Push an immediate value onto the stack (the value coming from
+     # the instruction itself).
+     ZPushImm       = 0x13,
+
+     # Pushes the type of a a heap object onto the stack
+     # for purposes of runtime type comparisons.
+     ZPushSType     = 0x14,
+
+     # Push the address of a variable that lives either on the stack
+     # or the heap (not an attribute).  The intent here is not to
+     # access the contents, but to replace the object.  So if we do:
+     # `x = y`, where `y` is an `int`, this loads the address of `x`,
+     # not the value of `x`.
+     #
+     # For *object* types, there's no difference here, until we add
+     # references to the language.
+     ZPushAddr      = 0x15,
+
+     # A lot of the below operations implicitly pop args from the
+     # stack once they consume them. This allows us to keep an arg
+     # around. Particularly, we use this for switch-style statements,
+     # to keep the value we're testing against around (since our
+     # current VM model is stack-only).
+     ZDupTop        = 0x16,
+
+     # When this instruction is called, the stack is popped, the value is
+     # checked for a C-style string; that attribute is loaded.
+     ZLoadFromAttr  = 0x17,
+
+     # The top of the stack has a heap object and an index; replace
+     # with the contents at that index. Note that the index might not
+     # be directly on the stack, it might be a string, etc.  Check the
+     # type field for this one.
+     ZIndexedLoad   = 0x18,
+
+     # Load a slice. Here, the indicies are always ints.
+     ZSliceLoad     = 0x19,
+
+     # Pop a value from the stack, discarding it.
+     ZPop           = 0x20,
+
+     # Store a copy of the top of the stack into a memory address
+     # from a stack offset. Does not pop.
+     ZStoreTop      = 0x21,
+
+     # Store an immediate value (encoded in the instruction) into the
+     # memory address, ignoring the stack.
+     ZStoreImm      = 0x22,
+
+     # Tests the top of the stack... if it's a zero value, it jumps to
+     # the indicated instruction. The jump argument is a relative
+     # offset, and is measured in BYTES, which obviously will
+     # be a multiple of the opcode size.
+     #
+     # Note that, when we're backpatching jumps, we hold onto an
+     # absolute index into the opcode table, not a byte index. We
+     # don't convert to a relative offset until storing the info.
+     #
+     # No matter the value, the two conditional jumps pop the top of
+     # the stack.
+     ZJz            = 0x30,
+     ZJnz           = 0x31,
+
+     # No popping for an unconditional jump.
+     ZJ             = 0x32,
+
+     # This calls our internal data type API. If there's a return value,
+     # it's left on the stack.
+     ZTCall         = 0x33,
+
+     # This calls a function, which can include the module's top-level
+     # code, with the opcode encoding the arena (module id) and the
+     # byte offset into that arena's code.
+     #
+     # It assumes arguments are pushed, but then:
+     # 1. Pushes the return address
+     # 2. Saves the base pointer to the stack.
+     # 3. Sets the value of the base pointer to point to the saved
+     #    base pointer. That means the first argument will live at -16.
+     # 4. It jumps to the entry point.
+     Z0Call         = 0x34,
+
+     # This runs a FFI call.
+     ZFFICall       = 0x35,
+
+     # This maps to a 'use' statement; it calls the initialization code
+     # of a module.
+     ZCallModule    = 0x36,
+
+     # Duh.
+     ZNot           = 0x50,
+
+     # Unmarshal stored data from the heap, instantiating an object.
+     # the data in the heap should be considered read-only.
+     ZSObjNew       = 0x60,
+
+     # The stack contains a heap pointer and a value to assign at
+     # that address. This pops its arguments.
+     ZAssignToLoc   = 0x70,
+
+     # The stack contains a heap pointer to a data object, an index
+     # (which might be a non-int type like a pointer), and a value
+     # to assign at the given index. Pops arguments.
+     ZAssignToIx    = 0x71,
+
+     # Same as prev in concept, but with the extra index to indicate
+     # the end of the slice. Pops arguments.
+     ZAssignSlice   = 0x72,
+
+     # Whereas with `ZAssignToLoc`, the stack containsa pointer to a variable,
+     # here it contains a pointer to a heap-alloc'd string that is the name
+     # of the attribute.
+     ZAssignAttr    = 0x73,
+
+     # This just needs to shrink the stack back to the base pointer,
+     # restore the old base pointer, and jump to the saved return
+     # address (popping it as well).
+     ZRet           = 0x80,
+
+     # This is a return, unless the module is the entry point, in
+     # which case it is a halt.
+     ZModuleRet     = 0x81,
+     ZHalt          = 0x82,
+
+     # SetRet should be called by any function before exiting, placing
+     # the return value in the one user register in our 'machine'. The
+     # top of the stack is popped and placed in that register, overwriting
+     # anything there.
+     ZSetRes        = 0x90,
+
+     # This pushes whatever is in the return register onto the stack;
+     # It does NOT clear the register.
+     ZPushRes       = 0x91,
+
+     # This is the standard function prologue; it pushes the base
+     # pointer and grows the stack by the number of bytes requested in
+     # the `immediate` field, but will always be 64-bit aligned.
+     ZEnter         = 0x92,
+
+     # A no-op. These double as labels for disassembly too.
+     ZNop           = 0xff
+
+  ZProgParam* = object
+    # `memloc` specifies where the parameter should be stored. This is
+    # not a raw memory pointer. It's either an offset from a module's
+    # arena, or a pointer to the global static data, where the
+    # attribute name is kept.
+    #
+    # Which of the above applies is detemrined by the `arenaId` field;
+    # the modules are all given positive indexes. If it's zero, then
+    # it's an attribute.
+    memloc*:    pointer
+    paramName*: pointer # The source name of the variable or attribute.
+    typePtr*:   pointer # The marshal'd type object.
+    shortDoc*:  pointer # An offset to the short description start.
+    longDoc*:   pointer
+    validator*: pointer # An offset to validation code in the global arena.
+    default*:   pointer # Depending on the type, either a value, or a ptr
+    status*:    int32   # 0 for no value present.
+    arenaId*:   int32
+
+  ZInstruction* = object
+    # Compilers should all pad this structure to 24 bytes, but just in case...
+    op*:        ZOp     # 1 byte
+    pad:        byte
+    arena*:     int16   # Right now, 0 for global variables,
+                        # -1 for stack, and then a positive number for
+                        # modules. These don't really need to live in
+                        # separate memory arenas, but we computed
+                        # offsets on a per-module basis.
+    lineNo*:    int32   # Line # in the current module this was gen'd at.
+    arg*:       int32   # An offset, call number, etc.
+    immediate*: int64   # Anything that must be 64-bits.
+    typeInfo*:  TypeId  # TypeID associated w/ a data object in the source
+                        # code. Will not always be concrete, but is there
+                        # to facilitate run-time type info without having
+                        # to do more accounting than needed.
+
+  ZFFiAuxArgInfo* = object
+    held*:    bool   # Whether passing a pointer to the thing causes it
+                     # to hold the pointer, in which case decref must
+                     # be explicit.
+    alloced*: bool   # This passes a value back that was allocated
+                     # in the FFI.
+    argType*: uint16 # an index into the CTypeNames data structure in ffi.nim.
+    ourType*: uint32 # To look up any FFI processing we do for the type.
+
+  ZFFiInfo* = object
+    baseInfo*:     CallerInfo
+    externalName*: pointer
+    dllName*:      pointer
+    auxArgInfo*:   seq[ZffiAuxArgInfo]
+
+  ZFnInfo* = ref object
+    # This field maps offsets to the name of the field. Frame
+    # temporaries do not get name information here.
+    syms*:       Dict[int, string]
+    # Type IDs at compile time. Particularly for debugging info, but
+    # will be useful if we ever want to, from the object file, create
+    # optimized instances of functions based on the calling type, etc.
+    # Parameters are held seprately from stack symbols, and like w/
+    # syms, we only capture variables scoped to the entire function.
+    # We'll probably address that later.
+    paramTypes*: seq[TypeId]
+    symTypes*:   seq[TypeId]
+    # Offset in bytes into the module's generated code where this
+    # function begins.
+    offset*:     int
+    size*:       int
+
+    # Not used during runtime; a back-pointer for generation.
+    fnRef*:   FuncInfo
+
+  # This is all the data that will be in an "object" file; we'll
+  # focus on being able to marshal and load these only.
+  #
+  # When we move on to storing object files, the data will be
+  # marshal'd into the object's static data segment, and even the
+  # dictionaries will be laid out so that we can just load them into
+  # hatrack data structures w/o having to re-insert k/v pairs.
+  #
+  # Also, the object file will have room for runtime save state, a
+  # resumption point (i.e., a replacement entry point), and a chalk
+  # mark.
+  ZObject* = ref object
+    zeroMagic*:      int = 0x0c001dea0c001dea
+    zcObjectVers*:   int = 0x01
+    staticData*:     string
+    globals*:        Dict[int, string]
+    globalTypes*:    Dict[int, string]
+
+    moduleContents*: seq[ZModuleInfo]
+    entrypoint*:     int64
+    funcInfo*:       seq[ZFnInfo]
+
+  ZModuleInfo* = ref object
+    datasyms*:       Dict[int, string]
+    codesyms*:       Dict[int, string]
+    source*:         StringCursor
+    arenaId*:        int
+    instructions*:   seq[ZInstruction]
+    initSize*:       int # size of init code before functions begin.
+
+    # The above items get marshalled into the ZObject; this is
+    # just a backpointer to the module object.
+    moduleRef*:      Module
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

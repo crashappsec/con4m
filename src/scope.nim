@@ -1,7 +1,7 @@
 import parse, strutils, specs
 
 template getTid*(s: SymbolInfo): TypeId =
-  s.tid.followForwards()
+  s.tid.getTid()
 
 proc initScope*(): Scope =
   result        = Scope()

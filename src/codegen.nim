@@ -24,279 +24,14 @@ proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
                       Option[Module] {.importc, cdecl.}
 
 type
-  ZOp* {.size: 1.} = enum
-     # The first four pushes are all pushes from variables to the stack.
-     # So if we were explicitly going through registers, this would be
-     # load + push.
-     #
-     #
-     #
-     # The 64-bit argument to the instruction will contain the address
-     # from which to load.
-     ZPushO         = 0x10, # Push an ordinal type (no need to type check)
-     ZPushF         = 0x11, # Push a float type
-     ZPushVal       = 0x12, # Push some other primitive value that is
-                            # passed by value (e.g., a size object)
-
-     # Push a pointer relative to the offset of the scope start.  This
-     # might be a data object pointer, or it might be an attribute
-     # name, as we call this before assigning or loading attributes.
-     ZPushPtr       = 0x13,
-
-     # Push a pointer relative to our static data.
-     ZPushStaticPtr = 0x14,
-
-     # Push an immediate value onto the stack (the value coming from
-     # the instruction itself).
-     ZPushImm       = 0x15,
-
-     # Pushes the type of a a heap object onto the stack
-     # for purposes of runtime type comparisons.
-     ZPushSType     = 0x16,
-
-     # Push the address of a variable that lives either on the stack
-     # or the heap (not an attribute).  The intent here is not to
-     # access the contents, but to replace the object.  So if we do:
-     # `x = y`, where `y` is an `int`, this loads the address of `x`,
-     # not the value of `x`.
-     #
-     # For *object* types, there's no difference here, until we add
-     # references to the language.
-     ZPushAddr      = 0x17,
-
-     # A lot of the below operations implicitly pop args from the
-     # stack once they consume them. This allows us to keep an arg
-     # around. Particularly, we use this for switch-style statements,
-     # to keep the value we're testing against around (since our
-     # current VM model is stack-only).
-     ZDupTop        = 0x18,
-
-     # When this instruction is called, the stack is popped, the value is
-     # checked for a C-style string; that attribute is loaded.
-     ZLoadFromAttr  = 0x19,
-
-     # The top of the stack has a heap object and an index; replace
-     # with the contents at that index. Note that the index might not
-     # be directly on the stack, it might be a string, etc.  Check the
-     # type field for this one.
-     ZIndexedLoad   = 0x1a,
-
-     # Load a slice. Here, the indicies are always ints.
-     ZSliceLoad     = 0x1b,
-
-     # Pop a value from the stack, discarding it.
-     ZPop           = 0x20,
-
-     # Store a copy of the top of the stack into a memory address
-     # from a stack offset.
-     ZStoreTop      = 0x21,
-
-     # Store an immediate value (encoded in the instruction) into the
-     # memory address, ignoring the stack.
-     ZStoreImm      = 0x22,
-
-     # Tests the top of the stack... if it's a zero value, it jumps to
-     # the indicated instruction. The jump argument is a relative
-     # offset, and is measured in BYTES, which obviously will
-     # be a multiple of the opcode size.
-     #
-     # Note that, when we're backpatching jumps, we hold onto an
-     # absolute index into the opcode table, not a byte index. We
-     # don't convert to a relative offset until storing the info.
-     #
-     # No matter the value, the two conditional jumps pop the top of
-     # the stack.
-     ZJz            = 0x30,
-     ZJnz           = 0x31,
-
-     # No popping for an unconditional jump.
-     ZJ             = 0x32,
-
-     # This calls our internal data type API. If there's a return value,
-     # it's left on the stack.
-     ZTCall         = 0x33,
-
-     # This calls a function, which can include the module's top-level
-     # code, with the opcode encoding the arena (module id) and the
-     # byte offset into that arena's code.
-     #
-     # It assumes arguments are pushed, but then:
-     # 1. Pushes the return address
-     # 2. Saves the base pointer to the stack.
-     # 3. Sets the value of the base pointer to point to the saved
-     #    base pointer. That means the first argument will live at -16.
-     # 4. It jumps to the entry point.
-     Z0Call         = 0x34,
-
-     # This runs a FFI call.
-     ZFFICall       = 0x35,
-
-     # This maps to a 'use' statement; it calls the initialization code
-     # of a module.
-     ZCallModule    = 0x36,
-
-     # Duh.
-     ZNot           = 0x50,
-
-     # Unmarshal stored data from the heap, instantiating an object.
-     # the data in the heap should be considered read-only.
-     ZSObjNew       = 0x60,
-
-     # The stack contains a heap pointer and a value to assign at
-     # that address. This pops its arguments.
-     ZAssignToLoc   = 0x70,
-
-     # The stack contains a heap pointer to a data object, an index
-     # (which might be a non-int type like a pointer), and a value
-     # to assign at the given index. Pops arguments.
-     ZAssignToIx    = 0x71,
-
-     # Same as prev in concept, but with the extra index to indicate
-     # the end of the slice. Pops arguments.
-     ZAssignSlice   = 0x72,
-
-     # Whereas with `ZAssignToLoc`, the stack containsa pointer to a variable,
-     # here it contains a pointer to a heap-alloc'd string that is the name
-     # of the attribute.
-     ZAssignAttr    = 0x73,
-
-     # This just needs to shrink the stack back to the base pointer,
-     # restore the old base pointer, and jump to the saved return
-     # address (popping it as well).
-     ZRet           = 0x80,
-
-     # This is a return, unless the module is the entry point, in
-     # which case it is a halt.
-     ZModuleRet     = 0x81,
-     ZHalt          = 0x82,
-
-     # SetRet should be called by any function before exiting, placing
-     # the return value in the one user register in our 'machine'. The
-     # top of the stack is popped and placed in that register, overwriting
-     # anything there.
-     ZSetRes        = 0x90,
-
-     # This pushes whatever is in the return register onto the stack;
-     # It does NOT clear the register.
-     ZPushRes       = 0x91,
-
-     # This is the standard function prologue; it pushes the base
-     # pointer and grows the stack by the number of bytes requested in
-     # the `immediate` field, but will always be 64-bit aligned.
-     ZEnter         = 0x92,
-
-     # A no-op. These double as labels for disassembly too.
-     ZNop           = 0xff
-
-  ZProgParam* = object
-    # `memloc` specifies where the parameter should be stored. This is
-    # not a raw memory pointer. It's either an offset from a module's
-    # arena, or a pointer to the global static data, where the
-    # attribute name is kept.
-    #
-    # Which of the above applies is detemrined by the `arenaId` field;
-    # the modules are all given positive indexes. If it's zero, then
-    # it's an attribute.
-    memloc*:    pointer
-    paramName*: pointer # The source name of the variable or attribute.
-    typePtr*:   pointer # The marshal'd type object.
-    shortDoc*:  pointer # An offset to the short description start.
-    longDoc*:   pointer
-    validator*: pointer # An offset to validation code in the global arena.
-    default*:   pointer # Depending on the type, either a value, or a ptr
-    status*:    int32   # 0 for no value present.
-    arenaId*:   int32
-
-  ZInstruction* = object
-    # Compilers should all pad this structure to 24 bytes, but just in case...
-    op*:        ZOp     # 1 byte
-    pad:        byte
-    arena*:     int16   # Right now, 0 for global variables,
-                        # -1 for stack, and then a positive number for
-                        # modules. These don't really need to live in
-                        # separate memory arenas, but we computed
-                        # offsets on a per-module basis.
-    srcId*:     int32   # Index of source info in the
-    arg*:       int32   # An offset, call number, etc.
-    immediate*: int64
-    typeInfo*:  TypeId
-
-  ZLoc* = object
-    url*:     string
-    modname*: string
-    line*:    int
-    col*:     int
-
-  ZFFiAuxArgInfo* = object
-    held*:    bool # Whether passing a pointer to the thing causes it
-                   # to hold the pointer, in which case decref must
-                   # be explicit.
-    alloced*: bool # This passes a value back that was allocated
-                   # in the FFI.
-    argType*: uint16 # an index into the CTypeNames data structure in ffi.nim.
-    ourType*: uint32 # To look up any FFI processing we do for the type.
-
-  ZFFiInfo* = object
-    baseInfo*:     CallerInfo
-    externalName*: pointer
-    dllName*:      pointer
-    auxArgInfo*:   seq[ZffiAuxArgInfo]
-
-  ZFnInfo* = ref object
-    syms*:     Dict[int, string]
-    symTypes*: Dict[int, int]
-    offset*:   int
-    size*:     int
-
-    # Not used during runtime; a back-pointer for generation.
-    fnRef*:   FuncInfo
-
-  # This is all the data that will be in an "object" file; we'll
-  # focus on being able to marshal and load these only.
-  #
-  # When we move on to storing object files, the data will be
-  # marshal'd into the object's static data segment, and even the
-  # dictionaries will be laid out so that we can just load them into
-  # hatrack data structures w/o having to re-insert k/v pairs.
-  #
-  # Also, the object file will have room for runtime save state, a
-  # resumption point (i.e., a replacement entry point), and a chalk
-  # mark.
-  ZObject* = ref object
-    zeroMagic*:      int = 0x0c001dea0c001dea
-    zcObjectVers*:   int = 0x01
-    staticData*:     string
-    globals*:        Dict[int, string]
-    globalTypes*:    Dict[int, string]
-
-    moduleContents*: seq[ModuleInfo]
-    entrypoint*:     int64
-    locInfo*:        seq[ZLoc]
-    funcInfo*:       seq[ZFnInfo]
-
-  ModuleInfo* = ref object
-    datasyms*:       Dict[int, string]
-    codesyms*:       Dict[int, string]
-    source*:         StringCursor
-    arenaId*:        int
-
-    # The above items get marshalled into the ZObject; the rest does not.
-    processed*:      bool
-    moduleRef*:      Module
-    loopLocs*:       seq[(IrNode, int)]
-    backpatchLocs*:  seq[(IrNode, int)]
-    instructions*:   seq[ZInstruction]
-
-
-  CodeGenState* = ref object
-    minfo*:          Dict[string, ModuleInfo]
-    cc*:             CompileCtx
-    zobj*:           ZObject
-    locMap*:         Dict[IrNode, ZLoc]
-    mcur*:           ModuleInfo
-    fcur*:           ZFnInfo
-    curNode*:        IrNode
-    callBackpatches*: seq[(FuncInfo, ModuleInfo, int)]
+  CodeGenState = ref object
+    minfo:           Dict[string, ZModuleInfo]
+    cc:              CompileCtx
+    zobj:            ZObject
+    mcur:            ZModuleInfo
+    fcur:            ZFnInfo
+    curNode:         IrNode
+    callBackpatches: seq[(FuncInfo, ZModuleInfo, int)]
 
 
 var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
@@ -310,26 +45,6 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode)
 
 template getOffset(sym: SymbolInfo): int64 =
   int64(sym.offset)
-
-proc getLocationObj(ctx: CodeGenState, n: IrNode): Zloc =
-  let
-    opt    = ctx.locMap.lookup(n)
-    module = ctx.mcur.moduleRef
-
-  if opt.isSome():
-    return opt.get()
-
-  if n == nil or n.parseNode == nil:
-    result = ZLoc(url: module.url, modname: module.modname,
-                  line: -1, col: -1)
-
-  else:
-    let tok  = n.parseNode.token
-
-    result = ZLoc(url: module.url, modname: module.modname,
-                  line: tok.lineNo,  col: tok.lineOffset)
-
-  ctx.locMap[n] = result
 
 proc addStaticObject(ctx: CodeGenState, p: pointer, l: int): int =
 
@@ -356,31 +71,24 @@ proc addStaticObject(ctx: CodeGenState, s: string, addnil = true): int =
     ctx.zobj.staticData.add('\x00')
 
 proc getLocation(ctx: CodeGenState): int32 =
-  var
-    obj = ctx.getLocationObj(ctx.curNode)
-    ix  = ctx.zobj.locInfo.find(obj)
+  let n = ctx.curNode
+  if n == nil or n.parseNode == nil or n.parseNode.token == nil:
+    return -1
 
-  if ix == -1:
-    ix = ctx.zobj.locInfo.len()
-    ctx.zobj.locInfo.add(obj)
-
-  return int32(ix)
+  return int32(n.parseNode.token.lineNo)
 
 proc addInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                     immediate: int64 = 0,  tid: TypeId = TBottom,
                     arena: int = ctx.mcur.arenaId) =
   var ins = ZInstruction(op: op, arena: int16(arena), arg: int32(arg),
-                         immediate: immediate, srcId: ctx.getLocation(),
-                         typeInfo: tid.followForwards())
+                         immediate: immediate, lineNo: ctx.getLocation(),
+                         typeInfo: tid.getTid())
   ctx.mcur.instructions.add(ins)
 
 proc findStringAt(mem: string, offset: int): string =
   let endIx = mem.find('\0', offset)
 
   return mem[offset ..< endIx]
-
-proc lookupLine*(ctx: ZObject, ins: ZInstruction): int =
-  result = ctx.locInfo[ins.srcId].line
 
 proc hex(x: int, minlen = 2): string =
   let bitlen = int(64 - clzll(cast[uint](x)))
@@ -392,7 +100,7 @@ proc hex(x: int, minlen = 2): string =
   return "0x" & `$`(x.toHex(outlen).toLowerAscii())
 
 
-proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
+proc rawReprInstructions(module: ZModuleInfo, ctx: ZObject, fn = 0): Rope =
   # This is really just for use during development.
   # Will do a more proper disassembler at some point.
   var
@@ -409,7 +117,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
       arg1 = text(" ")
       arg2 = text(" ")
       ty   = text(cast[TypeId](item.typeInfo).toString())
-      lno  = ctx.lookupLine(item)
+      lno  = item.lineNo
       lbl: Rope = text(" ")
 
     if item.typeInfo == TBottom:
@@ -442,7 +150,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
 
       lbl = em("-> " & name)
 
-    of ZPushO, ZPushF, ZPushVal, ZPushPtr, ZPushSType, ZPushAddr:
+    of ZPushVal, ZPushPtr, ZPushSType, ZPushAddr:
       var
         prefix, vname: string
 
@@ -571,7 +279,7 @@ proc codeLoc(ctx: CodeGenState): int =
 ## Opcode generation
 proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
             tid: TypeId = TBottom) =
-  var ntid: TypeId = tid
+  var ntid: TypeId = tid.getTid()
 
   ## Pop should be as much as we know about the type we're popping.
   if sym == nil:
@@ -580,7 +288,7 @@ proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
     let arena = ctx.getsymbolArena(sym)
 
     if ntid == TBottom:
-      ntid = sym.tid
+      ntid = sym.getTid()
 
     ctx.addInstruction(ZStoreTop, sym.getOffset(), tid = ntid, arena = arena)
     ctx.addInstruction(ZPop, tid = ntid)
@@ -590,7 +298,7 @@ proc genNop(ctx: CodeGenState) =
 
 proc genCopyStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
-  ctx.addInstruction(ZSObjNew, l, offset, tid)
+  ctx.addInstruction(ZSObjNew, l, offset, tid.getTid())
 
 proc genLabel(ctx: CodeGenState, label: string) =
   ctx.addInstruction(ZNop, 1, ctx.addStaticObject(label))
@@ -601,19 +309,14 @@ proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
     op:   ZOp
 
   if sym.tid.isValueType():
-    if sym.tid.isIntType() or sym.tid.isBoolType():
-      op = ZPushO # Ordinal type
-    elif sym.tid.isFloatType():
-      op = ZPushF
-    else:
-      op = ZPushVal
+    op = ZPushVal
   else:
     op = ZPushPtr
 
-  ctx.addInstruction(op, sym.getOffset(), tid = sym.tid, arena = arena)
+  ctx.addInstruction(op, sym.getOffset(), tid = sym.getTid(), arena = arena)
 
 proc genPushImmediate(ctx: CodeGenState, immediate: int, tid = TInt) =
-  ctx.addInstruction(ZPushImm, immediate = immediate, tid = tid)
+  ctx.addInstruction(ZPushImm, immediate = immediate, tid = tid.getTid())
 
 proc genPushImmediateF(ctx: CodeGenState, val: float) =
   let p = cast[pointer](val)
@@ -627,12 +330,12 @@ proc genDupTop(ctx: CodeGenState) =
   ctx.addInstruction(ZDupTop)
 
 proc genStore(ctx: CodeGenState, sym: SymbolInfo, tid = sym.tid) =
-  ctx.addInstruction(ZStoreTop, sym.getOffset(), tid = tid,
+  ctx.addInstruction(ZStoreTop, sym.getOffset(), tid = tid.getTid(),
                      arena = ctx.getSymbolArena(sym))
 
 proc genStoreImmediate(ctx: CodeGenState, sym: SymbolInfo,
                        immediate: int, tid = sym.tid) =
-  ctx.addInstruction(ZStoreImm, sym.getOffset(), immediate, tid = tid,
+  ctx.addInstruction(ZStoreImm, sym.getOffset(), immediate, tid = tid.getTid(),
                      arena = ctx.getSymbolArena(sym))
 
 proc genTCall(ctx: CodeGenState, callId: int, tid: TypeId = TBottom) =
@@ -676,7 +379,7 @@ proc startJz(ctx: CodeGenState, target: IrNode = nil,
   ctx.addInstruction(ZJz)
 
   if target != nil:
-    ctx.mcur.backpatchLocs.add((target, result))
+    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
 
 proc startJnz(ctx: CodeGenState, target: IrNode = nil,
              popit = true): int {.discardable.} =
@@ -689,7 +392,7 @@ proc startJnz(ctx: CodeGenState, target: IrNode = nil,
   ctx.addInstruction(ZJnz)
 
   if target != nil:
-    ctx.mcur.backpatchLocs.add((target, result))
+    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
 
 proc startJ(ctx: CodeGenState, target: IrNode = nil): int {.discardable.} =
 
@@ -697,7 +400,7 @@ proc startJ(ctx: CodeGenState, target: IrNode = nil): int {.discardable.} =
   ctx.addInstruction(ZJ)
 
   if target != nil:
-    ctx.mcur.backpatchLocs.add((target, result))
+    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
 
 proc getJumpOffset(jAddr, targetAddr: int): int32 =
   return int32((targetAddr - jAddr) * sizeof(ZInstruction))
@@ -705,7 +408,7 @@ proc getJumpOffset(jAddr, targetAddr: int): int32 =
 proc genBackwardsJump(ctx: CodeGenState, target: IrNode) =
   let curAddr = ctx.mcur.instructions.len()
 
-  for (n, loc) in ctx.mcur.loopLocs:
+  for (n, loc) in ctx.mcur.moduleRef.loopLocs:
     if n == target:
       ctx.addInstruction(ZJ, arg = getJumpOffset(curAddr, loc))
       return
@@ -858,8 +561,8 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
     cur = n.contents
 
   # TODO: debug info w/ label names.
-  m.loopLocs.add((n, ctx.codeLoc()))
-  let patchStackSz = m.backpatchLocs.len()
+  m.moduleRef.loopLocs.add((n, ctx.codeLoc()))
+  let patchStackSz = m.moduleRef.backpatchLocs.len()
   if cur.whileLoop:
     ctx.genWhileLoopInit()
   else:
@@ -869,7 +572,7 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
       ctx.genContainerLoopInit()
 
   let top = ctx.codeLoc()
-  m.loopLocs.add((n, top))
+  m.moduleRef.loopLocs.add((n, top))
 
   if cur.label != nil:
     ctx.genLabel(cur.label.getText() & ": ")
@@ -879,13 +582,13 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
 
   var savedLocs: seq[(IrNode, int)]
 
-  for (node, loc) in m.backpatchLocs:
+  for (node, loc) in m.moduleRef.backpatchLocs:
     if node == n:
       ctx.backpatch(loc)
     else:
       savedLocs.add((node, loc))
 
-  m.backpatchLocs = savedLocs
+  m.moduleRef.backpatchLocs = savedLocs
 
 proc genTypeCase(ctx: CodeGenState, cur: IrContents) =
   var
@@ -1267,22 +970,26 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   let fullname = fn.name & fn.tid.toString()
   ctx.genLabel(fullname)
 
-  fn.codeOffset  = ctx.mcur.instructions.len() * sizeof(ZInstruction)
-  ctx.fcur       = ctx.zobj.funcInfo[fn.internalId - 1]
-  ctx.fcur.fnRef = fn
+  fn.codeOffset   = ctx.mcur.instructions.len() * sizeof(ZInstruction)
+  ctx.fcur        = ctx.zobj.funcInfo[fn.internalId - 1]
+  ctx.fcur.fnRef  = fn
+  ctx.fcur.offset = fn.codeOffset
 
   ctx.genPrologue(fn.fnScope.scopeSize)
   ctx.oneIrNode(fn.implementation)
   # Todo: if this is unreachable, don't bother generating it.
   ctx.genReturnInstructions()
 
-  ctx.fcur = nil
+  # Keep track of the size of the function implementation.
+  let endPos    = ctx.mcur.instructions.len() * sizeof(ZInstruction)
+  ctx.fcur.size = endPos - ctx.fcur.offset
+  ctx.fcur      = nil
 
   ctx.mcur.codesyms[fn.codeOffset] = fullname
 
 proc genModule(ctx: CodeGenState, m: Module) =
   let curMod = ctx.minfo[m.key]
-  if curMod.processed:
+  if curMod.moduleRef.processed:
     return
 
   ctx.mcur = curMod
@@ -1296,17 +1003,18 @@ proc genModule(ctx: CodeGenState, m: Module) =
   ctx.genPrologue(m.moduleScope.scopeSize)
   ctx.oneIrNode(m.ir)
   ctx.addInstruction(ZModuleRet)
+  curMod.initSize = curMod.instructions.len() * sizeof(ZInstruction)
   ctx.genLabel("Functions: ")
 
   for (_, sym) in m.moduleScope.table.items():
     for fn in sym.fimpls:
       ctx.genFunction(fn)
 
-  curMod.processed = true
+  curMod.moduleRef.processed = true
 
   let deps = ctx.minfo.items(sort = true)
   for (k, v) in deps:
-    if not v.processed:
+    if not v.moduleRef.processed:
       ctx.genModule(v.moduleRef)
 
 proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
@@ -1335,7 +1043,7 @@ proc setupModules(ctx: CodeGenState) =
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals)
 
   for (_, module) in ctx.cc.modules.items():
-    var mi = ModuleInfo(arenaId: curArena, moduleRef: module)
+    var mi = ZModuleInfo(arenaId: curArena, moduleRef: module)
     ctx.applyArenaId(module.moduleScope, curArena, curFnId)
     curArena                            = curArena + 1
     ctx.minfo[module.key]               = mi
@@ -1360,9 +1068,6 @@ proc generateCode*(cc: CompileCtx): ZObject =
   ctx.cc   = cc
   ctx.zobj = result
 
-  result.types.initDict()
-
-  ctx.locMap.initDict()
   ctx.minfo.initDict()
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
