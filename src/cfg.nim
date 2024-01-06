@@ -446,7 +446,7 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   if f.cfg != nil or f.externInfo != nil:
     return
 
-  # Leave a word for the samed base pointer.
+  # Leave a word for the base pointer.
   f.fnScope.calculateOffsets(startOffset = 8)
   f.maxOffset = f.fnScope.scopeSize # This can get bigger as we descend.
 
@@ -471,7 +471,7 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
   if m == nil or m.cfg != nil:
     return
 
-  m.moduleScope.calculateOffsets()
+  m.moduleScope.calculateOffsets(startoffset = 8)
   if m.globalScope.scopeSize == 0:
     m.globalScope.calculateOffsets()
 
@@ -566,6 +566,8 @@ proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
   # value for any type.
 
   for function in module.allFunctions():
+    if function.cfg != nil:
+      continue
     let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
 
     module.definingFn = function
@@ -749,7 +751,7 @@ proc toRope*(n: CfgNode, isModule: bool, inclCalls = true): Rope =
     fouts.add(dummy.quickTree(cfgRopeWalk))
 
   if mouts.len() != 0 or fouts.len() != 0:
-    result = h1("Entry point:")
+    result = h2("Entry point:")
 
   result += main
 

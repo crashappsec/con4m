@@ -160,8 +160,9 @@ type
      # of the attribute.
      ZAssignAttr    = 0x73,
 
-     # This just needs to restore the old base pointer, and jump to
-     # the saved return address.
+     # This just needs to shrink the stack back to the base pointer,
+     # restore the old base pointer, and jump to the saved return
+     # address (popping it as well).
      ZRet           = 0x80,
 
      # This is a return, unless the module is the entry point, in
@@ -178,6 +179,11 @@ type
      # This pushes whatever is in the return register onto the stack;
      # It does NOT clear the register.
      ZPushRes       = 0x91,
+
+     # This is the standard function prologue; it pushes the base
+     # pointer and grows the stack by the number of bytes requested in
+     # the `immediate` field, but will always be 64-bit aligned.
+     ZEnter         = 0x92,
 
      # A no-op. These double as labels for disassembly too.
      ZNop           = 0xff
@@ -365,8 +371,14 @@ proc findStringAt(mem: string, offset: int): string =
 proc lookupLine*(ctx: ZObject, ins: ZInstruction): int =
   result = ctx.locInfo[ins.srcId].line
 
-template hex(x: int): string =
-  `$`((cast[int32](x)).toHex().toLowerAscii())
+proc hex(x: int, minlen = 2): string =
+  let bitlen = int(64 - clzll(cast[uint](x)))
+  var outlen = ((bitlen + 7) div 8) * 2
+
+  if outlen < minlen:
+    outlen = minlen
+
+  return "0x" & `$`(x.toHex(outlen).toLowerAscii())
 
 
 proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
@@ -382,7 +394,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
 
   for i, item in module.instructions:
     var
-      address = text(hex(i * sizeof(ZInstruction)))
+      address = text(hex(i * sizeof(ZInstruction), 8))
       arg1 = text(" ")
       arg2 = text(" ")
       ty   = text(cast[TypeId](item.typeInfo).toString())
@@ -421,7 +433,10 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
       var
         prefix, vname: string
 
-      arg1 = text("+" & hex(item.arg))
+      if item.arg > 0:
+        arg1 = text("+" & hex(item.arg))
+      else:
+        arg1 = text("-" & hex(-item.arg))
 
       if item.arena == -1:
         vname = ctx.funcInfo[fn].syms[item.arg]
@@ -467,6 +482,9 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
       lbl = text("popx2")
     of ZModuleRet , ZRet, ZHalt:
       ty = text(" ")
+    of ZEnter:
+      ty = text(" ")
+      arg1 = text("-" & $hex(item.arg))
     of ZJz, ZJnz, ZJ:
       if item.arg > 0:
         arg1 = text("+" & hex(item.arg))
@@ -501,7 +519,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
     cells.add(row)
 
   result = quickTable(cells)
-  result.colWidths([(10, true), (15, true), (14, true), (16, true),
+  result.colWidths([(12, true), (15, true), (14, true), (16, true),
                     (0, false), (0, false)])
 
 proc disassembly*(ctx: ZObject): Rope =
@@ -722,6 +740,8 @@ proc genAssignToIx(ctx: CodeGenState, tid: TypeId) =
 proc genAssignSlice(ctx: CodeGenState, tid: TypeId) =
   ctx.addInstruction(ZAssignSlice, tid = tid)
 
+proc genPrologue(ctx: CodeGenState, sz: int) =
+  ctx.addInstruction(ZEnter, arg = sz)
 
 proc genReturnInstructions(ctx: CodegenState) =
   let fn = ctx.fcur.fnRef
@@ -1207,6 +1227,7 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   ctx.fcur       = ctx.zobj.funcInfo[fn.internalId - 1]
   ctx.fcur.fnRef = fn
 
+  ctx.genPrologue(fn.fnScope.scopeSize)
   ctx.oneIrNode(fn.implementation)
   # Todo: if this is unreachable, don't bother generating it.
   ctx.genReturnInstructions()
@@ -1228,6 +1249,7 @@ proc genModule(ctx: CodeGenState, m: Module) =
     if sym.pInfo != nil:
       ctx.addParameter(sym)
 
+  ctx.genPrologue(m.moduleScope.scopeSize)
   ctx.oneIrNode(m.ir)
   ctx.addInstruction(ZModuleRet)
   ctx.genLabel("Functions: ")

@@ -146,7 +146,10 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.buildIr(ctx.entrypoint)
   ctx.handleFolding(ctx.entrypoint)
   ctx.buildCfg(ctx.entrypoint)
-  ctx.buildAllUnbuiltCfgs(ctx.entrypoint) # TODO: do for all modules
+  ctx.buildAllUnbuiltCfgs(ctx.entrypoint)
+  for module in ctx.modules.values():
+    ctx.buildCfg(module)
+    ctx.buildAllUnbuiltCfgs(module)
   ctx.wholeProgramChecks()
   ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
@@ -193,23 +196,23 @@ proc printGlobalScope*(ctx: CompileCtx) =
   print ctx.globalScope.toRope("Globals used")
 
 proc printModuleScope*(ctx: Module) =
-  print ctx.moduleScope.toRope("Module scope")
+  print ctx.moduleScope.toRope("Scope for module '" & ctx.modname & "'")
 
 proc printFuncScope*(fn: FuncInfo) =
   print fn.fnScope.toRope("Scope for function " & fn.name)
   if fn.implementation != nil:
     print fn.implementation.toRope()
 
-proc printAllFuncScopes*(ctx: Module) =
-  if ctx.moduleScope == nil:
+proc printAllFuncScopes*(ctx: CompileCtx, m: Module) =
+  if m.moduleScope == nil:
     print h4("No functions found due to parse failure.")
     return
-  for sym in ctx.moduleScope.table.values():
+  for sym in m.moduleScope.table.values():
     if sym.isFunc:
       for item in sym.fimpls:
         item.printFuncScope()
   for sym in ctx.globalScope.table.values():
-    if sym.isFunc:
+    if sym.isFunc and sym notin m.moduleScope.table.values():
       for item in sym.fimpls:
         item.printFuncScope()
 

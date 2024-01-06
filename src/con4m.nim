@@ -146,15 +146,34 @@ when isMainModule:
 
   discard session.buildFromEntryPoint(params[0])
   if debug:
-    var module = session.entrypoint
+    let allmods = session.modules.values(sort = true)
 
-    module.printTokens()
-    module.printParseTree()
-    module.printIr()
-    module.printAttrsUsed()
-    module.printAllFuncScopes()
-    module.printModuleScope()
+    for m in allmods:
+      print(h1("Tokens for module '" & m.modname & "'"))
+      m.printTokens()
+
+    for m in allmods:
+      print(h1("Parse tree for module '" & m.modname & "'"))
+      m.printParseTree()
+
+    for m in allmods:
+      print(h1("IR for module '" & m.modname & "'"))
+      m.printIr()
+
+    for m in allmods:
+      if m.usedAttrs.table.items().len() != 0:
+        m.printAttrsUsed()
+
+    for m in allmods:
+      m.printModuleScope()
+
+    print(h1("Function scopes + IRs available from entry point"))
+    session.printAllFuncScopes(session.entrypoint)
+
+    print(h1("Global Scope"))
     session.printGlobalScope()
+
+    print(h1("Global CFG"))
     session.printProgramCfg()
 
   if session.printErrors():
