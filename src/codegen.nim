@@ -243,25 +243,36 @@ type
     auxArgInfo*:   seq[ZffiAuxArgInfo]
 
   ZFnInfo* = ref object
-    syms*:    Dict[int, string]
-    offset*:  int
-    size*:    int
+    syms*:     Dict[int, string]
+    symTypes*: Dict[int, int]
+    offset*:   int
+    size*:     int
 
     # Not used during runtime; a back-pointer for generation.
     fnRef*:   FuncInfo
 
   # This is all the data that will be in an "object" file; we'll
   # focus on being able to marshal and load these only.
+  #
+  # When we move on to storing object files, the data will be
+  # marshal'd into the object's static data segment, and even the
+  # dictionaries will be laid out so that we can just load them into
+  # hatrack data structures w/o having to re-insert k/v pairs.
+  #
+  # Also, the object file will have room for runtime save state, a
+  # resumption point (i.e., a replacement entry point), and a chalk
+  # mark.
   ZObject* = ref object
-    zeroMagic*:      int = 0x0c001deac001dea
-    zeroCoolVers*:   int = 0x01
+    zeroMagic*:      int = 0x0c001dea0c001dea
+    zcObjectVers*:   int = 0x01
+    staticData*:     string
+    globals*:        Dict[int, string]
+    globalTypes*:    Dict[int, string]
+
     moduleContents*: seq[ModuleInfo]
-    types*:          Dict[int64, string]
     entrypoint*:     int64
     locInfo*:        seq[ZLoc]
     funcInfo*:       seq[ZFnInfo]
-    globals*:        Dict[int, string]
-    staticData*:     string
 
   ModuleInfo* = ref object
     datasyms*:       Dict[int, string]
@@ -291,7 +302,7 @@ type
 var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
                        "*", "/", "//", "%", "<<", ">>", "&", "|", "^",
                        "[]", "dict[]", "[:]", "[]=", "dict[]=",
-                       "[:]=", "loadlit()", "containerlit()", "copy()",
+                       "[:]=", "loadlit()", "containerlit()", "copy_object()",
                        "len()", "+=", "ffi()", "init()", "cleanup()",
                        "newlit()", ">max<"]
 
@@ -387,7 +398,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
   var
     mem = ctx.staticData
     cells: seq[seq[Rope]] = @[@[atom("Address"), atom("Op"), atom("Arg 1"),
-                                atom("Arg 2"), atom("Tid"),
+                                atom("Arg 2"), atom("Type Info"),
                                 atom("Comment / label")]]
     row: seq[Rope]
 
@@ -414,7 +425,9 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
 
         ty  = text(" ")
         lbl = strong(str)
-
+    of ZFFICall:
+      arg1 = text(hex(item.arg))
+      lbl  = em(" ffi(" & mem.findStringAt(item.arg) & ")")
     of ZTCall:
       arg1 = text(hex(item.arg))
       lbl  = em(tCallReverseMap[item.arg])
@@ -490,7 +503,7 @@ proc rawReprInstructions(module: ModuleInfo, ctx: ZObject, fn = 0): Rope =
         arg1 = text("+" & hex(item.arg))
       else:
         arg1 = text("-" & hex(-item.arg))
-      lbl  = italic("-> 0x" & hex(item.arg + (i * sizeof(ZInstruction))))
+      lbl  = italic("-> " & hex(item.arg + (i * sizeof(ZInstruction))))
       ty = text(" ")
 
       if item.op != ZJ:
@@ -719,13 +732,24 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
 
   ctx.genTCall(FIndex)
 
-proc genPushAttrName(ctx: CodeGenState, name: string) =
+proc genPushStaticString(ctx: CodeGenState, name: string) =
   ctx.addInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
 
 proc genLoadAttr(ctx: CodeGenState, tid: TypeId) =
   ctx.addInstruction(ZLoadFromAttr, tid = tid)
 
-proc genAssign(ctx: CodeGenState, tid: TypeId) =
+proc genAssign(ctx: CodeGenState, tid: TypeId, copyFirst: bool) =
+  ## The copyFirst parameter only applies to by-ref data types.  But,
+  ## when we're loading a literal object from static memory, the
+  ## loaded object is already a copy and does not need to be
+  ## re-coppied. So the copyFirst parameter is really just meant to
+  ## give us a way to skip the copy this function would normally
+  ## generate for a by-ref data type.
+  # TODO, when we add refs, this should be based on whether the
+  # RHS is of type ref.
+
+  if not tid.getDataType.byValue and copyFirst:
+    ctx.genTCall(FCopy, tid)
   ctx.addInstruction(ZAssignToLoc, tid = tid)
 
 proc genLoadFromIx(ctx: CodeGenState, tid: TypeId) =
@@ -962,7 +986,8 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
 
     ctx.genPushImmediate(cur.items.len())
 
-    ctx.genTCall(FContainerLit, n.tid)
+
+    ctx.genTCall(FContainerLit, n.tid.getContainerInfo().dtid)
 
   else:
     if cur.byVal:
@@ -972,11 +997,11 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
       ctx.genCopyStaticObject(offset, cur.sz, n.tid)
 
 proc genMember(ctx: CodeGenState, cur: IrContents) =
-  ctx.genPushAttrName(cur.attrSym.name)
+  ctx.genPushStaticString(cur.attrSym.name)
   ctx.genLoadAttr(cur.attrSym.tid)
 
 proc genMemberLhs(ctx: CodeGenState, cur: IrContents) =
-  ctx.genPushAttrName(cur.attrSym.name)
+  ctx.genPushStaticString(cur.attrSym.name)
 
 proc genIndex(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
@@ -1006,12 +1031,31 @@ proc genCall(ctx: CodeGenState, cur: IrContents) =
     moduleKey = cur.toCall.defModule.key
     minf      = ctx.minfo[moduleKey]
     i         = cur.actuals.len()
+    va        = cur.toCall.tid.isVarargs()
 
+  if va and cur.toCall.externInfo == nil:
+    # If the function accepts multiple args, wpush the number of VARARG
+    # parameters. What we do with this depends on whether we're
+    # FFI-calling.  If we're not, we actually construct a list of
+    # items and thus always pass a fixed numer of args internally.
+    #
+    # Since we push arguments on in reverse order, the list of
+    # items should be the first thing pushed, which means we must
+    # call construct-list after pushing just the variadic arguments.
+    var numFixed = cur.toCall.tid.getNumFormals() - 1
+    ctx.genPushImmediate(cur.actuals.len() - numFixed)
+    ctx.genTCall(FContainerLit, cur.toCall.tid.getVarargsContainerTid())
+  else:
   # Push actuals in reverse order. This isn't ideal, since people expect
   # left-to-right evaluation. It's a TODO to fix that later.
-  while i != 0:
-    i = i - 1
-    ctx.oneIrNode(cur.actuals[i])
+    if va and cur.toCall.externInfo != nil:
+      # TODO -- not sure where to push varargs info for FFI yet.
+      var numFixed = cur.toCall.tid.getNumFormals() - 1
+      ctx.genPushImmediate(cur.actuals.len() - numFixed)
+
+    while i != 0:
+      i = i - 1
+      ctx.oneIrNode(cur.actuals[i])
 
   if cur.toCall.externInfo == nil:
     if cur.toCall.codeOffset == 0:
@@ -1019,13 +1063,12 @@ proc genCall(ctx: CodeGenState, cur: IrContents) =
 
     ctx.addInstruction(Z0Call, arg = cur.toCall.codeOffset,
                        tid = cur.toCall.tid, arena = minf.arenaId)
-
-    if cur.toCall.retVal.tid.followForwards != TVoid:
-      ctx.addInstruction(ZPushRes, tid = cur.toCall.retVal.tid)
-
   else:
-    discard
-    # TODO: FFI
+    let stroffset = ctx.addStaticObject(cur.toCall.externInfo.externName)
+    ctx.addInstruction(ZFFICall, arg = stroffset, tid = cur.toCall.retVal.tid)
+
+  if cur.toCall.retVal.tid.followForwards != TVoid:
+    ctx.addInstruction(ZPushRes, tid = cur.toCall.retVal.tid)
 
 proc genUse(ctx: CodeGenState, cur: IrContents) =
   # This is basically just a 'call' with no parameters to the
@@ -1044,7 +1087,6 @@ proc genUse(ctx: CodeGenState, cur: IrContents) =
     minf      = ctx.minfo[moduleKey]
 
   ctx.addInstruction(Z0Call, arg = 0, tid = TVoid, arena = minf.arenaId)
-
 
 proc genRet(ctx: CodeGenState, cur: IrContents) =
   # We could skip adding any value to the `result` variable if there's
@@ -1074,19 +1116,21 @@ proc genAttrAssign(ctx: CodeGenState, n: IrNode) =
       ctx.genAssignToIx(cur.attrRhs.tid)
     else:
       ctx.genAssignSlice(cur.attrRhs.tid)
+  elif cur.attrRhs.contents.kind == IrLit:
+    ctx.genAssign(cur.attrRhs.tid, copyFirst = false)
   else:
-    ctx.genAssign(cur.attrRhs.tid)
+    ctx.genAssign(cur.attrRhs.tid, copyFirst = true)
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
-    ctx.genPushAttrName(sym.name)
+    ctx.genPushStaticString(sym.name)
   else:
     ctx.addInstruction(ZPushAddr, sym.getOffset(), tid = sym.tid,
                        arena = sym.arena)
 
 proc genLoadSymbol(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
-    ctx.genPushAttrName(sym.name)
+    ctx.genPushStaticString(sym.name)
     ctx.genLoadAttr(sym.tid)
   else:
     ctx.genPush(sym)
@@ -1327,3 +1371,4 @@ proc generateCode*(cc: CompileCtx): ZObject =
 
 # TODO -- call table for FFI info.
 # TODO -- pushTypeOf needs to handle attributes.
+# TODO -- varargs for func entry.

@@ -263,6 +263,19 @@ proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
 
   return t.getContainerInfo()
 
+proc isVarargs*(id: TypeId): bool {.exportc, cdecl.} =
+  let tr = typestore[id.followForwards()]
+  return tr.va
+
+proc getVarargsContainerTid*(id: TypeId): TypeId {.exportc, cdecl.} =
+  return tinfo(TList).dtid
+
+proc getNumFormals*(id: TypeId): int {.exportc, cdecl.} =
+  let tr = typestore[id.followForwards()]
+  # The last item is always the return type even if it's void.
+  return tr.items.len() - 1
+
+
 proc newRefValue*[T](item: T, tid: TypeId): pointer =
   var dt = tid.getDataType()
 

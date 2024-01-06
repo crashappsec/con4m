@@ -76,6 +76,7 @@
 # - What's wrong w/ hatrack add??
 # - Add maybe / null checking
 # - Should add variable aliases for $i and $label
+# - Implement FFI Varargs.
 
 # == Lower priority ==
 # - Error msg squelching and colating
