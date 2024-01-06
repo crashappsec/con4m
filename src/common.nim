@@ -44,8 +44,6 @@ const
   FNewLit*       = 30
   FMax*          = 31
 
-
-
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
   OpLogicOr*     = 33
@@ -360,6 +358,7 @@ type
     maxOffset*:      int
     internalId*:     int
     codeOffset*:     int # Measured in bytes.
+    objInfo*:        ZFnInfo
 
   ParamInfo*  = ref object
     ## Module parameters.
@@ -593,6 +592,7 @@ type
     processed*:     bool
     loopLocs*:      seq[(IrNode, int)]
     backpatchLocs*: seq[(IrNode, int)]
+    objInfo*:       ZmoduleInfo
 
   CompileCtx* = ref object
     modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
@@ -866,7 +866,6 @@ type
     staticData*:     string
     globals*:        Dict[int, string]
     globalTypes*:    Dict[int, string]
-
     moduleContents*: seq[ZModuleInfo]
     entrypoint*:     int64
     funcInfo*:       seq[ZFnInfo]

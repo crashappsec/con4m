@@ -25,13 +25,13 @@ proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
 
 type
   CodeGenState = ref object
-    minfo:           Dict[string, ZModuleInfo]
+    minfo:           Dict[string, Module]
     cc:              CompileCtx
     zobj:            ZObject
-    mcur:            ZModuleInfo
-    fcur:            ZFnInfo
+    mcur:            Module
+    fcur:            FuncInfo
     curNode:         IrNode
-    callBackpatches: seq[(FuncInfo, ZModuleInfo, int)]
+    callBackpatches: seq[(FuncInfo, Module, int)]
 
 
 var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
@@ -79,11 +79,11 @@ proc getLocation(ctx: CodeGenState): int32 =
 
 proc addInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                     immediate: int64 = 0,  tid: TypeId = TBottom,
-                    arena: int = ctx.mcur.arenaId) =
+                    arena: int = ctx.mcur.objInfo.arenaId) =
   var ins = ZInstruction(op: op, arena: int16(arena), arg: int32(arg),
                          immediate: immediate, lineNo: ctx.getLocation(),
                          typeInfo: tid.getTid())
-  ctx.mcur.instructions.add(ins)
+  ctx.mcur.objInfo.instructions.add(ins)
 
 proc findStringAt(mem: string, offset: int): string =
   let endIx = mem.find('\0', offset)
@@ -265,16 +265,16 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
     # stack; right now, we just call any such variable "(tmp)"; we can
     # do something more sophisticated later...
     if ctx.fcur != nil:
-      ctx.fcur.syms[sym.offset] = "tmp@" & $(sym.offset div 8)
+      ctx.fcur.objInfo.syms[sym.offset] = "tmp@" & $(sym.offset div 8)
     else:
-      ctx.mcur.datasyms[sym.offset] = "tmp@" & $(sym.offset div 8)
+      ctx.mcur.objInfo.datasyms[sym.offset] = "tmp@" & $(sym.offset div 8)
 
-    return ctx.mcur.arenaId
+    return ctx.mcur.objInfo.arenaId
   else:
     return sym.arena
 
 proc codeLoc(ctx: CodeGenState): int =
-  return ctx.mcur.instructions.len()
+  return ctx.mcur.objInfo.instructions.len()
 
 ## Opcode generation
 proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
@@ -371,7 +371,7 @@ proc startJz(ctx: CodeGenState, target: IrNode = nil,
              popit = true): int {.discardable.} =
   # Returns the ABSOLUTE offset of this instruction; you need to
   # then calculate an offset.
-  result = ctx.mcur.instructions.len()
+  result = ctx.mcur.objInfo.instructions.len()
 
   if not popit:
     ctx.addInstruction(ZDupTop)
@@ -379,12 +379,12 @@ proc startJz(ctx: CodeGenState, target: IrNode = nil,
   ctx.addInstruction(ZJz)
 
   if target != nil:
-    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
+    ctx.mcur.backpatchLocs.add((target, result))
 
 proc startJnz(ctx: CodeGenState, target: IrNode = nil,
              popit = true): int {.discardable.} =
 
-  result = ctx.mcur.instructions.len()
+  result = ctx.mcur.objInfo.instructions.len()
 
   if not popit:
     ctx.addInstruction(ZDupTop)
@@ -392,23 +392,23 @@ proc startJnz(ctx: CodeGenState, target: IrNode = nil,
   ctx.addInstruction(ZJnz)
 
   if target != nil:
-    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
+    ctx.mcur.backpatchLocs.add((target, result))
 
 proc startJ(ctx: CodeGenState, target: IrNode = nil): int {.discardable.} =
 
-  result = ctx.mcur.instructions.len()
+  result = ctx.mcur.objInfo.instructions.len()
   ctx.addInstruction(ZJ)
 
   if target != nil:
-    ctx.mcur.moduleRef.backpatchLocs.add((target, result))
+    ctx.mcur.backpatchLocs.add((target, result))
 
 proc getJumpOffset(jAddr, targetAddr: int): int32 =
   return int32((targetAddr - jAddr) * sizeof(ZInstruction))
 
 proc genBackwardsJump(ctx: CodeGenState, target: IrNode) =
-  let curAddr = ctx.mcur.instructions.len()
+  let curAddr = ctx.mcur.objInfo.instructions.len()
 
-  for (n, loc) in ctx.mcur.moduleRef.loopLocs:
+  for (n, loc) in ctx.mcur.loopLocs:
     if n == target:
       ctx.addInstruction(ZJ, arg = getJumpOffset(curAddr, loc))
       return
@@ -416,14 +416,15 @@ proc genBackwardsJump(ctx: CodeGenState, target: IrNode) =
   unreachable
 
 proc genBackwardsJump(ctx: CodeGenState, target: int) =
-  let curAddr = ctx.mcur.instructions.len()
+  let curAddr = ctx.mcur.objInfo.instructions.len()
   ctx.addInstruction(ZJ, arg = getJumpOffset(curAddr, target))
 
 proc backPatch(ctx: CodeGenState, patchLoc: int) =
-  var cur = ctx.mcur.instructions[patchLoc]
+  var cur = ctx.mcur.objInfo.instructions[patchLoc]
 
-  cur.arg                         = getJumpOffset(patchLoc, ctx.codeLoc())
-  ctx.mcur.instructions[patchLoc] = cur
+  cur.arg = getJumpOffset(patchLoc, ctx.codeLoc())
+
+  ctx.mcur.objInfo.instructions[patchLoc] = cur
 
 proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
                        immediate = 0) =
@@ -471,7 +472,7 @@ proc genPrologue(ctx: CodeGenState, sz: int) =
   ctx.addInstruction(ZEnter, arg = sz)
 
 proc genReturnInstructions(ctx: CodegenState) =
-  let fn = ctx.fcur.fnRef
+  let fn = ctx.fcur
 
   if fn.retval != nil and fn.retval.tid.unify(TVoid) == TBottom:
     ctx.addInstruction(ZSetRes, fn.retval.sym.getOffset(),
@@ -515,9 +516,7 @@ proc genWhileLoopInit(ctx: CodeGenState) =
   ctx.genStoreImmediate(curSym, 0)
 
 proc genIterationCheck(ctx: CodeGenState, n: IrNode) =
-  let
-    cur = n.contents
-    m   = ctx.mcur
+  let cur = n.contents
 
   if not cur.whileLoop:
     ctx.genPush(cur.loopVars[0])
@@ -561,8 +560,8 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
     cur = n.contents
 
   # TODO: debug info w/ label names.
-  m.moduleRef.loopLocs.add((n, ctx.codeLoc()))
-  let patchStackSz = m.moduleRef.backpatchLocs.len()
+  m.loopLocs.add((n, ctx.codeLoc()))
+  let patchStackSz = m.backpatchLocs.len()
   if cur.whileLoop:
     ctx.genWhileLoopInit()
   else:
@@ -572,7 +571,7 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
       ctx.genContainerLoopInit()
 
   let top = ctx.codeLoc()
-  m.moduleRef.loopLocs.add((n, top))
+  m.loopLocs.add((n, top))
 
   if cur.label != nil:
     ctx.genLabel(cur.label.getText() & ": ")
@@ -582,13 +581,13 @@ proc genLoop(ctx: CodeGenState, n: IrNode) =
 
   var savedLocs: seq[(IrNode, int)]
 
-  for (node, loc) in m.moduleRef.backpatchLocs:
+  for (node, loc) in m.backpatchLocs:
     if node == n:
       ctx.backpatch(loc)
     else:
       savedLocs.add((node, loc))
 
-  m.moduleRef.backpatchLocs = savedLocs
+  m.backpatchLocs = savedLocs
 
 proc genTypeCase(ctx: CodeGenState, cur: IrContents) =
   var
@@ -765,7 +764,7 @@ proc genCall(ctx: CodeGenState, cur: IrContents) =
       ctx.callBackpatches.add((cur.toCall, ctx.mCur, ctx.codeLoc()))
 
     ctx.addInstruction(Z0Call, arg = cur.toCall.codeOffset,
-                       tid = cur.toCall.tid, arena = minf.arenaId)
+                       tid = cur.toCall.tid, arena = minf.objInfo.arenaId)
   else:
     let stroffset = ctx.addStaticObject(cur.toCall.externInfo.externName)
     ctx.addInstruction(ZFFICall, arg = stroffset, tid = cur.toCall.retVal.tid)
@@ -789,7 +788,7 @@ proc genUse(ctx: CodeGenState, cur: IrContents) =
     moduleKey = cur.moduleObj.key
     minf      = ctx.minfo[moduleKey]
 
-  ctx.addInstruction(Z0Call, arg = 0, tid = TVoid, arena = minf.arenaId)
+  ctx.addInstruction(Z0Call, arg = 0, tid = TVoid, arena = minf.objInfo.arenaId)
 
 proc genRet(ctx: CodeGenState, cur: IrContents) =
   # We could skip adding any value to the `result` variable if there's
@@ -797,7 +796,7 @@ proc genRet(ctx: CodeGenState, cur: IrContents) =
   # register, but for now we're keeping it simple.
   if cur.retVal != nil:
     ctx.oneIrNode(cur.retVal)
-    ctx.genPop(ctx.fcur.fnRef.retval.sym)
+    ctx.genPop(ctx.fcur.retval.sym)
 
   ctx.genReturnInstructions()
 
@@ -967,13 +966,16 @@ proc stashSymbolInfo(scope: Scope, d: var Dict[int, string]) =
     d[sym.offset] = name
 
 proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
-  let fullname = fn.name & fn.tid.toString()
+  let
+    fullname = fn.name & fn.tid.toString()
+    zinfo    = ctx.zobj.funcInfo[fn.internalId - 1]
+
   ctx.genLabel(fullname)
 
-  fn.codeOffset   = ctx.mcur.instructions.len() * sizeof(ZInstruction)
-  ctx.fcur        = ctx.zobj.funcInfo[fn.internalId - 1]
-  ctx.fcur.fnRef  = fn
-  ctx.fcur.offset = fn.codeOffset
+  ctx.fcur      = fn
+  fn.codeOffset = ctx.mcur.objInfo.instructions.len() * sizeof(ZInstruction)
+  fn.objInfo    = zinfo
+  zinfo.offset  = fn.codeOffset
 
   ctx.genPrologue(fn.fnScope.scopeSize)
   ctx.oneIrNode(fn.implementation)
@@ -981,15 +983,15 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   ctx.genReturnInstructions()
 
   # Keep track of the size of the function implementation.
-  let endPos    = ctx.mcur.instructions.len() * sizeof(ZInstruction)
-  ctx.fcur.size = endPos - ctx.fcur.offset
-  ctx.fcur      = nil
+  let endPos = ctx.mcur.objInfo.instructions.len() * sizeof(ZInstruction)
+  zinfo.size = endPos - zinfo.offset
+  ctx.fcur   = nil
 
-  ctx.mcur.codesyms[fn.codeOffset] = fullname
+  ctx.mcur.objInfo.codesyms[zinfo.offset] = fullname
 
 proc genModule(ctx: CodeGenState, m: Module) =
   let curMod = ctx.minfo[m.key]
-  if curMod.moduleRef.processed:
+  if curMod.processed:
     return
 
   ctx.mcur = curMod
@@ -1003,19 +1005,20 @@ proc genModule(ctx: CodeGenState, m: Module) =
   ctx.genPrologue(m.moduleScope.scopeSize)
   ctx.oneIrNode(m.ir)
   ctx.addInstruction(ZModuleRet)
-  curMod.initSize = curMod.instructions.len() * sizeof(ZInstruction)
+  let numInstructions     = curMod.objInfo.instructions.len()
+  curMod.objInfo.initSize = numInstructions  * sizeof(ZInstruction)
   ctx.genLabel("Functions: ")
 
   for (_, sym) in m.moduleScope.table.items():
     for fn in sym.fimpls:
       ctx.genFunction(fn)
 
-  curMod.moduleRef.processed = true
+  curMod.processed = true
 
   let deps = ctx.minfo.items(sort = true)
   for (k, v) in deps:
-    if not v.moduleRef.processed:
-      ctx.genModule(v.moduleRef)
+    if not v.processed:
+      ctx.genModule(v)
 
 proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
                   curFnId: var int) =
@@ -1024,8 +1027,9 @@ proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
     for fn in sym.fimpls:
       if fn.internalId == 0:
         fn.internalId = curFnId
-        let fi = ZFnInfo()
+        let fi = ZFnInfo()   # Info carried into the object file.
         ctx.zobj.funcInfo.add(fi)
+        fn.objInfo = fi
         fi.syms.initDict()
         fn.fnscope.stashSymbolInfo(fi.syms)
         curFnId += 1
@@ -1043,10 +1047,11 @@ proc setupModules(ctx: CodeGenState) =
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals)
 
   for (_, module) in ctx.cc.modules.items():
-    var mi = ZModuleInfo(arenaId: curArena, moduleRef: module)
+    var mi = ZModuleInfo(arenaId: curArena)
+    module.objInfo = mi
     ctx.applyArenaId(module.moduleScope, curArena, curFnId)
     curArena                            = curArena + 1
-    ctx.minfo[module.key]               = mi
+    ctx.minfo[module.key]               = module
     ctx.zobj.moduleContents.add(mi)
     mi.codesyms.initDict()
     mi.datasyms.initDict()
@@ -1057,9 +1062,10 @@ proc setupModules(ctx: CodeGenState) =
 
 proc fillCallBackpatches(ctx: CodeGenState) =
   for (fn, dstmodule, patchloc) in ctx.callBackpatches:
-    var cur                          = dstmodule.instructions[patchloc]
-    cur.arg                          = int32(fn.codeOffset)
-    dstmodule.instructions[patchloc] = cur
+    var cur = dstmodule.objInfo.instructions[patchloc]
+    cur.arg = int32(fn.codeOffset)
+
+    dstmodule.objInfo.instructions[patchloc] = cur
 
 proc generateCode*(cc: CompileCtx): ZObject =
   var ctx = CodeGenState()

@@ -1,103 +1,103 @@
 # TODO:
 #
-# === High priority ===
+# === High priority -- before Chalk integration ===
+#
+# - Basic execution.
 # - No matching sig error for function calls
 # - Offset isn't right for sym copies in a typecase. Check lineage.
-# - Basic execution.
+# - Test suite.
 # - Load default values at beginning of program.
 # - Dictionary and tuple implementations
 # - C-level interface to attributes
 # - Stack traces during execution.
 # - Spec checking after execution.
+# - Saving the spec in the object file.
 # - Checkpointing runtime state.
-# - Module state caching for re-linking when conf files change.
 # - Swap in hatrack lists (and add rings?).
-# - Use No-side-effect prop for funcs to allow calling functions at compile time.
-# Builtin funcs are a bit wrong about data storage etc.
 # - Print statement?
-#
-# - Keep spec around in object file.
-# - Allow assignment inside var / global / const statements.
 # - Component logic in runtime.
-# - ConvertCallbackLit type secolution.
+# - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - In showCallMistakes(), show which functions have the wrong # of args,
 #   and which parameters are right / wrong.
-# - Base types should be treated more like proper classes?
 # - Re-implement standard library / wrappings.
 # - finish hasExitToOuterBlock in CFG.
-# - For errors, make it easy to see "previous instance", and remove
-#   table for 2nd line
-# - Auto-generation of type-checking C interface API?
+# - Auto-conversion / management of FFI params in runtime.
 # - Copy operations for all ref builtin types.
 # - Handle negative indexes in call_...index
 # - explicit casts
-# - Callback objects
-# - Warning when your declared type is more generic than the inferred type.
+# - Hook up getopts again.
+# - Update the pretty printer.
+# - Possibly allow generating a C API based on the spec.
+# - Doc API.
+# - Default parameters
+# - Add global enum
+# - Enumerate function pointer literals and assume they're always live
+#   and called as part of the entry point.
 
-# == Medium ==
+# == Medium -- before public release ==
+# - +=, -=, *=, etc.
+# - Share dup'd strings in static data.
+# - Have `const` items move to module-specific static storage.
+# - Allow assignment inside var / global / const statements.
+# - Use No-side-effect prop for funcs to allow calling functions at compile
+#   time (and mark native f() no-side-effect if they do not use external state)
 # - Merge var/attr assign nodes.
-# - Access controls around extern and extensibility features
+# - Fold container literals wherever possible.
+# - Access controls around extern and extensibility features.
 # - ~ operator should be renamed to 'lock' and not require an assignment,
 #   but if there's no assignment it should error / warn if one might be
 #   locking something that isn't assigned.
+# - Be able to lock an entire section.
 # - Built in print statement??
+# - Warning when your declared type is more generic than the inferred type.
+# - Warning when (in non-REPL-land) module vars / global vars are generic.
 # - Doc strings
 # - Implement _ as a 'discard' variable.
 # - Rename to 0cool
 # - C api and bindings to other languages.
-# - Code generation.
-# - Doc API.
 # - dlclose stuff.
 # - Redo the CFG for SSA (cleaning up the existing bug)
 # - Add some sort of mixed type
-# - Hook getopt back up.
-# - Update the pretty printer.
 # - Extra lines in error messages shouldn't get the huge table indent.
 # - Sort errors by file / line (they come out by phase in IR portion).
+# - // for integer division.
 # - REPL
-# - Error if any variables not within a function do not have a concrete type (after REPL is done)
-# - Default parameters
-# - Litmods for common rope types
-# - Add $len, $last
+# - Error if any variables not within a function do not have a
+#   concrete type (after REPL is done)
 # - Give names to enums / turn them into int subtypes.
-# - Fold for list indexes when the length is fixed size.
+# - Fold for list indexes when the length is fixed size and the list is static.
 # - Add 'error' to functions.
-# - Add global enum
 # - string enums
-# - :: module scope operator; root::, module::, local:: I think?
+# - some sort of module scope operator; perhaps root::, module::,
+#   local:: I think?
 # - Keyword arguments
-# - Move temporary compile state to a throw-away reference obj that's
-#   carried in the module state.
-# - Debug mode.
-# - Enumerate function pointer literals and assume they're always live
-#   and called as part of the entry point.
-# - Properly handle
-# - += and similar.
+# - Some sort of debugger?
 # - What's wrong w/ hatrack add??
 # - Add maybe / null checking
 # - Should add variable aliases for $i and $label
 # - Implement FFI Varargs.
-
-# == Lower priority ==
-# - Error msg squelching and colating
-# - GUI for repl; show trees, etc.
-# - let all the IO stuff be themeable
 # - Add objects, with typevars that can bind to all fields...
 # - Add oneof
 # - Add ref
+
+# == Lower priority ==
+# - For errors, make it easy to see "previous instance", and remove
+#   table for 2nd line
+# - Error msg squelching and colating
+# - GUI for repl; show trees, etc.
+# - let all the IO stuff be themeable
 # - for x in <container>: generate a call to items() if the object is
 #   not one of the built-in types.
-# - Todo-- index for non-base types should generate a rewrite func
+# - Index for non-base types should generate a rewrite func
 # - Validation routines need routines to validate their inputs.
-# - For dicts and lists: capture the value when possible and perform folding
-# - Support litmods for containers.
 # - TODO: should there be an option to leave functions in the module scope?
 #   If so, what's the syntax?
-# - Macros / aspects
+# - Macro-style compile time rewriting and an aspect system
 # - Allow arbitrary blocks within statements?
-# - Object field is never used (or set and not read)
+# - Check for object field is never used (or set and not read)
 # - Config limit for how many errors we print.
 # - Use tracking for function calls.
+# - Package system.
 
 ## Makes it easy to build Apache-style configuration files with
 ## well-defined schemas, where you don't have to do significant work.
