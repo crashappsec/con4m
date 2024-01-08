@@ -79,6 +79,8 @@ const errorMsgs = [
                      "specification (<em>$1</em>)"),
   ("DupeExtField",   "Duplicate field <em>$1</em> provided for an <em>" &
                      "extern</em> block."),
+  ("DupeDllName",    "Duplicate DLL name <em>$1</em> provided for an " &
+                     "external function (ignored)."),
   ("DupeVal",        "Duplicate parameter value <em>$1</em> in the " &
                      "<em>$2</em> property of the <em>extern</em> spec."),
   ("ExtNotSpecd",    "None of the external function parameters were given" &

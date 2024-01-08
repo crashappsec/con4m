@@ -727,10 +727,10 @@ proc convertExternBlock(ctx: Module) =
     fn       = FuncInfo(externInfo: info)
 
     gotLocal = false
-    gotDll   = false
     gotPure  = false
     gotHold  = false
     gotAlloc = false
+    gotDll   = false
 
   ctx.extractCTypes(ctx.pt.children[1], fn)
 
@@ -748,11 +748,13 @@ proc convertExternBlock(ctx: Module) =
       gotLocal = true
       k.extractLocalSym(fn)
     of NodeExternDll:
-      if gotDll:
-        ctx.irError("DupeExtField", @["dll"])
-        continue
-      gotDll   = true
-      fn.externInfo.dll = ctx.getText(i, 0)
+      gotDll = true
+
+      let dllName = ctx.getText(i, 0)
+      if dllName in fn.externInfo.dlls:
+        ctx.irWarn("DupeDllName", @[dllName])
+      else:
+        fn.externInfo.dlls.add(dllName)
     of NodeExternPure:
       if gotPure:
         ctx.irError("DupeExtField", @["pure"])
@@ -773,7 +775,7 @@ proc convertExternBlock(ctx: Module) =
     else:
       unreachable
   if gotDll:
-    fn.externInfo.binPtr = findSymbol(info.externName, [fn.externInfo.dll])
+    fn.externInfo.binPtr = findSymbol(info.externName, fn.externInfo.dlls)
   else:
     fn.externInfo.binPtr = findSymbol(info.externName, [])
 

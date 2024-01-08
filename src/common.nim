@@ -328,7 +328,7 @@ type
     cParamNames*:   seq[string]
     heldParams*:    seq[int]
     allocedParams*: seq[int]
-    dll*:           string
+    dlls*:          seq[string]
     ffiArgTypes*:   array[100, FfiType] # Will store arg info.
     ffiInfo*:       CallerInfo
 
@@ -661,8 +661,10 @@ type
      # current VM model is stack-only).
      ZDupTop        = 0x16,
 
-     # When this instruction is called, the stack is popped, the value is
-     # checked for a C-style string; that attribute is loaded.
+     # When this instruction is called, the stack is popped, the value
+     # is checked for a C-style string; that attribute is
+     # loaded. Right now, there's no dynamic checking on this; the
+     # null / 0 value gets loaded if there's a lookup failure.
      ZLoadFromAttr  = 0x17,
 
      # The top of the stack has a heap object and an index; replace
@@ -745,9 +747,9 @@ type
      # the end of the slice. Pops arguments.
      ZAssignSlice   = 0x72,
 
-     # Whereas with `ZAssignToLoc`, the stack containsa pointer to a variable,
-     # here it contains a pointer to a heap-alloc'd string that is the name
-     # of the attribute.
+     # Whereas with `ZAssignToLoc`, the stack contains a pointer to a
+     # variable, here it contains a pointer to a heap-alloc'd string
+     # that is the name of the attribute.
      ZAssignAttr    = 0x73,
 
      # This just needs to shrink the stack back to the base pointer,
@@ -814,20 +816,20 @@ type
                         # to facilitate run-time type info without having
                         # to do more accounting than needed.
 
-  ZFFiAuxArgInfo* = object
+  ZFFiArgInfo* = ref object
     held*:    bool   # Whether passing a pointer to the thing causes it
                      # to hold the pointer, in which case decref must
                      # be explicit.
     alloced*: bool   # This passes a value back that was allocated
                      # in the FFI.
-    argType*: uint16 # an index into the CTypeNames data structure in ffi.nim.
-    ourType*: uint32 # To look up any FFI processing we do for the type.
+    argType*: int16  # an index into the CTypeNames data structure in ffi.nim.
+    ourType*: int32  # To look up any FFI processing we do for the type.
 
-  ZFFiInfo* = object
-    baseInfo*:     CallerInfo
-    externalName*: pointer
-    dllName*:      pointer
-    auxArgInfo*:   seq[ZffiAuxArgInfo]
+  ZFFiInfo* = ref object
+    nameOffset*: int
+    va*:         bool
+    dlls*:       seq[int]
+    argInfo*:    seq[ZffiArgInfo]
 
   ZFnInfo* = ref object
     # This field maps offsets to the name of the field. Frame
@@ -846,9 +848,6 @@ type
     offset*:     int
     size*:       int
 
-    # Not used during runtime; a back-pointer for generation.
-    fnRef*:   FuncInfo
-
   # This is all the data that will be in an "object" file; we'll
   # focus on being able to marshal and load these only.
   #
@@ -860,27 +859,30 @@ type
   # Also, the object file will have room for runtime save state, a
   # resumption point (i.e., a replacement entry point), and a chalk
   # mark.
-  ZObject* = ref object
+  ZObjectFile* = ref object
     zeroMagic*:      int = 0x0c001dea0c001dea
     zcObjectVers*:   int = 0x01
     staticData*:     string
     globals*:        Dict[int, string]
     globalTypes*:    Dict[int, string]
+    globalScopeSz*:  int
     moduleContents*: seq[ZModuleInfo]
-    entrypoint*:     int64
+    entrypoint*:     int32  # A module ID
+    nextEntrypoint*: int32  # A module ID
     funcInfo*:       seq[ZFnInfo]
+    ffiInfo*:        seq[ZFfiInfo]
 
   ZModuleInfo* = ref object
+    modname*:        string
+    location*:       string
+    version*:        string
     datasyms*:       Dict[int, string]
     codesyms*:       Dict[int, string]
     source*:         StringCursor
     arenaId*:        int
+    arenaSize*:      int
     instructions*:   seq[ZInstruction]
     initSize*:       int # size of init code before functions begin.
-
-    # The above items get marshalled into the ZObject; this is
-    # just a backpointer to the module object.
-    moduleRef*:      Module
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

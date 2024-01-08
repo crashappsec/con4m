@@ -36,7 +36,7 @@
 
 # == Medium -- before public release ==
 # - +=, -=, *=, etc.
-# - Share dup'd strings in static data.
+# - Share dup'd strings when loading static data.
 # - Have `const` items move to module-specific static storage.
 # - Allow assignment inside var / global / const statements.
 # - Use No-side-effect prop for funcs to allow calling functions at compile
@@ -79,6 +79,7 @@
 # - Add objects, with typevars that can bind to all fields...
 # - Add oneof
 # - Add ref
+# - Code playground
 
 # == Lower priority ==
 # - For errors, make it easy to see "previous instance", and remove
@@ -110,8 +111,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import module, specs, codegen
-export module
+import compile, specs, codegen, vm
+export compile
 
 when isMainModule:
   useCrashTheme()
@@ -178,8 +179,12 @@ when isMainModule:
     session.printProgramCfg()
 
   if session.printErrors():
-    let generatedCode = session.generateCode()
-    print generatedCode.disassembly()
+    var generatedCode = session.generateCode()
+    if debug:
+      print generatedCode.disassembly()
+
+
+    generatedCode.executeObject()
 
   else:
     print h2("Program loading failed.")

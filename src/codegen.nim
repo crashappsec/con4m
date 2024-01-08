@@ -27,7 +27,7 @@ type
   CodeGenState = ref object
     minfo:           Dict[string, Module]
     cc:              CompileCtx
-    zobj:            ZObject
+    zobj:            ZObjectFile
     mcur:            Module
     fcur:            FuncInfo
     curNode:         IrNode
@@ -100,7 +100,7 @@ proc hex(x: int, minlen = 2): string =
   return "0x" & `$`(x.toHex(outlen).toLowerAscii())
 
 
-proc rawReprInstructions(module: ZModuleInfo, ctx: ZObject, fn = 0): Rope =
+proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
   # This is really just for use during development.
   # Will do a more proper disassembler at some point.
   var
@@ -190,7 +190,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObject, fn = 0): Rope =
         lbl = text(tmp & " -> " & ctx.globals[item.arg])
     of ZPushStaticPtr:
       arg1 = text("+" & hex(item.arg))
-      arg2 = text(mem.findStringAt(item.arg))
+      lbl  = text(mem.findStringAt(item.arg))
     of ZPushRes:
       lbl = text("(ret) -> (stack)")
     of ZSetRes:
@@ -243,7 +243,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObject, fn = 0): Rope =
   result.colWidths([(12, true), (15, true), (14, true), (16, true),
                     (0, false), (0, false)])
 
-proc disassembly*(ctx: ZObject): Rope =
+proc disassembly*(ctx: ZObjectFile): Rope =
     for item in ctx.moduleContents:
       result = result + rawReprInstructions(item, ctx)
 
@@ -594,7 +594,6 @@ proc genTypeCase(ctx: CodeGenState, cur: IrContents) =
     locsToFillWithExit: seq[int]
     locsForBranches:    seq[seq[int]]
 
-
   ctx.genPushTypeOf(cur.targetSym)
 
   # First go through and set up the conditional checks, then line up
@@ -610,7 +609,7 @@ proc genTypeCase(ctx: CodeGenState, cur: IrContents) =
       for item in branch.conditions:
         ctx.genDupTop()
         ctx.oneIrNode(item)
-        ctx.genEqual( )  # TODO: Add TTSpec
+        ctx.genEqual()  # TODO: Add TTSpec
         successPatches.add(ctx.startJnz())
 
     locsForBranches.add(successPatches)
@@ -958,9 +957,6 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
 proc addParameter(ctx: CodeGenState, symbol: SymbolInfo) =
   discard
 
-proc addAllFfiInfo(ctx: CodeGenState) =
-  discard
-
 proc stashSymbolInfo(scope: Scope, d: var Dict[int, string]) =
   for (name, sym) in scope.table.items():
     d[sym.offset] = name
@@ -1035,6 +1031,59 @@ proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
         curFnId += 1
       ctx.applyArenaId(fn.fnScope, -1, curFnId)
 
+proc addFfiInfo(ctx: CodeGenState, m: Module) =
+  # Since we want people to be able to add modules to already existing
+  # static objects that use new functions, we've got space reserved in
+  # both the module and in the global state for this stuff. But, for
+  # the moment, I'm only implementing the initial compilation /
+  # linking, so we just plop everything in the global space.
+  for (_, sym) in m.moduleScope.table.items():
+    if not sym.isFunc:
+      continue
+
+    for item in sym.fimpls:
+      if item.externInfo == nil:
+        continue # Not a FFI definition.
+
+      var
+        cinfo     = item.externInfo
+        zinfo     = ZFFiInfo()
+        typeinfo  = item.tid.idToTypeRef()
+        dupeEntry = false
+
+      zinfo.nameOffset = ctx.addStaticObject(cinfo.externName)
+
+      for entry in ctx.zobj.ffiInfo:
+        if entry.nameOffset == zinfo.nameOffset:
+          dupeEntry = true
+          break
+
+      if dupeEntry:
+        continue
+
+      for dll in cinfo.dlls:
+        zinfo.dlls.add(ctx.addStaticObject(dll))
+
+      for i, param in cinfo.cArgTypes:
+        var
+          cArgType  = int16(cTypeNames.find(param[0]))
+          ourType   = int32(typeinfo.items[i])
+
+          paramInfo = ZffiArgInfo(argType: cArgType, ourType: ourType)
+
+        zinfo.argInfo.add(paramInfo)
+
+      for n in cinfo.heldParams:
+        zinfo.argInfo[n].held = true
+
+      for n in cinfo.allocedParams:
+        zinfo.argInfo[n].alloced = true
+
+      if typeinfo.va:
+        zinfo.va = true
+
+      ctx.zobj.ffiInfo.add(zinfo)
+
 proc setupModules(ctx: CodeGenState) =
   var
     curArena = 1
@@ -1045,9 +1094,11 @@ proc setupModules(ctx: CodeGenState) =
   ctx.applyArenaId(ctx.cc.globalScope, 0, curFnId)
   ctx.zobj.globals.initDict()
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals)
+  ctx.zobj.globalScopeSz = ctx.cc.globalScope.scopeSize
 
   for (_, module) in ctx.cc.modules.items():
-    var mi = ZModuleInfo(arenaId: curArena)
+    var mi = ZModuleInfo(arenaId: curArena,
+                         arenaSize: module.moduleScope.scopeSize)
     module.objInfo = mi
     ctx.applyArenaId(module.moduleScope, curArena, curFnId)
     curArena                            = curArena + 1
@@ -1057,8 +1108,7 @@ proc setupModules(ctx: CodeGenState) =
     mi.datasyms.initDict()
     module.moduleScope.stashSymbolInfo(mi.datasyms)
     mi.codesyms[0] = module.modname & ".__mod_init__()"
-
-  ctx.addAllFfiInfo()
+    ctx.addFfiInfo(module)
 
 proc fillCallBackpatches(ctx: CodeGenState) =
   for (fn, dstmodule, patchloc) in ctx.callBackpatches:
@@ -1067,10 +1117,10 @@ proc fillCallBackpatches(ctx: CodeGenState) =
 
     dstmodule.objInfo.instructions[patchloc] = cur
 
-proc generateCode*(cc: CompileCtx): ZObject =
+proc generateCode*(cc: CompileCtx): ZObjectFile =
   var ctx = CodeGenState()
 
-  result   = ZObject()
+  result   = ZObjectFile()
   ctx.cc   = cc
   ctx.zobj = result
 
@@ -1078,8 +1128,8 @@ proc generateCode*(cc: CompileCtx): ZObject =
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()
+  result.entrypoint     = int32(cc.entrypoint.objInfo.arenaId)
+  result.nextEntrypoint = int32(cc.entrypoint.objInfo.arenaId)
 
-
-# TODO -- call table for FFI info.
 # TODO -- pushTypeOf needs to handle attributes.
 # TODO -- varargs for func entry.

@@ -505,8 +505,12 @@ proc allVars*(s: Scope): seq[SymbolInfo] =
       result.add(v)
 
 proc calculateOffsets*(s: Scope, startOffset = 0) =
-  # For now, we just allocate everything 8 bytes on the stack,
+  # For now, we just allocate everything 16 bytes on the stack,
   # regardless of type. Formal parameters get negative offsets.
+  # We do this because for expedience we're going to store type info
+  # with items we push, even when we don't have to (really we should
+  # only need to be doing this in anything data dependent on a generic
+  # parameter).
   if s == nil:
     return
 
@@ -523,12 +527,12 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
       continue
     if sym.formal:
       sym.offset = formalOffset
-      formalOffset -= 8
+      formalOffset -= 16
       continue
 
     sym.offset = sz
-    sym.size   = 8
-    sz        += 8
+    sym.size   = 16
+    sz        += 16
 
   s.scopeSize = sz
 
