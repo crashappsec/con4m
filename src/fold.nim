@@ -474,24 +474,20 @@ proc logicFold(ctx: Module) =
       else:
         node.contents = bLhs.contents
 
-proc varAssignFold(ctx: Module) =
-  ctx.foldDown(ctx.current.contents.varlhs)
-  ctx.foldDown(ctx.current.contents.varrhs)
+proc assignFold(ctx: Module) =
+  ctx.foldDown(ctx.current.contents.assignLhs)
+  ctx.foldDown(ctx.current.contents.assignLhs)
   # For now, we only fold this if the RHS is constant and the LHS is a
   # simple variable, not an array access (even if it's `m[4] = 12`, if
   # `m` is a global).
-  if ctx.current.contents.varrhs.isConstant():
-    let lhs = ctx.current.contents.varlhs
+  if ctx.current.contents.assignRhs.isConstant():
+    let lhs = ctx.current.contents.assignLhs
     if lhs.contents.kind == IrLhsLoad:
       let sym = lhs.contents.symbol
       if sym.immutable:
         # Previous pass would catch multiple assignments.
-        sym.constValue       = ctx.current.contents.varrhs.value
+        sym.constValue       = ctx.current.contents.assignRhs.value
         ctx.current.contents = IrContents(kind: IrNop)
-
-proc attrAssignFold(ctx: Module) =
-  ctx.foldDown(ctx.current.contents.attrLhs)
-  ctx.foldDown(ctx.current.contents.attrRhs)
 
 proc foldIr(ctx: Module) =
   if ctx.current == nil:
@@ -506,10 +502,8 @@ proc foldIr(ctx: Module) =
       ctx.foldDown(item)
   of IrLoop:
     ctx.loopFold()
-  of IrAttrAssign:
-    ctx.attrAssignFold()
-  of IrVarAssign:
-    ctx.varAssignFold()
+  of IrAssign:
+    ctx.assignFold()
   of IrConditional:
     ctx.conditionalFold()
   of IrRet:

@@ -38,9 +38,8 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeExternHolds:    toPrint = n.ropeNt("ExternHolds")
   of NodeExternAllocs:   toPrint = n.ropeNt("ExternAllocs")
   of NodeExternReturn:   toPrint = n.ropeNt("ExternReturn")
-  of NodeAttrAssign:     toPrint = n.ropeNt("AttrAssign")
+  of NodeAssign:         toPrint = n.ropeNt("Assign")
   of NodeAttrSetLock:    toPrint = n.ropeNt("AttrSetLock")
-  of NodeVarAssign:      toPrint = n.ropeNt("VarAssign")
   of NodeSection:        toPrint = n.ropeNt("Section")
   of NodeIfStmt:         toPrint = n.ropeNt("If")
   of NodeTypeOfStmt:     toPrint = n.ropeNt("TypeOf")
@@ -144,9 +143,8 @@ proc `$`*(n: Con4mNode): string =
   of NodeExternHolds:    "an external function's <em>holds</em> spec"
   of NodeExternAllocs:   "an external function's <em>allocs</em> spec"
   of NodeExternReturn:   "spec of the <em>return</em> for an external func"
-  of NodeAttrAssign:     "an assignment"
+  of NodeAssign:         "an assignment"
   of NodeAttrSetLock:    "a lock operation"
-  of NodeVarAssign:      "a variable assignment"
   of NodeSection:        "a section declaration"
   of NodeIfStmt:         "an <em>if</em> block"
   of NodeTypeOfStmt:     "a <em>typeof</em> statement"
@@ -169,9 +167,9 @@ proc `$`*(n: Con4mNode): string =
   of NodeKVPair:         "a key / value pair"
   of NodeListLit:        "a <em>list</em> literal"
   of NodeTupleLit:       "a <em>tuple</em> literal"
-  of NodeOtherLit:       "a con4m special literal"
   of NodeCharLit:        "a character literal"
   of NodeLiteral:        "a literal"
+  of NodeOtherLit:       "a literal"
   of NodeEnumStmt:       "an <em>enum</em> statement"
   of NodeEnumItem:       "an <em>enum</em> item"
   of NodeFormalList:     "func declaration formals"
@@ -243,8 +241,7 @@ proc constStmt(ctx: Module): Con4mNode
 proc labelStmt(ctx: Module): Con4mNode
 proc useStmt(ctx: Module): Con4mNode
 proc parameterBlock(ctx: Module): Con4mNode
-proc varAssign(ctx: Module, lhs: Con4mNode): Con4mNode
-proc attrAssign(ctx: Module, lhs: Con4mNode): Con4mNode
+proc assign(ctx: Module, lhs: Con4mNode): Con4mNode
 proc section(ctx: Module, lhs: Con4mNode): Con4mNode
 
 proc inFunction(ctx: Module): bool {.inline.} =
@@ -255,7 +252,7 @@ proc inLoop(ctx: Module): bool {.inline.} =
 
 proc curTok(ctx: Module): Con4mToken
 
-const stmtStartList = [NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
+const stmtStartList = [NodeAssign, NodeAttrSetLock,
                        NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt,
                        NodeForStmt, NodeWhileStmt, NodeBreakStmt,
                        NodeTypeOfStmt, NodeValueOfStmt]
@@ -473,12 +470,11 @@ template errBail(ctx: Module, msg: string) =
 # there's no nesting, the way there is with parens. curTok() clears
 # this field when it's set.
 
-const ignore1Nl = [TtPlus, TtMinus, TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte,
-                   TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign,
-                   TtCmp, TtComma, TtPeriod, TtLBrace, TtLBracket, TtLParen,
-                   TtAnd, TtOr, TTFrom, TtTo, TtArrow, TtIn, TtBitAnd,
-                   TtBitOr, TtBitXor, TTShl, TtShr
-]
+const ignore1Nl = [ TtPlus, TtMinus, TtMul, TtDiv, TtMod, TtLte, TtLt,
+                    TtGte, TtGt, TtNeq, TtNot, TtColon, TtAssign,
+                    TtCmp, TtComma, TtPeriod, TtLBrace, TtLBracket,
+                    TtLParen, TtAnd, TtOr, TTFrom, TtTo, TtArrow, TtIn,
+                    TtBitAnd, TtBitOr, TtBitXor, TTShl, TtShr ]
 
 const commentToks = [TtLineComment, TtLongComment]
 
@@ -979,7 +975,7 @@ production(expressionStart, NodeExpression):
 
 production(enumItem, NodeEnumItem):
   result.addKid(ctx.identifier())
-  if ctx.curKind() in [TtLocalAssign, TtAttrAssign, TtColon]:
+  if ctx.curKind() in [TtAssign, TtColon]:
     ctx.advance()
     result.addKid(ctx.expression())
 
@@ -994,14 +990,14 @@ production(enumStmt, NodeEnumStmt):
     else:
       ctx.advance()
 
-idStmtProd(attrAssign, NodeAttrAssign):
+idStmtProd(assign, NodeAssign):
   ctx.advance()
   result.addKid(ctx.expression())
   ctx.endOfStatement()
 
 production(lockAttr, NodeAttrSetLock):
   ctx.advance()
-  result.addKid(ctx.attrAssign(ctx.expression()))
+  result.addKid(ctx.assign(ctx.expression()))
 
 production(elseStmt, NodeElseStmt):
   ctx.advance()
@@ -1082,10 +1078,12 @@ production(caseBody, NodeBody):
         result.addKid(ctx.constStmt())
         continue
       of TtIdentifier:
-        case ctx.curTok.getText()
-        of "label":
+        if ctx.lookahead().kind == TtColon and
+           ctx.lookahead(2).kind in [TtFor, TtWhile]:
           result.addKid(ctx.labelStmt())
           continue
+
+        case ctx.curTok.getText()
         of "use":
           result.addKid(ctx.useStmt())
           continue
@@ -1102,11 +1100,8 @@ production(caseBody, NodeBody):
 
       let x = ctx.expression()
       case ctx.curKind()
-      of TtLocalAssign:
-        result.addKid(ctx.varAssign(x))
-        continue
-      of TtColon, TtAttrAssign:
-        result.addKid(ctx.attrAssign(x))
+      of TtColon, TtAssign:
+        result.addKid(ctx.assign(x))
         continue
       of TtIdentifier, TtStringLit, TtLBrace:
         result.addKid(ctx.section(x))
@@ -1532,9 +1527,9 @@ production(useStmt, NodeUseStmt):
     ctx.errSkipStmt("BadUseSyntax")
 
 production(labelStmt, NodeLabelStmt):
-  ctx.advance()
   result.addKid(ctx.identifier())
-  ctx.endOfStatement()
+  ctx.advance()
+  ctx.skipNextNewLine()
 
 production(assertStmt, NodeAssert):
   ctx.advance()
@@ -1572,7 +1567,7 @@ production(docString, NodeDocString):
 proc commonExternStart(ctx: Module) =
   ctx.advance()
   case ctx.curKind()
-  of TtColon, TtAttrAssign:
+  of TtColon, TtAssign:
     ctx.advance()
   else:
     ctx.errSkipStmtNoBackup("MissingTok", @["a <em>:</em>"])
@@ -1700,12 +1695,6 @@ production(externBlock, NodeExternBlock):
     else:
       ctx.errSkipStmtNoBackup("BadExternField")
 
-idStmtProd(varAssign, NodeVarAssign):
-  # The := has already been validated by the caller.
-  ctx.advance()
-  result.addKid(ctx.expression())
-  ctx.endOfStatement()
-
 production(optionalBody, NodeBody):
   if ctx.curKind() == TtLBrace:
     result = ctx.body()
@@ -1809,10 +1798,12 @@ production(body, NodeBody):
         result.addKid(ctx.constStmt())
         continue
       of TtIdentifier:
-        case ctx.curTok.getText()
-        of "label":
+        if ctx.lookahead().kind == TtColon and
+           ctx.lookahead(2).kind in [TtFor, TtWhile]:
           result.addKid(ctx.labelStmt())
           continue
+
+        case ctx.curTok.getText()
         of "use":
           result.addKid(ctx.useStmt())
           continue
@@ -1829,11 +1820,8 @@ production(body, NodeBody):
 
       let x = ctx.expression()
       case ctx.curKind()
-      of TtLocalAssign:
-        result.addKid(ctx.varAssign(x))
-        continue
-      of TtColon, TtAttrAssign:
-        result.addKid(ctx.attrAssign(x))
+      of TtColon, TtAssign:
+        result.addKid(ctx.assign(x))
         continue
       of TtIdentifier, TtStringLit, TtLBrace:
         result.addKid(ctx.section(x))
@@ -1904,12 +1892,13 @@ production(topLevel, NodeModule):
         result.addKid(ctx.constStmt())
         continue
       of TtIdentifier:
+        if ctx.lookahead().kind == TtColon and
+           ctx.lookahead(2).kind in [TtFor, TtWhile]:
+          result.addKid(ctx.labelStmt())
+          continue
         case ctx.curTok().getText()
         of "assert":
           result.addKid(ctx.assertStmt())
-          continue
-        of "label":
-          result.addKid(ctx.labelStmt())
           continue
         of "use":
           result.addKid(ctx.useStmt())
@@ -1926,11 +1915,8 @@ production(topLevel, NodeModule):
         discard
       let x = ctx.expression()
       case ctx.curKind()
-      of TtLocalAssign:
-        result.addKid(ctx.varAssign(x))
-        continue
-      of TtColon, TtAttrAssign:
-        result.addKid(ctx.attrAssign(x))
+      of TtColon, TtAssign:
+        result.addKid(ctx.assign(x))
         continue
       of TtIdentifier, TtStringLit, TtLBrace:
         result.addKid(ctx.section(x))

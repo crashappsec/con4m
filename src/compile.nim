@@ -237,10 +237,9 @@ proc printAllFuncScopes*(ctx: CompileCtx, m: Module) =
   for sym in m.moduleScope.table.values():
     if sym.isFunc:
       for item in sym.fimpls:
-        item.printFuncScope()
-  for sym in ctx.globalScope.table.values():
-    if sym.isFunc and sym notin m.moduleScope.table.values():
-      for item in sym.fimpls:
+        if item.externInfo != nil:
+          print(em("External: " & item.name & item.tid.toString()))
+          continue
         item.printFuncScope()
 
 proc printAttrsUsed*(ctx: Module) =

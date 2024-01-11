@@ -7,7 +7,10 @@ const
   MAX_CALL_DEPTH = 200
   STACK_SIZE     = 1 shl 20
   sz             = sizeof(ZInstruction)
-  USE_TRACE      = false
+  USE_TRACE      = false # Also requires one of the below to be true
+  TRACE_INSTR    = true
+  TRACE_STACK    = false
+  TRACE_SCOPE    = false
 
 
 type
@@ -111,14 +114,17 @@ when USE_TRACE:
 
   proc traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     if trace_on:
-      print ctx.stackRepr()
-      print ctx.fnScopeRepr()
-      print ctx.moduleScopeRepr()
-      echo "Next instruction: ",
-         "ip = ", toHex(ctx.ip * sz), "; sp = ", ctx.sp.toHex().toLowerAscii(),
+      if TRACE_STACK:
+        print ctx.stackRepr()
+      if TRACE_SCOPE:
+        print ctx.fnScopeRepr()
+        print ctx.moduleScopeRepr()
+      if TRACE_INSTR:
+        echo "Next instruction: ip = ", toHex(ctx.ip * sz),
+         "; sp = ", ctx.sp.toHex().toLowerAscii(),
          "; fp = ", ctx.fp.toHex().toLowerAscii()
 
-      echo instr.toString()
+        echo instr.toString()
 else:
   template traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     discard

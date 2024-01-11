@@ -156,7 +156,7 @@ type
   Con4mTokenKind* = enum
     TtWhiteSpace, TtSemi, TtNewLine, TtLineComment, TtLockAttr,
     TtPlus, TtMinus, TtMul, TtLongComment, TtDiv, TTMod, TtLte, TtLt, TtGte,
-    TtGt, TtNeq, TtNot, TtLocalAssign, TtColon, TtAttrAssign, TtCmp, TtComma,
+    TtGt, TtNeq, TtNot, TtColon, TtAssign, TtCmp, TtComma,
     TtPeriod, TtLBrace, TtRBrace, TtRBraceMod, TtLBracket, TtRBracket,
     TtRBracketMod, TtLParen, TtRParen, TtRParenMod, TtAnd, TtOr, TtIntLit,
     TtHexLit, TtFloatLit, TtStringLit, TtCharLit, TtTrue, TtFalse, TtNil, TTIf,
@@ -199,7 +199,7 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeModule, NodeBody, NodeAttrAssign, NodeAttrSetLock, NodeVarAssign,
+    NodeModule, NodeBody, NodeAssign, NodeAttrSetLock,
     NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, NodeTypeOfStmt,
     NodeValueOfStmt, NodeForStmt, NodeWhileStmt, NodeBreakStmt,
     NodeContinueStmt, NodeReturnStmt, NodeStringLit, NodeIntLit, NodeHexLit,
@@ -220,7 +220,7 @@ type
     NodeCaseCondition, NodeRange, NodeDocString, NodeAssert
 
   IrNodeType* = enum
-    IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrConditional,
+    IrBlock, IrLoop, IrAssign, IrConditional,
     IrJump, IrRet, IrLit, IrMember, IrMemberLhs, IrIndex, IrIndexLhs, IrCall,
     IrUse, IrUMinus, IrNot, IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad,
     IrFold, IrNop, IrSection, IrNil, IrSwitch, IrSwitchBranch, IrRange,
@@ -252,13 +252,10 @@ type
       condition*:  IrNode    # For loops, this is the range or a container.
                              # For while loops, the loop condition.
       loopBody*:   IrNode
-    of IrAttrAssign:
-      attrlhs*:   IrNode
-      attrrhs*:   IrNode
+    of IrAssign:
+      assignlhs*:   IrNode
+      assignrhs*:   IrNode
       lock*:      bool
-    of IrVarAssign:
-      varlhs*: IrNode
-      varrhs*: IrNode
     of IrConditional:
       predicate*:   IrNode
       trueBranch*:  IrNode

@@ -45,10 +45,6 @@ const errorMsgs = [
   ("ExprStart",      "Expected the start of an expression here, but got $1."),
   ("BinaryNot",      "<em>'not'<em> operator takes only one operand."),
   ("LitExpected",    "Expected a literal value here."),
-  ("NotAttrAssign",  "Left hand side of assignment was an attribute, " &
-                     "not a variable. Therefore, expected either " &
-                     "<em>':'</em> or <em>'='</em> for the assignment " &
-                     "operator."),
   ("ForFromIx",      "<em>for ... from</em> loops must have a single index " &
                      "variable."),
   ("NameInTypeSpec", "<em>'$1'</em> is not a builtin type. " &

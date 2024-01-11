@@ -136,7 +136,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
       if item.contents.kind notin [IrBlock, IrSection]:
         result.stmts.add(item)
       if item.tid.getTid() notin [TVoid, TBottom]:
-        if item.contents.kind notin [IrAttrAssign, IrVarAssign]:
+        if item.contents.kind != IrAssign:
           if not item.tid.isTVar():
             # Right now, function calls will not always have been
             # resolved when this check is run. CFG needs to be redone.
@@ -191,12 +191,10 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
 
     result = loopTop.exitNode
 
-  of IrAttrAssign:
-    result = ctx.handleOneNode(m, n.contents.attrRhs, result)
-    result = ctx.handleOneNode(m, n.contents.attrLhs, result)
-  of IrVarAssign:
-    result = ctx.handleOneNode(m, n.contents.varRhs, result)
-    result = ctx.handleOneNode(m, n.contents.varLhs, result)
+  of IrAssign:
+    result = ctx.handleOneNode(m, n.contents.assignRhs, result)
+    result = ctx.handleOneNode(m, n.contents.assignLhs, result)
+
   of IrRange:
     result = ctx.handleOneNode(m, n.contents.rangeStart, result)
     result = ctx.handleOneNode(m, n.contents.rangeEnd, result)

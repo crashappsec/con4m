@@ -424,7 +424,7 @@ proc lex_impl(ctx: Module) =
     of Rune(':'):
       if ctx.s.peek() == Rune('='):
         ctx.s.advance()
-        tok(TtAttrAssign, true)
+        tok(TtAssign, true)
         startpos        = ctx.s.getPosition()
         tokenLine       = ctx.lineNo
         tokenLineOffset = startPos - ctx.lineStart
@@ -442,7 +442,7 @@ proc lex_impl(ctx: Module) =
         ctx.s.advance()
         tok(TtCmp, true)
       else:
-        tok(TtAttrAssign, true)
+        tok(TtAssign, true)
     of Rune(','):
       tok(TtComma, true)
     of Rune('.'):
@@ -800,7 +800,7 @@ proc toRope*(tok: Con4mToken): Rope =
   of TtOtherLit:
     result.fgColor(getCurrentCodeStyle().otherLitColor)
   of TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte, TtGt, TtCmp, TtNeq, TtPlus,
-     TtLocalAssign, TtAttrAssign, TtComma, TtPeriod, TtSemi, TtMinus,
+     TtAssign, TtComma, TtPeriod, TtSemi, TtMinus,
      TtLockAttr, TtBacktick, TtArrow, TtColon, TtIn, TtBitAnd, TtBitOr,
      TtBitXor, TtShl, TtShr:
     result.fgColor(getCurrentCodeStyle().operatorColor)
@@ -863,12 +863,10 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "!="
     of TtNot:
       return "not"
-    of TtLocalAssign:
-      return ":="
     of TtColon:
       return ":"
-    of TtAttrAssign:
-      return "= or :"
+    of TtAssign:
+      return "="
     of TtCmp:
       return "=="
     of TtComma:

@@ -18,7 +18,8 @@ extern abort() -> cvoid {
   pure: false
 }
 
- extern splitwrap(a: cstring, b: cstring) -> ptr {
+ extern splitwrap(a: cstring, cstring) -> ptr {
   local: split(string, string) -> list[string]
   pure: true
- }
+}
+

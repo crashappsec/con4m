@@ -124,14 +124,11 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
 
     return (fmt("Loop", descriptor, moreinfo),
             @[ctx.contents.condition, ctx.contents.loopBody])
-  of IrAttrAssign:
+  of IrAssign:
     if ctx.contents.lock:
       moreinfo = "+lock"
-    return (fmt("AttrAssign", "", moreinfo, ctx.getTid()),
-            @[ctx.contents.attrLhs, ctx.contents.attrRhs])
-  of IrVarAssign:
-    return (fmt("VarAssign", "", "", ctx.getTid()),
-            @[ctx.contents.varlhs, ctx.contents.varrhs])
+    return (fmt("Assign", "", moreinfo, ctx.getTid()),
+            @[ctx.contents.assignLhs, ctx.contents.assignRhs])
   of IrConditional:
     return (fmt("Conditional"), @[ctx.contents.predicate,
                                   ctx.contents.trueBranch,
@@ -374,21 +371,21 @@ proc convertIdentifier(ctx: Module): IrNode =
   if result.contents.symbol != nil:
     result.tid = result.contents.symbol.getTid()
 
-proc convertAttrAssignment(ctx: Module): IrNode =
-  result                  = ctx.irNode(IrAttrAssign)
+proc convertAssignment(ctx: Module): IrNode =
+  result                  = ctx.irNode(IrAssign)
   ctx.lhsContext          = true
   ctx.attrContext         = true
   if ctx.pt.getText() != ":":
     ctx.ambigAssign         = true
 
-  result.contents.attrLhs = ctx.downNode(0)
-  ctx.attrContext         = false
-  ctx.lhsContext          = false
-  ctx.ambigAssign         = false
-  result.contents.attrRhs = ctx.downNode(1)
+  result.contents.assignLhs = ctx.downNode(0)
+  ctx.attrContext           = false
+  ctx.lhsContext            = false
+  ctx.ambigAssign           = false
+  result.contents.assignRhs = ctx.downNode(1)
 
-  result.tid = ctx.typeCheck(result.contents.attrRhs.getTid(),
-                             result.contents.attrLhs.getTid())
+  result.tid = ctx.typeCheck(result.contents.assignRhs.getTid(),
+                             result.contents.assignLhs.getTid())
 
 proc convertMember(ctx: Module): IrNode =
   var subaccess: IrNode
@@ -422,23 +419,6 @@ proc convertMember(ctx: Module): IrNode =
   if sym.isSome():
     result.contents.attrSym = sym.get()
     result.tid              = result.contents.attrSym.getTid()
-
-proc convertVarAssignment(ctx: Module): IrNode =
-  result = ctx.irNode(IrVarAssign)
-  ctx.lhsContext = true
-  let lhsIr = ctx.downNode(0)
-  ctx.lhsContext = false
-  let rhsIr = ctx.downNode(1)
-
-  if lhsIr.contents.kind == IrLit:
-    for node in lhsIr.contents.items:
-      if node.contents.kind != IrLhsLoad:
-        ctx.irError("TupleLhs", w = node)
-
-  result.tid = ctx.typeCheck(lhsIr.getTid(), rhsIr.getTid())
-
-  result.contents.varLhs = lhsIr
-  result.contents.varRhs = rhsIr
 
 proc extractSymInfo(ctx: Module, scope: var Scope, isConst = false,
                     checkdollar = false): SymbolInfo {.discardable.} =
@@ -522,7 +502,7 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
 
   independentSubtree:
     for i in 0 ..< ctx.numKids():
-      if ctx.kidKind(i) != NodeAttrAssign:
+      if ctx.kidKind(i) != NodeAssign:
         ctx.irError("No code is allowed inside parameter blocks")
         continue
       let propname = ctx.getText(i, 0)
@@ -1115,7 +1095,7 @@ proc convertOtherLit(ctx: Module): IrNode =
   let
     modifier = ctx.getLitMod()
     parent   = ctx.current
-    symNode  = parent.contents.attrlhs.contents
+    symNode  = parent.contents.assignlhs.contents
 
   var
     sym:   SymbolInfo
@@ -1972,8 +1952,6 @@ proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
       result = ctx.statementsToIr()
-    of NodeVarAssign:
-      result = ctx.convertVarAssignment()
     of NodeIdentifier:
       result = ctx.convertIdentifier()
     of NodeExpression, NodeLiteral, NodeElseStmt, NodeParenExpr:
@@ -2027,8 +2005,8 @@ proc parseTreeToIr(ctx: Module): IrNode =
       result.contents.lock = true
     of NodeReturnStmt:
       result = ctx.convertReturn()
-    of NodeAttrAssign:
-      result = ctx.convertAttrAssignment()
+    of NodeAssign:
+      result = ctx.convertAssignment()
     of NodeSection:
       result = ctx.convertSection()
     of NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeLt:

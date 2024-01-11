@@ -2,42 +2,56 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Test suite.
+# - Component logic in runtime.
 # - Load default values at beginning of program.
-# - Dictionary and tuple implementations
-# - C-level interface to attributes
+# - explicit casts  # to(obj, type)
 # - Spec checking after execution.
+# - Get FFI fully working (it's not very robust at the moment).
+# - Re-implement standard library / wrappings.
 # - Saving the spec in the object file.
 # - Checkpointing runtime state.
+# - Hook up getopts again.
+# - Probably have module initializers run before the first function is called,
+#   esp if there's no 'use' statement.  Or, add an import statement as well,
+#   but IDK man.
+# - Remove the need to use the keyword 'label'... if it's before a
+#   for/while, it's not an assignment.
+
+# - C-level interface to attributes
+# - Dictionary and tuple implementations
+# - Finish the builtin types api, eg. copy operations for all ref builtin types
 # - Swap in hatrack lists (and add rings?).
-# - Print statement?
-# - Component logic in runtime.
+# - Update the pretty printer.
+
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - In showCallMistakes(), show which functions have the wrong # of args,
 #   and which parameters are right / wrong.
-# - Re-implement standard library / wrappings.
 # - finish hasExitToOuterBlock in CFG.
-# - Copy operations for all ref builtin types.
 # - Handle negative indexes in call_...index
-# - explicit casts
-# - Hook up getopts again.
-# - Update the pretty printer.
+
 # - Possibly allow generating a C API based on the spec.
 # - Doc API.
-# - Default parameters
-# - Add global enum
+# - Enums should be global by default.  Add a 'private' for enums,
+#   funcs and, when they show up,
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
 # - Add code gen for 'lock' operator.
-# - The attr type info needs to be folded into the same dict as attrs.
+# - Some basic memory management in the runtime (dynamic alllocs are
+#   currently just leaked).
+# - Re-do the grammar doc
+# - Default auto-import of stdlib modules.
+# - Vestigial 'fail' code and hint cleanups
 
 # == Medium -- before public release ==
 # - +=, -=, *=, etc.
+# - The attr type info needs to be folded into the same dict as attrs
+#   (it's a race condition for it to be separate)
 # - Share dup'd strings when loading static data.
 # - Have `const` items move to module-specific static storage.
 # - Allow assignment inside var / global / const statements.
 # - Use No-side-effect prop for funcs to allow calling functions at compile
-#   time (and mark native f() no-side-effect if they do not use external state)
+#   time (and mark native f() no-side-effect if they do not use external state).
+#   Lots more folding work should be done.
 # - Merge var/attr assign nodes.
 # - Fold container literals wherever possible.
 # - Access controls around extern and extensibility features.
@@ -76,6 +90,7 @@
 # - Add oneof
 # - Add ref
 # - Code playground
+# - LSP server
 
 # == Lower priority ==
 # - For errors, make it easy to see "previous instance", and remove

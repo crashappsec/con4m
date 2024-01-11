@@ -559,6 +559,8 @@ proc genIterationCheck(ctx: CodeGenState, n: IrNode) =
 
 proc genLoopFooter(ctx: CodeGenState, top: int) =
   ctx.genAdd(ctx.curNode.contents.loopVars[0], 1, TInt)
+  ctx.genStore(ctx.curNode.contents.loopVars[0], TInt)
+  ctx.genPop()
   ctx.genBackwardsJump(top)
 
 proc genConditional(ctx: CodeGenState, cur: IrContents) =
@@ -845,7 +847,7 @@ proc genRet(ctx: CodeGenState, cur: IrContents) =
 
   ctx.genReturnInstructions()
 
-proc genAttrAssign(ctx: CodeGenState, n: IrNode) =
+proc genAssign(ctx: CodeGenState, n: IrNode) =
   # In the case of assigning to an index, we'll end up w/
   # an extra item on the stack, with the index pushed on after the
   # container's address.
@@ -855,18 +857,18 @@ proc genAttrAssign(ctx: CodeGenState, n: IrNode) =
 
   let cur = n.contents
 
-  ctx.oneIrNode(cur.attrRhs)
-  ctx.oneIrNode(cur.attrLhs)
+  ctx.oneIrNode(cur.assignRhs)
+  ctx.oneIrNode(cur.assignLhs)
 
-  if cur.attrLhs.contents.kind == IrIndexLhs:
-    if cur.attrLhs.contents.subaccess.contents.indexEnd == nil:
-      ctx.genAssignToIx(cur.attrRhs.tid)
+  if cur.assignLhs.contents.kind == IrIndexLhs:
+    if cur.assignLhs.contents.subaccess.contents.indexEnd == nil:
+      ctx.genAssignToIx(cur.assignRhs.tid)
     else:
-      ctx.genAssignSlice(cur.attrRhs.tid)
-  elif cur.attrRhs.contents.kind == IrLit:
-    ctx.genAssign(cur.attrRhs.tid, copyFirst = false)
+      ctx.genAssignSlice(cur.assignRhs.tid)
+  elif cur.assignRhs.contents.kind == IrLit:
+    ctx.genAssign(cur.assignRhs.tid, copyFirst = false)
   else:
-    ctx.genAssign(cur.attrRhs.tid, copyFirst = true)
+    ctx.genAssign(cur.assignRhs.tid, copyFirst = true)
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
@@ -991,14 +993,13 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
     ctx.genNop()
   of IrNil:
     ctx.genPushImmediate(0, TVoid)
-  of IrAttrAssign:
-    ctx.genAttrAssign(n)
+  of IrAssign:
+    ctx.genAssign(n)
   of IrAssert:
     ctx.oneIrNode(n.contents.assertion)
     ctx.emitInstruction(ZAssert)
-  of IrVarAssign, IrSwitchBranch:
-    # The first shouldn't be produced anymore, and the second is handled
-    # from the parent node w/o descending.
+  of IrSwitchBranch:
+    # Handled from the parent node w/o descending.
     unreachable
 
   ctx.curNode = saved
