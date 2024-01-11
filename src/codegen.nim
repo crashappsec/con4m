@@ -86,8 +86,8 @@ proc getLocation(ctx: CodeGenState): int32 =
 
 proc emitInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                     immediate: int64 = 0,  tid: TypeId = TBottom,
-                    arena: int = ctx.mcur.objInfo.arenaId) =
-  var ins = ZInstruction(op: op, arena: int16(arena), arg: int32(arg),
+                    moduleId: int = ctx.mcur.objInfo.moduleId) =
+  var ins = ZInstruction(op: op, moduleId: int16(moduleId), arg: int32(arg),
                          immediate: immediate, lineNo: ctx.getLocation(),
                          typeInfo: tid.getTid())
   ctx.mcur.objInfo.instructions.add(ins)
@@ -147,22 +147,22 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       arg1 = text(hex(item.arg))
       lbl  = em(tCallReverseMap[item.arg])
     of Z0Call:
-      # Look up the symbol name by arena. It's always going to be a module,
+      # Look up the symbol name by moduleId. It's always going to be a module,
       # so it's really about indexing into the right module in the
-      # zobject state, which is offset by one, since arena 0 is the
+      # zobject state, which is offset by one, since moduleId 0 is the
       # global namespace.
       if item.arg <= 0:
-        let moduleIx = item.arena - 1
+        let moduleIx = item.moduleId - 1
         arg1 = text($(moduleIx))
         arg2 = text("module: " & ctx.moduleContents[moduleIx].modname)
       else:
         let
-          moduleIx = item.arena - 1
+          moduleIx = item.moduleId - 1
           fnObj    = ctx.funcInfo[item.arg - 1]
           name     = ctx.moduleContents[moduleIx].codesyms[fnObj.offset]
 
         arg1 = text(hex(item.arg))
-        arg2 = text("module id: " & $item.arena)
+        arg2 = text("module id: " & $item.moduleId)
         lbl = em("-> " & name)
 
     of ZPushVal, ZPushPtr, ZPushSType, ZPushAddr:
@@ -174,9 +174,9 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       else:
         arg1 = text("-" & hex(-item.arg))
 
-      if item.arena == -1:
+      if item.moduleId == -1:
         vname = ctx.funcInfo[fn].syms[item.arg]
-      elif item.arena != 0:
+      elif item.moduleId != 0:
         vname = module.datasyms[item.arg]
       else:
         vname = ctx.globals[item.arg]
@@ -197,9 +197,9 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       else:
         tmp = "(stack)"
 
-      if item.arena == -1:
+      if item.moduleId == -1:
         lbl = text(tmp & " -> " & ctx.funcInfo[fn].syms[item.arg])
-      elif item.arena != 0:
+      elif item.moduleId != 0:
         lbl = text(tmp & " -> " & module.datasyms[item.arg])
       else:
         lbl = text(tmp & " -> " & ctx.globals[item.arg])
@@ -268,9 +268,9 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
   while sym.actualSym != nil:
     sym = sym.actualSym
 
-  # Here, the arena is always the module the symbol was defined in,
+  # Here, the moduleId is always the module the symbol was defined in,
   # whether or not it's going on the stack.
-  if sym.arena == 0 and not sym.global:
+  if sym.moduleId == 0 and not sym.global:
     # When we did our original scope scan on a function or module, we
     # didn't descend into block scopes.
     #
@@ -284,9 +284,9 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
     else:
       ctx.mcur.objInfo.datasyms[sym.offset] = "tmp@" & $(sym.offset div 8)
 
-    return ctx.mcur.objInfo.arenaId
+    return ctx.mcur.objInfo.moduleId
   else:
-    return sym.arena
+    return sym.moduleId
 
 proc codeLoc(ctx: CodeGenState): int =
   return ctx.mcur.objInfo.instructions.len()
@@ -300,12 +300,12 @@ proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
   if sym == nil:
     ctx.emitInstruction(ZPop, tid = ntid)
   else:
-    let arena = ctx.getsymbolArena(sym)
+    let moduleId = ctx.getsymbolArena(sym)
 
     if ntid == TBottom:
       ntid = sym.getTid()
 
-    ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = ntid, arena = arena)
+    ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = ntid, moduleId = moduleId)
     ctx.emitInstruction(ZPop, tid = ntid)
 
 proc genNop(ctx: CodeGenState) =
@@ -313,14 +313,14 @@ proc genNop(ctx: CodeGenState) =
 
 proc genCopyStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
-  ctx.emitInstruction(ZSObjNew, l, offset, tid.getTid(), arena = -2)
+  ctx.emitInstruction(ZSObjNew, l, offset, tid.getTid(), moduleId = -2)
 
 proc genLabel(ctx: CodeGenState, label: string) =
   ctx.emitInstruction(ZNop, 1, ctx.addStaticObject(label))
 
 proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
   var
-    arena = ctx.getSymbolArena(sym)
+    moduleId = ctx.getSymbolArena(sym)
     op:   ZOp
 
   if sym.tid.isValueType():
@@ -328,7 +328,7 @@ proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
   else:
     op = ZPushPtr
 
-  ctx.emitInstruction(op, sym.getOffset(), tid = sym.getTid(), arena = arena)
+  ctx.emitInstruction(op, sym.getOffset(), tid = sym.getTid(), moduleId = moduleId)
 
 proc genPushImmediate(ctx: CodeGenState, immediate: int, tid = TInt) =
   ctx.emitInstruction(ZPushImm, immediate = immediate, tid = tid.getTid())
@@ -339,19 +339,19 @@ proc genPushImmediateF(ctx: CodeGenState, val: float) =
 
 proc genPushTypeOf(ctx: CodeGenState, sym: SymbolInfo) =
   ctx.emitInstruction(ZPushSType, sym.getOffset(),
-                     arena = ctx.getSymbolArena(sym))
+                     moduleId = ctx.getSymbolArena(sym))
 
 proc genDupTop(ctx: CodeGenState) =
   ctx.emitInstruction(ZDupTop)
 
 proc genStore(ctx: CodeGenState, sym: SymbolInfo, tid = sym.tid) =
   ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = tid.getTid(),
-                     arena = ctx.getSymbolArena(sym))
+                     moduleId = ctx.getSymbolArena(sym))
 
 proc genStoreImmediate(ctx: CodeGenState, sym: SymbolInfo,
                        immediate: int, tid = sym.tid) =
   ctx.emitInstruction(ZStoreImm, sym.getOffset(), immediate, tid = tid.getTid(),
-                     arena = ctx.getSymbolArena(sym))
+                     moduleId = ctx.getSymbolArena(sym))
 
 proc genTCall(ctx: CodeGenState, callId: int, tid: TypeId = TBottom) =
   var dtid: TypeId
@@ -495,7 +495,7 @@ proc genReturnInstructions(ctx: CodegenState) =
   if fn.retval != nil and fn.retval.tid.unify(TVoid) == TBottom:
     ctx.emitInstruction(ZSetRes, fn.retval.sym.getOffset(),
                        tid = fn.retval.sym.tid,
-                       arena = ctx.getSymbolArena(fn.retval.sym))
+                       moduleId = ctx.getSymbolArena(fn.retval.sym))
   ctx.emitInstruction(ZRet)
 
 ## End opcode generation
@@ -811,7 +811,7 @@ proc genCall(ctx: CodeGenState, cur: IrContents) =
     ctx.callBackpatches.add((cur.toCall, ctx.mCur, ctx.codeLoc()))
 
   ctx.emitInstruction(Z0Call, arg = cur.toCall.internalId,
-                     tid = cur.toCall.tid, arena = minf.objInfo.arenaId)
+                     tid = cur.toCall.tid, moduleId = minf.objInfo.moduleId)
 
   # Now we have to pop what we pushed:
   ctx.emitInstruction(ZMoveSp, - cur.actuals.len())
@@ -834,7 +834,7 @@ proc genUse(ctx: CodeGenState, cur: IrContents) =
     moduleKey = cur.moduleObj.key
     minf      = ctx.minfo[moduleKey]
 
-  ctx.emitInstruction(ZCallModule, minf.objInfo.arenaId, tid = TVoid)
+  ctx.emitInstruction(ZCallModule, minf.objInfo.moduleId, tid = TVoid)
 
 proc genRet(ctx: CodeGenState, cur: IrContents) =
   # We could skip adding any value to the `result` variable if there's
@@ -874,7 +874,7 @@ proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
     ctx.genPushStaticString(sym.name)
   else:
     ctx.emitInstruction(ZPushAddr, sym.getOffset(), tid = sym.tid,
-                       arena = sym.arena)
+                       moduleId = sym.moduleId)
 
 proc genLoadSymbol(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
@@ -1072,10 +1072,10 @@ proc genModule(ctx: CodeGenState, m: Module) =
     if not v.processed:
       ctx.genModule(v)
 
-proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
+proc applyArenaId(ctx: CodeGenState, scope: Scope, moduleId: int,
                   curFnId: var int) =
   for (name, sym) in scope.table.items():
-    sym.arena = arenaId
+    sym.moduleId = moduleId
     for fn in sym.fimpls:
       if fn.externInfo != nil:
         continue
@@ -1161,7 +1161,7 @@ proc setupModules(ctx: CodeGenState) =
     curArena = 1
     curFnId  = 1
 
-  # This applies a unique number to each module (an arena id)
+  # This applies a unique number to each module (an moduleId id)
   # and then applies a unique number to each function.
   ctx.applyArenaId(ctx.cc.globalScope, 0, curFnId)
   ctx.zobj.globals.initDict()
@@ -1172,8 +1172,8 @@ proc setupModules(ctx: CodeGenState) =
     ctx.addFfiInfo(module)
 
   for (_, module) in ctx.cc.modules.items():
-    var mi = ZModuleInfo(arenaId: curArena, modname: module.modname,
-                         arenaSize: module.moduleScope.scopeSize)
+    var mi = ZModuleInfo(moduleId: curArena, modname: module.modname,
+                         moduleVarSize: module.moduleScope.scopeSize)
     module.objInfo = mi
     ctx.applyArenaId(module.moduleScope, curArena, curFnId)
     curArena              = curArena + 1
@@ -1203,8 +1203,8 @@ proc generateCode*(cc: CompileCtx): ZObjectFile =
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()
-  result.entrypoint     = int32(cc.entrypoint.objInfo.arenaId)
-  result.nextEntrypoint = int32(cc.entrypoint.objInfo.arenaId)
+  result.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
+  result.nextEntrypoint = int32(cc.entrypoint.objInfo.moduleId)
 
 # TODO -- pushTypeOf needs to handle attributes.
 # TODO -- varargs for func entry.

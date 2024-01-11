@@ -396,16 +396,16 @@ type
     # stack, but from some start offset associated with the module
     # the variable lives in.
     heapAlloc*:    bool  # The below are not used for attributes.
-    arena*:        int   # The index into modules; the set of offsets
-                         # is calculated per-'memory arena', but
+    moduleId*:        int   # The index into modules; the set of offsets
+                         # is calculated per-'memory moduleId', but
                          # during compilation, we don't care how
                          # that's implemented.
-    offset*:       int   # offset within the arena.
+    offset*:       int   # offset within the moduleId.
     size*:         int   # Size that needs to be allocated. Currently,
                          # this should always be 8 bytes, because we do
                          # not yet support non-64-bit aligned layout, and
                          # we implement all container types as pointers
-                         # in this arena, with no sense of where the
+                         # in this moduleId, with no sense of where the
                          # backing store is (we might do more optimized
                          # arrays when the size is known later).
     # As we implement SSA and type casing, these are for managing
@@ -714,8 +714,8 @@ type
      ZTCall         = 0x33,
 
      # This calls a function, which can include the module's top-level
-     # code, with the opcode encoding the arena (module id) and the
-     # byte offset into that arena's code.
+     # code, with the opcode encoding the moduleId (module id) and the
+     # byte offset into that moduleId's code.
      #
      # It assumes arguments are pushed, but then:
      # 1. Pushes the return address
@@ -790,10 +790,10 @@ type
   ZProgParam* = object
     # `memloc` specifies where the parameter should be stored. This is
     # not a raw memory pointer. It's either an offset from a module's
-    # arena, or a pointer to the global static data, where the
+    # moduleId, or a pointer to the global static data, where the
     # attribute name is kept.
     #
-    # Which of the above applies is detemrined by the `arenaId` field;
+    # Which of the above applies is detemrined by the `moduleId` field;
     # the modules are all given positive indexes. If it's zero, then
     # it's an attribute.
     memloc*:    pointer
@@ -801,19 +801,19 @@ type
     typePtr*:   pointer # The marshal'd type object.
     shortDoc*:  pointer # An offset to the short description start.
     longDoc*:   pointer
-    validator*: pointer # An< offset to validation code in the global arena.
+    validator*: pointer # An< offset to validation code in the global moduleId.
     default*:   pointer # Depending on the type, either a value, or a ptr
     status*:    int32   # 0 for no value present.
-    arenaId*:   int32
+    moduleId*:   int32
 
   ZInstruction* = object
     # Compilers should all pad this structure to 24 bytes, but just in case...
     op*:        ZOp     # 1 byte
     pad:        byte
-    arena*:     int16   # Right now, 0 for global variables,
+    moduleId*:     int16   # Right now, 0 for global variables,
                         # -1 for stack, and then a positive number for
                         # modules. These don't really need to live in
-                        # separate memory arenas, but we computed
+                        # separate memory moduleIds, but we computed
                         # offsets on a per-module basis.
     lineNo*:    int32   # Line # in the current module this was gen'd at.
     arg*:       int32   # An offset, call number, etc.
@@ -891,8 +891,8 @@ type
     codesyms*:       Dict[int, string]
     datasyms*:       Dict[int, string]
     source*:         string
-    arenaId*:        int
-    arenaSize*:      int
+    moduleId*:       int
+    moduleVarSize*:  int
     instructions*:   seq[ZInstruction]
     initSize*:       int # size of init code before functions begin.
 

@@ -29,7 +29,7 @@ type
     ip:             int      # Index into instruction array, not bytes.
     returnRegister: pointer
     rrType:         pointer
-    arenas:         seq[seq[pointer]]
+    moduleIds:         seq[seq[pointer]]
     attrs:          Dict[string, pointer]
     attrTypes:      Dict[string, TypeId]
     externCalls:    seq[CallerInfo]
@@ -103,7 +103,7 @@ when USE_TRACE:
 
     for (offset, name) in ctx.curModule.datasyms.items():
       let
-        raw = ctx.arenas[ctx.curModule.arenaId][offset * 2]
+        raw = ctx.moduleIds[ctx.curModule.moduleId][offset * 2]
         val = toHex(cast[int](raw)).toLowerAscii()
       rows.add(@[text(name), text(val), text($(offset))])
 
@@ -183,13 +183,13 @@ template popFrame(ctx: RuntimeState) =
 
 proc storageAddr(ctx: RuntimeState, x: ZInstruction,
                      p: int64): ptr pointer =
-  if x.arena == -1:
+  if x.moduleId == -1:
     result = addr ctx.stack[ctx.fp - (p * 2)]
-  elif x.arena == -2:
+  elif x.moduleId == -2:
     # Static data, no type info assumed.
     result = cast[ptr pointer](addr ctx.obj.staticData[p])
   else:
-    result = addr ctx.arenas[x.arena][p * 2]
+    result = addr ctx.moduleIds[x.moduleId][p * 2]
 
 template storageAddr(ctx: RuntimeState, x: ZInstruction): ptr pointer =
   ctx.storageAddr(x, int64(x.arg))
@@ -222,7 +222,7 @@ template leaveFrame() =
 proc showAssertionFailure(ctx: RuntimeState, instr: ZInstruction) =
   let
     lineno  = instr.lineno
-    module  = ctx.obj.moduleContents[instr.arena - 1]
+    module  = ctx.obj.moduleContents[instr.moduleId - 1]
     line    = module.source.split(Rune('\n'))[lineno - 1]
     modname = module.modname
 
@@ -553,7 +553,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       # `toSave` will get pushed onto the stack, and it's the current
       # instruction pointer plus the module ID in one word.
       let
-        toSave     = ctx.ip shl 32 or ctx.curModule.arenaId
+        toSave     = ctx.ip shl 32 or ctx.curModule.moduleId
         fobj       = ctx.obj.funcInfo[instr.arg - 1]
         oldModule  = ctx.curModule
 
@@ -569,14 +569,14 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       # but we're indexing by instruction.
       ctx.ip            = fobj.offset div sz
 
-      ctx.curModule       = ctx.obj.moduleContents[instr.arena - 1]
+      ctx.curModule       = ctx.obj.moduleContents[instr.moduleId - 1]
       let nextInstruction = ctx.curModule.instructions[ctx.ip]
 
       ctx.pushFrame(oldmodule, instr.lineno, nextInstruction.lineno,
                     fobj, ctx.curModule)
     of ZCallModule:
       let
-        toSave = ctx.ip shl 32 or ctx.curModule.arenaId
+        toSave = ctx.ip shl 32 or ctx.curModule.moduleId
         mobj   = ctx.obj.moduleContents[instr.arg - 1]
 
       ctx.sp -= 1
@@ -656,14 +656,14 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
     ctx.ip += 1
 
-proc setupArena(ctx: RuntimeState, typeInfo: seq[(int, TypeId)], arenaSz: int) =
+proc setupArena(ctx: RuntimeState, typeInfo: seq[(int, TypeId)], moduleIdSz: int) =
   # 128 bits per item.
-  var arena = newSeq[pointer](arenaSz * 16)
+  var moduleId = newSeq[pointer](moduleIdSz * 16)
 
   for (offset, tid) in typeInfo:
-    arena[offset + 1] = cast[pointer](tid)
+    moduleId[offset + 1] = cast[pointer](tid)
 
-  ctx.arenas.add(arena)
+  ctx.moduleIds.add(moduleId)
 
 proc setupFfi(ctx: var RuntimeState) =
   var
@@ -719,12 +719,12 @@ proc executeObject*(obj: ZObjectFile): int =
   ctx.sp        = STACK_SIZE
   ctx.fp        = ctx.sp
 
-  # Add arenas.
+  # Add moduleIds.
   ctx.setupFfi()
   ctx.setupArena(obj.symTypes, obj.globalScopeSz)
 
   for item in obj.moduleContents:
-    ctx.setupArena(item.symTypes, item.arenaSize)
+    ctx.setupArena(item.symTypes, item.moduleVarSize)
   ctx.attrs.initDict()
   ctx.attrTypes.initDict()
   ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)

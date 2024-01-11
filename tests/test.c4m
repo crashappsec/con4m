@@ -1,6 +1,0 @@
-#x = ["hi", "there"]
-use basic from "."
-
-y = fib(3)
-print("Fib(3) = ")
-print(y)
