@@ -184,12 +184,21 @@ proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,
 
   return op(st, litmod, t, contents, err)
 
+proc runtime_instantiate_container*(t: TypeId, contents: seq[pointer],
+                                    err: var string): pointer =
+    let
+      info = t.getDataType()
+      op   = cast[CLitFn](info.ops[FContainerLit])
+
+    return op(StNone, "", t, contents, err)
+
 proc call_copy*(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
   let
     info = t.get_data_type()
     op   = cast[CopyFn](info.ops[FCopy])
 
-  return op(p)
+  echo $(cast[uint](op))
+  return op(p, t)
 
 proc call_len*(p: pointer, t: TypeId): int {.exportc, cdecl.} =
   let

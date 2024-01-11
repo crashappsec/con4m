@@ -22,7 +22,7 @@ type
   ClitFn*     = proc(st: SyntaxType, litmod: string, t: TypeId,
                      contents: seq[pointer], err: var string):
                      pointer {.cdecl.}
-  CopyFn*     = proc(a: pointer): pointer {.cdecl.}
+  CopyFn*     = proc(a: pointer, t: TypeId): pointer {.cdecl.}
   LenFn*      = proc(a: pointer): int {.cdecl.}
   PlusEqFn*   = proc(l, r: pointer) {.cdecl.}
 
@@ -287,20 +287,20 @@ proc newRefValue*[T](item: T, tid: TypeId): pointer =
   return cast[pointer](o)
 
 
-proc call_repr*(value: pointer, t: TypeId): string {.exportc, cdecl.} =
+proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
   let
     info = getDataType(t)
 
   if info.ops.len() == 0:
-    return "void"
+    return cstring("void")
 
   let
     op   = cast[ReprFn](info.ops[FRepr])
 
   if op == nil:
-    return "?"
+    return cstring("?")
 
-  return op(value)
+  return cstring(op(value))
 
 # proc call_get_val_for_ffi*(p: pointer, ffitype: int)
 

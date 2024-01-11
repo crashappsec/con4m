@@ -1,0 +1,26 @@
+extern callecho(a: ptr) -> cvoid {
+  local: print(string) -> void
+  pure: false
+}
+
+extern echoanint(a: cint) -> cvoid {
+  local: print(int) -> void
+  pure: false
+}
+
+func fib(x) {
+  valueof x {
+    case 0:
+        return 0
+    case 1:
+        return 1
+    else:
+        return fib(x - 2) + fib(x - 1)
+  }
+}
+
+x = fib(10)
+
+assert x == 55
+
+

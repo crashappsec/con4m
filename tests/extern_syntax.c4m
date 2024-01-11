@@ -1,0 +1,24 @@
+extern callecho(a: ptr) -> cvoid {
+  local: print(string) -> void
+  pure: false
+}
+
+extern echoanint(a: cint) -> cvoid {
+  local: print(int) -> void
+  pure: false
+}
+
+extern exit(status: cint) -> cvoid {
+  local: exit(int) -> void
+  pure: false
+}
+
+extern abort() -> cvoid {
+  local: abort() -> void
+  pure: false
+}
+
+ extern splitwrap(a: cstring, b: cstring) -> ptr {
+  local: split(string, string) -> list[string]
+  pure: true
+ }

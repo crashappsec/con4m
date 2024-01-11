@@ -273,6 +273,7 @@ proc cast_rich_to_str(pre: pointer): pointer =
   return newRefValue[string](s, TString)
 
 proc get_cast_from_string(dt: DataType, err: var string): pointer =
+  echo "YOYO"
   if dt.dtid == TUtf32:
     return cast[pointer](cast_str_to_u32)
   elif dt.dtid == TRich:

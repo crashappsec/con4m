@@ -219,7 +219,7 @@ proc boolFold(ctx: Module) =
   if node.tid.followForwards() == TBottom:
     return
 
-  if not node.tid.isNumericBuiltin():
+  if not bLhs.tid.isNumericBuiltin():
     ctx.replaceBoolOpWithCall(node)
 
   elif bLhs.isConstant() and bRhs.isConstant():
@@ -535,8 +535,11 @@ proc foldIr(ctx: Module) =
     ctx.logicFold()
   of IrSection:
     ctx.foldDown(ctx.current.contents.blk)
-  of IrSwitch, IrSwitchBranch, IrRange:
+  of IrAssert:
+    # TODO-- warn if assertion is always true.
     discard
+  of IrSwitch, IrSwitchBranch, IrRange:
+    discard # TODO... fold down at least. Prune cases that can't be true.
   of IrNil:
     discard
   of IrLoad, IrLhsLoad, IrNop, IrFold, IrUse, IrJump, IrMember, IrMemberLhs:

@@ -91,6 +91,7 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeExpression:     toPrint = n.ropeNt("Expression")
   of NodeTypeOneOf:      toPrint = n.ropeNt("OneOf")
   of NodeTypeMaybe:      toPrint = n.ropeNt("Maybe")
+  of NodeAssert:         toPrint = n.ropeNt("Assert")
   of NodeBreakStmt:      toPrint = n.ropeT("Break")
   of NodeContinueStmt:   toPrint = n.ropeT("Continue")
   of NodeVarargsFormal:  toPrint = n.ropeNt("Varargs")
@@ -207,6 +208,7 @@ proc `$`*(n: Con4mNode): string =
   of NodeBoolLit:        "a <em>boolean</em> literal"
   of NodeNilLit:         "the <em>nil</em> value"
   of NodeFuncDef:        "a <em>function</em> declaration"
+  of NodeAssert:         "an assert statement"
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
      NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
@@ -293,7 +295,7 @@ proc parseBaseError*(ctx: Module, code: string, backup: bool,
   let tok = ctx.curTok()
   let sev = if warn: LlWarn else: LlErr
 
-  ctx.errors.baseError(code, tok, ctx.modname, ErrParse, sev, subs, st, ii)
+  ctx.errors.baseError(code, tok, ctx.modname, ErrParse, sev, subs, nil, st, ii)
 
 template parseError*(ctx: Module, msg: string,
                     extra: seq[string] = @[]) =
@@ -1377,7 +1379,7 @@ production(funcType, NodeTypeFunc):
         else:
           ctx.expect(TtRParen, consume = true)
           break
-    result.addKid(ctx.returnType())
+  result.addKid(ctx.returnType())
 
 production(typeSpec, NodeType):
   case ctx.curKind()
@@ -1534,6 +1536,11 @@ production(labelStmt, NodeLabelStmt):
   result.addKid(ctx.identifier())
   ctx.endOfStatement()
 
+production(assertStmt, NodeAssert):
+  ctx.advance()
+  result.addKid(ctx.expression())
+  ctx.endOfStatement()
+
 production(oneVarDecl, NodeVarSymInfo):
   result.addKid(ctx.identifier())
   if ctx.curKind() == TtColon:
@@ -1664,8 +1671,8 @@ production(externSignature, NodeExternSig):
         ctx.expect(TtRParen, consume = true)
         break
 
-    ctx.expect(TtArrow, consume = true)
-    result.addKid(ctx.externParam())
+  ctx.expect(TtArrow, consume = true)
+  result.addKid(ctx.externParam())
 
 production(externBlock, NodeExternBlock):
   ctx.advance()
@@ -1898,6 +1905,9 @@ production(topLevel, NodeModule):
         continue
       of TtIdentifier:
         case ctx.curTok().getText()
+        of "assert":
+          result.addKid(ctx.assertStmt())
+          continue
         of "label":
           result.addKid(ctx.labelStmt())
           continue

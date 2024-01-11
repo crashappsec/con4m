@@ -32,45 +32,42 @@ template withFnLock(fi: FuncInfo, code: untyped) =
 
 proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
                               callType: TypeId): FuncInfo =
-  var
-    symOpt   = ctx.moduleScope.table.lookup(name)
-    sym:     SymbolInfo
-    matches: seq[FuncInfo]
-    fails:   seq[FuncInfo]
+  # var
+  #   symOpt   = ctx.moduleScope.table.lookup(name)
+  #   sym:     SymbolInfo
+  #   matches: seq[FuncInfo]
 
-  if symOpt.isSome():
-    sym = symOpt.get()
-    if sym.isFunc:
-      for fimpl in sym.fimpls:
-        withFnLock(fimpl):
-          if callType.copyType().typeId.unify(fimpl.tid) == TBottom:
-            fails.add(fimpl)
-          else:
-            matches.add(fimpl)
+  # if symOpt.isSome():
+  #   sym = symOpt.get()
+  #   if sym.isFunc:
+  #     for fimpl in sym.fimpls:
+  #       withFnLock(fimpl):
+  #         if callType.copyType().typeId.unify(fimpl.tid) != TBottom:
+  #           matches.add(fimpl)
 
-  # All our functions generally will already be in the global scope,
-  # so there's a bit of redundancy we could remove here.
-  if matches.len() == 0:
-    symOpt = ctx.globalScope.table.lookup(name)
-    if symOpt.isSome():
-      sym = symOpt.get()
-      if sym.isFunc:
-        for fimpl in sym.fimpls:
-          withFnLock(fimpl):
-            if callType.copyType().typeId.unify(fimpl.tid) == TBottom:
-              fails.add(fimpl)
-            else:
-              matches.add(fimpl)
-  if matches.len() == 1:
-    result = matches[0]
+  # # All our functions generally will already be in the global scope,
+  # # so there's a bit of redundancy we could remove here.
+  # if matches.len() == 0:
+  #   symOpt = ctx.globalScope.table.lookup(name)
+  #   if symOpt.isSome():
+  #     sym = symOpt.get()
+  #     if sym.isFunc:
+  #       for fimpl in sym.fimpls:
+  #         withFnLock(fimpl):
+  #           if callType.unify(fimpl.tid.tcopy()) != TBottom:
+  #             matches.add(fimpl)
+  # if matches.len() == 1:
+  #   result = matches[0]
 
-    withFnLock(matches[0]):
-      discard matches[0].tid.unify(callType)
-  else:
-    # Try again after functions have had a chance to be fully inferred.
-    # Even if there's no match, it'll allow us to be more accurate
-    # with type errors.
-    ctx.funcsToResolve.add((n, callType, matches, fails))
+  #   withFnLock(matches[0]):
+  #     discard callType.unify(matches[0].tid)
+  #   if matches[0].implementation == nil and matches[0].externInfo == nil:
+  #     ctx.funcsToResolve.add((n, callType, name))
+  # else:
+  #   # Try again after functions have had a chance to be fully inferred.
+  #   # Even if there's no match, it'll allow us to be more accurate
+  #   # with type errors.
+  ctx.funcsToResolve.add((n, callType, name))
 
 proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
   result = atom(s).fgColor("atomiclime")
@@ -87,7 +84,7 @@ template reprBasicLiteral(ctx: IrNode): string =
   if ctx.value.isNone():
     ""
   else:
-    callRepr(ctx.value.get(), ctx.tid)
+    $(call_repr(ctx.value.get(), ctx.tid))
 
 proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   var
@@ -204,6 +201,8 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("Branch"), ctx.contents.conditions & @[ctx.contents.action])
   of IrRange:
     return (fmt("Range"), @[ctx.contents.rangeStart, ctx.contents.rangeEnd])
+  of IrAssert:
+    return (fmt("Assert"), @[ctx.contents.assertion])
 
 proc toRope*(ctx: IrNode): Rope =
   if ctx == nil:
@@ -724,13 +723,23 @@ proc convertExternBlock(ctx: Module) =
   var
     sym: SymbolInfo
     info     = ExternFnInfo(externName: ctx.getText(0))
-    fn       = FuncInfo(externInfo: info)
+    fn       = FuncInfo()
 
     gotLocal = false
     gotPure  = false
     gotHold  = false
     gotAlloc = false
     gotDll   = false
+
+
+  # For some reason, info.externName is getting dropped...
+  # Turning off GC doesn't fix, so I'm probably overwriting the
+  # fn object somehow??
+  #
+  # For now as a quick hack.
+
+  fn.externName = info.externName
+  fn.externInfo = info
 
   ctx.extractCTypes(ctx.pt.children[1], fn)
 
@@ -774,6 +783,7 @@ proc convertExternBlock(ctx: Module) =
       ctx.checkAllocs(k, fn.externInfo)
     else:
       unreachable
+
   if gotDll:
     fn.externInfo.binPtr = findSymbol(info.externName, fn.externInfo.dlls)
   else:
@@ -1843,18 +1853,20 @@ proc convertCall(ctx: Module): IrNode =
   result.contents.toCall =
       ctx.beginFunctionResolution(result, result.contents.fname, tFunc(fArgs))
 
-proc fmtImplementationList(fname: string, fns: seq[FuncInfo],
-                           t: TypeId, extra: seq[string] = @[]): string =
+proc convertAssert(ctx: Module): IrNode =
+  result                    = ctx.irNode(IrAssert)
+  result.contents.assertion = ctx.downNode(0)
+
+proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
+                           extra: seq[string] = @[]): seq[seq[Rope]] =
   var
-    row:   seq[string]
-    cells: seq[seq[string]]
+    row:   seq[Rope]
     cur:   string
-    pad:   string
-    w = 0
+
+  result = @[@[text(" "), text("Signature"), text("Location")]]
 
   for num, item in fns:
-    cur = "  <strong>"
-    cur &= fname & "("
+    cur = fname & "("
     for i, param in item.params:
       cur &= item.paramNames[i]
       cur &= ": "
@@ -1865,11 +1877,9 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo],
         cur &= ", "
     cur &= ") -> "
     cur &= item.retval.tid.toString()
-    cur &= "</strong>"
 
-    row.add(cur)
-    if cur.len() > w:
-      w = cur.len()
+    row.add(text($(num + 1)))
+    row.add(strong(cur))
 
     cur = item.defModule.modname & ":"
     cur &= $(item.rawImpl.token.lineNo) & ":"
@@ -1878,59 +1888,73 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo],
     if extra.len() != 0:
       cur &= extra[num]
 
-    row.add(cur)
-    cells.add(row)
+    row.add(text(cur))
+    result.add(row)
     row = @[]
 
-  pad = `$`(Rune(' ').repeat(w))
-  w += 2
+proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): Rope =
+  fmtImplementationList(fname, fns, t).quicktable()
 
-  result = "<ol>"
-  for row in cells:
-    result &= "<li>" & row[0]
-    result &= pad[0 .. (w - len(row[0]))]
-    result &= row[1]
-    result &= "</li>"
-  result &= "</ol>"
+proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
+  for (n, t, name) in m.funcsToResolve:
 
-
-proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): string =
-  return fmtImplementationList(fname, fns, t)
-
-proc resolveDeferredSymbols*(ctx: Module) =
-  for (n, t, origmatch, origfail) in ctx.funcsToResolve:
     var
-      matches: seq[FuncInfo]
-      fails = origfail
+      possibles:    seq[FuncInfo]
+      matches:      seq[FuncInfo]
+      fails:        seq[FuncInfo]
+      symbolExists: bool
+      symOpt = m.moduleScope.table.lookup(name)
 
-    if origmatch.len() == 0 and origfail.len() == 0:
-      ctx.irError("NoImpl", n, @[n.contents.fname, t.toString()])
-      return
+    if symOpt.isSome():
+      symbolExists = true
+      let sym = symOpt.get()
+      if sym.isFunc:
+        possibles = sym.fimpls
 
-    for possibility in origmatch:
-      withFnLock(possibility):
-        if possibility.tid.unify(t.copyType().typeId) == TBottom:
-          fails.add(possibility)
+    symOpt = ctx.globalScope.table.lookup(name)
+    if symOpt.isSome():
+      symbolExists = true
+      let sym = symOpt.get()
+      if sym.isFunc:
+        for item in sym.fimpls:
+          if item notin possibles:
+            possibles.add(item)
+
+    if possibles.len() == 0:
+      if symbolExists:
+        m.irError("NotAFunc", n, @[name, t.toString()])
+        continue
+      else:
+        m.irError("NoImpl", n, @[name, t.toString()])
+        continue
+
+    for item in possibles:
+      withFnLock(item):
+        if item.tid.unify(t.copyType().typeId) == TBottom:
+          fails.add(item)
         else:
-          matches.add(possibility)
+          matches.add(item)
 
     if matches.len() == 1:
-      n.contents.toCall = matches[0]
       withFnLock(matches[0]):
         discard matches[0].tid.unify(t)
+        discard n.tid.unify(t)
+      n.contents.toCall = matches[0]
       continue
     elif matches.len() == 0:
       let info = showCallMistakes(n.contents.fname, fails, t)
-      ctx.irError("BadSig", n, @[n.contents.fname, t.toString(), info, "call"])
+      m.irError("BadSig", n, @[n.contents.fname, t.toString(), "call"],
+                detail = info)
     else:
-      let info = fmtImplementationList(n.contents.fname, matches, t)
-      ctx.irError("CallAmbig",n,
-                  @[n.contents.fname, t.toString(), info, "call"])
+      let info = fmtImplementationList(n.contents.fname,
+                                       matches, t).quicktable()
+      m.irError("CallAmbig", n, @[n.contents.fname, t.toString(), "call"],
+                 detail = info)
 
-  ctx.funcsToResolve = @[]
+  m.funcsToResolve = @[]
 
   # Also take a pass looking for overlapping signatures.
-  for (name, sym) in ctx.moduleScope.table.items():
+  for (name, sym) in m.moduleScope.table.items():
     if sym.isFunc and sym.fimpls.len() > 1:
       for i in 0 ..< (sym.fimpls.len() - 1):
         let oneFuncType = sym.fimpls[i].tid
@@ -1940,8 +1964,8 @@ proc resolveDeferredSymbols*(ctx: Module) =
               t1 = sym.fimpls[i].tid.toString()
               t2 = sym.fimpls[j].tid.toString()
               l1 = $(sym.fimpls[i].implementation.parseNode.token.lineNo)
-            ctx.irError("SigOverlap", w = sym.fimpls[j].implementation,
-                                      @[name, t1, t2, l1])
+            m.irError("SigOverlap", w = sym.fimpls[j].implementation,
+                      @[name, t1, t2, l1])
 
 proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
@@ -2031,6 +2055,8 @@ proc parseTreeToIr(ctx: Module): IrNode =
       result = ctx.convertIndex()
     of NodeCall:
       result = ctx.convertCall()
+    of NodeAssert:
+      result = ctx.convertAssert()
     else:
       unreachable
 

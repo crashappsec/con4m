@@ -1,0 +1,3 @@
+assert 100 > 88
+assert 100 < 88
+assert true != false

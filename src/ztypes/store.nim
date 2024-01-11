@@ -19,6 +19,9 @@ proc isConcrete*(ids: seq[TypeId]): bool =
     combined = combined or item.followForwards()
   return combined.isConcrete()
 
+proc isTVar*(id: TypeId): bool =
+  return typeStore[id.followForwards()].kind == C4TVar
+
 proc isConcrete*(tRef: TypeRef): bool =
   return tRef.typeId.followForwards().isConcrete()
 

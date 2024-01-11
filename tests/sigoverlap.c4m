@@ -1,0 +1,29 @@
+extern callecho(a: ptr) -> cvoid {
+  local: echo(string) -> void
+  pure: false
+}
+
+func ex2(x: `t) {
+  typeof x {
+    case int, i32:
+       echo("hi")
+    case dict[`t, int]:
+        echo("Int value")
+    case dict[string, string]:
+       echo("Word.")
+  }
+}
+
+func ex2(lmno: `t) {
+  typeof lmno {
+    case int, i32:
+       echo("hi")
+    case dict[`t, int]:
+        echo("Int value")
+    case dict[string, string]:
+       echo("Word.")
+    else {
+       echo("foo")
+    }
+  }
+}

@@ -41,6 +41,13 @@ var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
                        "len()", "+=", "ffi()", "init()", "cleanup()",
                        "newlit()", ">max<"]
 
+proc toString*(ins: ZInstruction): string =
+  result = $ins & ": " & ins.typeInfo.toString()
+
+  if ins.op == ZTCall:
+    result &= " (" & tcallReverseMap[ins.arg] & ")"
+
+
 proc oneIrNode(ctx: CodeGenState, n: IrNode)
 
 template getOffset(sym: SymbolInfo): int64 =
@@ -77,7 +84,7 @@ proc getLocation(ctx: CodeGenState): int32 =
 
   return int32(n.parseNode.token.lineNo)
 
-proc addInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
+proc emitInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                     immediate: int64 = 0,  tid: TypeId = TBottom,
                     arena: int = ctx.mcur.objInfo.arenaId) =
   var ins = ZInstruction(op: op, arena: int16(arena), arg: int32(arg),
@@ -98,7 +105,6 @@ proc hex(x: int, minlen = 2): string =
     outlen = minlen
 
   return "0x" & `$`(x.toHex(outlen).toLowerAscii())
-
 
 proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
   # This is really just for use during development.
@@ -134,8 +140,9 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         ty  = text(" ")
         lbl = strong(str)
     of ZFFICall:
+      var p = addr ctx.staticData[item.arg]
       arg1 = text(hex(item.arg))
-      lbl  = em(" ffi(" & mem.findStringAt(item.arg) & ")")
+      lbl  = em(" ffi(" & $(cast[cstring](p)) & ")")
     of ZTCall:
       arg1 = text(hex(item.arg))
       lbl  = em(tCallReverseMap[item.arg])
@@ -144,11 +151,19 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       # so it's really about indexing into the right module in the
       # zobject state, which is offset by one, since arena 0 is the
       # global namespace.
-      let
-        moduleIx = item.arena - 1
-        name     = ctx.moduleContents[moduleIx].codesyms[item.arg]
+      if item.arg <= 0:
+        let moduleIx = item.arena - 1
+        arg1 = text($(moduleIx))
+        arg2 = text("module: " & ctx.moduleContents[moduleIx].modname)
+      else:
+        let
+          moduleIx = item.arena - 1
+          fnObj    = ctx.funcInfo[item.arg - 1]
+          name     = ctx.moduleContents[moduleIx].codesyms[fnObj.offset]
 
-      lbl = em("-> " & name)
+        arg1 = text(hex(item.arg))
+        arg2 = text("module id: " & $item.arena)
+        lbl = em("-> " & name)
 
     of ZPushVal, ZPushPtr, ZPushSType, ZPushAddr:
       var
@@ -199,13 +214,13 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     of ZPushImm:
       arg2 = text($item.immediate)
       lbl  = text(`$`(item.immediate) & " -> (stack)")
-    of ZAssignToLoc:
+    of ZAssignToLoc, ZAssignAttr:
       lbl = text("popx2")
     of ZModuleRet , ZRet, ZHalt:
       ty = text(" ")
-    of ZEnter:
+    of ZMoveSp:
       ty = text(" ")
-      arg1 = text("-" & $hex(item.arg))
+      arg1 = text($item.arg)
     of ZJz, ZJnz, ZJ:
       if item.arg > 0:
         arg1 = text("+" & hex(item.arg))
@@ -230,7 +245,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         lbl = em(s)
       else:
         lbl = text(" ")
-    of ZPop:
+    of ZPop, ZAssert:
       ty = text(" ")
     else:
       discard
@@ -240,7 +255,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     cells.add(row)
 
   result = quickTable(cells)
-  result.colWidths([(12, true), (15, true), (14, true), (16, true),
+  result.colWidths([(12, true), (16, true), (14, true), (16, true),
                     (0, false), (0, false)])
 
 proc disassembly*(ctx: ZObjectFile): Rope =
@@ -283,25 +298,25 @@ proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
 
   ## Pop should be as much as we know about the type we're popping.
   if sym == nil:
-    ctx.addInstruction(ZPop, tid = ntid)
+    ctx.emitInstruction(ZPop, tid = ntid)
   else:
     let arena = ctx.getsymbolArena(sym)
 
     if ntid == TBottom:
       ntid = sym.getTid()
 
-    ctx.addInstruction(ZStoreTop, sym.getOffset(), tid = ntid, arena = arena)
-    ctx.addInstruction(ZPop, tid = ntid)
+    ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = ntid, arena = arena)
+    ctx.emitInstruction(ZPop, tid = ntid)
 
 proc genNop(ctx: CodeGenState) =
-  ctx.addInstruction(ZNop)
+  ctx.emitInstruction(ZNop)
 
 proc genCopyStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
-  ctx.addInstruction(ZSObjNew, l, offset, tid.getTid())
+  ctx.emitInstruction(ZSObjNew, l, offset, tid.getTid(), arena = -2)
 
 proc genLabel(ctx: CodeGenState, label: string) =
-  ctx.addInstruction(ZNop, 1, ctx.addStaticObject(label))
+  ctx.emitInstruction(ZNop, 1, ctx.addStaticObject(label))
 
 proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
   var
@@ -313,29 +328,29 @@ proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
   else:
     op = ZPushPtr
 
-  ctx.addInstruction(op, sym.getOffset(), tid = sym.getTid(), arena = arena)
+  ctx.emitInstruction(op, sym.getOffset(), tid = sym.getTid(), arena = arena)
 
 proc genPushImmediate(ctx: CodeGenState, immediate: int, tid = TInt) =
-  ctx.addInstruction(ZPushImm, immediate = immediate, tid = tid.getTid())
+  ctx.emitInstruction(ZPushImm, immediate = immediate, tid = tid.getTid())
 
 proc genPushImmediateF(ctx: CodeGenState, val: float) =
   let p = cast[pointer](val)
-  ctx.addInstruction(ZPushImm, immediate = cast[int](p), tid = TFloat)
+  ctx.emitInstruction(ZPushImm, immediate = cast[int](p), tid = TFloat)
 
 proc genPushTypeOf(ctx: CodeGenState, sym: SymbolInfo) =
-  ctx.addInstruction(ZPushSType, sym.getOffset(),
+  ctx.emitInstruction(ZPushSType, sym.getOffset(),
                      arena = ctx.getSymbolArena(sym))
 
 proc genDupTop(ctx: CodeGenState) =
-  ctx.addInstruction(ZDupTop)
+  ctx.emitInstruction(ZDupTop)
 
 proc genStore(ctx: CodeGenState, sym: SymbolInfo, tid = sym.tid) =
-  ctx.addInstruction(ZStoreTop, sym.getOffset(), tid = tid.getTid(),
+  ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = tid.getTid(),
                      arena = ctx.getSymbolArena(sym))
 
 proc genStoreImmediate(ctx: CodeGenState, sym: SymbolInfo,
                        immediate: int, tid = sym.tid) =
-  ctx.addInstruction(ZStoreImm, sym.getOffset(), immediate, tid = tid.getTid(),
+  ctx.emitInstruction(ZStoreImm, sym.getOffset(), immediate, tid = tid.getTid(),
                      arena = ctx.getSymbolArena(sym))
 
 proc genTCall(ctx: CodeGenState, callId: int, tid: TypeId = TBottom) =
@@ -346,10 +361,10 @@ proc genTCall(ctx: CodeGenState, callId: int, tid: TypeId = TBottom) =
 
   # This is for generating calls to our internal API for data types.
   # Push parameters on last to first.
-  ctx.addInstruction(ZTCall, callId, tid = dtid)
+  ctx.emitInstruction(ZTCall, callId, tid = tid)
 
 proc genNot(ctx: CodeGenState) =
-  ctx.addInstruction(ZNot)
+  ctx.emitInstruction(ZNot)
 
 proc genEqual(ctx: CodeGenState, tid = TBool) =
   ctx.genTCall(FEq, tid)
@@ -374,9 +389,9 @@ proc startJz(ctx: CodeGenState, target: IrNode = nil,
   result = ctx.mcur.objInfo.instructions.len()
 
   if not popit:
-    ctx.addInstruction(ZDupTop)
+    ctx.emitInstruction(ZDupTop)
 
-  ctx.addInstruction(ZJz)
+  ctx.emitInstruction(ZJz)
 
   if target != nil:
     ctx.mcur.backpatchLocs.add((target, result))
@@ -387,9 +402,9 @@ proc startJnz(ctx: CodeGenState, target: IrNode = nil,
   result = ctx.mcur.objInfo.instructions.len()
 
   if not popit:
-    ctx.addInstruction(ZDupTop)
+    ctx.emitInstruction(ZDupTop)
 
-  ctx.addInstruction(ZJnz)
+  ctx.emitInstruction(ZJnz)
 
   if target != nil:
     ctx.mcur.backpatchLocs.add((target, result))
@@ -397,7 +412,7 @@ proc startJnz(ctx: CodeGenState, target: IrNode = nil,
 proc startJ(ctx: CodeGenState, target: IrNode = nil): int {.discardable.} =
 
   result = ctx.mcur.objInfo.instructions.len()
-  ctx.addInstruction(ZJ)
+  ctx.emitInstruction(ZJ)
 
   if target != nil:
     ctx.mcur.backpatchLocs.add((target, result))
@@ -410,14 +425,14 @@ proc genBackwardsJump(ctx: CodeGenState, target: IrNode) =
 
   for (n, loc) in ctx.mcur.loopLocs:
     if n == target:
-      ctx.addInstruction(ZJ, arg = getJumpOffset(curAddr, loc))
+      ctx.emitInstruction(ZJ, arg = getJumpOffset(curAddr, loc))
       return
 
   unreachable
 
 proc genBackwardsJump(ctx: CodeGenState, target: int) =
   let curAddr = ctx.mcur.objInfo.instructions.len()
-  ctx.addInstruction(ZJ, arg = getJumpOffset(curAddr, target))
+  ctx.emitInstruction(ZJ, arg = getJumpOffset(curAddr, target))
 
 proc backPatch(ctx: CodeGenState, patchLoc: int) =
   var cur = ctx.mcur.objInfo.instructions[patchLoc]
@@ -437,10 +452,13 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
   ctx.genTCall(FIndex)
 
 proc genPushStaticString(ctx: CodeGenState, name: string) =
-  ctx.addInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
+  ctx.emitInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
 
 proc genLoadAttr(ctx: CodeGenState, tid: TypeId) =
-  ctx.addInstruction(ZLoadFromAttr, tid = tid)
+  ctx.emitInstruction(ZLoadFromAttr, tid = tid)
+
+proc genSetAttr(ctx: CodeGenState, tid: TypeId) =
+  ctx.emitInstruction(ZAssignAttr, tid = tid)
 
 proc genAssign(ctx: CodeGenState, tid: TypeId, copyFirst: bool) =
   ## The copyFirst parameter only applies to by-ref data types.  But,
@@ -454,32 +472,31 @@ proc genAssign(ctx: CodeGenState, tid: TypeId, copyFirst: bool) =
 
   if not tid.getDataType.byValue and copyFirst:
     ctx.genTCall(FCopy, tid)
-  ctx.addInstruction(ZAssignToLoc, tid = tid)
+  ctx.emitInstruction(ZAssignToLoc, tid = tid)
 
 proc genLoadFromIx(ctx: CodeGenState, tid: TypeId) =
-  ctx.addInstruction(ZIndexedLoad, tid = tid)
+  ctx.emitInstruction(ZIndexedLoad, tid = tid)
 
 proc genLoadFromSlice(ctx: CodeGenState, tid: TypeId) =
-  ctx.addInstruction(ZSliceLoad, tid = tid)
+  ctx.emitInstruction(ZSliceLoad, tid = tid)
 
 proc genAssignToIx(ctx: CodeGenState, tid: TypeId) =
-  ctx.addInstruction(ZAssignToIx, tid = tid)
+  ctx.emitInstruction(ZAssignToIx, tid = tid)
 
 proc genAssignSlice(ctx: CodeGenState, tid: TypeId) =
-  ctx.addInstruction(ZAssignSlice, tid = tid)
+  ctx.emitInstruction(ZAssignSlice, tid = tid)
 
 proc genPrologue(ctx: CodeGenState, sz: int) =
-  ctx.addInstruction(ZEnter, arg = sz)
+  ctx.emitInstruction(ZMoveSp, arg = sz)
 
 proc genReturnInstructions(ctx: CodegenState) =
   let fn = ctx.fcur
 
   if fn.retval != nil and fn.retval.tid.unify(TVoid) == TBottom:
-    ctx.addInstruction(ZSetRes, fn.retval.sym.getOffset(),
+    ctx.emitInstruction(ZSetRes, fn.retval.sym.getOffset(),
                        tid = fn.retval.sym.tid,
                        arena = ctx.getSymbolArena(fn.retval.sym))
-
-  ctx.addInstruction(ZRet)
+  ctx.emitInstruction(ZRet)
 
 ## End opcode generation
 
@@ -703,6 +720,7 @@ proc genMember(ctx: CodeGenState, cur: IrContents) =
 
 proc genMemberLhs(ctx: CodeGenState, cur: IrContents) =
   ctx.genPushStaticString(cur.attrSym.name)
+  ctx.genSetAttr(cur.attrSym.tid)
 
 proc genIndex(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
@@ -727,49 +745,78 @@ proc genIndexLhs(ctx: CodeGenState, n: IrNode) =
   if cur.indexEnd != nil:
     ctx.oneIrNode(cur.indexEnd)
 
+proc genExternCall(ctx: CodeGenState, cur: IrContents) =
+
+  var
+    i = cur.actuals.len()
+    tid: TypeId
+    found: bool
+
+  while i != 0:
+    i = i - 1
+    ctx.oneIrNode(cur.actuals[i])
+
+
+  if cur.toCall.retVal == nil:
+    tid = TVoid
+  else:
+    tid = cur.toCall.retVal.tid.followForwards()
+
+  for i, item in ctx.zobj.ffiInfo:
+    let
+      p = addr ctx.zobj.staticData[item.nameOffset]
+      s = $(cast[cstring](p))
+
+    if s == cur.toCall.externName:
+      ctx.emitInstruction(ZFFICall, arg = i, tid = tid)
+      found = true
+      break
+
+  if not found:
+    unreachable
+
+  # let stroffset = ctx.addStaticObject(cur.toCall.externName)
+  # ctx.emitInstruction(ZFFICall, arg = stroffset, tid = tid)
+
+  ctx.emitInstruction(ZMoveSp, - cur.actuals.len())
+  if tid != TVoid:
+    ctx.emitInstruction(ZPushRes, tid = tid)
+
 proc genCall(ctx: CodeGenState, cur: IrContents) =
+  if cur.toCall.defModule == nil:
+    ctx.genExternCall(cur)
+    return
+
   var
     moduleKey = cur.toCall.defModule.key
     minf      = ctx.minfo[moduleKey]
     i         = cur.actuals.len()
     va        = cur.toCall.tid.isVarargs()
+    numFixed  = cur.toCall.tid.getNumFormals() - 1
 
-  if va and cur.toCall.externInfo == nil:
-    # If the function accepts multiple args, wpush the number of VARARG
-    # parameters. What we do with this depends on whether we're
-    # FFI-calling.  If we're not, we actually construct a list of
-    # items and thus always pass a fixed numer of args internally.
-    #
-    # Since we push arguments on in reverse order, the list of
-    # items should be the first thing pushed, which means we must
-    # call construct-list after pushing just the variadic arguments.
-    var numFixed = cur.toCall.tid.getNumFormals() - 1
-    ctx.genPushImmediate(cur.actuals.len() - numFixed)
-    ctx.genTCall(FContainerLit, cur.toCall.tid.getVarargsContainerTid())
-  else:
-  # Push actuals in reverse order. This isn't ideal, since people expect
-  # left-to-right evaluation. It's a TODO to fix that later.
-    if va and cur.toCall.externInfo != nil:
-      # TODO -- not sure where to push varargs info for FFI yet.
-      var numFixed = cur.toCall.tid.getNumFormals() - 1
-      ctx.genPushImmediate(cur.actuals.len() - numFixed)
+  # If the function accepts multiple args, wpush the number of VARARG
+  # parameters. What we do with this depends on whether we're
+  # FFI-calling.  If we're not, we actually construct a list of
+  # items and thus always pass a fixed numer of args internally.
+  #
+  # Since we push arguments on in reverse order, the list of
+  # items should be the first thing pushed, which means we must
+  # call construct-list after pushing just the variadic arguments.
 
-    while i != 0:
-      i = i - 1
-      ctx.oneIrNode(cur.actuals[i])
+  while i != 0:
+    i = i - 1
+    ctx.oneIrNode(cur.actuals[i])
 
-  if cur.toCall.externInfo == nil:
-    if cur.toCall.codeOffset == 0:
-      ctx.callBackpatches.add((cur.toCall, ctx.mCur, ctx.codeLoc()))
+  if cur.toCall.codeOffset == 0:
+    ctx.callBackpatches.add((cur.toCall, ctx.mCur, ctx.codeLoc()))
 
-    ctx.addInstruction(Z0Call, arg = cur.toCall.codeOffset,
-                       tid = cur.toCall.tid, arena = minf.objInfo.arenaId)
-  else:
-    let stroffset = ctx.addStaticObject(cur.toCall.externInfo.externName)
-    ctx.addInstruction(ZFFICall, arg = stroffset, tid = cur.toCall.retVal.tid)
+  ctx.emitInstruction(Z0Call, arg = cur.toCall.internalId,
+                     tid = cur.toCall.tid, arena = minf.objInfo.arenaId)
 
+  # Now we have to pop what we pushed:
+  ctx.emitInstruction(ZMoveSp, - cur.actuals.len())
   if cur.toCall.retVal.tid.followForwards != TVoid:
-    ctx.addInstruction(ZPushRes, tid = cur.toCall.retVal.tid)
+    ctx.emitInstruction(ZPushRes, tid = cur.toCall.retVal.tid)
 
 proc genUse(ctx: CodeGenState, cur: IrContents) =
   # This is basically just a 'call' with no parameters to the
@@ -787,7 +834,7 @@ proc genUse(ctx: CodeGenState, cur: IrContents) =
     moduleKey = cur.moduleObj.key
     minf      = ctx.minfo[moduleKey]
 
-  ctx.addInstruction(Z0Call, arg = 0, tid = TVoid, arena = minf.objInfo.arenaId)
+  ctx.emitInstruction(ZCallModule, minf.objInfo.arenaId, tid = TVoid)
 
 proc genRet(ctx: CodeGenState, cur: IrContents) =
   # We could skip adding any value to the `result` variable if there's
@@ -809,11 +856,11 @@ proc genAttrAssign(ctx: CodeGenState, n: IrNode) =
 
   let cur = n.contents
 
-  ctx.oneIrNode(cur.attrLhs)
   ctx.oneIrNode(cur.attrRhs)
+  ctx.oneIrNode(cur.attrLhs)
 
-  if cur.attrLhs.contents.kind == IrMemberLhs:
-    if cur.attrLhs.contents.indexEnd == nil:
+  if cur.attrLhs.contents.kind == IrIndexLhs:
+    if cur.attrLhs.contents.subaccess.contents.indexEnd == nil:
       ctx.genAssignToIx(cur.attrRhs.tid)
     else:
       ctx.genAssignSlice(cur.attrRhs.tid)
@@ -826,7 +873,7 @@ proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
     ctx.genPushStaticString(sym.name)
   else:
-    ctx.addInstruction(ZPushAddr, sym.getOffset(), tid = sym.tid,
+    ctx.emitInstruction(ZPushAddr, sym.getOffset(), tid = sym.tid,
                        arena = sym.arena)
 
 proc genLoadSymbol(ctx: CodeGenState, sym: SymbolInfo) =
@@ -947,6 +994,9 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
     ctx.genPushImmediate(0, TVoid)
   of IrAttrAssign:
     ctx.genAttrAssign(n)
+  of IrAssert:
+    ctx.oneIrNode(n.contents.assertion)
+    ctx.emitInstruction(ZAssert)
   of IrVarAssign, IrSwitchBranch:
     # The first shouldn't be produced anymore, and the second is handled
     # from the parent node w/o descending.
@@ -957,9 +1007,13 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
 proc addParameter(ctx: CodeGenState, symbol: SymbolInfo) =
   discard
 
-proc stashSymbolInfo(scope: Scope, d: var Dict[int, string]) =
-  for (name, sym) in scope.table.items():
+proc stashSymbolInfo(scope: Scope, d: var Dict[int, string],
+                     t: var seq[(int, TypeId)]) =
+  for (name, sym) in scope.table.items(sort=true):
+    if sym.isFunc:
+      continue
     d[sym.offset] = name
+    t.add((sym.offset, sym.getTid()))
 
 proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   let
@@ -973,7 +1027,8 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   fn.objInfo    = zinfo
   zinfo.offset  = fn.codeOffset
 
-  ctx.genPrologue(fn.fnScope.scopeSize)
+  if fn.fnScope.scopeSize > 0:
+    ctx.genPrologue(fn.fnScope.scopeSize - 1)
   ctx.oneIrNode(fn.implementation)
   # Todo: if this is unreachable, don't bother generating it.
   ctx.genReturnInstructions()
@@ -998,15 +1053,16 @@ proc genModule(ctx: CodeGenState, m: Module) =
     if sym.pInfo != nil:
       ctx.addParameter(sym)
 
-  ctx.genPrologue(m.moduleScope.scopeSize)
   ctx.oneIrNode(m.ir)
-  ctx.addInstruction(ZModuleRet)
+  ctx.emitInstruction(ZModuleRet)
   let numInstructions     = curMod.objInfo.instructions.len()
   curMod.objInfo.initSize = numInstructions  * sizeof(ZInstruction)
   ctx.genLabel("Functions: ")
 
   for (_, sym) in m.moduleScope.table.items():
     for fn in sym.fimpls:
+      if fn.externInfo != nil:
+        continue
       ctx.genFunction(fn)
 
   curMod.processed = true
@@ -1018,16 +1074,18 @@ proc genModule(ctx: CodeGenState, m: Module) =
 
 proc applyArenaId(ctx: CodeGenState, scope: Scope, arenaId: int,
                   curFnId: var int) =
-  for (_, sym) in scope.table.items():
+  for (name, sym) in scope.table.items():
     sym.arena = arenaId
     for fn in sym.fimpls:
+      if fn.externInfo != nil:
+        continue
       if fn.internalId == 0:
         fn.internalId = curFnId
-        let fi = ZFnInfo()   # Info carried into the object file.
+        let fi = ZFnInfo(funcname: name)   # Info carried into the object file.
         ctx.zobj.funcInfo.add(fi)
         fn.objInfo = fi
         fi.syms.initDict()
-        fn.fnscope.stashSymbolInfo(fi.syms)
+        fn.fnscope.stashSymbolInfo(fi.syms, fi.symTypes)
         curFnId += 1
       ctx.applyArenaId(fn.fnScope, -1, curFnId)
 
@@ -1051,7 +1109,8 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
         typeinfo  = item.tid.idToTypeRef()
         dupeEntry = false
 
-      zinfo.nameOffset = ctx.addStaticObject(cinfo.externName)
+      zinfo.nameOffset = ctx.addStaticObject(item.externName)
+      zinfo.localName  = ctx.addStaticObject(item.name)
 
       for entry in ctx.zobj.ffiInfo:
         if entry.nameOffset == zinfo.nameOffset:
@@ -1067,9 +1126,22 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
       for i, param in cinfo.cArgTypes:
         var
           cArgType  = int16(cTypeNames.find(param[0]))
-          ourType   = int32(typeinfo.items[i])
+          ourType: int32
 
-          paramInfo = ZffiArgInfo(argType: cArgType, ourType: ourType)
+        let itemType = typeinfo.items[i].idToTypeRef()
+        if itemType.kind == C4TVar:
+          ourType = -1
+        else:
+          let dsttype = typeinfo.items[i].followForwards()
+          if dsttype.isBasicType():
+            ourType = int32(dsttype)
+          else:
+            ourType = -1
+
+        if ourType == -1:
+          cArgType = int16(cTypeNames.find("ptr"))
+
+        var paramInfo = ZffiArgInfo(argType: cArgType, ourType: ourType)
 
         zinfo.argInfo.add(paramInfo)
 
@@ -1093,27 +1165,30 @@ proc setupModules(ctx: CodeGenState) =
   # and then applies a unique number to each function.
   ctx.applyArenaId(ctx.cc.globalScope, 0, curFnId)
   ctx.zobj.globals.initDict()
-  ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals)
+  ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals, ctx.zobj.symTypes)
   ctx.zobj.globalScopeSz = ctx.cc.globalScope.scopeSize
 
   for (_, module) in ctx.cc.modules.items():
-    var mi = ZModuleInfo(arenaId: curArena,
+    ctx.addFfiInfo(module)
+
+  for (_, module) in ctx.cc.modules.items():
+    var mi = ZModuleInfo(arenaId: curArena, modname: module.modname,
                          arenaSize: module.moduleScope.scopeSize)
     module.objInfo = mi
     ctx.applyArenaId(module.moduleScope, curArena, curFnId)
-    curArena                            = curArena + 1
-    ctx.minfo[module.key]               = module
+    curArena              = curArena + 1
+    ctx.minfo[module.key] = module
     ctx.zobj.moduleContents.add(mi)
     mi.codesyms.initDict()
     mi.datasyms.initDict()
-    module.moduleScope.stashSymbolInfo(mi.datasyms)
-    mi.codesyms[0] = module.modname & ".__mod_init__()"
-    ctx.addFfiInfo(module)
+    mi.source = $(module.s.runes)
+    module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
+    mi.codesyms[0] = module.modname & ".__mod_run__()"
 
 proc fillCallBackpatches(ctx: CodeGenState) =
   for (fn, dstmodule, patchloc) in ctx.callBackpatches:
     var cur = dstmodule.objInfo.instructions[patchloc]
-    cur.arg = int32(fn.codeOffset)
+    cur.arg = int32(fn.internalId)
 
     dstmodule.objInfo.instructions[patchloc] = cur
 

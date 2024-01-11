@@ -129,7 +129,7 @@ type
     tid*:  TypeId
     impl*: FuncInfo
 
-  Con4mErrPhase* = enum ErrLoad, ErrLex, ErrParse, ErrIrgen
+  Con4mErrPhase* = enum ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrRuntime
   Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr, LlFatal
   InstantiationInfo* = tuple[filename: string, line: int, column: int]
   Con4mError* = object
@@ -141,6 +141,7 @@ type
     line*:     int
     offset*:   int
     extra*:    seq[string]
+    detail*:   Rope
     when not defined(release):
       trace*:  string
       ii*:     InstantiationInfo
@@ -216,13 +217,14 @@ type
     NodeExternDll, NodeExternPure, NodeExternHolds, NodeExternAllocs,
     NodeExternReturn, NodeExpression, NodeFormal, NodeLabelStmt, NodeBitOr,
     NodeBitXor, NodeBitAnd, NodeShl, NodeShr, NodeNilLit, NodeCase,
-    NodeCaseCondition, NodeRange, NodeDocString
+    NodeCaseCondition, NodeRange, NodeDocString, NodeAssert
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAttrAssign, IrVarAssign, IrConditional,
     IrJump, IrRet, IrLit, IrMember, IrMemberLhs, IrIndex, IrIndexLhs, IrCall,
     IrUse, IrUMinus, IrNot, IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad,
-    IrFold, IrNop, IrSection, IrNil, IrSwitch, IrSwitchBranch, IrRange
+    IrFold, IrNop, IrSection, IrNil, IrSwitch, IrSwitchBranch, IrRange,
+    IrAssert
     #IrCast
 
   IrNode* = ref object
@@ -251,9 +253,9 @@ type
                              # For while loops, the loop condition.
       loopBody*:   IrNode
     of IrAttrAssign:
-      attrlhs*: IrNode
-      attrrhs*: IrNode
-      lock*:    bool
+      attrlhs*:   IrNode
+      attrrhs*:   IrNode
+      lock*:      bool
     of IrVarAssign:
       varlhs*: IrNode
       varrhs*: IrNode
@@ -313,6 +315,8 @@ type
       symbol*: SymbolInfo
     of IrFold, IrNop, IrNil:
       discard
+    of IrAssert:
+      assertion*: IrNode
 
   FormalInfo* = ref object
     name*: string
@@ -341,6 +345,7 @@ type
     # come here.
     externInfo*:     ExternFnInfo
     name*:           string
+    externName*:     string   # Somehow the string inside eI is getting lost?
     rawImpl*:        Con4mNode
     implementation*: IrNode
     tid*:            TypeId
@@ -581,7 +586,7 @@ type
     secDefContext*:  bool
     curSym*:         SymbolInfo
     usedModules*:    seq[(string, string)]
-    funcsToResolve*: seq[(IrNode, TypeId, seq[FuncInfo], seq[FuncInfo])]
+    funcsToResolve*: seq[(IrNode, TypeId, string)]
     labelNode*:      Con4mNode
     curSecPrefix*:   string
     curSecSpec*:     SectionSpec
@@ -762,20 +767,22 @@ type
      ZModuleRet     = 0x81,
      ZHalt          = 0x82,
 
-     # SetRet should be called by any function before exiting, placing
-     # the return value in the one user register in our 'machine'. The
-     # top of the stack is popped and placed in that register, overwriting
-     # anything there.
+     # SetRet should be called by any function before exiting, where
+     # that function is non-void. It moves the value at fp - 2
+     # into the return register.
      ZSetRes        = 0x90,
 
      # This pushes whatever is in the return register onto the stack;
      # It does NOT clear the register.
      ZPushRes       = 0x91,
 
-     # This is the standard function prologue; it pushes the base
-     # pointer and grows the stack by the number of bytes requested in
-     # the `immediate` field, but will always be 64-bit aligned.
-     ZEnter         = 0x92,
+     # This jumps the stack pointer to add or shrink by the size of
+     # the variables in the current scope.  The scope size to add or
+     # sub is in the `immediate` field and must be 64-bit aligned.
+     ZMoveSP        = 0x92,
+
+     # Halts the program if the stack top is false. Pops the stack.
+     ZAssert        = 0xa0,
 
      # A no-op. These double as labels for disassembly too.
      ZNop           = 0xff
@@ -794,7 +801,7 @@ type
     typePtr*:   pointer # The marshal'd type object.
     shortDoc*:  pointer # An offset to the short description start.
     longDoc*:   pointer
-    validator*: pointer # An offset to validation code in the global arena.
+    validator*: pointer # An< offset to validation code in the global arena.
     default*:   pointer # Depending on the type, either a value, or a ptr
     status*:    int32   # 0 for no value present.
     arenaId*:   int32
@@ -827,6 +834,7 @@ type
 
   ZFFiInfo* = ref object
     nameOffset*: int
+    localName*:  int
     va*:         bool
     dlls*:       seq[int]
     argInfo*:    seq[ZffiArgInfo]
@@ -834,6 +842,7 @@ type
   ZFnInfo* = ref object
     # This field maps offsets to the name of the field. Frame
     # temporaries do not get name information here.
+    funcname*:   string
     syms*:       Dict[int, string]
     # Type IDs at compile time. Particularly for debugging info, but
     # will be useful if we ever want to, from the object file, create
@@ -842,7 +851,9 @@ type
     # syms, we only capture variables scoped to the entire function.
     # We'll probably address that later.
     paramTypes*: seq[TypeId]
-    symTypes*:   seq[TypeId]
+    # symTypes has offsets mapped to the compile-time type.
+    # At run-time, the type will always need to be concrete.
+    symTypes*:   seq[(int, TypeId)]
     # Offset in bytes into the module's generated code where this
     # function begins.
     offset*:     int
@@ -864,7 +875,7 @@ type
     zcObjectVers*:   int = 0x01
     staticData*:     string
     globals*:        Dict[int, string]
-    globalTypes*:    Dict[int, string]
+    symTypes*:       seq[(int, TypeId)]
     globalScopeSz*:  int
     moduleContents*: seq[ZModuleInfo]
     entrypoint*:     int32  # A module ID
@@ -876,9 +887,10 @@ type
     modname*:        string
     location*:       string
     version*:        string
-    datasyms*:       Dict[int, string]
+    symTypes*:       seq[(int, TypeId)]
     codesyms*:       Dict[int, string]
-    source*:         StringCursor
+    datasyms*:       Dict[int, string]
+    source*:         string
     arenaId*:        int
     arenaSize*:      int
     instructions*:   seq[ZInstruction]

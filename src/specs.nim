@@ -166,11 +166,11 @@ proc oneChoiceValidator*(attrs: AttrDict, path: string, t: TypeId,
       return nil
 
   result = atom("Invalid choice for field: ") + em(path) +
-           atom(". Got value: ") + em(box.call_repr(t)) +
+           atom(". Got value: ") + em($(box.call_repr(t))) +
            atom(", but valid choices are: ")
 
   for i, item in args:
-    result += em(item.call_repr(t))
+    result += em($(item.call_repr(t)))
     if i != args.len() - 1:
       result += atom(", ")
 

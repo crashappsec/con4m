@@ -125,9 +125,6 @@ proc buildIr(ctx: CompileCtx, module: Module) =
   module.toIr()
   module.compileCtx = nil
 
-  module.resolveDeferredSymbols()
-  module.foldingPass()
-
 proc handleFolding(ctx: CompileCtx, module: Module) =
   if module == nil or module.didFoldingPass:
     return
@@ -147,12 +144,19 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.handleFolding(ctx.entrypoint)
   ctx.buildCfg(ctx.entrypoint)
   ctx.buildAllUnbuiltCfgs(ctx.entrypoint)
+
   for module in ctx.modules.values():
     ctx.buildCfg(module)
     ctx.buildAllUnbuiltCfgs(module)
+
+  for module in ctx.modules.values():
+    ctx.resolveDeferredSymbols(module)
+    module.foldingPass()
+
   ctx.wholeProgramChecks()
   ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
+
 
 proc newCompileContext*(spec: ValidationSpec = nil,
                         path                 = @[".", "https://chalkdust.io/"],
@@ -233,7 +237,7 @@ proc printProgramCfg*(ctx: CompileCtx) =
   print ctx.entrypoint.cfg.toRope(true)
 
 proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone):
-  bool {.discardable.} =
+  bool =
   var errsToPrint: seq[Con4mError]
 
   for (_, m) in ctx.modules.items():
@@ -245,6 +249,6 @@ proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone):
     if cast[int](item.severity) >= cast[int](ll):
       errsToPrint.add(item)
 
-  print errsToPrint.formatErrors(verbose)
+  print(errsToPrint.formatErrors(verbose), file = stderr)
 
-  return errsToPrint.canProceed()
+  result = errsToPrint.canProceed()

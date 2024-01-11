@@ -126,6 +126,14 @@ else:
     ffiSSizeT* = ffiI64
     ffiSizeT*  = ffiU64
 
+
+let
+  ffiTypeNameMapping* = [ ffiVoid, ffiU8, ffiI8, ffiU16, ffiI16, ffiU32,
+                          ffiI32, ffiU64, ffiI64, ffiFloat, ffiDouble,
+                          ffiuChar, ffiChar, ffiShort, ffiUShort, ffiInt,
+                          ffiUint, ffiLong, ffiULong, ffiU8, ffiSizeT,
+                          ffiSSizet, ffiPtr, ffiPtr, ffiPtr ]
+
 proc ffi_prep_cif*(cif: var CallerInfo, abi: cuint, nargs: cuint,
                    rtype: ptr FfiObj, argTypes:
                      pointer): FfiStatus {.discardable,

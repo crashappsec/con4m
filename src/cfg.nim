@@ -137,15 +137,18 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
         result.stmts.add(item)
       if item.tid.getTid() notin [TVoid, TBottom]:
         if item.contents.kind notin [IrAttrAssign, IrVarAssign]:
-          m.irWarn("ExprResult", item, @[item.tid.toString()])
+          if not item.tid.isTVar():
+            # Right now, function calls will not always have been
+            # resolved when this check is run. CFG needs to be redone.
+            m.irWarn("ExprResult", item, @[item.tid.toString()])
 
       result = ctx.handleOneNode(m, item, result)
 
       if result == nil:
         if i + 1 != n.contents.stmts.len():
           m.irWarn("DeadCode", item, @["statement"])
-          for m in i + 1 ..< n.contents.stmts.len():
-            print n.contents.stmts[m].toRope()
+          #for m in i + 1 ..< n.contents.stmts.len():
+          #  print n.contents.stmts[m].toRope()
         return # Skip dead code.
 
   of IrSection:
@@ -231,11 +234,10 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
       top    = result.startBlock(n)
       joiner = top.exitNode
 
-    if n notin n.contents.targetSym.uses:
-      n.contents.targetSym.uses.add(n)
-
     if not n.contents.typeCase:
       result = ctx.handleOneNode(m, n.contents.switchTarget, result)
+    elif n notin n.contents.targetSym.uses:
+      n.contents.targetSym.uses.add(n)
 
     for branch in n.contents.branches:
       var
@@ -434,7 +436,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     m.addUse(n.contents.symbol, n, result)
   of IrLhsLoad:
     n.contents.symbol.addDef(n, result)
-  of IrLit, IrFold, IrNop, IrNil:
+  of IrLit, IrFold, IrNop, IrNil, IrAssert:
     discard
 
 proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
@@ -446,8 +448,7 @@ proc handleOneFunc(ctx: CompileCtx, f: FuncInfo, start: seq[SymbolInfo]) =
   if f.cfg != nil or f.externInfo != nil:
     return
 
-  # Leave a word for the base pointer.
-  f.fnScope.calculateOffsets(startOffset = 8)
+  f.fnScope.calculateOffsets(1)
   f.maxOffset = f.fnScope.scopeSize # This can get bigger as we descend.
 
   let m = f.defModule
@@ -471,7 +472,7 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
   if m == nil or m.cfg != nil:
     return
 
-  m.moduleScope.calculateOffsets(startoffset = 8)
+  m.moduleScope.calculateOffsets()
   if m.globalScope.scopeSize == 0:
     m.globalScope.calculateOffsets()
 

@@ -463,7 +463,7 @@ proc toRope*(s: Scope, title = ""): Rope =
       isFunc = fgColor("✗", "red")
     if sym.constValue.isSome():
       let box = sym.constValue.get()
-      cc = fgColor(call_repr(box, sym.tid), "atomiclime")
+      cc = fgColor($(call_repr(box, sym.tid)), "atomiclime")
     elif sym.immutable:
       cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")
     if sym.fImpls.len() != 0:
@@ -473,8 +473,9 @@ proc toRope*(s: Scope, title = ""): Rope =
       cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
                   atom($(sym.offset)),
                   sym.declaredType.isDeclaredRepr(), cc, isFunc,
-                  atom($(sym.uses.len())),
-                  atom($(sym.defs.len()))])
+                  atom($(sym.defs.len())),
+                  atom($(sym.uses.len()))
+            ])
     else:
       for item in sym.fImpls:
         cells.add(@[name.atom(), item.tid.toRope(), atom("n/a"),
@@ -517,7 +518,7 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
   let symInfo = s.table.items(sort = true)
   var
     sz           = startOffset
-    formalOffset = -16 # -8 is the return address.
+    formalOffset = -1
 
   if s.parent != nil:
     sz = s.parent.scopeSize
@@ -527,12 +528,12 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
       continue
     if sym.formal:
       sym.offset = formalOffset
-      formalOffset -= 16
+      formalOffset -= 1
       continue
 
     sym.offset = sz
-    sym.size   = 16
-    sz        += 16
+    sym.size   = 1
+    sz        += 1
 
   s.scopeSize = sz
 

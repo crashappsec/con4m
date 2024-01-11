@@ -2,14 +2,10 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Basic execution.
-# - No matching sig error for function calls
-# - Offset isn't right for sym copies in a typecase. Check lineage.
 # - Test suite.
 # - Load default values at beginning of program.
 # - Dictionary and tuple implementations
 # - C-level interface to attributes
-# - Stack traces during execution.
 # - Spec checking after execution.
 # - Saving the spec in the object file.
 # - Checkpointing runtime state.
@@ -21,7 +17,6 @@
 #   and which parameters are right / wrong.
 # - Re-implement standard library / wrappings.
 # - finish hasExitToOuterBlock in CFG.
-# - Auto-conversion / management of FFI params in runtime.
 # - Copy operations for all ref builtin types.
 # - Handle negative indexes in call_...index
 # - explicit casts
@@ -33,6 +28,8 @@
 # - Add global enum
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
+# - Add code gen for 'lock' operator.
+# - The attr type info needs to be folded into the same dict as attrs.
 
 # == Medium -- before public release ==
 # - +=, -=, *=, etc.
@@ -48,7 +45,6 @@
 #   but if there's no assignment it should error / warn if one might be
 #   locking something that isn't assigned.
 # - Be able to lock an entire section.
-# - Built in print statement??
 # - Warning when your declared type is more generic than the inferred type.
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
 # - Doc strings
@@ -99,17 +95,10 @@
 # - Config limit for how many errors we print.
 # - Use tracking for function calls.
 # - Package system.
+# - Varargs for external calls.
 
-## Makes it easy to build Apache-style configuration files with
-## well-defined schemas, where you don't have to do significant work.
-##
-## And the people who write configuration files, can do extensive
-## customization using the con4m language, which is built in a way
-## that guarantees termination (e.g., no while loops, for loop index
-## variables are immutible to the programmer).
-##
 ## :Author: John Viega (john@crashoverride.com)
-## :Copyright: 2022
+## :Copyright: 2022 - 2024
 
 import compile, specs, codegen, vm
 export compile
@@ -183,8 +172,7 @@ when isMainModule:
     if debug:
       print generatedCode.disassembly()
 
-
-    generatedCode.executeObject()
-
+    quit(generatedCode.executeObject())
   else:
     print h2("Program loading failed.")
+    quit(1)

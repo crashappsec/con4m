@@ -92,7 +92,10 @@ const errorMsgs = [
                      "memory management will not be performend, and this " &
                      "annotation will be ignored."),
   ("WontLink",       "Was not able to locate the external symbol <em>$1</em>" &
-                     ", which is required for running."),
+                     ", which may be required for running."),
+  ("MissingSym",     "Was not able to locate the external symbol <em>$1</em>" &
+                     "; program will crash if it is accessed, unless " &
+                     "it is dynamically loaded first."),
   ("PurePlz",        "Please provide a value for the <em>pure</em> property " &
                      "for extern functions. Pure functions always " &
                      "return the same output for the same input, and do " &
@@ -232,18 +235,20 @@ const errorMsgs = [
   ("TupleIxBound",   "Constant index is out of bounds for the tuple being " &
                      "indexed."),
   ("ContainerType",  "Cannot distinguish what kind of container type this " &
-                     "is (could be a dict, list, tuple, etc. " &
+                     "is (could be a dict, list, tuple, etc.) " &
                      " Please explicitly declare this type."),
   ("BadUrl",         "Invalid URL for loading con4m source code."),
   ("InsecureUrl",    "Warning: loading file from an insecure URL. " &
                      "The contents could be injected by an attacker."),
   ("NoImpl",         "Could not find any function implementations in scope " &
                      "named <em>$1</em>. Full signature: <em>$1$2</em>"),
-  ("BadSig",         "No implementation of <em>$1</em> matched the $4." &
-                     "The $4 had the type: <em>$1$2</em> But available " &
-                     "functions were: <br>$3"),
-  ("CallAmbig",      "Found multiple functions matching the $4: <em>$1$2" &
-                     "</em> Please disambiguate. Found functions:<br>$3"),
+  ("NotAFunc",       "There is a variable named <em>$1</em>, but there was " &
+                     "Not a function in scope with the signature: " &
+                     "<em>$1$2</em>"),
+  ("BadSig",         "No implementation of <em>$1</em> matched this $3. " &
+                     "The $3 had the type: <em>$1$2</em>"),
+  ("CallAmbig",      "Found multiple functions matching <em>$1$2" &
+                     "</em> Please disambiguate."),
   ("NotIndexible",   "Type <em>$1</em> is not indexible."),
   ("CantLiftFunc",   "Function <em>$1</em> has the same name as a " &
                      "global variable. Currently, other modules will have to " &
@@ -304,17 +309,20 @@ const errorMsgs = [
   ("AttrUse",        "Attempted to use an attribute <em>$1</em> that has not " &
                      "been set."),
 
+  ("RT_BadTOp",      "Unknown function id for internal type API call " &
+                     "(<em>$1</em>)"),
+  ("Debug",          "Debug: $1 $2 $3"),
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
                 modname: string, line: int, lineOffset: int,
                 phase: Con4mErrPhase, severity = LlFatal,
-                extraContents: seq[string] = @[],
+                extraContents: seq[string] = @[], detail: Rope = nil,
                 trace: string = "", ii: Option[InstantiationInfo] =
                                   none(InstantiationInfo)) =
   var err = Con4mError(phase: phase, severity: severity, code: code,
                        cursor: cursor, modname: modname, line: line,
-                       offset: lineOffset, extra: extraContents)
+                       offset: lineOffset, extra: extraContents, detail: detail)
 
   when not defined(release):
     err.trace = trace
@@ -334,10 +342,10 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
 
 proc baseError*(list: var seq[Con4mError], code: string, tok: Con4mToken,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
-                extra: seq[string] = @[], trace = "",
+                extra: seq[string] = @[], detail: Rope = nil, trace = "",
                 ii = none(InstantiationInfo)) =
   list.baseError(code, tok.cursor, modname, tok.lineNo, tok.lineOffset,
-                 phase, severity, extra, trace, ii)
+                 phase, severity, extra, detail, trace, ii)
 
 proc lexBaseError*(ctx: Module, basemsg: string, t: Con4mToken = nil,
                   subs: seq[string] = @[]) =
@@ -358,10 +366,11 @@ template lexError*(msg: string, t: Con4mToken = nil) =
 
 proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
-                extra = seq[string](@[]), trace = "",
+                extra = seq[string](@[]), detail: Rope = nil, trace = "",
                 ii = none(InstantiationInfo)) =
   if node == nil:
-    list.baseError(code, nil, modname, 0, 0, phase, severity, extra, trace, ii)
+    list.baseError(code, nil, modname, 0, 0, phase, severity, extra,
+                   detail, trace, ii)
     return
 
   if node.err and severity != LlInfo:
@@ -369,17 +378,19 @@ proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
   if severity in [LlErr, LlFatal]:
     node.err = true
   list.baseError(code, node.token, modname, phase, severity, extra,
-                 trace, ii)
+                 detail, trace, ii)
 
 template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
-                w = Con4mNode(nil)) =
+                  w = Con4mNode(nil), detail = Rope(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra)
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra,
+                       detail)
 
 template irError*(ctx: Module, msg: string, w: IrNode,
-                  extra: seq[string] = @[]) =
+                  extra: seq[string] = @[], detail: Rope = nil) =
   var where = if w == nil: ctx.pt else: w.parseNode
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra)
+  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra,
+                       detail)
 
 template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
@@ -405,7 +416,6 @@ template irWarn*(ctx: Module, msg: string, w: IrNode,
   var where = if w == nil: ctx.pt else: w.parseNode
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
 
-
 template irInfo*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = Con4mNode(nil)) =
   var where = if w == nil: ctx.pt else: w
@@ -426,10 +436,13 @@ template loadWarn*(ctx: CompileCtx, msg: string, modname: string,
 
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:
-    if err.severity == LlFatal:
-      return false
+    if err.severity in [LlErr, LlFatal]:
 
+      return false
   return true
+
+template canProceed*(ctx: CompileCtx): bool =
+  ctx.errors.canProceed()
 
 proc lookupMsg(err: Con4mError): string =
   for (k, v) in errorMsgs:
@@ -465,19 +478,30 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
   result.add(s.htmlStringToRope(markdown = false, add_div = false))
 
 proc getVerboseInfo(err: Con4mError): Rope =
-  var noSource = false
+  var
+    noSource = false
+    noLoc    = false
+
   if err.cursor == nil:
     return nil
-  else:
-    let
-      src     = $(err.cursor.runes)
-      lines   = src.split("\n")
-      locator = em(repeat((' '), err.offset) & "^")
 
-    if lines.len() == 0 or err.line == 0:
-      return nil
-    else:
-      result = text(lines[err.line - 1]) + newBreak() + locator + newBreak()
+  elif err.offset < 0:
+    noLoc = true
+
+  let
+    src     = $(err.cursor.runes)
+    lines   = src.split("\n")
+
+  if lines.len() == 0 or err.line <= 0:
+    return nil
+
+  result = text(lines[err.line - 1]) + newBreak()
+
+  if not noLoc:
+    result += em(repeat((' '), err.offset) & "^") + newBreak()
+
+  if err.detail != nil:
+    result = result + err.detail
 
 proc getLocWidth(errs: seq[Con4mError]): int =
   for err in errs:
@@ -501,7 +525,7 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
   for i, error in errs:
     if i == 30: # TODO; make this a configurable limit.
       break
-    var msg = error.lookupMsg()
+    var msg = error.lookupMsg() & "<i> (" & error.code & ")</i>"
     error.performSubs(msg)
     errList.add(error.oneErrToRopeList(msg))
 
@@ -519,3 +543,19 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       table = table.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
       result += table
       result += container(errs[i].getVerboseInfo())
+
+proc runtimeWarn*(err: string, args: seq[string] = @[]) =
+  var
+    rawText = err
+    toOut: Rope
+
+  for (k, v) in errorMsgs:
+    if k == err:
+      rawText = v
+      break
+
+  for i, item in args:
+    rawText = rawText.replace("$" & `$`(i + 1), item)
+
+  toOut = fgColor("Warning: ", "yellow") + markdown(rawText)
+  print(err, file = stderr)

@@ -1,4 +1,4 @@
-import base, ../common
+import base, ../common, strutils
 
 # TODO: this is currently using Nim seq's until we fully wrap hatrack.
 
@@ -12,13 +12,14 @@ proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string): pointer {.
                 exportc, cdecl.}
 
-proc list_repr(pre: pointer): string {.exportc, cdecl.} =
+proc list_repr(pre: pointer): cstring {.exportc, cdecl.} =
   let c = extractRef[Zlist](pre)
   var parts: seq[string]
 
   for item in c.l:
-    parts.add(item.call_repr(c.tid))
+    parts.add($(item.call_repr(c.tid)))
 
+  return cstring("[" & parts.join(", ") & "]")
 
 proc call_eq(v1, v2: pointer, t: TypeId): bool {.importc, cdecl.}
 
@@ -69,13 +70,32 @@ proc list_index(p: pointer, i: int, err: var bool): pointer =
 # proc list_assign_ix()
 # proc list_slice()
 # proc list_assign_slice()
-# proc list_copy()
+proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
+
+proc list_copy(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
+  echo "HELLO: ", cast[int](cast[pointer](p))
+
+  var
+    list = extractRef[Zlist](p)
+
+
+  var
+    tobj = list.tid.idToTypeRef()
+    s2: seq[pointer]
+
+  for item in list.l:
+    s2.add(call_copy(item, tobj.items[0]))
+
+  let zl = ZList(l: s2, tid: t)
+
+  return newRefValue(zl, t)
 
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FContainerLit] = cast[pointer](list_lit)
 listOps[Feq]           = cast[pointer](list_eq)
 listOps[FLen]          = cast[pointer](list_len)
 listOps[FIndex]        = cast[pointer](list_index)
+listOps[FCopy]         = cast[pointer](list_copy)
 
 TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)

@@ -3,7 +3,7 @@ version       = "0.2.0"
 author        = "John Viega"
 description   = "A generic configuration file format that allows for flexible, lightweight scripting."
 license       = "Apache-2.0"
-bin           = @["con4m"]
+bin           = @["con4m", "cap10", "test"]
 srcDir        = "src"
 installExt    = @["nim", "c4m", "c42spec", "sh"]
 
