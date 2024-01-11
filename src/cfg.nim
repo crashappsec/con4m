@@ -401,7 +401,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     # This basically acts identically to function calls; we're just
     # calling the module initialization 'function' (the top level
     # code) when we execute a use statement.
-    if n.contents.moduleObj == nil:
+    if n.contents.moduleObj == nil or n.contents.moduleObj.exitNode == nil:
       return
 
     ctx.handleModule(n.contents.moduleObj,

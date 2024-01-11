@@ -14,6 +14,7 @@ template con4mLongJmp*(msg = "") =
 
 const errorMsgs = [
   ("FileNotFound",   "Module could not be located."),
+  ("ModuleNotFound", "Module <em>$1</em> could not be located."),
   ("StrayCr",        "Carriage return (<em>\r</em>) without newline."),
   ("BadEscape",      "Unterminated escape sequence in literal."),
   ("UnicodeEscape",  "Invalid unicode escape character found in literal."),
@@ -468,11 +469,13 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
 
   if err.modname.len() != 0:
     let modname = fgColor(err.modname, "jazzberry") + text(":")
-    let offset = td(text(`$`(err.line) & ":" & `$`(err.offset + 1) & ":"))
     result.add(modname.overflow(OTruncate))
-    result.add(offset.overflow(OTruncate))
   else:
     result.add(text(""))
+  if err.line >= 1:
+    let offset = td(text(`$`(err.line) & ":" & `$`(err.offset + 1) & ":"))
+    result.add(offset.overflow(OTruncate))
+  else:
     result.add(text(""))
 
   result.add(s.htmlStringToRope(markdown = false, add_div = false))

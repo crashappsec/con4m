@@ -827,7 +827,6 @@ proc genUse(ctx: CodeGenState, cur: IrContents) =
   if cur.moduleObj == nil:
     let m = ctx.cc.findAndLoadModule(cur.targetLoc, cur.targetModule, "")
 
-    assert m.isSome()
     cur.moduleObj = m.get()
 
   var

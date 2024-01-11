@@ -600,16 +600,16 @@ type
     objInfo*:       ZmoduleInfo
 
   CompileCtx* = ref object
-    modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
+    modules*:     Dict[string, Module]
     defaultExt*:  string      = ".c4m"
     attrSpec*:    ValidationSpec
-    errors*:      seq[Con4mError]
     globalScope*: Scope
     usedAttrs*:   Scope
     entrypoint*:  Module
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
-    modules*:     Dict[string, Module]
+    modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
+    errors*:      seq[Con4mError]
 
   # The remaining data structures are used in code generation and / or
   # runtime. Any type here with a Z in front is intended to get
@@ -899,3 +899,30 @@ type
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",
                                                    noSideEffect.}
+
+template debug*(x: string) =
+  print(h1("Debug") + text(x), file = stderr)
+
+template debug*(r: Rope) =
+  print(h1("Debug") + r, file = stderr)
+
+template debug*(s: string, s2: string, moreargs: varargs[string]) =
+  var
+    cells: seq[seq[string]]
+    i = 0
+    args = @[s, s2]
+
+  for item in moreargs:
+    args.add(item)
+
+  while i < args.len():
+    var row: seq[string]
+    row.add(args[i])
+    i += 1
+    row.add(args[i])
+    i += 1
+    cells.add(row)
+
+  cells.add(@["trace", getStackTrace()])
+
+  debug(cells.quickTable(verticalHeaders = true))

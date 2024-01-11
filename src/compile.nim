@@ -33,6 +33,8 @@ proc loadSourceFromInsecureUrl(ctx: CompileCtx, url: string):
     return some(response.bodyStream.readAll())
 
 proc loadModule(ctx: CompileCtx, module: Module)
+proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.exportc,
+                                                                       cdecl.}
 
 proc loadModuleFromLocation(ctx: CompileCtx, location: string,
                             fname: string, ext = ""): Option[Module] =
@@ -69,20 +71,38 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
   ctx.loadModule(module)
   return some(module)
 
+proc isRelativePath(loc: string): bool =
+  if loc.len() == 0:
+    return true
+  if loc[0] == '/':
+    return false
+  if loc[0] != 'h':
+    return true
+  if loc.startswith("http://"):
+    return false
+  if loc.startswith("https://"):
+    return false
+  return true
+
 proc findAndLoadModule*(ctx: CompileCtx, location, fname, ext: string):
                       Option[Module] {.exportc, cdecl.} =
-  if location != "":
+  if not location.isRelativePath():
     return ctx.loadModuleFromLocation(location, fname, ext)
 
-  for possibleLoc in ctx.modulePath:
-    let possibly = ctx.loadModuleFromLocation(possibleLoc, fname, ext)
+  for pathItem in ctx.modulePath:
+    let
+      possibleLoc = joinPath(pathItem, location)
+
+    let
+      possibly    = ctx.loadModuleFromLocation(possibleLoc, fname, ext)
+
     if possibly.isSome():
+      let module = possibly.get()
       return possibly
 
-  ctx.loadError("FileNotFound", fname)
   return none(Module)
 
-proc findAndLoadModule(ctx: CompileCtx, url: string): Option[Module] =
+proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] =
   let (loc, name, ext) = url.splitFile()
   return ctx.findAndLoadModule(loc, name, ext)
 
@@ -136,9 +156,12 @@ proc handleFolding(ctx: CompileCtx, module: Module) =
 
 proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
                         bool {.discardable.} =
-  let modOpt        = ctx.findAndLoadModule(entrypointName)
+  let modOpt        = ctx.findAndLoadFromUrl(entrypointName)
 
   ctx.entrypoint = modOpt.getOrElse(nil)
+  if modOpt.isNone():
+    ctx.loadError("FileNotFound", entryPointName)
+    return
 
   ctx.buildIr(ctx.entrypoint)
   ctx.handleFolding(ctx.entrypoint)

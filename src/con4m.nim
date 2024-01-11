@@ -100,7 +100,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import compile, specs, codegen, vm
+import compile, specs, codegen, vm, os
 export compile
 
 when isMainModule:
@@ -121,6 +121,12 @@ when isMainModule:
     debug  = false
     spec   = buildTestSpec()
     session = newCompileContext(nil)
+
+  let altPath = $(getEnv("CON4M_PATH"))
+
+  if altPath != "":
+    session.modulePath = altPath.split(Rune(':'))
+
 
   if "--debug" in params:
     debug = true

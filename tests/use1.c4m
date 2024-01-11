@@ -1,0 +1,3 @@
+use use2 from "."
+
+assert(fact(4) == 24)

@@ -945,7 +945,7 @@ proc processUseStmt(ctx: Module) =
 
   ctx.usedModules.add((moduleLoc, moduleName))
 
-proc findAndLoadModule(ctx: var CompileCtx, location, fname, ext: string):
+proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
                        Option[Module] {.importc, cdecl.}
 
 proc convertUseStmt(ctx: Module): IrNode =
@@ -963,6 +963,8 @@ proc convertUseStmt(ctx: Module): IrNode =
     result.contents.moduleObj = possibleModule.get()
     if result.contents.moduleObj notin ctx.imports:
       ctx.imports.add(result.contents.moduleObj)
+  else:
+    ctx.irError("ModuleNotFound", @[modName])
 
 proc findDeclarations(ctx: Module, n: Con4mNode) =
   ## To make life easier for us when handling def's and uses, we will
@@ -1677,7 +1679,6 @@ proc convertBinaryOp(ctx: Module): IrNode =
     result.contents.opId = FShr
   else:
     unreachable
-
 
 proc convertLogicOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrLogic)
