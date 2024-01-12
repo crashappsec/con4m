@@ -1,0 +1,211 @@
+toplevel ::= (';' | '\n' | enumStmt | lockAttr | ifStmt | forStmt | whileStmt |
+              typeOfStmt | valueOfStmt | funcDef | varStmt | globalStmt |
+              constStmt | assertStmt | useStmt | parameterBlock |
+              externBlock | assign | section | expression)*
+
+bodyItem ::= lockAttr | ifStmt | forStmt | whileStmt | typeOfStmt |
+             valueOfStmt | continueStmt | breakStmt | returnStmt |
+             varStmt | globalStmt | constStmt | labelStmt | useStmt
+
+body          ::= '{' (bodyItem? EOS)* '}'
+optionalBody  ::= body | 
+
+enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
+enumItem     ::= ID (('=' | ':') expression)?
+lockAttr     ::= '~' assign
+ifStmt       ::= "if" expression body ("elif" expression body)* ("else" body)?
+
+forStmt      ::= labelStmt? (rangedFor | containerFor)
+containerFor ::= "for" ID (',' ID) "in" expression body
+rangedFor    ::= "for" ID ("from" | "in") expression "to" expression" body
+whileStmt    ::= labelStmt? "while" expression body
+labelStmt    ::= ID ':'
+
+typeofStmt   ::= "typeof" memberExpr '{' (oneTypeCase)+ caseElseBlock? '}'
+valueOfStmt  ::= "valueof" expression '{' (oneValueCase)+ caseElseBlock? '}'
+
+continueStmt ::= "continue" ID?
+breakStmt    ::= "break" ID?
+returnStmt   ::= "return" expression?
+
+
+oneTypeCase  ::= "case" typeCaseCondition (caseBody | body)
+oneValueCase ::= "case" valueCaseCondition (caseBody | body)
+
+typeCaseCondition  ::= typeSpec (',' typeSpec)
+valueCaseCondition ::= expression ('to' expression)? (',' valueCaseCondition)?
+caseElseBlock      ::= 'else' (caseBody | body)
+
+caseBody           ::= ':' (bodyItem EOS)*
+                
+funcDef     ::= "func" ID formalList -> returnType body
+
+varArgsFormal ::= '*' ID
+formal        ::= ID (':' typeSpec)
+argList       ::= formal (', ' formal)* varArgsFormal?
+formalList    ::= '(' (varArgsFormal | argList | <empty> ) ')' 
+
+
+varStmt     ::= "var" ("const")? varSymInfo EOS
+globalStmt  ::= "global" ("const")? varsymInfo EOS
+constStmt   ::= "const" ("global" | "var")? varSymInfo EOS
+varSymInfo  ::= ID (',' ID)* (':' typeSpec)
+
+
+assertStmt  ::= "assert" expression EOS
+useStmt     ::= "use" ID ("from" STR) EOS
+
+# Parameter blocks are actually more constrained than this; but we
+# implemented it outside the parsing phase; will update the grammar
+# soon, but also a TODO to move it all into the parser where it should
+# be.
+parameterBlock  ::= "parameter" (memberExpr | paramVarDecl) optionalBody
+paramVarDecl    ::= "var" oneVarDecl
+
+externBlock     ::= 'extern' ID externSignature docString ('{' externField '}')*
+externSignature ::= '(' (externParam (',', externParam)*)? ')' '->' externParam
+externParam     ::= ID ':' CTYPE | CTYPE
+
+externField ::= externLocalDef | externDllName | externPure |
+                externHolds | externAllocs
+
+# Currently, only dll can appear multiple times. It should eventually
+# take a list instead.
+externLocalDef ::= "local" (":" | "=") ID typeSpec EOS
+externDllName  ::= "dll" (":" | "=") STRING EOS
+externPure     ::= "pure" BOOL
+externHolds    ::= "holds" ID+
+externAllocs   ::= "allocs" | ID* ("return") | ID+
+
+assign      ::= expression (':' | '=') expression EOS
+section     ::= ID body | ID (ID | STR) opttionalBody
+docstring   ::= STR ('\n' STR)
+
+oneVarDecl  ::= ID (":" typeSpec)
+
+typespec ::= typeVariable | funcType | objectType | listType | dictType |
+             tupleType, refType, typeTypeSpec typeOneOf, typeMaybe |
+             builtinType
+funcType ::= '(' typeSpec? (',' typeSpec)* (',' '*' typeSpec)? ')' returnType |
+             '(' '*' typeSpec ')' returnType
+             
+returnType   ::= ('->' typeSpec)?
+objectType   ::= "struct" '[' (ID | typeVariable) ']'
+typeTypeSpec ::= "typespec" ('[' typeVariable ']')?
+typeVariable ::= '`' ID
+listType     ::= "list"  '[' typeSpec ']'
+dictType     ::= "dict"  '[' typeSpec ']'
+refType      ::= "ref"   '[' typeSpec ']'
+typeMaybe    ::= "maybe" '[' typeSpec ']'
+typeOneOf    ::= "oneof" '[' typeSpec (',' typeSpec)+ ']'
+tupleType    ::= "tuple" '[' typespec (',' typeSpec)+ ']'
+builtinType  ::= BITYPE
+
+expression    ::= exprStart (orExpr*)
+orExpr        ::= ("||" | "or")  expression | andExpr
+andExpr       ::= ("&&" | "and") andExprRHS | neExpr
+andExprRHS    ::= exprStart (andExpr)*
+neExpr        ::= "!=" neExprRHS | eqExpr
+neExprRHS     ::= exprStart (neExpr)*
+eqExpr        ::= "==" eqExprRHS | gteExpr
+eqExprRHS     ::= exprStart (eqExpr)*
+gteExpr       ::= ">=" gteExprRHS | lteExpr
+gteExprRHS    ::= exprStart (gteExpr)*
+lteExpr       ::= "<=" lteExprRHS | gtExpr
+lteExprRHS    ::= exprStart (lteExpr)*
+gtExpr        ::= ">" gtExprRHS | ltExpr
+gtExprRHS     ::= exprStart (gtExpr)*
+ltExpr        ::= "<" ltExprRHS | plusExpr
+ltExprRHS     ::= exprStart (ltExpr)*
+plusExpr      ::= "+" plusExprRHS | minusExpr
+plusExprRHS   ::= exprStart (plusExpr)*
+minusExpr     ::= "-" minusExprRHS | modExpr
+minusExprRHS  ::= exprStart (minusExpr)*
+modExpr       ::= "%" modExprRHS | mulExpr
+modExprRHS    ::= exprStart (modExpr)*
+mulExpr       ::= "*" mulExprRHS | divExpr
+mulExprRHS    ::= exprStart (mulExpr)*
+divExpr       ::= "/" divExprRHS | shrExpr
+divExprRHS    ::= exprStart (divExpr)*
+shrExpr       ::= ">>" shrExprRHS | shlExpr
+shrExprRHS    ::= exprStart (shrExpr)*
+shlExpr       ::= "<<" shlExprRHS | notExpr
+shlExprRHS    ::= exprStart (shlExpr)*
+notExpr       ::= 'not' expression
+
+expressionStart ::= literal | accessExpr
+
+literal ::= (INT | HEX | FLOAT | STR | CHR | BOOL | bracketLit | tupleLit |
+            dictLit) litmod? | OTHERLIT | callbackLit | typeSpec | 'nil'
+               
+bracketLit    ::= '[' (expression (',' expression)*)? ']'
+tupleLit      ::= '(' expression (',' expression)+ ')'
+dictLit       ::= '{' (kvPair (',' kvPair)* )? 
+kvPair        ::= expression ':' expression
+litMod        ::= '\'' ID   # No space allowed
+callbackLit   ::= 'func' ID typeSpec?
+accessExpr    ::= (parenExpr | ID) (memberExpr | indexExpr | callActuals)*
+parenExpr     ::= '(' expression ')'
+memberExpr    ::= '.' ID (memberExpr)?
+indexExpr     ::= '[' expression (':' expression) ']'
+callActuals   ::= '(' (expression (',' expression)*)? ')'
+
+BOOL  ::= "true" | "false" | "True" | "False"
+
+CTYPE ::= "cvoid" | "cu8" | "ci8" | "cu16" | "ci16" | "cu32" | "ci32" | "cu64" |
+           "ci64" | "cfloat" | "cdouble" | "cuchar" | "cchar" | "cshort" |
+           "cushort" | "cint" | "cuint" | "clong" | "culong" | "cbool" |
+           "csize" | "cssize" | "ptr" | "cstring" | "carray"
+
+BITYPE ::= "void" | "bool" | "i8" | "byte" | "i32" | "char" | "u32" | "int" |
+           "uint" | "f32" | "f64" | "string" | "buffer" | "utf32" | "rich" |
+           "list" | "dict" | "tuple" | "typespec" | "ipv4" | "ipv6" |
+           "duration" | "size" | "datetime" | "date" | "time" | "url"
+
+EOS ::= '\n' | ';' <<or, if followed by a '}', then ''>>
+
+ONE line break is allowed after any punction character, binary
+operator and parenthesis starts. This is currently the following:
+
+ + - * / % <= < >= > != : = == , . { [ (  -> & | ^ << >> and or from to in not
+
+Two line breaks is assumed to be a mistake. Single line breaks are
+also allowed before a '{' in all cases, if you like to hang your braces..
+
+Note that, at the statement level, this grammar requires lookahead to figure
+out the context for an ID. At most, one has to look ahead two extra tokens.
+
+The language also accepts syntax for unimplemented features, like ref
+types, maybe types, structs, etc.
+
+Also, the language accepts ":=", which has the special syntax of
+generating a "=" operator, then tries to automatically determine the
+(non-numeric) literal type automatically by running through a
+prioritized list of literal parsers (currently intended for the
+config-focused literals).
+
+For instance:
+
+```
+now := 11 Jan 2024
+```
+
+Is equal to:
+
+now = "11 Jan 2024"'date
+
+Note that currently, without a literal modifier, "" always assume
+'string', so the following does NOT work:
+
+```
+var now: date
+now = "11 Jan 2024"
+```
+
+This gives a string vs. date type error. `:=` is the thing that says,
+"try to be smart!"
+
+The lexer actually does the conversion, adding an assignment token and the
+`OTHERLIT` token (which maybe we should change to be more descriptive?)
+
+

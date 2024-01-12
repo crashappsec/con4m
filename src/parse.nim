@@ -658,8 +658,10 @@ exprProd(binXorExpr, binXorExprRhs,  binAndExpr, TtBitXor, NodeBitXor)
 exprProd(binOrExpr,  binOrExprRhs,   binXorExpr, TtBitOr,  NodeBitOr)
 exprProd(neExpr,     neExprRHS,      binOrExpr,  TtNeq,    NodeNe)
 exprProd(andExpr,    andExprRHS,     neExpr,     TtAnd,    NodeAnd)
-exprProd(orExpr,     orExprRhs,      andExpr,    TtOr,     NodeOr)
+exprProd(orExpr,     expression,     andExpr,    TtOr,     NodeOr)
 
+#[ TODO: make sure this really is the same as what's generated,
+         and if not, why not.
 proc expression(ctx: Module): Con4mNode =
   let
     expr   = ctx.expressionStart()
@@ -679,6 +681,7 @@ proc expression(ctx: Module): Con4mNode =
         result = r
   else:
     return expr
+]#
 
 production(identifier, NodeIdentifier):
   ctx.expect(TtIdentifier, consume = true)
@@ -1159,7 +1162,6 @@ production(oneTypeCase, NodeCase):
   ctx.advance()
   let condition = ctx.typeCaseCondition()
 
-  assert condition != nil
   result.addKid(condition)
   case ctx.curKind()
   of TtColon:

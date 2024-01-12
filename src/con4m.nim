@@ -4,7 +4,7 @@
 #
 # - Component logic in runtime.
 # - Load default values at beginning of program.
-# - explicit casts  # to(obj, type)
+# - explicit casts -- to(obj, type)
 # - Spec checking after execution.
 # - Get FFI fully working (it's not very robust at the moment).
 # - Re-implement standard library / wrappings.
@@ -14,9 +14,7 @@
 # - Probably have module initializers run before the first function is called,
 #   esp if there's no 'use' statement.  Or, add an import statement as well,
 #   but IDK man.
-# - Remove the need to use the keyword 'label'... if it's before a
-#   for/while, it's not an assignment.
-
+#
 # - C-level interface to attributes
 # - Dictionary and tuple implementations
 # - Finish the builtin types api, eg. copy operations for all ref builtin types
@@ -38,9 +36,9 @@
 # - Add code gen for 'lock' operator.
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
-# - Re-do the grammar doc
 # - Default auto-import of stdlib modules.
 # - Vestigial 'fail' code and hint cleanups
+# - Documentation.
 
 # == Medium -- before public release ==
 # - +=, -=, *=, etc.
