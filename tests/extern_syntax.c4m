@@ -1,4 +1,4 @@
-extern callecho(a: ptr) -> cvoid {
+extern callecho(a: ptr) -> ptr {
   local: print(string) -> void
   pure: false
 }
@@ -21,5 +21,12 @@ extern abort() -> cvoid {
  extern splitwrap(a: cstring, cstring) -> ptr {
   local: split(string, string) -> list[string]
   pure: true
+}
+
+extern callecho2(a: ptr, b: ptr) -> ptr {
+  local: print(string) -> void
+  pure: false
+  holds: a
+  allocs: b, return
 }
 

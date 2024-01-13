@@ -12,7 +12,7 @@ optionalBody  ::= body |
 
 enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
 enumItem     ::= ID (('=' | ':') expression)?
-lockAttr     ::= '~' assign
+lockAttr     ::= '~' (assign | 
 ifStmt       ::= "if" expression body ("elif" expression body)* ("else" body)?
 
 forStmt      ::= labelStmt? (rangedFor | containerFor)
@@ -77,9 +77,11 @@ externPure     ::= "pure" BOOL
 externHolds    ::= "holds" ID+
 externAllocs   ::= "allocs" | ID* ("return") | ID+
 
-assign      ::= expression (':' | '=') expression EOS
-section     ::= ID body | ID (ID | STR) opttionalBody
-docstring   ::= STR ('\n' STR)
+assign       ::= expression assignmentOp expression EOS
+assignmentOp ::= ':' | '=' | '+=' | '-=' | '*=' | '/=' | '|=' | '&=' |
+                 '^=' | '>>=' | '<<='
+section      ::= ID body | ID (ID | STR) opttionalBody
+docstring    ::= STR ('\n' STR)
 
 oneVarDecl  ::= ID (":" typeSpec)
 
@@ -134,21 +136,24 @@ shlExprRHS    ::= exprStart (shlExpr)*
 notExpr       ::= 'not' expression
 
 expressionStart ::= literal | accessExpr
-
+                
 literal ::= (INT | HEX | FLOAT | STR | CHR | BOOL | bracketLit | tupleLit |
             dictLit) litmod? | OTHERLIT | callbackLit | typeSpec | 'nil'
                
-bracketLit    ::= '[' (expression (',' expression)*)? ']'
-tupleLit      ::= '(' expression (',' expression)+ ')'
-dictLit       ::= '{' (kvPair (',' kvPair)* )? 
-kvPair        ::= expression ':' expression
-litMod        ::= '\'' ID   # No space allowed
-callbackLit   ::= 'func' ID typeSpec?
-accessExpr    ::= (parenExpr | ID) (memberExpr | indexExpr | callActuals)*
-parenExpr     ::= '(' expression ')'
-memberExpr    ::= '.' ID (memberExpr)?
-indexExpr     ::= '[' expression (':' expression) ']'
-callActuals   ::= '(' (expression (',' expression)*)? ')'
+bracketLit     ::= '[' (expression (',' expression)*)? ']'
+tupleLit       ::= '(' expression (',' expression)+ ')'
+dictLit        ::= '{' (kvPair (',' kvPair)* )? 
+kvPair         ::= expression ':' expression
+litMod         ::= '\'' ID   # No space allowed
+callbackLit    ::= 'func' ID typeSpec?
+accessExpr     ::= (parenExpr | ID) (memberExpr | indexExpr | callActuals |
+                                     oneArgCastExpr | castExpr)*
+parenExpr      ::= '(' expression ')'
+memberExpr     ::= '.' (ID (memberExpr)?)
+indexExpr      ::= '[' expression (':' expression) ']' (oneArgCastExpr)?
+callActuals    ::= '(' (expression (',' expression)*)? ')'
+castExpr       ::= 'to' '(' expression typeSpec ')'
+oneArgCastExpr ::= '.' 'to' '(' typeSpec ')'
 
 BOOL  ::= "true" | "false" | "True" | "False"
 
@@ -167,7 +172,8 @@ EOS ::= '\n' | ';' <<or, if followed by a '}', then ''>>
 ONE line break is allowed after any punction character, binary
 operator and parenthesis starts. This is currently the following:
 
- + - * / % <= < >= > != : = == , . { [ (  -> & | ^ << >> and or from to in not
+ + - * / % <= < >= > != : = == , . { [ (  -> & | ^ << >> and & or | from to
+ in not += -= *= /= %= &= |= ^= <<= >>=
 
 Two line breaks is assumed to be a mistake. Single line breaks are
 also allowed before a '{' in all cases, if you like to hang your braces..

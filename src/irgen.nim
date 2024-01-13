@@ -200,6 +200,8 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("Range"), @[ctx.contents.rangeStart, ctx.contents.rangeEnd])
   of IrAssert:
     return (fmt("Assert"), @[ctx.contents.assertion])
+  of IrCast:
+    return (fmt("Cast"), @[ctx.contents.srcData])
 
 proc toRope*(ctx: IrNode): Rope =
   if ctx == nil:
@@ -1282,12 +1284,15 @@ proc convertForStmt(ctx: Module): IrNode =
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
   var
-    scope:       Scope
+    scope = initScope()
     v1, v2, c3: SymbolInfo
+    rangeLoop:  bool
 
-  scope = initScope()
+  if ctx.pt.children[1].kind == NodeRange:
+    rangeLoop = true
 
-  result.scope    = scope
+  result.scope = scope
+
   if ctx.blockScopes.len() != 0:
     scope.parent = ctx.blockScopes[^1]
   elif ctx.funcScope != nil:
@@ -1295,53 +1300,74 @@ proc convertForStmt(ctx: Module): IrNode =
   else:
     scope.parent = ctx.moduleScope
 
-  ctx.blockScopes = @[scope] & ctx.blockScopes
+  ctx.blockScopes.add(scope)
+  scope.parent.childScopes.add(scope)
 
+  # For loops over containers get a phantom index variable named $i,
+  # since the named variable gets the contents of the container. The
+  # programmer can use this variable. They also get a phantom variable
+  # called `$container`, which holds the container object after it's
+  # evaluated during loop initialization.
+  #
+  # The index variable is always loopVars[0] (even for while loops, where
+  # we also auto-add $i).
+  #
+  # Both types of for loops get a $len value that indicates the max
+  # number of iterations. The programmer can also use this, as $len.
+  #
+  # Eventually we'll add aliases for the index and len variables for
+  # labeled loops, but that isn't done yet.
+  #
+  # $max will always be in loopVars[^1], and does not exist for
+  # `while` loops.
+  #
+  # For container loops, the $container variable is second-from-last.
 
-  # Declare phantom variables.
-  if result.contents.label != nil:
-    v1 = ctx.scopeDeclare(scope, "$" & result.contents.label.getText(),
-                                         false, TInt, true).get()
-    v2 = ctx.scopeDeclare(scope, "$" & result.contents.label.getText() &
-                                     "_len", false, TInt, true).get()
+  if rangeLoop:
+    let
+      kid = ctx.pt.children[0].children[0]
+      sym = ctx.scopeDeclare(scope, kid.getText(), false, TInt, true).get()
+    result.contents.loopVars.add(sym)
   else:
-    v1 = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
-    v2 = ctx.scopeDeclare(scope, "$len", false, TInt, true).get()
+    let ixVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
 
-  result.contents.loopVars.add(v1)
-  result.contents.loopVars.add(v2)
+    result.contents.loopVars.add(ixVar)
 
-  for item in ctx.pt.children[0].children:
-    let sym = ctx.scopeDeclare(scope, item.getText(), false, tVar(), true)
-    result.contents.loopVars.add(sym.get())
+    for item in ctx.pt.children[0].children:
+      let sym = ctx.scopeDeclare(scope, item.getText(), false, tVar(), true)
+      result.contents.loopVars.add(sym.get())
+    let cVar = ctx.scopeDeclare(scope, "$container", false, tVar(), true)
+    result.contents.loopVars.add(cvar.get())
+
+  let maxSym = ctx.scopeDeclare(scope, "$len", false, TInt, true)
+  result.contents.loopVars.add(maxSym.get())
 
   result.contents.condition = ctx.downNode(1)
   result.contents.loopBody  = ctx.downNode(2)
 
-  if result.contents.loopVars.len() == 4:
-    ctx.typeCheck(result.contents.condition.tid,
-                  tDict(result.contents.loopVars[2].tid,
-                        result.contents.loopVars[3].tid))
-  else:
-      ctx.typeCheck(result.contents.condition.tid,
-                    tList(result.contents.loopVars[2].tid))
+  if not rangeLoop:
+    let lvTy = result.contents.loopVars[^2].tid
+    discard lvTy.unify(result.contents.condition.tid)
 
-  if ctx.blockScopes.len() > 1:
-    ctx.blockScopes = ctx.blockScopes[1 .. ^1]
-  else:
-    ctx.blockScopes = @[]
+    if result.contents.loopVars.len() == 5: # It's a dict container.
+      ctx.typeCheck(result.contents.condition.tid,
+                    tDict(result.contents.loopVars[1].tid,
+                          result.contents.loopVars[2].tid))
+    else:
+      ctx.typeCheck(result.contents.condition.tid,
+                    tList(result.contents.loopVars[1].tid))
+
+  discard ctx.blockScopes.pop()
 
 proc convertWhileStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
   result.contents.label     = ctx.labelNode
   ctx.labelNode             = nil
 
-  var
-    scope:       Scope
+  var scope = initScope()
 
-  scope = initScope()
+  result.scope = scope
 
-  result.scope    = scope
   if ctx.blockScopes.len() != 0:
     scope.parent = ctx.blockScopes[^1]
   elif ctx.funcScope != nil:
@@ -1349,7 +1375,8 @@ proc convertWhileStmt(ctx: Module): IrNode =
   else:
     scope.parent = ctx.moduleScope
 
-  ctx.blockScopes = @[scope] & ctx.blockScopes
+  scope.parent.childScopes.add(scope)
+  ctx.blockScopes.add(scope)
 
   let loopVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
 
@@ -1369,6 +1396,8 @@ proc convertWhileStmt(ctx: Module): IrNode =
 
   result.contents.loopBody  = ctx.downNode(1)
   result.contents.whileLoop = true
+
+  discard ctx.blockScopes.pop()
 
 
 proc makeVariant(parent: SymbolInfo): SymbolInfo =
@@ -1453,10 +1482,7 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
     n.contents.action = ctx.downNode(i, actionBranch)
     result.contents.branches.add(n)
 
-    if ctx.blockScopes.len() > 1:
-      ctx.blockScopes = ctx.blockScopes[1 .. ^1]
-    else:
-      ctx.blockScopes = @[]
+    discard ctx.blockScopes.pop()
 
 proc convertValueOfStmt(ctx: Module): IrNode =
   # TODO, check overlap, completeness, etc.
@@ -1606,6 +1632,11 @@ const notFloatOps = ["<<", ">>", "and", "or", "^", "&", "|", "div", "%"]
 proc convertBinaryOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrBinary)
   result.contents.bOp   = ctx.getText()
+
+  # If we have +=, we already rewrote the parse tree; this node
+  # should be a plus, the assignment will be above us.
+  if result.contents.bOp[^1] == '=':
+    result.contents.bOp = result.contents.bOp[0 ..< ^1]
 
   let
     bLhs                = ctx.downNode(0)
@@ -1940,7 +1971,8 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       for i in 0 ..< (sym.fimpls.len() - 1):
         let oneFuncType = sym.fimpls[i].tid
         for j in i + 1 .. (sym.fimpls.len() - 1):
-          if oneFuncType.unify(sym.fimpls[j].tid) != TBottom:
+          if oneFuncType.unify(sym.fimpls[j].tid) != TBottom and
+             sym.fimpls[i].implementation != nil:
             let
               t1 = sym.fimpls[i].tid.toString()
               t2 = sym.fimpls[j].tid.toString()

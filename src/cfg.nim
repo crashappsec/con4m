@@ -434,6 +434,8 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     m.addUse(n.contents.symbol, n, result)
   of IrLhsLoad:
     n.contents.symbol.addDef(n, result)
+  of IrCast:
+    result = ctx.handleOneNode(m, n.contents.srcData, result)
   of IrLit, IrFold, IrNop, IrNil, IrAssert:
     discard
 

@@ -506,6 +506,8 @@ proc allVars*(s: Scope): seq[SymbolInfo] =
       result.add(v)
 
 proc calculateOffsets*(s: Scope, startOffset = 0) =
+  if s.sized:
+    return
   # For now, we just allocate everything 16 bytes on the stack,
   # regardless of type. Formal parameters get negative offsets.
   # We do this because for expedience we're going to store type info
@@ -519,9 +521,6 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
   var
     sz           = startOffset
     formalOffset = -1
-
-  if s.parent != nil:
-    sz = s.parent.scopeSize
 
   for (n, sym) in symInfo:
     if sym.isFunc:
@@ -537,9 +536,14 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
 
   s.scopeSize = sz
 
-  # Recursively update.
-  var s = s
-  while s.parent != nil:
-    if s.parent.scopeSize < s.scopeSize:
-      s.parent.scopeSize = s.scopeSize
-    s = s.parent
+  for item in s.childScopes:
+    # For subscopes, they start with the size of their parent scope, but
+    # we consider the 'max' size of a scope to be what any subscope might
+    # need, because that's the amount we're going to alloc on function
+    # entry.
+    let p = cast[pointer](item)
+    item.calculateOffsets(sz)
+    if item.scopeSize > s.scopeSize:
+      s.scopeSize = item.scopeSize
+
+  s.sized = true

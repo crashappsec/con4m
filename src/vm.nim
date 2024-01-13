@@ -544,10 +544,10 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           arg   = ctx.stack[ctx.sp]
           argTy = instr.typeInfo
 
-        ctx.stack[ctx.sp + 1] = cast[pointer](TString)
+        ctx.stack[ctx.sp + 1] = cast[pointer](TInt)
         # TODO: we're not managing this pointer. Needs to be tracked.
         # right now we're just leaking it.
-        let s             = cast[pointer](call_repr(arg, argTy))
+        let s             = cast[pointer](call_len(arg, argTy))
         ctx.stack[ctx.sp] = cast[pointer](s)
 
       of FPlusEqRef, FGetFFIAddr, FInitialize, FCleanup:

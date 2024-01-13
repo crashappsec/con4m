@@ -42,6 +42,7 @@ proc ropeWalker(n: Con4mNode): (Rope, seq[Con4mNode]) =
   of NodeAttrSetLock:    toPrint = n.ropeNt("AttrSetLock")
   of NodeSection:        toPrint = n.ropeNt("Section")
   of NodeIfStmt:         toPrint = n.ropeNt("If")
+  of NodeCast:           toPrint = n.ropeNt("Cast")
   of NodeTypeOfStmt:     toPrint = n.ropeNt("TypeOf")
   of NodeValueOfStmt:    toPrint = n.ropeNt("ValueOf")
   of NodeCaseCondition:  toPrint = n.ropeNt("CaseCondition")
@@ -147,6 +148,7 @@ proc `$`*(n: Con4mNode): string =
   of NodeAttrSetLock:    "a lock operation"
   of NodeSection:        "a section declaration"
   of NodeIfStmt:         "an <em>if</em> block"
+  of NodeCast:           "a cast operation"
   of NodeTypeOfStmt:     "a <em>typeof</em> statement"
   of NodeValueOfStmt:    "a <em>valueof</em> statement"
   of NodeCaseCondition:  "a <em>case</em> condition"
@@ -214,11 +216,11 @@ proc `$`*(n: Con4mNode): string =
   of NodeIdentifier:
     "an identifier <em>(" & $(n.getText()) & ")</em>"
 
-proc addKid*(parent: Con4mNode, kid: Con4mNode) =
+proc addKid(parent: Con4mNode, kid: Con4mNode) =
   parent.children.add(kid)
   kid.parent = parent
 
-template tokAt*(ctx: Module, i: int): Con4mToken =
+template tokAt(ctx: Module, i: int): Con4mToken =
   ctx.tokens[i]
 
 # Prototypes for things where we need the forward reference.
@@ -273,7 +275,18 @@ proc newNode(ctx: Module, kind: Con4mNodeKind): Con4mNode =
 
   ctx.prevNode = result
 
-const alwaysSkip* = [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]
+proc copyNode(ctx: Module, n: Con4mNode): Con4mNode =
+  result             = ctx.newNode(n.kind)
+  result.prevTokenIx = n.prevTokenIx
+  result.depth       = n.depth
+  result.token       = n.token
+
+  for kid in n.children:
+    let k = ctx.copyNode(kid)
+    k.parent = result
+    result.children.add(k)
+
+const alwaysSkip = [TtSof, TtWhiteSpace, TtLineComment, TtLongComment]
 
 # When outputting errors: return "" we might want to back up a token.
 # need to skip ws when doing that.
@@ -462,19 +475,10 @@ template errBail(ctx: Module, msg: string) =
 # this field for #4 as well, even though it's not technically a
 # literal (except in the context of tuples).
 #
-# For #3, curTok() also handles this, by checking the previous token
-# agains tthe `ignore1Nl` list below.
-#
 # For #5, that's handled in the 'body' production by setting a field
 # in the parse context, telling curTok() to skip as a one-off (since
 # there's no nesting, the way there is with parens. curTok() clears
 # this field when it's set.
-
-const ignore1Nl = [ TtPlus, TtMinus, TtMul, TtDiv, TtMod, TtLte, TtLt,
-                    TtGte, TtGt, TtNeq, TtNot, TtColon, TtAssign,
-                    TtCmp, TtComma, TtPeriod, TtLBrace, TtLBracket,
-                    TtLParen, TtAnd, TtOr, TTFrom, TtTo, TtArrow, TtIn,
-                    TtBitAnd, TtBitOr, TtBitXor, TTShl, TtShr ]
 
 const commentToks = [TtLineComment, TtLongComment]
 
@@ -509,7 +513,7 @@ proc skipOneNewlineIfAppropriate(ctx: Module) =
 
   if ctx.curTokIx == 0:
     return
-  if ctx.literalDepth == 0 and ctx.tokAt(ctx.curTokIx - 1).kind notin ignore1Nl:
+  if ctx.literalDepth == 0: # and ctx.tokAt(ctx.curTokIx - 1).kind notin ignore1Nl:
     return
 
   ctx.doNewlineSkipping()
@@ -579,6 +583,7 @@ proc describeLastNode(ctx: Module): string =
 
 proc endOfStatement(ctx: Module, errIfNotThere = true) =
   if errIfNotThere and not ctx.atEndOfLine():
+    echo getStackTrace()
     ctx.errSkipStmtNoBackup("StmtEnd", @[ctx.describeLastNode()])
   else:
     while not ctx.atEndOfLine():
@@ -998,9 +1003,52 @@ idStmtProd(assign, NodeAssign):
   result.addKid(ctx.expression())
   ctx.endOfStatement()
 
+idStmtProd(opAssign, NodeAssign):
+  var opNode: Con4mNode
+
+  case ctx.curKind()
+  of TtPlusEq:
+    opNode = ctx.newNode(NodePlus)
+  of TtMinusEq:
+    opNode = ctx.newNode(NodeMinus)
+  of TtMulEq:
+    opNode = ctx.newNode(NodeMul)
+  of TtDivEq:
+    opNode = ctx.newNode(NodeDiv)
+  of TtModEq:
+    opNode = ctx.newNode(NodeMod)
+  of TtBitAndEq:
+    opNode = ctx.newNode(NodeBitAnd)
+  of TtBitOrEq:
+    opNode = ctx.newNode(NodeBitOr)
+  of TtBitXorEq:
+    opNode = ctx.newNode(NodeBitXor)
+  of TtShlEq:
+    opNode = ctx.newNode(NodeShl)
+  of TtShrEq:
+    opNode = ctx.newNode(NodeShr)
+  else:
+    unreachable
+  ctx.advance()
+
+  opNode.addKid(ctx.copyNode(lhs))
+  opNode.addKid(ctx.expression())
+
+  result.addKid(opNode)
+
 production(lockAttr, NodeAttrSetLock):
   ctx.advance()
-  result.addKid(ctx.assign(ctx.expression()))
+  let x = ctx.expression()
+  case ctx.curKind()
+  of TtPlusEq, TTMinusEq, TtMulEq, TtDivEq, TtModEq, TtBitAndEq,
+         TtBitOrEq, TtBitXOrEq, TtShlEq, TtShrEq:
+    result.addKid(ctx.opAssign(x))
+  of TtColon, TtAssign:
+    result.addKid(ctx.assign(x))
+  of TtIdentifier:
+    result.addKid(ctx.memberExpr(x))
+  else:
+    ctx.errSkipStmt("BadLock")
 
 production(elseStmt, NodeElseStmt):
   ctx.advance()
@@ -1021,6 +1069,11 @@ production(ifStmt, NodeIfStmt):
 
   if ctx.curKind() == TtElse:
     result.addKid(ctx.elseStmt())
+
+production(assertStmt, NodeAssert):
+  ctx.advance()
+  result.addKid(ctx.expression())
+  ctx.endOfStatement()
 
 production(caseBody, NodeBody):
   ctx.advance()
@@ -1087,6 +1140,9 @@ production(caseBody, NodeBody):
           continue
 
         case ctx.curTok.getText()
+        of "assert":
+          result.addKid(ctx.assertStmt())
+          continue
         of "use":
           result.addKid(ctx.useStmt())
           continue
@@ -1103,6 +1159,9 @@ production(caseBody, NodeBody):
 
       let x = ctx.expression()
       case ctx.curKind()
+      of TtPlusEq, TTMinusEq, TtMulEq, TtDivEq, TtModEq, TtBitAndEq,
+         TtBitOrEq, TtBitXOrEq, TtShlEq, TtShrEq:
+        result.addKid(ctx.opAssign(x))
       of TtColon, TtAssign:
         result.addKid(ctx.assign(x))
         continue
@@ -1533,11 +1592,6 @@ production(labelStmt, NodeLabelStmt):
   ctx.advance()
   ctx.skipNextNewLine()
 
-production(assertStmt, NodeAssert):
-  ctx.advance()
-  result.addKid(ctx.expression())
-  ctx.endOfStatement()
-
 production(oneVarDecl, NodeVarSymInfo):
   result.addKid(ctx.identifier())
   if ctx.curKind() == TtColon:
@@ -1806,6 +1860,9 @@ production(body, NodeBody):
           continue
 
         case ctx.curTok.getText()
+        of "assert":
+          result.addKid(ctx.assertStmt())
+          continue
         of "use":
           result.addKid(ctx.useStmt())
           continue
@@ -1822,6 +1879,9 @@ production(body, NodeBody):
 
       let x = ctx.expression()
       case ctx.curKind()
+      of TtPlusEq, TTMinusEq, TtMulEq, TtDivEq, TtModEq, TtBitAndEq,
+         TtBitOrEq, TtBitXOrEq, TtShlEq, TtShrEq:
+        result.addKid(ctx.opAssign(x))
       of TtColon, TtAssign:
         result.addKid(ctx.assign(x))
         continue
@@ -1917,6 +1977,9 @@ production(topLevel, NodeModule):
         discard
       let x = ctx.expression()
       case ctx.curKind()
+      of TtPlusEq, TTMinusEq, TtMulEq, TtDivEq, TtModEq, TtBitAndEq,
+         TtBitOrEq, TtBitXOrEq, TtShlEq, TtShrEq:
+        result.addKid(ctx.opAssign(x))
       of TtColon, TtAssign:
         result.addKid(ctx.assign(x))
         continue
@@ -1937,7 +2000,6 @@ production(topLevel, NodeModule):
         ctx.advance()
 
 proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
-  ## If error, you need to fill in the module.
   case n.kind
   of NodeTypeBuiltin:
     let biname = n.children[0].getText()
@@ -1993,6 +2055,7 @@ proc buildType*(n: Con4mNode, tvars: var Dict[string, TypeId]): TypeId =
       else:
         items.add(kid.buildType(tvars))
     return newFuncType(items, va).typeId
+
   of NodeTypeOneOf:
     var items: seq[TypeId]
     for kid in n.children:

@@ -129,7 +129,8 @@ type
     tid*:  TypeId
     impl*: FuncInfo
 
-  Con4mErrPhase* = enum ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrRuntime
+  Con4mErrPhase* = enum
+    ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrCodeGen, ErrRuntime
   Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr, LlFatal
   InstantiationInfo* = tuple[filename: string, line: int, column: int]
   Con4mError* = object
@@ -163,7 +164,9 @@ type
     TTElIf, TTElse, TtFor, TtFrom, TtTo, TtBreak, TtContinue, TtReturn,
     TtEnum, TtIdentifier, TtFunc, TtVar, TtGlobal, TtConst, TtOtherLit,
     TtBacktick, TtArrow, TtObject, TtWhile, TtIn, TtBitAnd, TtBitOr, TtBitXor,
-    TtShl, TtShr, TtTypeOf, TtValueOf, TtCase, TtSof, TtEof, ErrorTok
+    TtShl, TtShr, TtTypeOf, TtValueOf, TtCase, TtPlusEq, TTMinusEq, TtMulEq,
+    TtDivEq, TtModEq, TtBitAndEq, TtBitOrEq, TtBitXOrEq, TtShlEq, TtShrEq,
+    TtSof, TtEof, ErrorTok
 
   Con4mToken* = ref object
     ## Lexical tokens. Should not be exposed outside the package.
@@ -199,7 +202,7 @@ type
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
     ## user.
-    NodeModule, NodeBody, NodeAssign, NodeAttrSetLock,
+    NodeModule, NodeBody, NodeAssign, NodeAttrSetLock, NodeCast,
     NodeSection, NodeIfStmt, NodeElifStmt, NodeElseStmt, NodeTypeOfStmt,
     NodeValueOfStmt, NodeForStmt, NodeWhileStmt, NodeBreakStmt,
     NodeContinueStmt, NodeReturnStmt, NodeStringLit, NodeIntLit, NodeHexLit,
@@ -220,12 +223,11 @@ type
     NodeCaseCondition, NodeRange, NodeDocString, NodeAssert
 
   IrNodeType* = enum
-    IrBlock, IrLoop, IrAssign, IrConditional,
+    IrBlock, IrLoop, IrAssign, IrConditional, IrCast,
     IrJump, IrRet, IrLit, IrMember, IrMemberLhs, IrIndex, IrIndexLhs, IrCall,
     IrUse, IrUMinus, IrNot, IrBinary, IrBool, IrLogic, IrLoad, IrLhsLoad,
     IrFold, IrNop, IrSection, IrNil, IrSwitch, IrSwitchBranch, IrRange,
     IrAssert
-    #IrCast
 
   IrNode* = ref object
     parseNode*: Con4mNode
@@ -310,10 +312,12 @@ type
       bRhs*: IrNode
     of IrLhsLoad, IrLoad:
       symbol*: SymbolInfo
-    of IrFold, IrNop, IrNil:
-      discard
     of IrAssert:
       assertion*: IrNode
+    of IrCast:
+      srcData*: IrNode
+    of IrFold, IrNop, IrNil:
+      discard
 
   FormalInfo* = ref object
     name*: string
@@ -498,11 +502,13 @@ type
     secSpecs*: Dict[string, SectionSpec]
 
   Scope* = ref object
-    table*:     Dict[string, SymbolInfo]
-    scopeSize*: int
-    attr*:      bool
-    numSyms*:   int
-    parent*:    Scope
+    table*:       Dict[string, SymbolInfo]
+    scopeSize*:   int
+    attr*:        bool
+    numSyms*:     int
+    parent*:      Scope
+    childScopes*: seq[Scope]
+    sized*:       bool
 
   Module* = ref object
     # This is the compilation context for a single module. It includes

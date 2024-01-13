@@ -532,6 +532,8 @@ proc foldIr(ctx: Module) =
   of IrAssert:
     # TODO-- warn if assertion is always true.
     discard
+  of IrCast: # Fold if the item being cast is constant.
+    discard
   of IrSwitch, IrSwitchBranch, IrRange:
     discard # TODO... fold down at least. Prune cases that can't be true.
   of IrNil:

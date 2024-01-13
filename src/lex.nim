@@ -345,18 +345,34 @@ proc lex_impl(ctx: Module) =
     of Rune('`'):
       tok(TtBacktick)
     of Rune('+'):
-      tok(TtPlus, true)
+      case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtPlusEq, true)
+      else:
+        tok(TtPlus, true)
     of Rune('-'):
       case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtMinusEq, true)
       of Rune('>'):
         ctx.s.advance()
         tok(TtArrow, true)
       else:
         tok(TtMinus, true)
     of Rune('*'):
-      tok(TtMul, true)
+      case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtMulEq, true)
+      else:
+        tok(TtMul, true)
     of Rune('/'):
       case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtDivEq, true)
       of Rune('/'):
         while true:
           case ctx.s.peek()
@@ -385,7 +401,12 @@ proc lex_impl(ctx: Module) =
       else:
         tok(TtDiv, true)
     of Rune('%'):
-      tok(TtMod, true)
+      case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtModEq, true)
+      else:
+        tok(TtMod, true)
     of Rune('<'):
       if ctx.s.peek() == Rune('-'):
         while true:
@@ -401,13 +422,21 @@ proc lex_impl(ctx: Module) =
         tok(TtLte, true)
       elif ctx.s.peek() == Rune('<'):
         ctx.s.advance()
-        tok(TtShl, true)
+        if ctx.s.peek() == Rune('='):
+          ctx.s.advance()
+          tok(TtShlEq, true)
+        else:
+          tok(TtShl, true)
       else:
         tok(TtLt, true)
     of Rune('>'):
       if ctx.s.peek() == Rune('>'):
         ctx.s.advance()
-        tok(TtShr, true)
+        if ctx.s.peek() == Rune('='):
+          ctx.s.advance()
+          tok(TtShrEq, true)
+        else:
+          tok(TtShr, true)
       elif ctx.s.peek() == Rune('='):
         ctx.s.advance()
         tok(TtGte, true)
@@ -496,19 +525,32 @@ proc lex_impl(ctx: Module) =
                               litType:    oldTok.litType)
         ctx.tokens[^1] = newTok
     of Rune('&'):
-      if ctx.s.peek() == Rune('&'):
+      case ctx.s.peek()
+      of Rune('&'):
         ctx.s.advance()
         tok(TtAnd, true)
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtBitAndEq, true)
       else:
         tok(TtBitAnd, true)
     of Rune('|'):
-      if ctx.s.peek() == Rune('|'):
+      case ctx.s.peek()
+      of Rune('|'):
         ctx.s.advance()
         tok(TtOr, true)
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtBitOrEq, true)
       else:
         tok(TtBitOr, true)
     of Rune('^'):
-      tok(TtBitXor, true)
+      case ctx.s.peek()
+      of Rune('='):
+        ctx.s.advance()
+        tok(TtBitXorEq, true)
+      else:
+        tok(TtBitXor, true)
     of Rune('0') .. Rune('9'):
       if c == Rune('0') and ctx.s.peek() == Rune('x'):
         ctx.s.advance()
@@ -730,7 +772,7 @@ proc lex_impl(ctx: Module) =
       of "func":           tok(TtFunc)
       of "struct":         tok(TtObject)
       of "typeof":         tok(TtTypeOf)
-      of "valueof":        tok(TtValueOf)
+      of "switch":         tok(TtValueOf)
       else:                tok(TtIdentifier)
 
   unreachable
@@ -799,10 +841,11 @@ proc toRope*(tok: Con4mToken): Rope =
     result.fgColor(getCurrentCodeStyle().boolLitColor)
   of TtOtherLit:
     result.fgColor(getCurrentCodeStyle().otherLitColor)
-  of TtMul, TtDiv, TtMod, TtLte, TtLt, TtGte, TtGt, TtCmp, TtNeq, TtPlus,
-     TtAssign, TtComma, TtPeriod, TtSemi, TtMinus,
-     TtLockAttr, TtBacktick, TtArrow, TtColon, TtIn, TtBitAnd, TtBitOr,
-     TtBitXor, TtShl, TtShr:
+  of TtMul, TtMulEq, TtDiv, TtDivEq, TtMod, TtModEq, TtLte, TtLt, TtGte, TtGt,
+     TtCmp, TtNeq, TtPlus, TtPlusEq, TtAssign, TtComma, TtPeriod, TtSemi,
+     TtMinus, TtMinusEq, TtLockAttr, TtBacktick, TtArrow, TtColon, TtIn,
+     TtBitAnd, TtBitAndEq, TtBitOr, TtBitOrEq, TtBitXor, TtBitXorEq, TtShl,
+     TtShlEq, TtShr, TtShrEq:
     result.fgColor(getCurrentCodeStyle().operatorColor)
   of TtLineComment, TtLongComment:
     result.fgColor(getCurrentCodeStyle().commentColor)
@@ -843,14 +886,24 @@ proc `$`*(kind: Con4mTokenKind): string =
        return "~"
     of TtPlus:
       return "+"
+    of TtPlusEq:
+      return "+="
     of TtMinus:
       return "-"
+    of TtMinusEq:
+      return "-="
     of TtMul:
       return "*"
+    of TtMulEq:
+      return "*="
     of TtDiv:
       return "/"
+    of TtDivEq:
+      return "/="
     of TtMod:
       return "%"
+    of TtModEq:
+      return "%="
     of TtLte:
       return "<="
     of TtLt:
@@ -891,14 +944,24 @@ proc `$`*(kind: Con4mTokenKind): string =
       return "or"
     of TtBitAnd:
       return "&"
+    of TtBitAndEq:
+      return "&="
     of TtBitOr:
       return "|"
+    of TtBitOrEq:
+      return "|="
     of TtBitXor:
       return "^"
+    of TtBitXorEq:
+      return "^="
     of TtShl:
       return "<<"
+    of TtShlEq:
+      return "<<="
     of TtShr:
       return ">>"
+    of TtShrEq:
+      return ">>="
     of TtIntLit:
       return "an integer"
     of TtFloatLit:
@@ -924,7 +987,7 @@ proc `$`*(kind: Con4mTokenKind): string =
     of TtTypeOf:
        return "typeof"
     of TtValueOf:
-      return "valueof"
+      return "switch"
     of TtFor:
       return "for"
     of TtBreak:

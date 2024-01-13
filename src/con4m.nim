@@ -39,9 +39,10 @@
 # - Default auto-import of stdlib modules.
 # - Vestigial 'fail' code and hint cleanups
 # - Documentation.
+# - Sort errors by file / line (they come out by phase in IR portion).
 
 # == Medium -- before public release ==
-# - +=, -=, *=, etc.
+# - Remove any exceptions
 # - The attr type info needs to be folded into the same dict as attrs
 #   (it's a race condition for it to be separate)
 # - Share dup'd strings when loading static data.
@@ -61,13 +62,10 @@
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
 # - Doc strings
 # - Implement _ as a 'discard' variable.
-# - Rename to 0cool
 # - C api and bindings to other languages.
 # - dlclose stuff.
 # - Redo the CFG for SSA (cleaning up the existing bug)
 # - Add some sort of mixed type
-# - Extra lines in error messages shouldn't get the huge table indent.
-# - Sort errors by file / line (they come out by phase in IR portion).
 # - // for integer division.
 # - REPL
 # - Error if any variables not within a function do not have a
@@ -89,6 +87,7 @@
 # - Add ref
 # - Code playground
 # - LSP server
+# - Only generate loop variables if they're used.
 
 # == Lower priority ==
 # - For errors, make it easy to see "previous instance", and remove

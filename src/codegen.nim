@@ -280,9 +280,9 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
     # stack; right now, we just call any such variable "(tmp)"; we can
     # do something more sophisticated later...
     if ctx.fcur != nil:
-      ctx.fcur.objInfo.syms[sym.offset] = "tmp@" & $(sym.offset div 8)
+      ctx.fcur.objInfo.syms[sym.offset] = "tmp@" & $(sym.offset)
     else:
-      ctx.mcur.objInfo.datasyms[sym.offset] = "tmp@" & $(sym.offset div 8)
+      ctx.mcur.objInfo.datasyms[sym.offset] = "tmp@" & $(sym.offset)
 
     return ctx.mcur.objInfo.moduleId
   else:
@@ -515,17 +515,20 @@ proc genRangeLoopInit(ctx: CodeGenState) =
 proc genContainerLoopInit(ctx: CodeGenState) =
   let
     n            = ctx.curNode
-    cursym       = n.contents.loopVars[0]
-    maxsym       = n.contents.loopVars[1]
-    containersym = n.contents.loopVars[2]
+    curSym       = n.contents.loopVars[0]
+    containerSym = n.contents.loopVars[^2]
+    maxSym       = n.contents.loopVars[^1]
 
+  # This will push the container onto the stack.
   ctx.oneIrNode(n.contents.condition)
-  # Address of container should be at top of stack now.  When loaded,
-  # it will already be marked as CG-traced.
+  # Address of container should be at top of stack now.
+  # We need to get its length, and we need to stash a copy in $container.
+  # So let's first dupe the reference:
+  ctx.genDupTop()
+  ctx.genPop(containerSym)
   ctx.genTCall(FLen, n.contents.condition.tid)
-  ctx.genPop(maxsym)
+  ctx.genPop(maxSym)
   ctx.genStoreImmediate(curSym, 0)
-  ctx.genPop(containersym)
 
 proc genWhileLoopInit(ctx: CodeGenState) =
   # TODO-- only generate these if $i get used.
@@ -537,22 +540,23 @@ proc genIterationCheck(ctx: CodeGenState, n: IrNode) =
 
   if not cur.whileLoop:
     ctx.genPush(cur.loopVars[0])
-    ctx.genPush(cur.loopVars[1])
+    ctx.genPush(cur.loopVars[^1])
     ctx.genEqual()
-    ctx.startJz(target = n)
+    ctx.startJnz(target = n)
 
     if cur.condition.contents.kind != IrRange:
-      ctx.genPush(cur.loopVars[2]) # Container on stack.
+      ctx.genPush(cur.loopVars[^2]) # Container on stack.
       ctx.genContainerIndex(cur.loopVars[0])
-      if cur.loopVars.len() == 3:
+      if cur.loopVars.len() == 4:
         # This is a for x in list, so there's no array to unpack,
         # we can just directly pop it in.
-        ctx.genPop(cur.loopVars[2])
+        ctx.genPop(cur.loopVars[1])
       else:
-        for i in 3 ..< cur.loopVars.len():
-          ctx.genContainerIndex(immediate = i - 3)
-          ctx.genPop(cur.loopVars[i])
-      ctx.genPop() # Pop the container, but it's already stored, so no arg.
+        let unpackLen = cur.loopVars.len() - 3
+        for i in  0 ..< unpackLen:
+          ctx.genContainerIndex(immediate = i)
+          ctx.genPop(cur.loopVars[i + 1])
+        # The index operation pops the container.
   else:
     ctx.oneIrNode(cur.condition)
     ctx.startJz(target = n)
@@ -574,6 +578,9 @@ proc genConditional(ctx: CodeGenState, cur: IrContents) =
   ctx.backPatch(patch2)
 
 proc genLoop(ctx: CodeGenState, n: IrNode) =
+  # Loop var 0 is the interation count, always.
+  # For loops also have a $max, which is always $i.
+  # TODO: we should only generate these if used.
   let
     m   = ctx.mcur
     cur = n.contents
@@ -995,6 +1002,9 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
     ctx.genPushImmediate(0, TVoid)
   of IrAssign:
     ctx.genAssign(n)
+  of IrCast:
+    # TODO; for now just ignore
+    ctx.oneIrNode(n.contents.srcData)
   of IrAssert:
     ctx.oneIrNode(n.contents.assertion)
     ctx.emitInstruction(ZAssert)
@@ -1095,7 +1105,7 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
   # both the module and in the global state for this stuff. But, for
   # the moment, I'm only implementing the initial compilation /
   # linking, so we just plop everything in the global space.
-  for (_, sym) in m.moduleScope.table.items():
+  for (name, sym) in m.moduleScope.table.items():
     if not sym.isFunc:
       continue
 
@@ -1112,6 +1122,7 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
       zinfo.nameOffset = ctx.addStaticObject(item.externName)
       zinfo.localName  = ctx.addStaticObject(item.name)
 
+
       for entry in ctx.zobj.ffiInfo:
         if entry.nameOffset == zinfo.nameOffset:
           dupeEntry = true
@@ -1123,6 +1134,13 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
       for dll in cinfo.dlls:
         zinfo.dlls.add(ctx.addStaticObject(dll))
 
+      if typeinfo.items.len() > cinfo.cArgTypes.len():
+        lateError("ExternZArgCt", @[name, $(typeinfo.items.len()),
+                                    $(cinfo.cArgTypes.len())])
+
+      elif typeinfo.items.len() < cinfo.cArgTypes.len():
+        lateError("ExternCArgCt", @[name, $(typeinfo.items.len()),
+                                    $(cinfo.cArgTypes.len())])
       for i, param in cinfo.cArgTypes:
         var
           cArgType  = int16(cTypeNames.find(param[0]))

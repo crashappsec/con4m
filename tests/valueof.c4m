@@ -9,7 +9,7 @@ extern echoanint(a: cint) -> cvoid {
 }
 
 func fib(x) {
-  valueof x {
+  switch x {
     case 0:
         return 0
     case 1:
@@ -22,5 +22,3 @@ func fib(x) {
 x = fib(10)
 
 assert x == 55
-
-

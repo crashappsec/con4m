@@ -55,11 +55,19 @@ proc defWoUseCheck(ctx: CompileCtx) =
           continue
       if name == "result":
         continue
-      if name.startswith("$i"):
+      if name.startswith("$"):
         continue
       if sym.uses.len() != 0:
         continue
       ctx.programWarn("DefWoUse", sym, @[name])
+
+proc useWoDefCheck(ctx: CompileCtx) =
+  for scope in ctx.getAllScopes(false):
+    for (name, sym) in scope.table.items():
+      if sym.isFunc or sym.formal:
+        continue
+      if sym.uses.len() != 0 and sym.defs.len() == 0:
+        ctx.programError("UseWoDef", sym, @[name])
 
 proc constAssignmentCheck(ctx: CompileCtx) =
   for scope in ctx.getAllScopes(false):
@@ -70,3 +78,4 @@ proc constAssignmentCheck(ctx: CompileCtx) =
 proc wholeProgramChecks*(ctx: CompileCtx) =
   ctx.defWoUseCheck()
   ctx.constAssignmentCheck()
+  ctx.useWoDefCheck()

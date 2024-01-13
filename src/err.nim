@@ -57,6 +57,9 @@ const errorMsgs = [
   ("BadTypeDecl",    "Invalid syntax inside a type declaration."),
   ("BadFormalEnd",   "Expected either a closing parenthesis (<em>')'</em>" &
                      " or an additional parameter."),
+  ("BadLock",        "Attribute Lock operator (<em>~</em>) must be " &
+                     "followed either by an assignment statement or " &
+                     "an attribute to lock."),
   ("BadUseSyntax",   "<em>'use'</em> statement requires a string literal " &
                      " after <em>'from'</em>"),
   ("BadParamName",   "<em>'parameter'</em> keyword must be followed by " &
@@ -261,6 +264,7 @@ const errorMsgs = [
                      "previously assigned."),
   ("Immutable",      "Cannot modify immutable values."),
   ("DefWoUse",       "Variable <em>$1</em> is defined, but never used."),
+  ("UseWoDef",       "Definite use of <em>$1</em> without assignment."),
   ("ConstNotSet",    "Constant <em>$1</em> was declared, but no value was " &
                      "set."),
   ("$assign",        "Variables starting with <em>$</em> are set by the " &
@@ -308,6 +312,12 @@ const errorMsgs = [
 
   ("RT_BadTOp",      "Unknown function id for internal type API call " &
                      "(<em>$1</em>)"),
+  ("ExternZArgCt",   "Local function spec has more arguments than external " &
+                     "function for <em>$1</em>, which is currently not " &
+                     "allowed. C function has $3 args, local has $2."),
+  ("ExternCArgCt",   "External function spec has more arguments than local " &
+                     "function for <em>$1</em>, which is currently not " &
+                     "allowed. C function has $3 args, local has $2."),
   ("Debug",          "Debug: $1 $2 $3"),
  ]
 
@@ -441,15 +451,16 @@ proc canProceed*(errs: seq[Con4mError]): bool =
 template canProceed*(ctx: CompileCtx): bool =
   ctx.errors.canProceed()
 
-proc lookupMsg(err: Con4mError): string =
+proc lookupMsg(code: string): string =
   for (k, v) in errorMsgs:
-    if k == err.code:
+    if k == code:
       return v
 
-  return "<em>Unknown error code:</em> " & err.code
+  return "<em>Unknown error code:</em> " & code
 
-proc performSubs(err: Con4mError, s: var string) =
-  for i, item in err.extra:
+
+proc performSubs(extra: seq[string], s: var string) =
+  for i, item in extra:
     s = s.replace("$" & `$`(i + 1), item)
 
 proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
@@ -515,17 +526,29 @@ proc getModuleWidth(errs: seq[Con4mError]): int =
     if l != 0 and (l + 1) > result:
       result = l + 1
 
+proc dupeLocationCheck(err: Con4mError, locs: var seq[(int, int)]): bool =
+  for (l, c) in locs:
+    if err.line == l and err.offset == c:
+        return true
+
+  locs.add((err.line, err.offset))
+
 proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
-  var errList: seq[seq[Rope]]
+  var
+    errList: seq[seq[Rope]]
+    locs:    seq[(int, int)]
+
   let
     mw = errs.getModuleWidth() + 1
     lw = errs.getLocWidth() + 1
 
   for i, error in errs:
+    if error.dupeLocationCheck(locs):
+      continue
     if i == 30: # TODO; make this a configurable limit.
       break
-    var msg = error.lookupMsg() & "<i> (" & error.code & ")</i>"
-    error.performSubs(msg)
+    var msg = error.code.lookupMsg() & "<i> (" & error.code & ")</i>"
+    error.extra.performSubs(msg)
     errList.add(error.oneErrToRopeList(msg))
 
   if not verbose:
@@ -543,18 +566,38 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       result += table
       result += container(errs[i].getVerboseInfo())
 
+proc formatLateError*(err: string, severity: Con4mSeverity,
+                      args: seq[string], verbose = true): seq[Rope] =
+  var msg = err.lookupMsg() & "<i> (" & err & ")</i>"
+
+  performSubs(args, msg)
+
+  case severity
+  of LlErr, LlFatal:
+    result.add(fgColor("error:", "red").td().lpad(0))
+  of LlWarn:
+    result.add(fgColor("warn:", "yellow").td().overflow(OTruncate))
+  of LLInfo:
+    result.add(fgColor("info:", "atomiclime").td().overflow(OTruncate))
+  of LlNone:
+    unreachable
+
+  result.add(markdown(msg))
+
+
 proc runtimeWarn*(err: string, args: seq[string] = @[]) =
-  var
-    rawText = err
-    toOut: Rope
+  let
+    cells   = @[err.formatLateError(LlWarn, args)]
+    toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
 
-  for (k, v) in errorMsgs:
-    if k == err:
-      rawText = v
-      break
+  print(toPrint, file = stderr)
 
-  for i, item in args:
-    rawText = rawText.replace("$" & `$`(i + 1), item)
+proc lateError*(err: string, args: seq[string] = @[]) =
+  let
+    cells   = @[err.formatLateError(LlErr, args)]
+    toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
 
-  toOut = fgColor("Warning: ", "yellow") + markdown(rawText)
-  print(err, file = stderr)
+  toPrint.colWidths([(7, true), (0, false)])
+  toPrint.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
+  print(toPrint, file = stderr)
+  quit(-2)
