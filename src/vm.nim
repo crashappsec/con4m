@@ -173,6 +173,7 @@ proc bailHere(ctx: RuntimeState, errCode: string, extra: seq[string] = @[]) =
                     phase = ErrRuntime, severity = LlFatal,
                     extraContents = extra)
   print errlist.formatErrors()
+  ctx.printStackTrace()
   quit(-1)
 
 template pushFrame(ctx: RuntimeState, cm: ZModuleInfo, cl: int32,
@@ -366,6 +367,10 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       # functions use the stack directly.  However, until we are
       # really using the C ABI and the system stack, we're going to go
       # through this slight pain.
+      #
+      # For example, we can't just point at the start of args on the
+      # stack and call, because we're also keeping type info on the
+      # stack.
       var err: bool
       case instr.arg
       of FRepr:
@@ -503,21 +508,71 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         ctx.stack[ctx.sp] = call_bxor(arg1, arg2, argTy)
 
       of FIndex:
-        discard
-      of FDictIndex:
-        discard
+        let
+          ix = cast[int](ctx.stack[ctx.sp])
+          c  = ctx.stack[ctx.sp + 2]
+          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
+          to = ty.idToTypeRef()
+          it = to.items[^1]
+
+        var err: bool
+
+        ctx.sp += 2
+        ctx.stack[ctx.sp]     = call_index(ctx.stack[ctx.sp], ix, ty, err)
+        ctx.stack[ctx.sp + 1] = cast[pointer](it)
+
+        if err:
+          ctx.bailHere("ArrayIxErr", @[ $(ix) ])
       of FSlice:
-        discard
+        let
+          endIx = cast[int](ctx.stack[ctx.sp])
+          stIx  = cast[int](ctx.stack[ctx.sp + 2])
+          c     = ctx.stack[ctx.sp + 4]
+          ty    = cast[TypeId](ctx.stack[ctx.sp + 5])
+
+        var err: bool
+
+        ctx.sp += 4
+        # Type is already correct on the stack, since we're writing
+        # over the container location and this is a slice.
+        ctx.stack[ctx.sp] = call_slice(c, stIx, endIx, ty, err)
+
+        # Currently, `err` will never be set.
       of FAssignIx:
+        let
+          ix = cast[int](ctx.stack[ctx.sp])
+          cp = cast[ptr pointer](ctx.stack[ctx.sp + 2])
+          c  = cp[]
+          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
+          ob = ctx.stack[ctx.sp + 4]                 # Data to assign
+
+        var err: bool
+
+        ctx.sp += 6
+        call_assign_ix(c, ob, ix, ty, err)
+
+        if err:
+          ctx.bailHere("ArrayIxErr", @[ $(ix) ])
+      of FassignSlice:
+        let
+          endix = cast[int](ctx.stack[ctx.sp])
+          start = cast[int](ctx.stack[ctx.sp + 2])
+          cp    = cast[ptr pointer](ctx.stack[ctx.sp + 4])
+          c     = cp[]
+          ty    = cast[TypeId](ctx.stack[ctx.sp + 5])
+          ob    = ctx.stack[ctx.sp + 6] # Data to assign
+
+        var err: bool
+
+        ctx.sp += 8
+        call_assign_slice(c, ob, start, endix, ty, err)
+
+        # No possible error right now.
+      of FDictIndex:
         discard
       of FAssignDIx:
         discard
-      of FassignSlice:
-        discard
-      of FLoadLit:
-        discard
       of FContainerLit:
-        # TODO, get the output type precise. This isn't good enough.
         var
           num = cast[int](ctx.stack[ctx.sp])
           ty  = instr.typeInfo
@@ -526,7 +581,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
         for i in 0 ..< num:
           ctx.sp += 2
-          contents.add(ctx.stack[ctx.sp])
+          contents = @[ctx.stack[ctx.sp]] & contents
 
         ctx.stack[ctx.sp] = runtime_instantiate_container(ty, contents, err)
 
@@ -550,8 +605,8 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         let s             = cast[pointer](call_len(arg, argTy))
         ctx.stack[ctx.sp] = cast[pointer](s)
 
-      of FPlusEqRef, FGetFFIAddr, FInitialize, FCleanup:
-        discard # Not implemented yet.
+      of FPlusEqRef, FGetFFIAddr, FInitialize, FCleanup, FLoadLit:
+        unreachable # Not implemented yet, or not called via ZTCall.
       else:
         ctx.bailHere("RT_badTOp", @[$(instr.arg)])
 
@@ -629,14 +684,13 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ffi_call(ctx.externCalls[instr.arg], ctx.externFps[instr.arg],
                addr ctx.returnRegister, argAddr)
       ctx.rrType = cast[pointer](int64(ffiObj.argInfo[^1].ourType))
-
     of ZSObjNew:
       # TODO: memory management.
       let
         address = ctx.storageAddr(instr, instr.immediate)
-        obj     = alloc0(instr.arg)
+        objlen  = instr.arg
+        obj     = instantiate_literal(instr.typeInfo, address, objlen)
 
-      copyMem(obj, address, instr.arg)
       ctx.sp -= 1
       ctx.stack[ctx.sp] = cast[pointer](instr.typeInfo)
       ctx.sp -= 1
@@ -657,8 +711,6 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       else:
         ctx.showAssertionFailure(instr)
         return -1
-    of ZIndexedLoad, ZSliceLoad, ZAssignSlice, ZAssignToIx:
-      discard
 
     ctx.ip += 1
 

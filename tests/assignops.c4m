@@ -1,0 +1,17 @@
+extern echoanint(a: ptr) -> ptr {
+  local: print(int) -> void
+  pure: false
+}
+
+x = 2
+x += 2
+x -= 2
+assert x == 2
+
+for i from 0 to 10 {
+  x += 2
+  assert $len == 10
+}
+
+assert x == 22
+

@@ -26,7 +26,6 @@ proc buf_copy(p: pointer): pointer {.cdecl.}
 proc u32_copy(p: pointer): pointer {.cdecl.}
 proc rich_copy(p: pointer): pointer {.cdecl.}
 
-
 let richLitMods = @["r", "md", "html", "h1", "h2", "h3",
                     "h4", "h5", "h6", "p", "em", "i", "b",
                     "strong", "underline", "pre", "code",
@@ -67,7 +66,6 @@ proc u32_repr(pre: pointer): string {.cdecl.} =
 proc rich_repr(pre: pointer): string {.cdecl.} =
   let s = cast[Rope](pre)
   return s.toUtf8()
-
 
 proc str_eq(a, b: pointer): bool {.cdecl.} =
   let
@@ -154,48 +152,50 @@ proc rich_len(p: pointer): int {.cdecl.} =
   let r = cast[string](p)
   return r.runeLength()
 
-strOps[FRepr]       = cast[pointer](str_repr)
-strOps[FCastFn]     = cast[pointer](get_cast_from_string)
-strOps[FEq]         = cast[pointer](str_eq)
-strOps[FLt]         = cast[pointer](str_lt)
-strOps[FGt]         = cast[pointer](str_gt)
-strOps[FAdd]        = cast[pointer](str_add)
-strOps[FIndex]      = cast[pointer](str_index)
-strOps[FSlice]      = cast[pointer](str_slice)
-strOps[FNewLit]     = cast[pointer](str_new_lit)
-strOps[FCopy]       = cast[pointer](str_copy)
-strOps[FLen]        = cast[pointer](str_len)
-bufOps[FRepr]       = cast[pointer](str_repr)
-bufOps[FCastFn]     = cast[pointer](get_cast_from_string)
-bufOps[FEq]         = cast[pointer](str_eq)
-bufOps[FLt]         = cast[pointer](str_lt)
-bufOps[FGt]         = cast[pointer](str_gt)
-bufOps[FAdd]        = cast[pointer](buf_add)
-bufOps[FIndex]      = cast[pointer](str_index)
-bufOps[FSlice]      = cast[pointer](buf_slice)
-bufOps[FNewLit]     = cast[pointer](str_new_lit)
-bufOps[FCopy]       = cast[pointer](buf_copy)
-bufOps[FLen]        = cast[pointer](str_len)
-utf32Ops[FRepr]     = cast[pointer](u32_repr)
-utf32Ops[FCastFn]   = cast[pointer](get_cast_from_u32)
-utf32Ops[FEq]       = cast[pointer](u32_eq)
-utf32Ops[FLt]       = cast[pointer](u32_lt)
-utf32Ops[FGt]       = cast[pointer](u32_gt)
-utf32Ops[FAdd]      = cast[pointer](u32_add)
-utf32Ops[FIndex]    = cast[pointer](u32_index)
-utf32Ops[FSlice]    = cast[pointer](u32_slice)
-utf32Ops[FNewLit]   = cast[pointer](str_new_lit)
-utf32Ops[FCopy]     = cast[pointer](u32_copy)
-utf32Ops[FLen]      = cast[pointer](u32_len)
-richOps[FRepr]      = cast[pointer](rich_repr)
-richOps[FCastFn]    = cast[pointer](get_cast_from_rich)
-richOps[FEq]        = cast[pointer](value_eq)
-richOps[FAdd]       = cast[pointer](rich_add)
-richOps[FNewLit]    = cast[pointer](rich_new_lit)
-richOps[FLoadLit]   = cast[pointer](rich_load_lit)
-richOps[FCopy]      = cast[pointer](rich_copy)
-richOps[FLen]       = cast[pointer](rich_len)
-richOps[FPlusEqRef] = cast[pointer](rich_pluseq)
+strOps[FRepr]         = cast[pointer](str_repr)
+strOps[FCastFn]       = cast[pointer](get_cast_from_string)
+strOps[FEq]           = cast[pointer](str_eq)
+strOps[FLt]           = cast[pointer](str_lt)
+strOps[FGt]           = cast[pointer](str_gt)
+strOps[FAdd]          = cast[pointer](str_add)
+strOps[FIndex]        = cast[pointer](str_index)
+strOps[FSlice]        = cast[pointer](str_slice)
+strOps[FNewLit]       = cast[pointer](str_new_lit)
+strOps[FCopy]         = cast[pointer](str_copy)
+strOps[FLen]          = cast[pointer](str_len)
+bufOps[FRepr]         = cast[pointer](str_repr)
+bufOps[FCastFn]       = cast[pointer](get_cast_from_string)
+bufOps[FEq]           = cast[pointer](str_eq)
+bufOps[FLt]           = cast[pointer](str_lt)
+bufOps[FGt]           = cast[pointer](str_gt)
+bufOps[FAdd]          = cast[pointer](buf_add)
+bufOps[FIndex]        = cast[pointer](str_index)
+bufOps[FSlice]        = cast[pointer](buf_slice)
+bufOps[FNewLit]       = cast[pointer](str_new_lit)
+bufOps[FCopy]         = cast[pointer](buf_copy)
+bufOps[FLen]          = cast[pointer](str_len)
+utf32Ops[FRepr]       = cast[pointer](u32_repr)
+utf32Ops[FStaticRepr] = cast[pointer](u32_repr)
+utf32Ops[FCastFn]     = cast[pointer](get_cast_from_u32)
+utf32Ops[FEq]         = cast[pointer](u32_eq)
+utf32Ops[FLt]         = cast[pointer](u32_lt)
+utf32Ops[FGt]         = cast[pointer](u32_gt)
+utf32Ops[FAdd]        = cast[pointer](u32_add)
+utf32Ops[FIndex]      = cast[pointer](u32_index)
+utf32Ops[FSlice]      = cast[pointer](u32_slice)
+utf32Ops[FNewLit]     = cast[pointer](str_new_lit)
+utf32Ops[FCopy]       = cast[pointer](u32_copy)
+utf32Ops[FLen]        = cast[pointer](u32_len)
+richOps[FRepr]        = cast[pointer](rich_repr)
+richOps[FStaticRepr]  = cast[pointer](str_repr)
+richOps[FCastFn]      = cast[pointer](get_cast_from_rich)
+richOps[FEq]          = cast[pointer](value_eq)
+richOps[FAdd]         = cast[pointer](rich_add)
+richOps[FNewLit]      = cast[pointer](rich_new_lit)
+richOps[FLoadLit]     = cast[pointer](rich_load_lit)
+richOps[FCopy]        = cast[pointer](rich_copy)
+richOps[FLen]         = cast[pointer](rich_len)
+richOps[FPlusEqRef]   = cast[pointer](rich_pluseq)
 
 let
   TString* = addDataType(name = "string", concrete = true,
@@ -273,7 +273,6 @@ proc cast_rich_to_str(pre: pointer): pointer =
   return newRefValue[string](s, TString)
 
 proc get_cast_from_string(dt: DataType, err: var string): pointer =
-  echo "YOYO"
   if dt.dtid == TUtf32:
     return cast[pointer](cast_str_to_u32)
   elif dt.dtid == TRich:
@@ -390,7 +389,7 @@ proc rich_load_lit(cstr: cstring, l: cint): pointer =
     full = $cstr
     f    = full.find(':')
     lmod = full[0 ..< f]
-    s    = full[f + 1 ..< ^1]
+    s    = full[f + 1 .. ^1]
 
   var r: Rope
 
@@ -434,7 +433,7 @@ proc rich_load_lit(cstr: cstring, l: cint): pointer =
 
   GC_ref(r)
 
-  return cast[pointer](r)
+  result = cast[pointer](r)
 
 proc str_copy(p: pointer): pointer =
   let s = cast[cstring](p)

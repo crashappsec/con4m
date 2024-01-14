@@ -164,7 +164,6 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         arg1 = text(hex(item.arg))
         arg2 = text("module id: " & $item.moduleId)
         lbl = em("-> " & name)
-
     of ZPushVal, ZPushPtr, ZPushSType, ZPushAddr:
       var
         prefix, vname: string
@@ -185,7 +184,6 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         prefix = "&"
 
       lbl = text(prefix & vname & " -> (stack)")
-
     of ZStoreTop, ZStoreImm:
       var tmp: string
 
@@ -231,7 +229,6 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
 
       if item.op != ZJ:
         lbl += text(" + pop")
-
     of ZSObjNew:
       arg1 = text($(item.arg))
       arg2 = text("+" & hex(item.immediate))
@@ -460,31 +457,14 @@ proc genLoadAttr(ctx: CodeGenState, tid: TypeId) =
 proc genSetAttr(ctx: CodeGenState, tid: TypeId) =
   ctx.emitInstruction(ZAssignAttr, tid = tid)
 
-proc genAssign(ctx: CodeGenState, tid: TypeId, copyFirst: bool) =
-  ## The copyFirst parameter only applies to by-ref data types.  But,
-  ## when we're loading a literal object from static memory, the
-  ## loaded object is already a copy and does not need to be
-  ## re-coppied. So the copyFirst parameter is really just meant to
-  ## give us a way to skip the copy this function would normally
-  ## generate for a by-ref data type.
-  # TODO, when we add refs, this should be based on whether the
-  # RHS is of type ref.
-
-  if not tid.getDataType.byValue and copyFirst:
-    ctx.genTCall(FCopy, tid)
+proc genAssign(ctx: CodeGenState, tid: TypeId) =
   ctx.emitInstruction(ZAssignToLoc, tid = tid)
 
 proc genLoadFromIx(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZIndexedLoad, tid = tid)
+  ctx.genTCall(FIndex, tid = tid)
 
 proc genLoadFromSlice(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZSliceLoad, tid = tid)
-
-proc genAssignToIx(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZAssignToIx, tid = tid)
-
-proc genAssignSlice(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZAssignSlice, tid = tid)
+  ctx.genTCall(FSlice, tid = tid)
 
 proc genPrologue(ctx: CodeGenState, sz: int) =
   ctx.emitInstruction(ZMoveSp, arg = sz)
@@ -712,9 +692,7 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
       ctx.oneIrNode(item)
 
     ctx.genPushImmediate(cur.items.len())
-
-
-    ctx.genTCall(FContainerLit, n.tid.getContainerInfo().dtid)
+    ctx.genTCall(FContainerLit, n.tid)
 
   else:
     if cur.byVal:
@@ -861,21 +839,24 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
   #
   # To make our lives easier, we just use a different instruction
   # for each of these cases.
+  #
+  # TODO: Don't push the container's memory storage address if we're
+  # doing an index assign (right now the VM knows what to do).
 
   let cur = n.contents
 
   ctx.oneIrNode(cur.assignRhs)
+  if cur.assignRhs.contents.kind != IrLit and
+    not cur.assignRhs.tid.getDataType().byValue:
+    ctx.genTCall(FCopy, cur.assignRhs.tid)
   ctx.oneIrNode(cur.assignLhs)
-
   if cur.assignLhs.contents.kind == IrIndexLhs:
-    if cur.assignLhs.contents.subaccess.contents.indexEnd == nil:
-      ctx.genAssignToIx(cur.assignRhs.tid)
+    if cur.assignLhs.contents.indexEnd == nil:
+      ctx.genTCall(FAssignIx, cur.assignRhs.tid)
     else:
-      ctx.genAssignSlice(cur.assignRhs.tid)
-  elif cur.assignRhs.contents.kind == IrLit:
-    ctx.genAssign(cur.assignRhs.tid, copyFirst = false)
+      ctx.genTCall(FAssignSlice, cur.assignRhs.tid)
   else:
-    ctx.genAssign(cur.assignRhs.tid, copyFirst = true)
+    ctx.genAssign(cur.assignRhs.tid)
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:

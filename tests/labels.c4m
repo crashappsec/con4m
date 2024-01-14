@@ -1,0 +1,19 @@
+outer:
+  while true {
+    inner:
+    while true {
+      break outer
+    }
+  }
+
+outer:
+while true {
+  inner:
+  while true {
+    break outer
+  }
+}
+
+outer: while true {
+ break
+}

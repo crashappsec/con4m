@@ -1,0 +1,26 @@
+extern callprint(a: ptr) -> cvoid {
+  local: print(rich) -> void
+  pure: false
+}
+
+extern calltable(a: ptr) -> cvoid {
+  local: table(list[list[rich]]) -> rich
+  pure: true
+}
+
+extern callflattable(a: ptr) -> cvoid {
+  local: table(list[rich]) -> rich
+  pure: true
+}
+
+var r: rich
+r = "Hello, world!"'h1
+e = "emphasis"'em
+
+print(r)
+print(e)
+#n =  ["Title"'r, "Example 1"'r, "Example2"'r] 
+
+#print(table(n))
+
+#print("Hello, world!"'h1 + "emphasis"'em)

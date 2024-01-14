@@ -1,0 +1,21 @@
+## all of these should work
+hello {}
+hello world {}
+hello "world" {}
+hello {
+  world : 2
+}
+
+hello {
+  world {
+  
+  }
+}
+
+# These work, and it was intentional, but it might be a bad idea.
+hello world
+hello "world"
+
+# This should not work; should give a use-before-def.
+foo
+

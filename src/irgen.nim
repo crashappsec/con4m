@@ -84,7 +84,7 @@ template reprBasicLiteral(ctx: IrNode): string =
   if ctx.value.isNone():
     ""
   else:
-    $(call_repr(ctx.value.get(), ctx.tid))
+    $(call_static_repr(ctx.value.get(), ctx.tid))
 
 proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   var
@@ -1888,15 +1888,20 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
       if i + 1 < item.params.len():
         cur &= ", "
     cur &= ") -> "
-    cur &= item.retval.tid.toString()
+    if item.retval != nil:
+      cur &= item.retval.tid.toString()
+    else:
+      cur &= tVar().toString()
 
     row.add(text($(num + 1)))
     row.add(strong(cur))
 
-    cur = item.defModule.modname & ":"
-    cur &= $(item.rawImpl.token.lineNo) & ":"
-    cur &= $(item.rawImpl.token.lineOffset) & "("
-    cur &= item.defModule.where & ") "
+    if item.defModule != nil:
+      cur = item.defModule.modname & ":"
+    if item.rawImpl != nil:
+      cur &= $(item.rawImpl.token.lineNo) & ":"
+      cur &= $(item.rawImpl.token.lineOffset) & "("
+      cur &= item.defModule.where & ") "
     if extra.len() != 0:
       cur &= extra[num]
 

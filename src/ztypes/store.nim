@@ -549,7 +549,7 @@ proc toStr*(x: TypeRef): string {.exportc, cdecl.} =
   tbl.initDict()
   return x.toStr(tbl, n)
 
-proc toString*(x: TypeId): string {.exportc, cdecl.}=
+proc toString*(x: TypeId): string {.exportc, cdecl.} =
   typeStore[x].toStr()
 
 proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =

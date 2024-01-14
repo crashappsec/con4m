@@ -42,7 +42,8 @@ const
 
   # This is not meant for the IR, just for the compiler / interpreter.
   FNewLit*       = 30
-  FMax*          = 31
+  FStaticRepr*   = 31 # Only used for by-ref types.
+  FMax*          = 32
 
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
@@ -675,15 +676,6 @@ type
      # null / 0 value gets loaded if there's a lookup failure.
      ZLoadFromAttr  = 0x17,
 
-     # The top of the stack has a heap object and an index; replace
-     # with the contents at that index. Note that the index might not
-     # be directly on the stack, it might be a string, etc.  Check the
-     # type field for this one.
-     ZIndexedLoad   = 0x18,
-
-     # Load a slice. Here, the indicies are always ints.
-     ZSliceLoad     = 0x19,
-
      # Pop a value from the stack, discarding it.
      ZPop           = 0x20,
 
@@ -735,7 +727,7 @@ type
      # of a module.
      ZCallModule    = 0x36,
 
-     # Duh.
+     # Logical not. Currently there's no bitwise not.
      ZNot           = 0x50,
 
      # Unmarshal stored data from the heap, instantiating an object.
@@ -746,19 +738,10 @@ type
      # that address. This pops its arguments.
      ZAssignToLoc   = 0x70,
 
-     # The stack contains a heap pointer to a data object, an index
-     # (which might be a non-int type like a pointer), and a value
-     # to assign at the given index. Pops arguments.
-     ZAssignToIx    = 0x71,
-
-     # Same as prev in concept, but with the extra index to indicate
-     # the end of the slice. Pops arguments.
-     ZAssignSlice   = 0x72,
-
      # Whereas with `ZAssignToLoc`, the stack contains a pointer to a
      # variable, here it contains a pointer to a heap-alloc'd string
      # that is the name of the attribute.
-     ZAssignAttr    = 0x73,
+     ZAssignAttr    = 0x71,
 
      # This just needs to shrink the stack back to the base pointer,
      # restore the old base pointer, and jump to the saved return

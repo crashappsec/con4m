@@ -180,7 +180,6 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
 
-
 proc newCompileContext*(spec: ValidationSpec = nil,
                         path                 = @[".", "https://chalkdust.io/"],
                         ext                  = ".c4m"): CompileCtx =

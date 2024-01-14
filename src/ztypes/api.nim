@@ -156,7 +156,6 @@ proc get_tid_for_container_lit*(st: SyntaxType, litmod: string,
   else:
     err = true
 
-
 proc layout_literal*(id: TypeId, s: pointer, st: SyntaxType, litmod: string,
                      byVal: var bool, l: var int, err: var string): pointer =
   # If not byVal, the result *is* a pointer.
@@ -170,6 +169,14 @@ proc layout_literal*(id: TypeId, s: pointer, st: SyntaxType, litmod: string,
   var asStr = cast[string](s)
 
   result = op(s, st, litmod, l, err)
+
+proc instantiate_literal*(t: TypeId, s: pointer, l: int):
+                        pointer {.exportc, cdecl.} =
+  let
+    info = t.get_data_type()
+    op   = cast[LitLoadFn](info.ops[FLoadLit])
+
+  result = op(s, l)
 
 proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,
                             contents: seq[pointer], err: var string):
@@ -197,8 +204,10 @@ proc call_copy*(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
     info = t.get_data_type()
     op   = cast[CopyFn](info.ops[FCopy])
 
-  echo $(cast[uint](op))
-  return op(p, t)
+  if info.byValue or op == nil:
+    return p
+  else:
+    return op(p, t)
 
 proc call_len*(p: pointer, t: TypeId): int {.exportc, cdecl.} =
   let

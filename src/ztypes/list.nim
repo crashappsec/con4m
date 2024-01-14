@@ -53,8 +53,10 @@ proc list_len(p: pointer): int {.exportc, cdecl.} =
   return zlist.l.len()
 
 proc z_maybe_incref(p: pointer, t: TypeId) {.importc, cdecl.}
+proc toString(x: TypeId): string {.importc, cdecl.}
 
-proc list_index(p: pointer, i: int, err: var bool): pointer =
+proc list_index(p: pointer, i: int, err: var bool): pointer
+    {.exportc, cdecl.} =
   let zlist = extractRef[ZList](p)
 
   if i < 0 or i >= zlist.l.len():
@@ -66,18 +68,60 @@ proc list_index(p: pointer, i: int, err: var bool): pointer =
   let to = zlist.tid.idToTypeRef()
   z_maybe_incref(result, to.items[0])
 
-# proc list_slice()
-# proc list_assign_ix()
-# proc list_slice()
-# proc list_assign_slice()
+proc list_assign_ix(p: pointer, o: pointer, i: int, err: var bool)
+    {.exportc, cdecl.} =
+  let zlist = extractRef[Zlist](p)
+
+  if i < 0 or i >= zlist.l.len():
+    err = true
+    return
+
+  zlist.l[i] = o
+
+proc list_slice(p: pointer, i, j: int, err: var bool): pointer
+    {.exportc, cdecl.} =
+  let zlist = extractRef[ZList](p)
+  var
+    newlist: ZList
+    i = i
+    j = j
+
+  if i < 0:
+    i += zlist.l.len()
+  if j < 0:
+    j += zlist.l.len()
+
+  if i >= j or i >= zlist.l.len():
+    newList = ZList(l: @[], tid: zlist.tid)
+  else:
+    newList = ZList(l: zlist.l[i ..< j], tid: zlist.tid)
+  result = newRefValue(newlist, zlist.tid)
+
+proc list_assign_slice(c, v: pointer, i, j: int, err: var bool)
+    {.exportc, cdecl.} =
+  var
+    l: seq[pointer]
+    r: seq[pointer]
+    clist = extractRef[Zlist](c)
+    vlist = extractRef[Zlist](v)
+    i     = i
+    j     = j
+
+  if i < 0:
+    i += clist.l.len()
+  if j < 0:
+    j += clist.l.len()
+  if i > 0:
+    l = clist.l[0 ..< i]
+  if j < clist.l.len():
+    r = clist.l[j .. ^1]
+
+  clist.l = l & vlist.l & r
+
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
-
 proc list_copy(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
-  echo "HELLO: ", cast[int](cast[pointer](p))
-
   var
     list = extractRef[Zlist](p)
-
 
   var
     tobj = list.tid.idToTypeRef()
@@ -88,14 +132,18 @@ proc list_copy(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
 
   let zl = ZList(l: s2, tid: t)
 
-  return newRefValue(zl, t)
+  result = newRefValue(zl, t)
 
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FContainerLit] = cast[pointer](list_lit)
 listOps[Feq]           = cast[pointer](list_eq)
 listOps[FLen]          = cast[pointer](list_len)
 listOps[FIndex]        = cast[pointer](list_index)
+listOps[FAssignIx]     = cast[pointer](list_assign_ix)
+listOps[FSlice]        = cast[pointer](list_slice)
+listOps[FAssignSlice]  = cast[pointer](list_assign_slice)
 listOps[FCopy]         = cast[pointer](list_copy)
+
 
 TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)

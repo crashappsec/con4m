@@ -1,0 +1,42 @@
+# Tests basic functionality of lists built into the language:
+# 1. copying on assignment
+# 2. container iteration
+# 3. indexing
+# 4. assignment to an index
+# 5. slicing
+# 6. assigning slices
+
+extern echoanint(a: ci64) -> cvoid {
+  local: print(int) -> void
+  pure: false
+}
+
+x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+y = x
+
+for item in y {
+  assert item == ($i + 1)
+  x[$i] = 10
+}
+
+for item in x {
+  assert item == 10
+  assert y[$i] == $i + 1
+}
+
+sum = 0
+
+for item in x[1:-1] {
+  sum += item
+}
+
+assert sum == 80
+
+x[1:-1] = [5]
+
+sum = 0
+
+for item in x {
+  sum += item
+}
+assert sum == 25

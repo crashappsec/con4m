@@ -22,6 +22,7 @@ type
   ClitFn*     = proc(st: SyntaxType, litmod: string, t: TypeId,
                      contents: seq[pointer], err: var string):
                      pointer {.cdecl.}
+  LitLoadFn*  = proc(s: pointer, l: int): pointer {.cdecl.}
   CopyFn*     = proc(a: pointer, t: TypeId): pointer {.cdecl.}
   LenFn*      = proc(a: pointer): int {.cdecl.}
   PlusEqFn*   = proc(l, r: pointer) {.cdecl.}
@@ -299,6 +300,21 @@ proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
 
   if op == nil:
     return cstring("?")
+
+  return cstring(op(value))
+
+proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
+  let info = getDataType(t)
+
+  if info.ops.len() == 0:
+    return cstring("void")
+
+  var op: ReprFn
+
+  if info.byValue or info.ops[FStaticRepr] == nil:
+    op = cast[ReprFn](info.ops[FRepr])
+  else:
+    op = cast[ReprFn](info.ops[FStaticRepr])
 
   return cstring(op(value))
 
