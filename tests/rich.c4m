@@ -29,5 +29,5 @@ assert crappylen(n) == len(n)
 print(table(n))
 
 
-print("Hello, world!"'h1 + "Here's some "'r + "emphasis"'em + " for my table: "'r)
+print("Hello, world!"'h1 + "Here's "'r + "emphasis"'em + " for my table: "'r)
 print(table(n))

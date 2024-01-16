@@ -5,6 +5,7 @@
 # - Component logic in runtime.
 # - Load default values at beginning of program.
 # - explicit casts -- to(obj, type)
+# - Some auto-casting, especially auto-promoting strings to rich text.
 # - Spec checking after execution.
 # - Re-implement standard library / wrappings.
 # - Saving the spec in the object file.

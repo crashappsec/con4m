@@ -1,0 +1,5 @@
+extern listlen(p: ptr) -> ci64 {
+   local: len(list[`t]) -> int
+   pure: true
+}
+
