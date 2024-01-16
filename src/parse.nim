@@ -1763,7 +1763,7 @@ idStmtProd(section, NodeSection):
   elif ctx.curKind() == TtIdentifier:
     result.addKid(ctx.identifier())
 
-  result.addKid(ctx.optionalBody())
+  result.addKid(ctx.body())
 
 production(returnStmt, NodeReturnStmt):
   ctx.advance()
