@@ -6,16 +6,12 @@
 # - Load default values at beginning of program.
 # - explicit casts -- to(obj, type)
 # - Spec checking after execution.
-# - Get FFI fully working (it's not very robust at the moment).
 # - Re-implement standard library / wrappings.
 # - Saving the spec in the object file.
 # - Checkpointing runtime state.
 # - Hook up getopts again.
-# - Probably have module initializers run before the first function is called,
-#   esp if there's no 'use' statement.  Or, add an import statement as well,
-#   but IDK man.
 # - Typecheck c vs con4m api for ffi
-#
+# - fix stuff taking lists like u32.
 # - C-level interface to attributes
 # - Dictionary and tuple implementations
 # - Finish the builtin types api, eg. copy operations for all ref builtin types

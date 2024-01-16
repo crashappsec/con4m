@@ -13,7 +13,6 @@ proc echoanint*(s1: int64) {.exportc, cdecl.} =
   echo($(s1))
 
 proc callprint*(s1: Rope) {.exportc, cdecl.} =
-  let p = cast[pointer](s1)
   print(s1)
 
 proc calltable*(s1: pointer): Rope {.exportc, cdecl.} =
@@ -30,7 +29,8 @@ proc calltable*(s1: pointer): Rope {.exportc, cdecl.} =
       row.add(cast[Rope](cell))
     actual.add(row)
 
-  return actual.quickTable()
+  result = actual.quickTable()
+  GC_ref(result)
 
 proc callflattable*(s1: pointer): Rope {.exportc, cdecl.} =
   let
@@ -47,6 +47,10 @@ proc listlen*(p: pointer): int {.exportc, cdecl.} =
   let l = extractRef[Zlist](p)
   return l.l.len()
 
+proc ropeplus*(a, b: Rope): Rope {.exportc, cdecl.} =
+  result = a + b
+  GC_ref(result)
+
 addStaticFunction("splitwrap", splitwrap)
 addStaticFunction("echoanint",  echoanint)
 addStaticFunction("callecho",  callecho)
@@ -54,3 +58,4 @@ addStaticFunction("callprint", callprint)
 addStaticFunction("calltable", calltable)
 addStaticFunction("callflattable", callflattable)
 addStaticFunction("listlen", listlen)
+addStaticFunction("ropeplus", ropeplus)

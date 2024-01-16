@@ -289,6 +289,7 @@ proc newRefValue*[T](item: T, tid: TypeId): pointer =
   let o = RefValue[T](dtInfo: dt, item: item,
                       fullType: tid.followForwards(), refCount: 1)
 
+
   GC_ref(o)
 
   return cast[pointer](o)

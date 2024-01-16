@@ -126,7 +126,7 @@ proc list_copy(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
   for item in list.l:
     s2.add(call_copy(item, tobj.items[0]))
 
-  let zl = ZList(l: s2, tid: t)
+  var zl = ZList(l: s2, tid: t)
 
   result = newRefValue(zl, t)
 
@@ -149,6 +149,6 @@ registerSyntax(TList, STList, @["l"], primary = true)
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string): pointer =
 
-  let zl = ZList(l: contents, tid: t)
+  var zl = ZList(l: contents, tid: t)
 
-  return newRefValue(zl, t)
+  result = newRefValue(zl, t)

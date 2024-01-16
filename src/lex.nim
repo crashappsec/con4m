@@ -236,6 +236,16 @@ proc processStrings(ctx: Module) =
                 j += 1
                 continue
               of TtStringLit:
+                if t.litType != t3.litType:
+                  if newTok != nil:
+                    res.add(newTok)
+                    newTok = nil
+                    break outer
+
+                  res.add(t)
+                  i = i + 1
+                  break outer
+
                 if newTok == nil:
                   newTok = Con4mToken(kind:       TtStringLit,
                                       unescaped:  t.unescaped & t3.unescaped,
@@ -243,6 +253,7 @@ proc processStrings(ctx: Module) =
                                       endPos:     t3.endPos,
                                       lineNo:     t.lineNo,
                                       lineOffset: t.lineOffset,
+                                      litType:    t.litType,
                                       cursor:     t.cursor)
                 else:
                   newTok.unescaped &= t3.unescaped

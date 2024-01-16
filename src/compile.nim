@@ -181,15 +181,33 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
 
+proc processSystemDirectory(ctx: CompileCtx) =
+  if ctx.sysdir == "":
+    return
+  var all = getAllFileNames(ctx.sysdir.resolvePath())
+
+  for item in all:
+    let (dir, fname, ext) = item.splitFile()
+    if ext != ".c4m":
+      continue
+    let opt = ctx.loadModuleFromLocation(dir, fname, ext)
+
+    if opt.isSome():
+      let module = opt.get()
+      ctx.buildIr(module)
+
 proc newCompileContext*(spec: ValidationSpec = nil,
+                        sysdir               = "~/.local/c0/con4m/",
                         path                 = @[".", "https://chalkdust.io/"],
                         ext                  = ".c4m"): CompileCtx =
 
-  result = CompileCtx(modulePath: path, defaultExt: ext, attrSpec: spec)
+  result = CompileCtx(modulePath: path, defaultExt: ext, attrSpec: spec,
+                      sysdir: sysdir)
 
   result.globalScope = initScope()
   result.usedAttrs   = initScope()
   result.modules.initDict()
+  result.processSystemDirectory()
 
 proc printTokens*(ctx: Module, start = 0, endix = 0) =
   var

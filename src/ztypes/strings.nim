@@ -23,10 +23,10 @@ proc str_slice(a: pointer, b, c: int): pointer {.cdecl.}
 proc buf_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
 proc u32_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
 proc rich_load_lit(cstr: cstring, l: cint): pointer {.cdecl.}
-proc str_copy(p: pointer): pointer {.cdecl.}
-proc buf_copy(p: pointer): pointer {.cdecl.}
-proc u32_copy(p: pointer): pointer {.cdecl.}
-proc rich_copy(p: pointer): pointer {.cdecl.}
+proc str_copy(p: pointer): pointer {.cdecl, exportc.}
+proc buf_copy(p: pointer): pointer {.cdecl, exportc.}
+proc u32_copy(p: pointer): pointer {.cdecl, exportc.}
+proc rich_copy(p: pointer): pointer {.cdecl, exportc.}
 
 let richLitMods = @["r", "md", "html", "h1", "h2", "h3",
                     "h4", "h5", "h6", "p", "em", "i", "b",
@@ -284,7 +284,6 @@ proc get_cast_from_string(dt: DataType, err: var string): pointer =
   elif dt.dtid == TBool:
     return cast[pointer](cast_to_bool)
 
-
 proc get_cast_from_u32(dt: Datatype, err: var string): pointer =
   if dt.dtid == TUtf32:
     return cast[pointer](cast_identity)
@@ -326,7 +325,6 @@ proc rich_add(a, b: pointer): pointer =
     y = cast[Rope](b)
 
   return newRefValue[Rope](x + y, TRich)
-
 
 proc str_slice(a: pointer, b, c: int): pointer =
   let
@@ -385,7 +383,6 @@ proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
 
   return newRefValue[seq[Rune]](x[b .. c], TUtf32)
 
-
 proc rich_load_lit(cstr: cstring, l: cint): pointer =
 
   let
@@ -438,20 +435,24 @@ proc rich_load_lit(cstr: cstring, l: cint): pointer =
 
   result = cast[pointer](r)
 
-proc str_copy(p: pointer): pointer =
+proc str_copy(p: pointer): pointer {.cdecl, exportc.} =
+  let
+    s = cast[cstring](p)
+    l = strlen(s) + 1
+  result = alloc0(l)
+  copyMem(result, addr s[0], l)
+
+proc buf_copy(p: pointer): pointer {.cdecl, exportc.} =
   let s = cast[cstring](p)
   return cast[pointer](s)
 
-proc buf_copy(p: pointer): pointer =
-  let s = cast[cstring](p)
-  return cast[pointer](s)
-
-proc u32_copy(p: pointer): pointer =
+proc u32_copy(p: pointer): pointer {.cdecl, exportc.} =
   # TODO; fix these.
-  let s = cast[seq[Rune]](p)
+  var s = cast[seq[Rune]](p)
   return cast[pointer](s)
 
-proc rich_copy(p: pointer): pointer =
+proc rich_copy(p: pointer): pointer {.cdecl, exportc.} =
   let r = cast[Rope](p)
-  GC_ref(r)
-  return cast[pointer](r)
+  var r2 = r.copy()
+  GC_ref(r2)
+  return cast[pointer](r2)

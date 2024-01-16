@@ -615,6 +615,7 @@ type
     fatal*:       bool
     topExitNode*: CfgNode # Used when building CFG
     modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
+    sysdir*:      string
     errors*:      seq[Con4mError]
 
   # The remaining data structures are used in code generation and / or

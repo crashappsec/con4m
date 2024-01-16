@@ -456,7 +456,6 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
     ctx.genPushImmediate(immediate)
   else:
     ctx.genPush(sym)
-  ctx.genLabel("Call FIndex")
   ctx.genTCall(FIndex)
 
 proc genPushStaticString(ctx: CodeGenState, name: string) =
@@ -530,17 +529,13 @@ proc genIterationCheck(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
 
   if not cur.whileLoop:
-    ctx.genLabel("Push $i")
     ctx.genPush(cur.loopVars[0])
-    ctx.genLabel("Push $len")
     ctx.genPush(cur.loopVars[^1])
     ctx.genEqual()
     ctx.startJnz(target = n)
 
     if cur.condition.contents.kind != IrRange:
-      ctx.genLabel("Push $container")
       ctx.genPush(cur.loopVars[^2]) # Container on stack.
-      ctx.genLabel("Push $i again")
       ctx.genContainerIndex(cur.loopVars[0])
       if cur.loopVars.len() == 4:
         # This is a for x in list, so there's no array to unpack,
