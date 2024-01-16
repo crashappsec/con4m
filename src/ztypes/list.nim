@@ -4,10 +4,6 @@ import base, ../common, strutils
 
 var listOps = newVtable()
 
-type ZList* = ref object
-  l:   seq[pointer]
-  tid: TypeId
-
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string): pointer {.
                 exportc, cdecl.}

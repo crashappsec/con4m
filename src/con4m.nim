@@ -14,12 +14,14 @@
 # - Probably have module initializers run before the first function is called,
 #   esp if there's no 'use' statement.  Or, add an import statement as well,
 #   but IDK man.
+# - Typecheck c vs con4m api for ffi
 #
 # - C-level interface to attributes
 # - Dictionary and tuple implementations
 # - Finish the builtin types api, eg. copy operations for all ref builtin types
 # - Swap in hatrack lists (and add rings?).
 # - Update the pretty printer.
+# - Restrict the leading '$' properly.
 
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - In showCallMistakes(), show which functions have the wrong # of args,

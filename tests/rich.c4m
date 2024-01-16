@@ -1,26 +1,55 @@
+extern callflattable(a: ptr) -> ptr {
+  local: table(list[rich]) -> rich
+  pure: true
+}
+
 extern callprint(a: ptr) -> cvoid {
   local: print(rich) -> void
   pure: false
 }
 
-extern calltable(a: ptr) -> cvoid {
+extern calltable(a: ptr) -> ptr {
   local: table(list[list[rich]]) -> rich
   pure: true
 }
 
-extern callflattable(a: ptr) -> cvoid {
-  local: table(list[rich]) -> rich
-  pure: true
+extern listlen(p: ptr) -> ci64 {
+   local: len(list[`t]) -> int
+   pure: true
+}
+
+func crappylen(x: list[`t]) {
+  for i in x {
+    return $len
+  }
 }
 
 var r: rich
-r = "Hello, world!"'h1
-e = "emphasis"'em
+r = "Hello, world!"'h2
 
 print(r)
-print(e)
-#n =  ["Title"'r, "Example 1"'r, "Example2"'r] 
+
+n =  [["Name"'r,      "Country"'r, "City"'r],
+      ["John"'em,     "USA"'r,     "NYC"'r],
+      ["Brandon"'em,  "USA"'r,     "NYC"'r],
+      ["Liming"'em,   "USA"'r,     "NYC"'r],
+      ["Miroslav"'em, "USA"'r,     "Lawn Guy Land"'r],
+      ["Rich"'em,     "USA"'r,     "Providence, RI"'r],
+      ["Matt"'em,     "USA"'r,     "Orange"'r],
+      ["Mark"'em,     "UK"'r,      "Brighton"'r],
+      ["Hugo"'em,     "UK"'r,      "Brighton"'r],            
+      ["James"'em,    "UK"'r,      "Brighton"'r],
+      ["Max"'em,      "UK"'r,      "Brighton"'r],            
+      ["Theo"'em,     "Greece"'r,  "Athens"'r],
+      ["Thomas"'em,   "Greece"'r,  "Athens"'r],
+      ["James II"'em, "Germany"'r, "Berlin"'r]]
+
+assert crappylen(n) == len(n)
+
+wtf = table(n)
+print(wtf)
 
 #print(table(n))
+
 
 #print("Hello, world!"'h1 + "emphasis"'em)

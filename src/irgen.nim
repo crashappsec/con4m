@@ -849,7 +849,7 @@ proc handleFuncdefSymbols(ctx:   Module,
     allParams = info.params & @[info.retVal]
 
 
-  info.fnScope = initScope()
+  info.fnScope = initScope(fn = true)
 
   for i, item in allParams:
     symOpt = ctx.scopeDeclare(info.fnScope, item.name, false, item.getTid(),
@@ -1294,14 +1294,13 @@ proc convertForStmt(ctx: Module): IrNode =
   result.scope = scope
 
   if ctx.blockScopes.len() != 0:
-    scope.parent = ctx.blockScopes[^1]
+    scope.addParent(ctx.blockScopes[^1])
   elif ctx.funcScope != nil:
-    scope.parent = ctx.funcScope
+    scope.addParent(ctx.funcScope)
   else:
-    scope.parent = ctx.moduleScope
+    scope.addParent(ctx.moduleScope)
 
   ctx.blockScopes.add(scope)
-  scope.parent.childScopes.add(scope)
 
   # For loops over containers get a phantom index variable named $i,
   # since the named variable gets the contents of the container. The
@@ -1369,13 +1368,12 @@ proc convertWhileStmt(ctx: Module): IrNode =
   result.scope = scope
 
   if ctx.blockScopes.len() != 0:
-    scope.parent = ctx.blockScopes[^1]
+    scope.addParent(ctx.blockScopes[^1])
   elif ctx.funcScope != nil:
-    scope.parent = ctx.funcScope
+    scope.addParent(ctx.funcScope)
   else:
-    scope.parent = ctx.moduleScope
+    scope.addParent(ctx.moduleScope)
 
-  scope.parent.childScopes.add(scope)
   ctx.blockScopes.add(scope)
 
   let loopVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
@@ -1405,6 +1403,7 @@ proc makeVariant(parent: SymbolInfo): SymbolInfo =
   result              = SymbolInfo()
   result.name         = parent.name
   result.isAttr       = parent.isAttr
+  result.inFunc       = parent.inFunc
   result.defaultVal  = parent.defaultVal
   result.declaredType = parent.declaredType
   result.tid          = tVar()
@@ -1443,11 +1442,11 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
       actionBranch: int
 
     if ctx.blockScopes.len() != 0:
-      scope.parent = ctx.blockScopes[^1]
+      scope.addParent(ctx.blockScopes[^1])
     elif ctx.funcScope != nil:
-      scope.parent = ctx.funcScope
+      scope.addParent(ctx.funcScope)
     else:
-      scope.parent = ctx.moduleScope
+      scope.addParent(ctx.moduleScope)
 
     if ctx.numKids(i) == 2:
       var branchType: TypeId
@@ -1986,6 +1985,9 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
                       @[name, t1, t2, l1])
 
 proc parseTreeToIr(ctx: Module): IrNode =
+  if ctx.pt == nil:
+    return nil
+
   case ctx.pt.kind:
     of NodeModule, NodeBody:
       result = ctx.statementsToIr()

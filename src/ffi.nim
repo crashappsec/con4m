@@ -132,7 +132,8 @@ let
                           ffiI32, ffiU64, ffiI64, ffiFloat, ffiDouble,
                           ffiuChar, ffiChar, ffiShort, ffiUShort, ffiInt,
                           ffiUint, ffiLong, ffiULong, ffiU8, ffiSizeT,
-                          ffiSSizet, ffiPtr, ffiPtr, ffiPtr ]
+                          ffiSSizet, addr ffiPtrO, addr ffiPtrO,
+                          addr ffiPtrO ]
 
 proc ffi_prep_cif*(cif: var CallerInfo, abi: cuint, nargs: cuint,
                    rtype: ptr FfiObj, argTypes:

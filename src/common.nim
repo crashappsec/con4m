@@ -378,6 +378,7 @@ type
   SymbolInfo* = ref object
     name*:         string
     isFunc*:       bool
+    inFunc*:       bool
     isAttr*:       bool
     defaultVal*:   Option[pointer] # Only for attributes.
     declaredType*: bool
@@ -398,7 +399,7 @@ type
     # stack, but from some start offset associated with the module
     # the variable lives in.
     heapAlloc*:    bool  # The below are not used for attributes.
-    moduleId*:        int   # The index into modules; the set of offsets
+    moduleId*:     int   # The index into modules; the set of offsets
                          # is calculated per-'memory moduleId', but
                          # during compilation, we don't care how
                          # that's implemented.
@@ -506,6 +507,7 @@ type
     table*:       Dict[string, SymbolInfo]
     scopeSize*:   int
     attr*:        bool
+    fnScope*:     bool
     numSyms*:     int
     parent*:      Scope
     childScopes*: seq[Scope]
@@ -881,6 +883,10 @@ type
     moduleVarSize*:  int
     instructions*:   seq[ZInstruction]
     initSize*:       int # size of init code before functions begin.
+
+  ZList* = ref object
+    l*:   seq[pointer]
+    tid*: TypeId
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

@@ -1,5 +1,7 @@
 import base, unicode, ordinals
 
+from strutils import tohex, tolowerascii
+
 # These all need forward declarations because they refer to types that
 # haven't been declared yet.
 proc cast_str_to_u32(pre: pointer): pointer {.cdecl.}
@@ -382,6 +384,7 @@ proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
     return nil
 
   return newRefValue[seq[Rune]](x[b .. c], TUtf32)
+
 
 proc rich_load_lit(cstr: cstring, l: cint): pointer =
 

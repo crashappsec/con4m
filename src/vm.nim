@@ -9,8 +9,8 @@ const
   sz             = sizeof(ZInstruction)
   USE_TRACE      = false # Also requires one of the below to be true
   TRACE_INSTR    = true
-  TRACE_STACK    = false
-  TRACE_SCOPE    = false
+  TRACE_STACK    = true
+  TRACE_SCOPE    = true
 
 
 type
@@ -93,8 +93,9 @@ when USE_TRACE:
       let
         fnObj = ctx.frameInfo[ctx.numFrames - 1].targetFunc
 
-      for (offset, name) in fnObj.syms.items():
-        let val = toHex(cast[int](ctx.stack[ctx.fp - (2*offset)])).toLowerAscii()
+      for (offset, name) in fnObj.syms.items(sort=true):
+        let val = toHex(cast[int](ctx.stack[ctx.fp -
+                               (2*offset)])).toLowerAscii()
         rows.add(@[text(name), text(val), text($(offset))])
 
       return rows.quickTable(title = "Fn Scope")
@@ -104,13 +105,13 @@ when USE_TRACE:
 
     rows.add(@[text("Variable"), text("Value"), text("Offset")])
 
-    for (offset, name) in ctx.curModule.datasyms.items():
+    for (offset, name) in ctx.curModule.datasyms.items(sort=true):
       let
         raw = ctx.moduleIds[ctx.curModule.moduleId][offset * 2]
         val = toHex(cast[int](raw)).toLowerAscii()
       rows.add(@[text(name), text(val), text($(offset))])
 
-      return rows.quickTable(title = "Module scope")
+    return rows.quickTable(title = "Module scope")
 
   proc traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     if trace_on:
@@ -129,10 +130,9 @@ else:
   template traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     discard
 
-
 proc getStackTrace*(ctx: RuntimeState): Rope =
-  var cells: seq[seq[string]] = @[@["Caller module", "Caller line",
-                                   "Call target", "Call start"]]
+  var cells: seq[seq[string]] = @[@["Caller module", "Line #",
+                                   "Call target"]]
 
   for i in 1 ..< ctx.numFrames:
     var
@@ -147,10 +147,11 @@ proc getStackTrace*(ctx: RuntimeState): Rope =
     else:
       row.add(frame.targetmodule.modname & "." & frame.targetfunc.funcname)
 
-    row.add($(frame.targetline))
     cells.add(row)
 
   result = cells.quicktable(title = "Stack trace")
+  result.colWidths([(17, true), (15, true), (20, true)])
+  result.tpad(0, true).bpad(0, true)
 
 proc printStackTrace*(ctx: RuntimeState) =
   print ctx.getStackTrace()
@@ -518,7 +519,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         var err: bool
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = call_index(ctx.stack[ctx.sp], ix, ty, err)
+        ctx.stack[ctx.sp]     = call_index(c, ix, ty, err)
         ctx.stack[ctx.sp + 1] = cast[pointer](it)
 
         if err:
@@ -635,6 +636,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
       ctx.pushFrame(oldmodule, instr.lineno, nextInstruction.lineno,
                     fobj, ctx.curModule)
+      continue
     of ZCallModule:
       let
         toSave = ctx.ip shl 32 or ctx.curModule.moduleId
@@ -663,7 +665,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
     of ZFFICall:
       var
         ffiObj  = ctx.obj.ffiInfo[instr.arg]
-        p       = addr ctx.obj.staticData[instr.arg]
+        p       = addr ctx.obj.staticData[ffiObj.nameOffset]
         s       = $(cast[cstring](p))
         n       = ffiObj.argInfo.len() - 1 # Last is the return value
         sp      = ctx.sp
@@ -716,10 +718,10 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
 proc setupArena(ctx: RuntimeState, typeInfo: seq[(int, TypeId)], moduleIdSz: int) =
   # 128 bits per item.
-  var moduleId = newSeq[pointer](moduleIdSz * 16)
+  var moduleId = newSeq[pointer](moduleIdSz * 2)
 
   for (offset, tid) in typeInfo:
-    moduleId[offset + 1] = cast[pointer](tid)
+    moduleId[offset*2 + 1] = cast[pointer](tid)
 
   ctx.moduleIds.add(moduleId)
 

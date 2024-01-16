@@ -256,6 +256,12 @@ proc isBasicType*(id: TypeId): bool =
   if n >= 0 and n < len(dataTypeInfo):
     return true
 
+proc isContainerType*(id: TypeId): bool =
+  let to = id.idToTypeRef()
+
+  return to.kind in [C4List, C4Dict, C4Tuple]
+
+
 proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
   var t = t.followForwards()
 

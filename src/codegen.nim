@@ -112,7 +112,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
   var
     mem = ctx.staticData
     cells: seq[seq[Rope]] = @[@[atom("Address"), atom("Op"), atom("Arg 1"),
-                                atom("Arg 2"), atom("Type Info"),
+                                atom("Arg 2"), atom("Type Info"), atom("MID"),
                                 atom("Comment / label")]]
     row: seq[Rope]
 
@@ -124,6 +124,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       arg2 = text(" ")
       ty   = text(cast[TypeId](item.typeInfo).toString())
       lno  = item.lineNo
+      mid  = text($(item.moduleId))
       lbl: Rope = text(" ")
 
     if item.typeInfo == TBottom:
@@ -140,7 +141,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         ty  = text(" ")
         lbl = strong(str)
     of ZFFICall:
-      var p = addr ctx.staticData[item.arg]
+      let p = addr ctx.staticData[ctx.ffiInfo[item.arg].nameOffset]
       arg1 = text(hex(item.arg))
       lbl  = em(" ffi(" & $(cast[cstring](p)) & ")")
     of ZTCall:
@@ -174,18 +175,21 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         arg1 = text("-" & hex(-item.arg))
 
       if item.moduleId == -1:
-        vname = ctx.funcInfo[fn].syms[item.arg]
+        vname = ctx.funcInfo[fn].syms.lookup(item.arg).getOrElse("($...)")
       elif item.moduleId != 0:
-        vname = module.datasyms[item.arg]
+        vname = module.datasyms.lookup(item.arg).getOrElse("($...)")
       else:
-        vname = ctx.globals[item.arg]
+        vname = ctx.globals.lookup(item.arg).getOrElse("($...)")
 
       if item.op == ZPushAddr:
         prefix = "&"
 
       lbl = text(prefix & vname & " -> (stack)")
     of ZStoreTop, ZStoreImm:
-      var tmp: string
+      var
+        tmp:     string
+        tmpOpt:  Option[string]
+        dstname: string = "($...)"
 
       arg1 = text("+" & hex(item.arg))
 
@@ -196,11 +200,17 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         tmp = "(stack)"
 
       if item.moduleId == -1:
-        lbl = text(tmp & " -> " & ctx.funcInfo[fn].syms[item.arg])
+        tmpOpt = ctx.funcInfo[fn].syms.lookup(item.arg)
       elif item.moduleId != 0:
-        lbl = text(tmp & " -> " & module.datasyms[item.arg])
+        tmpOpt = module.datasyms.lookup(item.arg)
       else:
-        lbl = text(tmp & " -> " & ctx.globals[item.arg])
+        tmpOpt = ctx.globals.lookup(item.arg)
+
+      if tmpOpt.isSome():
+        dstName = tmpOpt.get()
+
+      lbl = text(tmp & " -> " & dstName)
+
     of ZPushStaticPtr:
       arg1 = text("+" & hex(item.arg))
       lbl  = text(mem.findStringAt(item.arg))
@@ -247,13 +257,13 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     else:
       discard
 
-    row = @[address, em($(item.op)), arg1, arg2, ty, lbl]
+    row = @[address, em($(item.op)), arg1, arg2, ty, mid, lbl]
 
     cells.add(row)
 
   result = quickTable(cells)
   result.colWidths([(12, true), (16, true), (14, true), (16, true),
-                    (0, false), (0, false)])
+                    (0, false), (0, false), (0, false)])
 
 proc disassembly*(ctx: ZObjectFile): Rope =
     for item in ctx.moduleContents:
@@ -265,8 +275,6 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
   while sym.actualSym != nil:
     sym = sym.actualSym
 
-  # Here, the moduleId is always the module the symbol was defined in,
-  # whether or not it's going on the stack.
   if sym.moduleId == 0 and not sym.global:
     # When we did our original scope scan on a function or module, we
     # didn't descend into block scopes.
@@ -281,7 +289,10 @@ proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
     else:
       ctx.mcur.objInfo.datasyms[sym.offset] = "tmp@" & $(sym.offset)
 
-    return ctx.mcur.objInfo.moduleId
+    if sym.inFunc:
+      return -1
+    else:
+      ctx.mcur.objInfo.moduleId
   else:
     return sym.moduleId
 
@@ -445,7 +456,7 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
     ctx.genPushImmediate(immediate)
   else:
     ctx.genPush(sym)
-
+  ctx.genLabel("Call FIndex")
   ctx.genTCall(FIndex)
 
 proc genPushStaticString(ctx: CodeGenState, name: string) =
@@ -519,13 +530,17 @@ proc genIterationCheck(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
 
   if not cur.whileLoop:
+    ctx.genLabel("Push $i")
     ctx.genPush(cur.loopVars[0])
+    ctx.genLabel("Push $len")
     ctx.genPush(cur.loopVars[^1])
     ctx.genEqual()
     ctx.startJnz(target = n)
 
     if cur.condition.contents.kind != IrRange:
+      ctx.genLabel("Push $container")
       ctx.genPush(cur.loopVars[^2]) # Container on stack.
+      ctx.genLabel("Push $i again")
       ctx.genContainerIndex(cur.loopVars[0])
       if cur.loopVars.len() == 4:
         # This is a for x in list, so there's no array to unpack,
@@ -687,7 +702,7 @@ proc genJump(ctx: CodeGenState, cur: IrContents) =
 proc genLitLoad(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
 
-  if cur.items.len() != 0:
+  if n.tid.isContainerType():
     for item in cur.items:
       ctx.oneIrNode(item)
 
@@ -697,9 +712,9 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
   else:
     if cur.byVal:
       ctx.genPushImmediate(cast[int64](n.value.getOrElse(nil)))
-    else:
-      let offset = ctx.addStaticObject(n.value.get(), cur.sz)
-      ctx.genCopyStaticObject(offset, cur.sz, n.tid)
+    elif n.value.isSome():
+        let offset = ctx.addStaticObject(n.value.get(), cur.sz)
+        ctx.genCopyStaticObject(offset, cur.sz, n.tid)
 
 proc genMember(ctx: CodeGenState, cur: IrContents) =
   ctx.genPushStaticString(cur.attrSym.name)
@@ -744,10 +759,7 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
     ctx.oneIrNode(cur.actuals[i])
 
 
-  if cur.toCall.retVal == nil:
-    tid = TVoid
-  else:
-    tid = cur.toCall.retVal.tid.followForwards()
+  tid = cur.toCall.getTid().idToTypeRef().items[^1].tcopy()
 
   for i, item in ctx.zobj.ffiInfo:
     let
@@ -755,17 +767,15 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
       s = $(cast[cstring](p))
 
     if s == cur.toCall.externName:
-      ctx.emitInstruction(ZFFICall, arg = i, tid = tid)
+      ctx.emitInstruction(ZFFICall, arg = i, tid = cur.toCall.tid)
       found = true
       break
 
   if not found:
     unreachable
 
-  # let stroffset = ctx.addStaticObject(cur.toCall.externName)
-  # ctx.emitInstruction(ZFFICall, arg = stroffset, tid = tid)
-
   ctx.emitInstruction(ZMoveSp, - cur.actuals.len())
+
   if tid != TVoid:
     ctx.emitInstruction(ZPushRes, tid = tid)
 
@@ -1040,7 +1050,7 @@ proc genModule(ctx: CodeGenState, m: Module) =
 
   ctx.genLabel("Module '" & m.modname & "' :")
 
-  for (_, sym) in m.moduleScope.table.items():
+  for (_, sym) in m.moduleScope.table.items(sort=true):
     if sym.pInfo != nil:
       ctx.addParameter(sym)
 
@@ -1050,7 +1060,7 @@ proc genModule(ctx: CodeGenState, m: Module) =
   curMod.objInfo.initSize = numInstructions  * sizeof(ZInstruction)
   ctx.genLabel("Functions: ")
 
-  for (_, sym) in m.moduleScope.table.items():
+  for (_, sym) in m.moduleScope.table.items(sort=true):
     for fn in sym.fimpls:
       if fn.externInfo != nil:
         continue
@@ -1065,7 +1075,7 @@ proc genModule(ctx: CodeGenState, m: Module) =
 
 proc applyArenaId(ctx: CodeGenState, scope: Scope, moduleId: int,
                   curFnId: var int) =
-  for (name, sym) in scope.table.items():
+  for (name, sym) in scope.table.items(sort=true):
     sym.moduleId = moduleId
     for fn in sym.fimpls:
       if fn.externInfo != nil:
@@ -1086,7 +1096,7 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
   # both the module and in the global state for this stuff. But, for
   # the moment, I'm only implementing the initial compilation /
   # linking, so we just plop everything in the global space.
-  for (name, sym) in m.moduleScope.table.items():
+  for (name, sym) in m.moduleScope.table.items(sort=true):
     if not sym.isFunc:
       continue
 
@@ -1167,10 +1177,10 @@ proc setupModules(ctx: CodeGenState) =
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals, ctx.zobj.symTypes)
   ctx.zobj.globalScopeSz = ctx.cc.globalScope.scopeSize
 
-  for (_, module) in ctx.cc.modules.items():
+  for (_, module) in ctx.cc.modules.items(sort=true):
     ctx.addFfiInfo(module)
 
-  for (_, module) in ctx.cc.modules.items():
+  for (_, module) in ctx.cc.modules.items(sort=true):
     var mi = ZModuleInfo(moduleId: curArena, modname: module.modname,
                          moduleVarSize: module.moduleScope.scopeSize)
     module.objInfo = mi

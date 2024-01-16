@@ -3,10 +3,10 @@ import parse, strutils, specs
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.getTid()
 
-proc initScope*(): Scope =
-  result        = Scope()
+proc initScope*(fn = false): Scope =
+  result         = Scope()
+  result.fnScope = fn
   result.table.initDict()
-
 
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
@@ -48,6 +48,9 @@ proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
       ctx.typeCheck(sym, tid)
   else:
     sym = SymbolInfo(name: n, tid: tid, isFunc: isFunc, module: ctx)
+
+    if scope.fnScope:
+      sym.inFunc = true
     scope.table[n] = sym
     scope.numSyms += 1
     result = some(sym)
@@ -547,3 +550,10 @@ proc calculateOffsets*(s: Scope, startOffset = 0) =
       s.scopeSize = item.scopeSize
 
   s.sized = true
+
+proc addParent*(child, parent: Scope) =
+  child.parent = parent
+  parent.childScopes.add(child)
+
+  if parent.fnScope:
+    child.fnScope = true

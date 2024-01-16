@@ -1,4 +1,4 @@
-import nimutils, strutils, ffi
+import nimutils, strutils, ffi, ztypes/base
 
 proc splitwrap*(s1: cstring, s2: cstring): seq[cstring] {.exportc, cdecl.} =
   let preResult = `$`(s1).split($(s2))
@@ -16,11 +16,36 @@ proc callprint*(s1: Rope) {.exportc, cdecl.} =
   let p = cast[pointer](s1)
   print(s1)
 
-proc calltable*(s1: seq[seq[Rope]]): Rope {.exportc, cdecl.} =
-  return s1.quickTable()
+proc calltable*(s1: pointer): Rope {.exportc, cdecl.} =
+  # For now because of the way we're packing we have to do a little dance.
+  var
+    actual: seq[seq[Rope]]
+    ropeZl = extractRef[Zlist](s1)
 
-proc callflattable*(s1: seq[Rope]): Rope {.exportc, cdecl.} =
-  return s1.instantTable()
+  for item in ropeZl.l:
+    let one = extractRef[Zlist](item)
+
+    var row: seq[Rope]
+    for cell in one.l:
+      row.add(cast[Rope](cell))
+    actual.add(row)
+
+  return actual.quickTable()
+
+proc callflattable*(s1: pointer): Rope {.exportc, cdecl.} =
+  let
+    ropeZl = extractRef[Zlist](s1)
+    l      = cast[seq[Rope]](ropeZl.l)
+
+  var
+    table: seq[Rope]
+
+  result = l.instantTable()
+  GC_ref(result)
+
+proc listlen*(p: pointer): int {.exportc, cdecl.} =
+  let l = extractRef[Zlist](p)
+  return l.l.len()
 
 addStaticFunction("splitwrap", splitwrap)
 addStaticFunction("echoanint",  echoanint)
@@ -28,3 +53,4 @@ addStaticFunction("callecho",  callecho)
 addStaticFunction("callprint", callprint)
 addStaticFunction("calltable", calltable)
 addStaticFunction("callflattable", callflattable)
+addStaticFunction("listlen", listlen)

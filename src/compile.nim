@@ -69,6 +69,7 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
                                 moduleKey)
 
   ctx.loadModule(module)
+
   return some(module)
 
 proc isRelativePath(loc: string): bool =
