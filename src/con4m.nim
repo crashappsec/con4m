@@ -19,12 +19,10 @@
 # - Swap in hatrack lists (and add rings?).
 # - Update the pretty printer.
 # - Restrict the leading '$' properly.
-
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - In showCallMistakes(), show which functions have the wrong # of args,
 #   and which parameters are right / wrong.
 # - finish hasExitToOuterBlock in CFG.
-# - Handle negative indexes in call_...index
 # - Possibly allow generating a C API based on the spec.
 # - Doc API.
 # - Enums should be global by default.  Add a 'private' for enums,
@@ -34,7 +32,6 @@
 # - Add code gen for 'lock' operator.
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
-# - Default auto-import of stdlib modules.
 # - Vestigial 'fail' code and hint cleanups
 # - Documentation.
 # - Sort errors by file / line (they come out by phase in IR portion).

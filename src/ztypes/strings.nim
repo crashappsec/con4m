@@ -455,4 +455,5 @@ proc rich_copy(p: pointer): pointer {.cdecl, exportc.} =
   let r = cast[Rope](p)
   var r2 = r.copy()
   GC_ref(r2)
+  GC_ref(r2)
   return cast[pointer](r2)

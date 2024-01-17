@@ -39,7 +39,7 @@ proc runInitialTests(verbose = true) =
     printIfVerbose(h2("Test: " & name))
 
     let
-      output = runCmdGetEverything("./con4m", @[item])
+      output = runCmdGetEverything("./con4m", @["--debug", item])
       kat    = tryToLoadFile(dir.joinPath(name & ".kat")).strip()
       errout = output.getStderr().strip()
       excode = output.getExit()

@@ -5,7 +5,7 @@ import base, ../common, strutils
 var listOps = newVtable()
 
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
-              contents: seq[pointer], err: var string): pointer {.
+              contents: seq[pointer], err: var string): FlexArray[pointer] {.
                 exportc, cdecl.}
 
 proc list_repr(pre: pointer): cstring {.exportc, cdecl.} =
@@ -19,116 +19,117 @@ proc list_repr(pre: pointer): cstring {.exportc, cdecl.} =
 
 proc call_eq(v1, v2: pointer, t: TypeId): bool {.importc, cdecl.}
 
-proc list_eq(l1, l2: pointer): bool {.exportc, cdecl.} =
-  let
-    ro1 = extractRef[ZList](l1)
-    ro2 = extractRef[Zlist](l2)
-
-  if ro1.l.len() != ro2.l.len():
-    return false
-
-  if ro1.l.len() == 0:
+proc list_eq(l1, l2: FlexArray[pointer]): bool {.exportc, cdecl.} =
+  if l1 == l2:
     return true
 
-  if ro1.tid.followForwards() != ro2.tid.followForwards():
+  let
+    v1 = l1.items()
+    v2 = l2.items()
+
+  if v1.len() != v2.len():
     return false
 
-  let
-    typeObj = ro1.tid.idToTypeRef()
-    subtype = typeObj.items[0]
+  if v1.len() == 0:
+    return true
 
-  for i in 0 ..< ro1.l.len():
-    if not call_eq(ro1.l[i], ro2.l[i], subtype):
+  let
+    tid1    = cast[TypeId](l1.metadata)
+    tid2    = cast[TypeId](l2.metadata)
+    subtype = tid1.idToTypeRef().items[0]
+
+  if tid1 != tid2:
+    return false
+
+  for i, item in v1:
+    if not call_eq(item, v2[i], subtype):
       return false
 
   return true
 
-proc list_len(p: pointer): int {.exportc, cdecl.} =
-  let zlist = extractRef[ZList](p)
+proc list_len(l1: FlexArray[pointer]): int {.exportc, cdecl.} =
+  return l1.len()
 
-  return zlist.l.len()
-
-proc z_maybe_incref(p: pointer, t: TypeId) {.importc, cdecl.}
 proc toString(x: TypeId): string {.importc, cdecl.}
 
-proc list_index(p: pointer, i: int, err: var bool): pointer
+proc list_index(arr: FlexArray[pointer], i: int, err: var bool): pointer
     {.exportc, cdecl.} =
-  let zlist = extractRef[ZList](p)
 
-  if i < 0 or i >= zlist.l.len():
+  let opt = arr.get(i)
+
+  if opt.isNone():
     err = true
-    return
+  else:
+    result = opt.get()
 
-  result = zlist.l[i]
+  # let to = cast[TypeId](arr.metadata.idToTypeRef())
 
-  let to = zlist.tid.idToTypeRef()
-  z_maybe_incref(result, to.items[0])
-
-proc list_assign_ix(p: pointer, o: pointer, i: int, err: var bool)
+proc list_assign_ix(p: FlexArray[pointer], o: pointer, i: int, err: var bool)
     {.exportc, cdecl.} =
-  let zlist = extractRef[Zlist](p)
+  err = not p.put(i, o)
 
-  if i < 0 or i >= zlist.l.len():
-    err = true
-    return
-
-  zlist.l[i] = o
-
-proc list_slice(p: pointer, i, j: int, err: var bool): pointer
-    {.exportc, cdecl.} =
-  let zlist = extractRef[ZList](p)
+proc list_slice(p: FlexArray[pointer], i, j: int, err: var bool):
+               FlexArray[pointer] {.exportc, cdecl.} =
+  let view = p.items()
   var
-    newlist: ZList
     i = i
     j = j
+    l = view.len()
 
   if i < 0:
-    i += zlist.l.len()
+    i += l
   if j < 0:
-    j += zlist.l.len()
+    j += l
 
-  if i >= j or i >= zlist.l.len():
-    newList = ZList(l: @[], tid: zlist.tid)
+  if i >= j or i >= l:
+    result = newArrayFromSeq[pointer](@[])
   else:
-    newList = ZList(l: zlist.l[i ..< j], tid: zlist.tid)
-  result = newRefValue(newlist, zlist.tid)
+    result = newArrayFromSeq[pointer](view[i ..< j])
 
-proc list_assign_slice(c, v: pointer, i, j: int, err: var bool)
+
+  result.metadata = p.metadata
+
+proc list_assign_slice(c, v: FlexArray[pointer], i, j: int, err: var bool)
     {.exportc, cdecl.} =
   var
-    l: seq[pointer]
-    r: seq[pointer]
-    clist = extractRef[Zlist](c)
-    vlist = extractRef[Zlist](v)
+    left, right: seq[pointer]
+    orig  = c.items()
+    slice = v.items()
+    l     = orig.len()
     i     = i
     j     = j
 
   if i < 0:
-    i += clist.l.len()
+    i += l
   if j < 0:
-    j += clist.l.len()
+    j += l
   if i > 0:
-    l = clist.l[0 ..< i]
-  if j < clist.l.len():
-    r = clist.l[j .. ^1]
+    left = orig[0 ..< i]
+  if j < l:
+    right = orig[j .. ^1]
 
-  clist.l = l & vlist.l & r
+  let
+    oldptr  = c.arr
+    newlist = newArrayFromSeq[pointer](left & slice & right)
+
+  c.arr = newlist.arr
+  flexarray_delete(oldptr)
 
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
-proc list_copy(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
+
+proc list_copy(p: FlexArray[pointer], t: TypeId): FlexArray[pointer]
+               {.exportc, cdecl.} =
   var
-    list = extractRef[Zlist](p)
+    dup: seq[pointer]
+    view = p.items()
+    tid  = cast[TypeId](p.metadata)
+    tobj = tid.idToTypeRef()
 
-  var
-    tobj = list.tid.idToTypeRef()
-    s2: seq[pointer]
+  for item in view:
+    dup.add(call_copy(cast[pointer](item), tobj.items[0]))
 
-  for item in list.l:
-    s2.add(call_copy(item, tobj.items[0]))
-
-  var zl = ZList(l: s2, tid: t)
-
-  result = newRefValue(zl, t)
+  result          = newArrayFromSeq[pointer](dup)
+  result.metadata = p.metadata
 
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FContainerLit] = cast[pointer](list_lit)
@@ -147,8 +148,10 @@ TList  = addDataType(name = "list", concrete = false, ops = listOps,
 registerSyntax(TList, STList, @["l"], primary = true)
 
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
-              contents: seq[pointer], err: var string): pointer =
+              contents: seq[pointer], err: var string):
+                FlexArray[pointer] {.importc, cdecl.} =
 
-  var zl = ZList(l: contents, tid: t)
+  result          = newArrayFromSeq[pointer](contents)
+  result.metadata = cast[pointer](t)
 
-  result = newRefValue(zl, t)
+  GC_ref(result)

@@ -4,7 +4,6 @@ func crappylen(x: list[`t]) {
   }
 }
 
-var r: rich
 r = "Hello, world!"'h2
 
 print(r)
@@ -25,9 +24,6 @@ n =  [["Name"'r,      "Country"'r, "City"'r],
       ["James II"'em, "Germany"'r, "Berlin"'r]]
 
 assert crappylen(n) == len(n)
-
-print(table(n))
-
 
 print("Hello, world!"'h1 + "Here's "'r + "emphasis"'em + " for my table: "'r)
 print(table(n))

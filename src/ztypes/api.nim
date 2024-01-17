@@ -230,26 +230,18 @@ proc call_plus_eq_ref*(v1, v2: pointer, t: TypeId) {.exportc, cdecl.} =
 
 proc z_maybe_incref*(p: pointer, t: TypeId) {.exportc, cdecl.} =
   if not t.isValueType():
-    let v = cast[RefValue[RootRef]](p)
-    if not v.staticVal:
-      v.refCount += 1
-      GC_ref(v.item)
+    let v = cast[RootRef](p)
+    GC_ref(v)
 
 proc z_maybe_decref*[T](p: pointer, t: TypeId) {.exportc, cdecl.} =
   if not t.isValueType():
-    let v = cast[RefValue[RootRef]](p)
-    if not v.staticVal:
-      v.refCount -= 1
-      GC_unref(v.item)
+    let v = cast[RootRef](p)
+    GC_unref(v)
 
 proc z_incref*(p: pointer) {.exportc, cdecl.} =
-  let v = cast[RefValue[RootRef]](p)
-  if not v.staticVal:
-    v.refCount += 1
-    GC_ref(v.item)
+  let v = cast[RootRef](p)
+  GC_ref(v)
 
 proc z_decref*[T](p: pointer) {.exportc, cdecl.} =
-  let v = cast[RefValue[RootRef]](p)
-  v.refCount -= 1
-  if not v.staticVal:
-    GC_unref(v.item)
+  let v = cast[RootRef](p)
+  GC_unref(v)

@@ -1,8 +1,10 @@
 nimcache/
 nimblecache/
 htmldocs/
-tests/t[^.]*[^m]
+test
+cap10
 tags
 *.dSYM
+*.dif
 /con4m
 files/con4m/parse

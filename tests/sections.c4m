@@ -14,6 +14,7 @@ hello {
 
 # These no longer work, as it is too easy to do this on accident.
 # But the error probably should be improved.
+
 hello world
 hello "world"
 
