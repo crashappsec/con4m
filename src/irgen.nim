@@ -119,6 +119,8 @@ proc unifyOrCast(ctx:   Module,
       let t = item.tid.followForwards()
       if t == curTid:
         continue
+      if t.unify(curTid) != TBottom:
+        continue
       let newType = ctx.findPromotionType(curTid, t)
       if newType == curTid:
         nodes[i].addCast(curTid)
