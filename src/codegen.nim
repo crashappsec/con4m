@@ -65,7 +65,7 @@ proc addStaticObject(ctx: CodeGenState, p: pointer, l: int): int =
   for i in 0 ..< l:
     ctx.zobj.staticData.add(arr[i])
 
-  dealloc(p)
+  #dealloc(p)
 
 proc addStaticObject(ctx: CodeGenState, s: string, addnil = true): int =
   if s.len() == 0:
@@ -313,7 +313,8 @@ proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
     if ntid == TBottom:
       ntid = sym.getTid()
 
-    ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = ntid, moduleId = moduleId)
+    ctx.emitInstruction(ZStoreTop, sym.getOffset(), tid = ntid,
+                        moduleId = moduleId)
     ctx.emitInstruction(ZPop, tid = ntid)
 
 proc genNop(ctx: CodeGenState) =
@@ -321,7 +322,7 @@ proc genNop(ctx: CodeGenState) =
 
 proc genCopyStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
-  ctx.emitInstruction(ZSObjNew, l, offset, tid.getTid(), moduleId = -2)
+  ctx.emitInstruction(ZSObjNew, l, offset, tid, moduleId = -2)
 
 proc genLabel(ctx: CodeGenState, label: string) =
   ctx.emitInstruction(ZNop, 1, ctx.addStaticObject(label))
@@ -336,7 +337,8 @@ proc genPush(ctx: CodeGenState, sym: SymbolInfo) =
   else:
     op = ZPushPtr
 
-  ctx.emitInstruction(op, sym.getOffset(), tid = sym.getTid(), moduleId = moduleId)
+  ctx.emitInstruction(op, sym.getOffset(), tid = sym.getTid(),
+                      moduleId = moduleId)
 
 proc genPushImmediate(ctx: CodeGenState, immediate: int, tid = TInt) =
   ctx.emitInstruction(ZPushImm, immediate = immediate, tid = tid.getTid())
@@ -708,8 +710,8 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
     if cur.byVal:
       ctx.genPushImmediate(cast[int64](n.value.getOrElse(nil)))
     elif n.value.isSome():
-        let offset = ctx.addStaticObject(n.value.get(), cur.sz)
-        ctx.genCopyStaticObject(offset, cur.sz, n.tid)
+      let offset = ctx.addStaticObject(n.value.get(), cur.sz)
+      ctx.genCopyStaticObject(offset, cur.sz, n.tid)
 
 proc genMember(ctx: CodeGenState, cur: IrContents) =
   ctx.genPushStaticString(cur.attrSym.name)
@@ -989,8 +991,9 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
   of IrAssign:
     ctx.genAssign(n)
   of IrCast:
-    # TODO; for now just ignore
     ctx.oneIrNode(n.contents.srcData)
+    ctx.genPushImmediate(cast[int](n.tid), TVoid)
+    ctx.emitInstruction(ZTCall, FCastFn, tid = n.contents.srcData.tid)
   of IrAssert:
     ctx.oneIrNode(n.contents.assertion)
     ctx.emitInstruction(ZAssert)

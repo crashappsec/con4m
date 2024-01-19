@@ -2,32 +2,6 @@ import base, unicode, ordinals
 
 from strutils import tohex, tolowerascii
 
-# These all need forward declarations because they refer to types that
-# haven't been declared yet.
-proc cast_str_to_u32(pre: pointer): pointer {.cdecl.}
-proc cast_str_to_rich(pre: pointer): pointer {.cdecl.}
-proc cast_u32_to_rich(pre: pointer): pointer {.cdecl.}
-proc cast_u32_to_u8(pre: pointer): pointer {.cdecl.}
-proc cast_u32_to_str(pre: pointer): pointer {.cdecl.}
-proc cast_rich_to_u32(pre: pointer): pointer {.cdecl.}
-proc cast_rich_to_u8(pre: pointer): pointer {.cdecl.}
-proc cast_rich_to_str(pre: pointer): pointer {.cdecl.}
-proc get_cast_from_string(dt: DataType, err: var string): pointer {.cdecl.}
-proc get_cast_from_u32(dt: Datatype, err: var string): pointer {.cdecl.}
-proc get_cast_from_rich(dt: Datatype, err: var string): pointer {.cdecl.}
-proc str_add(a, b: pointer): pointer {.cdecl.}
-proc buf_add(a, b: pointer): pointer {.cdecl.}
-proc u32_add(a, b: pointer): pointer {.cdecl.}
-proc rich_add(a, b: pointer): pointer {.cdecl.}
-proc str_slice(a: pointer, b, c: int): pointer {.cdecl.}
-proc buf_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
-proc u32_slice(a: pointer, b, c: int, err: var bool): pointer {.cdecl.}
-proc rich_load_lit(cstr: cstring, l: cint): pointer {.cdecl.}
-proc str_copy(p: pointer): pointer {.cdecl, exportc.}
-proc buf_copy(p: pointer): pointer {.cdecl, exportc.}
-proc u32_copy(p: pointer): pointer {.cdecl, exportc.}
-proc rich_copy(p: pointer): pointer {.cdecl, exportc.}
-
 let richLitMods = @["r", "md", "html", "h1", "h2", "h3",
                     "h4", "h5", "h6", "p", "em", "i", "b",
                     "strong", "underline", "pre", "code",
@@ -38,297 +12,133 @@ var
   utf32Ops = newVTable()
   richOps  = newVTable()
 
-
 proc str_new_lit(s: string, st: SyntaxType, lmod: string, l: var int,
                  err: var string): pointer {.cdecl.} =
   l = s.len() + 1
-  result = alloc0(l)
-  copyMem(result, addr s[0], l - 1)
-
+  result = cast[pointer](newC4Str(l))
+  copyMem(result, addr s[0], l)
 
 proc rich_new_lit(s: string, st: SyntaxType, lmod: string,
                   l: var int, err: var string): pointer {.cdecl.} =
   var toStore: string
 
   toStore = lmod & ":" & s
-
   l      = toStore.len() + 1
-  result = alloc0(l)
 
-  copyMem(result, addr toStore[0], l - 1)
+  result = cast[pointer](newC4Str(l))
+  copyMem(result, addr toStore[0], l)
 
 proc str_repr(pre: pointer): string {.cdecl.} =
   let s = cast[cstring](pre)
   return $(s)
 
-proc u32_repr(pre: pointer): string {.cdecl.} =
-  let s = cast[seq[Rune]](pre)
+proc u32_repr(pre: C4Str): string {.cdecl.} =
+  var
+    l = (pre.len() div 4) * 4  # If there's a byte for a trailing null, nuke it
+    s = newSeq[Rune](int(l))
+
+  copyMem(addr s[0], cast[pointer](pre), l)
   return $(s)
 
-proc rich_repr(pre: pointer): string {.cdecl.} =
-  let s = cast[Rope](pre)
+proc rich_repr(s: Rope): string {.cdecl.} =
   return s.toUtf8()
 
-proc str_eq(a, b: pointer): bool {.cdecl.} =
-  let
-    x = cast[string](a)
-    y = cast[string](b)
+proc rich_pluseq(a: pointer, b: Rope): void {.cdecl.} =
+  # I *think* I can declare `a` a `var Rope` here, but just in case.
+  var a = cast[Rope](a)
 
-  return x == y
+  a += b
 
-proc u32_eq(a, b: pointer): bool {.cdecl.} =
-  let
-    x = cast[seq[Rune]](a)
-    y = cast[seq[Rune]](b)
+proc rich_add(a, b: Rope): Rope {.cdecl.} =
+  return a + b
 
-  return x == y
-
-# For now, we just use the 'by value' cmp, which is really by ref for
-# Rich.
-# proc rich_eq(a, b: pointer): bool {.cdecl.} =
-
-proc str_lt(a, b: pointer): bool {.cdecl.} =
-  let
-    x = cast[string](a)
-    y = cast[string](b)
-
-  return x < y
-
-proc str_gt(a, b: pointer): bool {.cdecl.} =
-  let
-    x = cast[string](a)
-    y = cast[string](b)
-
-  return x > y
-
-proc u32_lt(a, b: pointer): bool {.cdecl.} =
-  ## Todo... faster comparisons here.
-  let
-    x = cast[seq[Rune]](a)
-    y = cast[seq[Rune]](b)
-
-  return $(x) < $(y)
-
-proc u32_gt(a, b: pointer): bool {.cdecl.} =
-  let
-    x = cast[seq[Rune]](a)
-    y = cast[seq[Rune]](b)
-
-  return $(x) > $(y)
-
-proc rich_pluseq(a, b: pointer): void {.cdecl.} =
-  var
-    x = cast[Rope](a)
-    y = cast[Rope](b)
-
-  x += y
-
-proc str_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
-  var x = cast[string](a)
+proc str_index(a: C4Str, b: int, err: var bool): int64 {.cdecl.} =
+  var x = cast[cstring](a)
 
   if b < 0 or b >= x.len():
     err = true
-    return nil
+    return 0
 
-  return cast[pointer](int64(x[b]))
+  return int64(x[b])
 
-proc u32_index(a: pointer, b: int, err: var bool): pointer {.cdecl.} =
-  var x = cast[seq[Rune]](a)
+proc u32_index(a: pointer, b: int, err: var bool): int64 {.cdecl.} =
+  # Pointer is to the char* part of a C4String.
+  let bytelen = b * 4
 
-  if b < 0 or b >= x.len():
+  if bytelen < 0 or bytelen >= c4str_len(cast[C4Str](a)):
     err = true
-    return nil
+    return 0
 
-  return cast[pointer](int64(x[b]))
+  let p = cast[ptr Rune](cast[uint64](a) + uint64(bytelen))
 
-
-proc str_len(p: pointer): int {.cdecl.} =
-  let s = cast[string](p)
-  return s.len()
-
-proc u32_len(p: pointer): int {.cdecl.} =
-  let s = cast[seq[Rune]](p)
-  return s.len()
+  return int64(p[])
 
 proc rich_len(p: pointer): int {.cdecl.} =
   let r = cast[string](p)
   return r.runeLength()
 
-strOps[FRepr]         = cast[pointer](str_repr)
-strOps[FCastFn]       = cast[pointer](get_cast_from_string)
-strOps[FEq]           = cast[pointer](str_eq)
-strOps[FLt]           = cast[pointer](str_lt)
-strOps[FGt]           = cast[pointer](str_gt)
-strOps[FAdd]          = cast[pointer](str_add)
-strOps[FIndex]        = cast[pointer](str_index)
-strOps[FSlice]        = cast[pointer](str_slice)
-strOps[FNewLit]       = cast[pointer](str_new_lit)
-strOps[FCopy]         = cast[pointer](str_copy)
-strOps[FLen]          = cast[pointer](str_len)
-bufOps[FRepr]         = cast[pointer](str_repr)
-bufOps[FCastFn]       = cast[pointer](get_cast_from_string)
-bufOps[FEq]           = cast[pointer](str_eq)
-bufOps[FLt]           = cast[pointer](str_lt)
-bufOps[FGt]           = cast[pointer](str_gt)
-bufOps[FAdd]          = cast[pointer](buf_add)
-bufOps[FIndex]        = cast[pointer](str_index)
-bufOps[FSlice]        = cast[pointer](buf_slice)
-bufOps[FNewLit]       = cast[pointer](str_new_lit)
-bufOps[FCopy]         = cast[pointer](buf_copy)
-bufOps[FLen]          = cast[pointer](str_len)
-utf32Ops[FRepr]       = cast[pointer](u32_repr)
-utf32Ops[FStaticRepr] = cast[pointer](u32_repr)
-utf32Ops[FCastFn]     = cast[pointer](get_cast_from_u32)
-utf32Ops[FEq]         = cast[pointer](u32_eq)
-utf32Ops[FLt]         = cast[pointer](u32_lt)
-utf32Ops[FGt]         = cast[pointer](u32_gt)
-utf32Ops[FAdd]        = cast[pointer](u32_add)
-utf32Ops[FIndex]      = cast[pointer](u32_index)
-utf32Ops[FSlice]      = cast[pointer](u32_slice)
-utf32Ops[FNewLit]     = cast[pointer](str_new_lit)
-utf32Ops[FCopy]       = cast[pointer](u32_copy)
-utf32Ops[FLen]        = cast[pointer](u32_len)
-richOps[FRepr]        = cast[pointer](rich_repr)
-richOps[FStaticRepr]  = cast[pointer](str_repr)
-richOps[FCastFn]      = cast[pointer](get_cast_from_rich)
-richOps[FEq]          = cast[pointer](value_eq)
-richOps[FAdd]         = cast[pointer](rich_add)
-richOps[FNewLit]      = cast[pointer](rich_new_lit)
-richOps[FLoadLit]     = cast[pointer](rich_load_lit)
-richOps[FCopy]        = cast[pointer](rich_copy)
-richOps[FLen]         = cast[pointer](rich_len)
-richOps[FPlusEqRef]   = cast[pointer](rich_pluseq)
+proc u32_len(s: C4Str): int {.cdecl.} =
+  return s.len() div 4
 
-let
-  TString* = addDataType(name = "string", concrete = true,
-                                strTy = true, ops = strOps)
-  TBuffer* = addDataType(name = "buffer", concrete = true,
-                                strTy = true, ops = bufOps)
-  TUtf32*  = addDataType(name = "utf32",  concrete = true,
-                                strTy = true, ops = utf32Ops)
-  TRich*   = addDataType(name = "rich",   concrete = true, ops = richOps)
+proc rich_copy(r: Rope): Rope {.cdecl, exportc.} =
+  result = r.copy()
+  GC_ref(result)
 
-registerSyntax(TString, STStrQuotes, @["u", "u8"], primary = true)
-registerSyntax(TBuffer, STStrQuotes, @["bin"])
-registerSyntax(TUtf32,  STStrQuotes, @["u32"])
-registerSyntax(TRich,   STStrQuotes, richLitMods)
-
-proc str_add(a, b: pointer): pointer =
+proc cast_str_to_u32(pre: C4Str, tfrom, tto: TypeId): C4Str =
   let
-    x = cast[string](a)
-    y = cast[string](b)
+    l = pre.len()
+    s = `$`(cast[cstring](pre)).toRunes()
 
-  return newRefValue[string](x & y, TString)
+  result = newC4Str(l * 4)
 
-proc buf_add(a, b: pointer): pointer =
+  if l != 0:
+    copyMem(cast[pointer](result), addr s[0], l)
+
+proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId): pointer =
+  let s = $(cast[cstring](pre))
+  var rope = text(s)
+
+  GC_ref(rope)
+
+  return cast[pointer](rope)
+
+proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId): Rope =
+  var
+    l = (pre.len() div 4) * 4
+    s = newSeq[Rune](int(l))
+
+  if l != 0:
+    copyMem(addr s[0], cast[pointer](pre), l)
+
+  result = text($(s))
+  GC_ref(result)
+
+proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId): C4Str =
+  var
+    l = (pre.len() div 4) * 4
+    s = newSeq[Rune](int(l))
+
+  if l != 0:
+    copyMem(addr s[0], cast[pointer](pre), l)
+
+  result = newC4Str($s)
+
+proc cast_rich_to_u32(r: Rope, tfrom, to: TypeId): C4Str =
   let
-    x = cast[string](a)
-    y = cast[string](b)
-
-  return newRefValue[string](x & y, TBuffer)
-
-proc cast_str_to_u32(pre: pointer): pointer =
-  let s = cast[string](pre)
-
-  return newRefValue[seq[Rune]](s.toRunes(), TUtf32)
-
-proc cast_str_to_rich(pre: pointer): pointer =
-  let s = cast[string](pre)
-
-  return newRefValue[Rope](text(s), TRich)
-
-proc cast_u32_to_rich(pre: pointer): pointer =
-  let runes = cast[seq[Rune]](pre)
-
-  return newRefValue[Rope](text(`$`(runes)), TRich)
-
-proc cast_u32_to_u8(pre: pointer): pointer =
-  let s = cast[seq[Rune]](pre)
-
-  return newRefValue[string](`$`(s), TBuffer)
-
-proc cast_u32_to_str(pre: pointer): pointer =
-  let s = cast[seq[Rune]](pre)
-
-  return newRefValue[string](`$`(s), TString)
-
-proc cast_rich_to_u32(pre: pointer): pointer =
-  let
-    r = cast[Rope](pre)
     s = r.toUtf8(r.runeLength())
     u = s.toRunes()
+    l = u.len() * 4
 
-  return newRefValue[seq[Rune]](u, TUtf32)
+  result = newC4Str(l)
+  if l != 0:
+    copyMem(cast[pointer](result), addr u[0], l)
 
-proc cast_rich_to_u8(pre: pointer): pointer =
+proc cast_rich_to_str(r: Rope, tfrom, tto: TypeId): C4Str =
+  return newC4Str(r.toUtf8(r.runeLength()))
+
+proc str_slice(a: pointer, b, c: int, err: bool): pointer =
   let
-    r = cast[Rope](pre)
-    s = r.toUtf8(r.runeLength())
-
-  return newRefValue[string](s, TBuffer)
-
-proc cast_rich_to_str(pre: pointer): pointer =
-  let
-    r = cast[Rope](pre)
-    s = r.toUtf8(r.runeLength())
-
-  return newRefValue[string](s, TString)
-
-proc get_cast_from_string(dt: DataType, err: var string): pointer =
-  if dt.dtid == TUtf32:
-    return cast[pointer](cast_str_to_u32)
-  elif dt.dtid == TRich:
-    return cast[pointer](cast_str_to_rich)
-  elif dt.dtid in [TString, TBuffer]:
-    return cast[pointer](cast_identity)
-  elif dt.dtid == TBool:
-    return cast[pointer](cast_to_bool)
-
-proc get_cast_from_u32(dt: Datatype, err: var string): pointer =
-  if dt.dtid == TUtf32:
-    return cast[pointer](cast_identity)
-  elif dt.dtid == TRich:
-    return cast[pointer](cast_u32_to_rich)
-  elif dt.dtid == TBuffer:
-    return cast[pointer](cast_u32_to_u8)
-  elif dt.dtid == TString:
-    return cast[pointer](cast_u32_to_str)
-  elif dt.dtid == TBool:
-    return cast[pointer](cast_to_bool)
-
-proc get_cast_from_rich(dt: Datatype, err: var string): pointer =
-  if dt.dtid == TUtf32:
-    result = cast[pointer](cast_rich_to_u32)
-    err    = "LoseFormat"
-  elif dt.dtid == TRich:
-    result = cast[pointer](cast_identity)
-  elif dt.dtid == TBuffer:
-    result = cast[pointer](cast_rich_to_u8)
-    err    = "LoseFormat"
-  elif dt.dtid == TString:
-    result = cast[pointer](cast_rich_to_str)
-    err    = "LoseFormat"
-  elif dt.dtid == TBool:
-    result = cast[pointer](cast_to_bool)
-    err    = "LoseFormat"
-
-proc u32_add(a, b: pointer): pointer =
-  let
-    x = cast[seq[Rune]](a)
-    y = cast[seq[Rune]](b)
-
-  return newRefValue[seq[Rune]](x & y, TUtf32)
-
-proc rich_add(a, b: pointer): pointer =
-  let
-    x = cast[Rope](a)
-    y = cast[Rope](b)
-
-  return newRefValue[Rope](x + y, TRich)
-
-proc str_slice(a: pointer, b, c: int): pointer =
-  let
-    x = cast[string](a)
+    x = cast[cstring](a)
     l = x.len()
 
   var
@@ -343,48 +153,20 @@ proc str_slice(a: pointer, b, c: int): pointer =
   if b >= c or b < 0 or c >= l:
     return nil
 
-  return newRefValue[string](x[b .. c], TString)
-
-proc buf_slice(a: pointer, b, c: int, err: var bool): pointer =
-  let
-    x = cast[string](a)
-    l = x.len()
-
-  var
-    b = b
-    c = c
-
-  if b < 0:
-    b += l
-  if c < 0:
-    b += l
-
-  if b >= c or b < 0 or c >= l:
-    return nil
-
-  return newRefValue[string](x[b .. c], TBuffer)
+  return newC4Str(`$`(x)[b .. c])
 
 proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
-  let
-    x = cast[seq[Rune]](a)
-    l = x.len()
+  return str_slice(a, b * 4, c * 4, err)
 
-  var
-    b = b
-    c = c
+proc str_load_lit(cstr: cstring, l: cint): pointer =
+  var s = newC4Str(int64(l))
 
-  if b < 0:
-    b += l
-  if c < 0:
-    b += l
+  if l != 0:
+    copyMem(cast[pointer](s), cstr, l)
 
-  if b >= c or b < 0 or c >= l:
-    return nil
-
-  return newRefValue[seq[Rune]](x[b .. c], TUtf32)
+  result = cast[pointer](s)
 
 proc rich_load_lit(cstr: cstring, l: cint): pointer =
-
   let
     full = $cstr
     f    = full.find(':')
@@ -435,25 +217,109 @@ proc rich_load_lit(cstr: cstring, l: cint): pointer =
 
   result = cast[pointer](r)
 
-proc str_copy(p: pointer): pointer {.cdecl, exportc.} =
-  let
-    s = cast[cstring](p)
-    l = strlen(s) + 1
-  result = alloc0(l)
-  copyMem(result, addr s[0], l)
+# These need to be fw referenced as we need TString, etc. defined first.
+proc get_cast_from_string(dt: DataType, t1, t2: TypeId,
+                          err: var string): pointer
+proc get_cast_from_u32(dt: Datatype, t1, t2: TypeId,
+                       err: var string): pointer
+proc get_cast_from_rich(dt: Datatype, t1, t2: TypeId,
+                        err: var string): pointer
 
-proc buf_copy(p: pointer): pointer {.cdecl, exportc.} =
-  let s = cast[cstring](p)
-  return cast[pointer](s)
+strOps[FRepr]         = cast[pointer](str_repr)
+strOps[FCastFn]       = cast[pointer](get_cast_from_string)
+strOps[FEq]           = cast[pointer](c4str_eq)
+strOps[FLt]           = cast[pointer](c4str_lt)
+strOps[FGt]           = cast[pointer](c4str_gt)
+strOps[FAdd]          = cast[pointer](c4str_add)
+strOps[FIndex]        = cast[pointer](str_index)
+strOps[FSlice]        = cast[pointer](str_slice)
+strOps[FNewLit]       = cast[pointer](str_new_lit)
+strOps[FLoadLit]      = cast[pointer](str_load_lit)
+strOps[FCopy]         = cast[pointer](c4str_copy)
+strOps[FLen]          = cast[pointer](c4str_len)
+bufOps[FRepr]         = cast[pointer](str_repr)
+bufOps[FCastFn]       = cast[pointer](get_cast_from_string)
+bufOps[FEq]           = cast[pointer](c4str_eq)
+bufOps[FLt]           = cast[pointer](c4str_lt)
+bufOps[FGt]           = cast[pointer](c4str_gt)
+bufOps[FAdd]          = cast[pointer](c4str_add)
+bufOps[FIndex]        = cast[pointer](str_index)
+bufOps[FSlice]        = cast[pointer](str_slice)
+bufOps[FNewLit]       = cast[pointer](str_new_lit)
+bufOps[FCopy]         = cast[pointer](c4str_copy)
+bufOps[FLen]          = cast[pointer](c4str_len)
+utf32Ops[FRepr]       = cast[pointer](u32_repr)
+utf32Ops[FStaticRepr] = cast[pointer](u32_repr)
+utf32Ops[FCastFn]     = cast[pointer](get_cast_from_u32)
+utf32Ops[FEq]         = cast[pointer](c4str_eq)
+utf32Ops[FLt]         = cast[pointer](c4str_lt)
+utf32Ops[FGt]         = cast[pointer](c4str_gt)
+utf32Ops[FAdd]        = cast[pointer](c4str_add)
+utf32Ops[FIndex]      = cast[pointer](u32_index)
+utf32Ops[FSlice]      = cast[pointer](u32_slice)
+utf32Ops[FNewLit]     = cast[pointer](str_new_lit)
+utf32Ops[FCopy]       = cast[pointer](c4str_copy)
+utf32Ops[FLen]        = cast[pointer](u32_len)
+richOps[FRepr]        = cast[pointer](rich_repr)
+richOps[FStaticRepr]  = cast[pointer](str_repr)
+richOps[FCastFn]      = cast[pointer](get_cast_from_rich)
+richOps[FEq]          = cast[pointer](value_eq)
+richOps[FAdd]         = cast[pointer](rich_add)
+richOps[FNewLit]      = cast[pointer](rich_new_lit)
+richOps[FLoadLit]     = cast[pointer](rich_load_lit)
+richOps[FCopy]        = cast[pointer](rich_copy)
+richOps[FLen]         = cast[pointer](rich_len)
+richOps[FPlusEqRef]   = cast[pointer](rich_pluseq)
 
-proc u32_copy(p: pointer): pointer {.cdecl, exportc.} =
-  # TODO; fix these.
-  var s = cast[seq[Rune]](p)
-  return cast[pointer](s)
+let
+  TString* = addDataType(name = "string", concrete = true,
+                                strTy = true, ops = strOps)
+  TBuffer* = addDataType(name = "buffer", concrete = true,
+                                strTy = true, ops = bufOps)
+  TUtf32*  = addDataType(name = "utf32",  concrete = true,
+                                strTy = true, ops = utf32Ops)
+  TRich*   = addDataType(name = "rich",   concrete = true, ops = richOps)
 
-proc rich_copy(p: pointer): pointer {.cdecl, exportc.} =
-  let r = cast[Rope](p)
-  var r2 = r.copy()
-  GC_ref(r2)
-  GC_ref(r2)
-  return cast[pointer](r2)
+registerSyntax(TString, STStrQuotes, @["u", "u8"], primary = true)
+registerSyntax(TBuffer, STStrQuotes, @["bin"])
+registerSyntax(TUtf32,  STStrQuotes, @["u32"])
+registerSyntax(TRich,   STStrQuotes, richLitMods)
+
+proc get_cast_from_string(dt: DataType, t1, t2: TypeId,
+                          err: var string): pointer =
+  if dt.dtid == TUtf32:
+    return cast[pointer](cast_str_to_u32)
+  elif dt.dtid == TRich:
+    return cast[pointer](cast_str_to_rich)
+  elif dt.dtid in [TString, TBuffer]:
+    return cast[pointer](cast_identity)
+  elif dt.dtid == TBool:
+    return cast[pointer](cast_to_bool)
+
+proc get_cast_from_u32(dt: Datatype, t1, t2: TypeId,
+                       err: var string): pointer =
+  if dt.dtid == TUtf32:
+    return cast[pointer](cast_identity)
+  elif dt.dtid == TRich:
+    return cast[pointer](cast_u32_to_rich)
+  elif dt.dtid in [TBuffer, TString]:
+    return cast[pointer](cast_u32_to_str)
+  elif dt.dtid == TBool:
+    return cast[pointer](cast_to_bool)
+
+proc get_cast_from_rich(dt: Datatype, t1, t2: TypeId,
+                        err: var string): pointer =
+  if dt.dtid == TUtf32:
+    result = cast[pointer](cast_rich_to_u32)
+    err    = "LoseFormat"
+  elif dt.dtid == TRich:
+    result = cast[pointer](cast_identity)
+  elif dt.dtid == TBuffer:
+    result = cast[pointer](cast_rich_to_str)
+    err    = "LoseFormat"
+  elif dt.dtid == TString:
+    result = cast[pointer](cast_rich_to_str)
+    err    = "LoseFormat"
+  elif dt.dtid == TBool:
+    result = cast[pointer](cast_to_bool)
+    err    = "LoseFormat"

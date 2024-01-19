@@ -130,6 +130,12 @@ else:
   template traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     discard
 
+template getModName(ctx: RuntimeState): string =
+  ctx.curModule.modName
+
+template getLineNo(ctx: RuntimeState): int =
+  ctx.curModule.instructions[ctx.ip].lineNo
+
 proc getStackTrace*(ctx: RuntimeState): Rope =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
                                    "Call target"]]
@@ -140,7 +146,10 @@ proc getStackTrace*(ctx: RuntimeState): Rope =
       row: seq[string]
 
     row.add(frame.callModule.modname)
-    row.add($(frame.calllineno))
+    if i == ctx.numFrames - 1:
+      row.add($(ctx.getLineNo()))
+    else:
+      row.add($(frame.calllineno))
 
     if frame.targetfunc == nil:
       row.add(frame.targetmodule.modname & ".__mod_run__")
@@ -155,12 +164,6 @@ proc getStackTrace*(ctx: RuntimeState): Rope =
 
 proc printStackTrace*(ctx: RuntimeState) =
   print ctx.getStackTrace()
-
-template getModName(ctx: RuntimeState): string =
-  ctx.curModule.modName
-
-template getLineNo(ctx: RuntimeState): int =
-  ctx.curModule.instructions[ctx.ip].lineNo
 
 proc bailHere(ctx: RuntimeState, errCode: string, extra: seq[string] = @[]) =
   var
@@ -373,6 +376,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       # stack and call, because we're also keeping type info on the
       # stack.
       var err: bool
+      var strerr: string
       case instr.arg
       of FRepr:
         let
@@ -385,7 +389,17 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         let s = call_repr(arg, argTy)
         ctx.stack[ctx.sp] = cast[pointer](s)
       of FCastFn:
-        discard # Not implemented yet.
+        let
+          srcType = instr.typeInfo
+          dstType = cast[TypeId](ctx.stack[ctx.sp])
+          obj     = ctx.stack[ctx.sp + 2]
+
+        ctx.sp += 2
+        ctx.stack[ctx.sp]     = call_cast(obj, srcType, dstType, strerr)
+        ctx.stack[ctx.sp + 1] = cast[pointer](dstType)
+
+        if strErr != "":
+          ctx.bailHere(strErr, @[srcType.toString(), dstType.toString()])
       of FEq:
         let
           arg2  = ctx.stack[ctx.sp]

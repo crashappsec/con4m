@@ -4,21 +4,22 @@ var
   f32Ops = newVTable()
   f64Ops = newVTable()
 
-proc cast_f_to_i(pre: pointer): pointer {.cdecl, exportc.} =
+proc cast_f_to_i(pre: pointer, t1, t2: TypeId): pointer {.cdecl, exportc.} =
   let
     f = cast[float64](pre)
     i = int64(f)
 
   result = cast[pointer](i)
 
-proc cast_f_to_u(pre: pointer): pointer {.cdecl, exportc.} =
+proc cast_f_to_u(pre: pointer, t1, t2: TypeId): pointer {.cdecl, exportc.} =
   let
     f = cast[float64](pre)
     i = uint64(f)
 
   result = cast[pointer](i)
 
-proc get_cast_func_float(dt, ot: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_float(dt, ot: DataType, t1, t2: TypeId,
+                         err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_identity)
 

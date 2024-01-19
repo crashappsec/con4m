@@ -8,22 +8,22 @@ r = "Hello, world!"'h2
 
 print(r)
 
-n =  [["Name"'r,      "Country"'r, "City"'r],
-      ["John"'em,     "USA"'r,     "NYC"'r],
-      ["Brandon"'em,  "USA"'r,     "NYC"'r],
-      ["Liming"'em,   "USA"'r,     "NYC"'r],
-      ["Miroslav"'em, "USA"'r,     "Lawn Guy Land"'r],
-      ["Rich"'em,     "USA"'r,     "Providence, RI"'r],
-      ["Matt"'em,     "USA"'r,     "Orange"'r],
-      ["Mark"'em,     "UK"'r,      "Brighton"'r],
-      ["Hugo"'em,     "UK"'r,      "Brighton"'r],            
-      ["James"'em,    "UK"'r,      "Brighton"'r],
-      ["Max"'em,      "UK"'r,      "Brighton"'r],            
-      ["Theo"'em,     "Greece"'r,  "Athens"'r],
-      ["Thomas"'em,   "Greece"'r,  "Athens"'r],
-      ["James II"'em, "Germany"'r, "Berlin"'r]]
+n =  [["Name",      "Country",   "City"],
+      ["John"'em,     "USA",     "NYC"],
+      ["Brandon"'em,  "USA",     "NYC"],
+      ["Liming"'em,   "USA",     "NYC"],
+      ["Miroslav"'em, "USA",     "Lawn Guy Land"],
+      ["Rich"'em,     "USA",     "Providence, RI"],
+      ["Matt"'em,     "USA",     "Orange"],
+      ["Mark"'em,     "UK",      "Brighton"],
+      ["Hugo"'em,     "UK",      "Brighton"],
+      ["James"'em,    "UK",      "Brighton"],
+      ["Max"'em,      "UK",      "Brighton"],
+      ["Theo"'em,     "Greece",  "Athens"],
+      ["Thomas"'em,   "Greece",  "Athens"],
+      ["James II"'em, "Germany", "Berlin"]]
 
 assert crappylen(n) == len(n)
 
-print("Hello, world!"'h1 + "Here's "'r + "emphasis"'em + " for my table: "'r)
+print("Hello, world!"'h1 + "Here's " + "emphasis"'em + " for my table: ")
 print(table(n))

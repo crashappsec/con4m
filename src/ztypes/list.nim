@@ -4,6 +4,11 @@ import base, ../common, strutils
 
 var listOps = newVtable()
 
+proc get_cast_fn(tcur, tdst: DataType, tfrom, tto: TypeId, err: var string):
+     pointer {.importc, cdecl.}
+proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
+                importc, cdecl.}
+
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string): FlexArray[pointer] {.
                 exportc, cdecl.}
@@ -86,7 +91,7 @@ proc list_slice(p: FlexArray[pointer], i, j: int, err: var bool):
   else:
     result = newArrayFromSeq[pointer](view[i ..< j])
 
-
+  GC_ref(result)
   result.metadata = p.metadata
 
 proc list_assign_slice(c, v: FlexArray[pointer], i, j: int, err: var bool)
@@ -112,8 +117,11 @@ proc list_assign_slice(c, v: FlexArray[pointer], i, j: int, err: var bool)
     oldptr  = c.arr
     newlist = newArrayFromSeq[pointer](left & slice & right)
 
+  newlist.metadata = c.metadata
+
   c.arr = newlist.arr
   flexarray_delete(oldptr)
+  GC_ref(newlist)
 
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
 
@@ -131,7 +139,45 @@ proc list_copy(p: FlexArray[pointer], t: TypeId): FlexArray[pointer]
   result          = newArrayFromSeq[pointer](dup)
   result.metadata = p.metadata
 
+  GC_ref(result)
+
+proc cast_from_list_t(pre: FlexArray[pointer], tfrom, tto: TypeId,
+                      err: var string): FlexArray[pointer] {.cdecl, exportc.} =
+
+  var
+    s: seq[pointer]
+    t1  = cast[TypeId](pre.metadata)
+    to1 = t1.idToTypeRef()
+    to2 = tto.idToTypeRef()
+
+  if to2.kind != C4List:
+    err = "CannotCast"
+    return nil
+
+  let
+    dt1 = to1.items[0].getDataType()
+    dt2 = to2.items[0].getDataType()
+
+  for item in pre.items():
+    let r = call_cast(item,
+                    to1.items[0].followForwards(),
+                    to2.items[0].followForwards(), err)
+
+    s.add(r)
+
+    if err != "":
+      return nil
+
+  result = newArrayFromSeq[pointer](s)
+  result.metadata = cast[pointer](tto)
+  GC_ref(result)
+
+proc get_cast_func_list(dt, ot: DataType, tfrom, tto: TypeId,
+                        err: var string): pointer {.cdecl.} =
+  return cast[pointer](cast_from_list_t)
+
 listOps[FRepr]         = cast[pointer](list_repr)
+listOps[FCastFn]       = cast[pointer](get_cast_func_list)
 listOps[FContainerLit] = cast[pointer](list_lit)
 listOps[Feq]           = cast[pointer](list_eq)
 listOps[FLen]          = cast[pointer](list_len)

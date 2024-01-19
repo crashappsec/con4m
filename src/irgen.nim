@@ -30,6 +30,118 @@ template withFnLock(fi: FuncInfo, code: untyped) =
   finally:
     tobj.isLocked = lock
 
+proc findPromotionType(ctx: Module, t1, t2: TypeId): TypeId =
+  # Assumes we're trying to promote either type into either type.
+  var
+    t1  = t1.followForwards()
+    t2  = t2.followForwards()
+    to1 = t1.idToTypeRef()
+    to2 = t2.idToTypeRef()
+
+  if to1.kind != to2.kind:
+    return TBottom
+
+  case to1.kind
+  of C4List:
+    return tList(ctx.findPromotionType(to1.items[0], to2.items[0]))
+  of C4Dict:
+    return tDict(ctx.findPromotionType(to1.items[0], to2.items[0]),
+                 ctx.findPromotionType(to1.items[1], to2.items[1]))
+  of C4Tuple:
+    var pi: seq[TypeId]
+    for i, item in to1.items:
+      pi.add(ctx.findPromotionType(item, to2.items[i]))
+    return tTuple(pi)
+  of C4Primitive:
+    if t1.isIntType():
+      return ctx.resultingNumType(t1, t2)
+    elif t1 == TRich and t2 in [TRich, TString]:
+      return TRich
+    elif t2 == TRich and t1 == TString:
+      return TRich
+  else:
+    discard
+
+  return t1.unify(t2)
+
+proc addCast(node: var IrNode, promoteTo: TypeId) =
+  var newNode = IrNode(contents:  IrContents(kind: IrCast, srcData: node),
+                       parseNode: node.parseNode,
+                       tid:       promoteTo,
+                       parent:    node.parent,
+                       scope:     node.scope)
+  node.parent = newNode
+  node        = newNode
+
+# This version is meant for when there's a fixed type ID we're expecting,
+# such as for things that take a boolean type.
+proc unifyOrCast(ctx: Module, t: TypeId, irNode: var IrNode): TypeId =
+  result = t.unify(irNode.tid)
+
+  if result == TBottom:
+    if t.unify(TBool) != TBottom:
+      ctx.irWarn("BoolAutoCast", irNode, @[irNode.getTid().toString()])
+      irNode.addCast(TBool)
+    else:
+      # Checks to see if we can get them to the same type, but
+      # generally we called this because the RHS has to promote,
+      # so if the result isn't t, it's an error.
+      result = ctx.findPromotionType(t, irNode.getTid())
+
+      if result != t.followForwards():
+        ctx.irError("CannotCast", irNode, @[irNode.getTid().toString(),
+                                            t.toString()])
+        # No need to force bottom here; we could end up with extraneous
+        # errors.
+      else:
+        irNode.addCast(result)
+
+# This version is for use when we have 2 or more nodes all expected to
+# be the same type.
+proc unifyOrCast(ctx:   Module,
+                 nodes: var openarray[IrNode],
+                 errIx: var int): TypeId =
+  var
+    curTid   = nodes[0].tid.followForwards()
+    dontExit = true
+
+  # We loop through all the items we need to cast at this level.  If
+  # we find a new type in the middle that we need to promote previous
+  # nodes into (via casting them), we go ahead and start the loop
+  # over, which is why the `for` loop is wrapped in a `while`
+  # loop. The `while` loop's first order of business is to set
+  # `dontExit` to false, in hopes that its going to exit normally;
+  # only if we have to restart does it get set to true.
+
+  while dontExit:
+    dontExit = false
+    for i, item in nodes:
+      let t = item.tid.followForwards()
+      if t == curTid:
+        continue
+      let newType = ctx.findPromotionType(curTid, t)
+      if newType == curTid:
+        nodes[i].addCast(curTid)
+        continue
+      elif newType == TBottom:
+        errIx = i
+        return TBottom
+      else:
+        curTid = newType
+        dontExit = true
+        break
+
+  return curTid
+
+# For binary ops. The err param is extraneous for them.
+proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
+  var errIx: int
+  var nodes = [n1, n2]
+
+  result = ctx.unifyOrCast(nodes, errIx)
+  n1     = nodes[0]
+  n2     = nodes[1]
+
 proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
                               callType: TypeId): FuncInfo =
   # var
@@ -1202,16 +1314,25 @@ proc convertTypeLit(ctx: Module): IrNode =
 
 proc convertListLit(ctx: Module): IrNode =
   var
-    err: bool
-    lmod     = ctx.getLitMod()
-    itemType = tVar()
+    lmod      = ctx.getLitMod()
+    err:       bool
+    errIx:     int
+    itemType:  TypeId
+    itemTypes: seq[TypeId]
 
   result = ctx.irNode(IrLit)
 
   for i in 0 ..< ctx.numKids():
-    let oneItem = ctx.downNode(i)
-    ctx.typeCheck(itemType, oneItem.getTid(), ctx.parseKid(i), "TyDiffListItem")
-    result.contents.items.add(oneItem)
+    result.contents.items.add(ctx.downNode(i))
+
+  itemType = ctx.unifyOrCast(result.contents.items, errIx)
+
+  if itemType == TBottom:
+    ctx.irError("TyDiffListItem",
+                result.contents.items[errIx],
+                @[result.contents.items[0].getTid().toString(),
+                  result.contents.items[errIx].getTid().toString()])
+    return
 
   result.tid = getTidForContainerLit(STList, lmod, @[itemType], err)
 
@@ -1220,22 +1341,38 @@ proc convertListLit(ctx: Module): IrNode =
 
 proc convertDictLit(ctx: Module): IrNode =
   var
-    err: bool
-    lmod     = ctx.getLitMod()
-    keyType  = tVar()
-    itemType = tVar()
+    err:      bool
+    errIx:    int
+    keyType:  TypeId
+    itemType: TypeId
+    kNodes:   seq[IrNode]
+    iNodes:   seq[IrNode]
+    lmod  = ctx.getLitMod()
 
   result = ctx.irNode(IrLit)
 
   for i in 0 ..< ctx.numKids():
-    let oneKey = ctx.downNode(i, 0)
-    ctx.typeCheck(keyType, oneKey.getTid(), ctx.parseKid(i, 0),
-                  "TyDiffKey")
-    let oneVal = ctx.downNode(i, 1)
-    ctx.typeCheck(itemType, oneVal.getTid(), ctx.parseKid(i, 1),
-                  "TyDiffVal")
-    result.contents.items.add(oneKey)
-    result.contents.items.add(oneVal)
+    kNodes.add(ctx.downNode(i, 0))
+    iNodes.add(ctx.downNode(i, 1))
+
+  keyType = ctx.unifyOrCast(kNodes, errIx)
+
+  if keyType == TBottom:
+    ctx.irError("TyDiffKey", kNodes[errIx],
+                @[kNodes[0].getTid().toString(),
+                  kNodes[errIx].getTid().toString()])
+    return
+
+  itemType = ctx.unifyOrCast(iNodes, errIx)
+  if itemType == TBottom:
+    ctx.irError("TyDiffVal", iNodes[errIx],
+                @[iNodes[0].getTid().toString(),
+                  iNodes[errIx].getTid().toString()])
+    return
+
+  for i in 0 ..< kNodes.len():
+    result.contents.items.add(kNodes[i])
+    result.contents.items.add(iNodes[i])
 
   result.tid = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
 
@@ -1382,21 +1519,15 @@ proc convertWhileStmt(ctx: Module): IrNode =
 
   result.contents.condition = ctx.downNode(0)
 
-  if unify(TBool, result.contents.condition.getTid()) == TBottom:
-    if result.contents.condition.getTid().canCastToBool():
-      ctx.irWarn("BoolAutoCast",
-                 @[result.contents.condition.getTid().toString()],
-                 w = ctx.parseKid(0))
-    else:
-      ctx.irError("NoBoolCast",
-                  @[result.contents.condition.getTid().toString()],
-                  w = ctx.parseKid(0))
+  if ctx.unifyOrCast(TBool, result.contents.condition) == TBottom:
+    ctx.irError("NoBoolCast",
+                @[result.contents.condition.getTid().toString()],
+                w = ctx.parseKid(0))
 
   result.contents.loopBody  = ctx.downNode(1)
   result.contents.whileLoop = true
 
   discard ctx.blockScopes.pop()
-
 
 proc makeVariant(parent: SymbolInfo): SymbolInfo =
   # We really don't need to copy everything we copy here.
@@ -1518,12 +1649,8 @@ proc convertRange(ctx: Module): IrNode =
   elif not result.contents.rangeEnd.tid.isIntType():
     ctx.irError("BadCxRange", w = result.contents.rangeEnd)
   else:
-    let
-      t1 = result.contents.rangeStart.tid
-      t2 = result.contents.rangeEnd.tid
-    result.tid = unify(t1, t2)
-    if result.tid == TBottom:
-      result.tid = ctx.resultingNumType(t1, t2)
+     result.tid = ctx.unifyOrCast(result.contents.rangeStart,
+                                  result.contents.rangeEnd)
 
 proc loopExit(ctx: Module, loopExit: bool): IrNode =
   result                   = ctx.irNode(IrJump)
@@ -1555,15 +1682,10 @@ proc convertConditional(ctx: Module): IrNode =
   if ctx.numKids() == 3:
     result.contents.falseBranch = ctx.downNode(2)
 
-  if unify(TBool, result.contents.predicate.getTid()) == TBottom:
-    if result.contents.predicate.getTid().canCastToBool():
-      ctx.irWarn("BoolAutoCast",
-                 @[result.contents.predicate.getTid().toString()],
-                 w = ctx.parseKid(0))
-    else:
-      ctx.irError("NoBoolCast",
-                  @[result.contents.predicate.getTid().toString()],
-                  w = ctx.parseKid(0))
+  if ctx.unifyOrCast(TBool, result.contents.predicate) == TBottom:
+    ctx.irError("NoBoolCast",
+                @[result.contents.predicate.getTid().toString()],
+                w = ctx.parseKid(0))
 
 proc convertReturn(ctx: Module): IrNode =
   result = ctx.irNode(IrRet)
@@ -1591,24 +1713,19 @@ proc convertBooleanOp(ctx: Module): IrNode =
 
   result                = ctx.irNode(IrBool)
   result.contents.bOp   = ctx.getText()
-  let
+  var
     bLhs                = ctx.downNode(0)
     bRhs                = ctx.downNode(1)
-  result.contents.bLhs  = bLhs
-  result.contents.bRhs  = bRhs
 
-  var operandType = bLhs.getTid().unify(bRhs.getTid())
+  var operandType = ctx.unifyOrCast(bLhs, bRhs)
 
-  if operandType == TBottom and bLhs.getTid().isNumericBuiltin() and
-     bRhs.getTid().isNumericBuiltin():
-    operandType = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
-
-  if operandType == TBottom and bLhs.getTid() != TBottom and
-    bRhs.getTid() != TBottom:
+  if operandType == TBottom:
     ctx.irError("BinaryOpCompat",
                 @[bLhs.getTid().toString(), bRhs.getTid().toString()])
 
-  result.tid = TBool
+  result.tid            = TBool
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
 
   case ctx.pt.kind
   of NodeNe:
@@ -1637,16 +1754,13 @@ proc convertBinaryOp(ctx: Module): IrNode =
   if result.contents.bOp[^1] == '=':
     result.contents.bOp = result.contents.bOp[0 ..< ^1]
 
-  let
-    bLhs                = ctx.downNode(0)
-    bRhs                = ctx.downNode(1)
+  var
+    bLhs = ctx.downNode(0)
+    bRhs = ctx.downNode(1)
 
-  result.contents.bLhs  = bLhs
-  result.contents.bRhs  = bRhs
+  result.tid = ctx.unifyOrCast(bLhs, bRhs)
 
-  result.tid = bLhs.getTid().unify(bRhs.getTid())
-
-  if result.getTid() == TBottom and bLhs.getTid().isNumericBuiltin() and
+  if result.tid == TBottom and bLhs.getTid().isNumericBuiltin() and
      bRhs.getTid().isNumericBuiltin():
     result.tid = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
 
@@ -1664,6 +1778,9 @@ proc convertBinaryOp(ctx: Module): IrNode =
     elif bLhs.getTid() == TUint or bRhs.getTid() == TUint:
       ctx.irError("U64Div")
       result.tid = TBottom
+
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
 
   case ctx.pt.kind
   of NodePlus:
@@ -1693,38 +1810,31 @@ proc convertBinaryOp(ctx: Module): IrNode =
 proc convertLogicOp(ctx: Module): IrNode =
   result                = ctx.irNode(IrLogic)
   result.contents.bOp   = ctx.getText()
-  let
+  var
     bLhs                = ctx.downNode(0)
     bRhs                = ctx.downNode(1)
-  result.contents.bLhs  = bLhs
-  result.contents.bRhs  = bRhs
 
   if ctx.pt.kind == NodeOr:
     result.contents.opId = OpLogicOr
   else:
     result.contents.opId = OpLogicAnd
 
-  if unify(TBool, bLhs.getTid()) == TBottom:
-    if bLhs.getTid().canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[bLhs.getTid().toString()],
-                 w = ctx.parseKid(0))
-    else:
-      ctx.irError("NoBoolCast", @[bLhs.getTid().toString()],
-                  w = ctx.parseKid(0))
-      result.tid = TBottom
-      return
+  if ctx.unifyOrCast(TBool, bLhs) == TBottom:
+    ctx.irError("NoBoolCast", @[bLhs.getTid().toString()],
+                w = ctx.parseKid(0))
+    result.tid = TBottom
+    return
 
-  if unify(TBool, bRhs.getTid()) == TBottom:
-    if bRhs.getTid().canCastToBool():
-      ctx.irWarn("BoolAutoCast", @[bRhs.getTid().toString()],
-                 w = ctx.parseKid(1))
-      result.tid = TBool
-    else:
-      ctx.irError("NoBoolCast", @[bRhs.getTid().toString()],
-                  w = ctx.parseKid(1))
-      result.tid = TBottom
+  if ctx.unifyOrCast(TBool, bRhs) == TBottom:
+    ctx.irError("NoBoolCast", @[bRhs.getTid().toString()],
+                w = ctx.parseKid(1))
+    result.tid = TBottom
+    return
   else:
       result.tid = TBool
+
+  result.contents.bLhs  = bLhs
+  result.contents.bRhs  = bRhs
 
 proc convertSection(ctx: Module): IrNode =
   var
@@ -1809,7 +1919,7 @@ proc convertIndex(ctx: Module): IrNode =
     let tobj = toIx.getTid().idToTypeRef()
     case tobj.kind
     of C4List:
-      if TInt.unify(ixStart.getTid()) == TBottom:
+      if ctx.unifyOrCast(TInt, ixStart) == TBottom:
         if not ixStart.getTid().isIntType():
           ctx.irError("ListIx")
       ctx.typeCheck(toIx.getTid(), tList(result.tid))

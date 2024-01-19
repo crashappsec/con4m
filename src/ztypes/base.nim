@@ -7,8 +7,9 @@ export common
 
 type
   ReprFn*     = proc(p: pointer): string {.cdecl.}
-  GetCastFn*  = proc(dt: DataType, err: var string): pointer {.cdecl.}
-  CastFn*     = proc(cur: pointer): pointer {.cdecl.}
+  GetCastFn*  = proc(dt: DataType, t1, t2: TypeId,
+                     err: var string): pointer {.cdecl.}
+  CastFn*     = proc(cur: pointer, tfrom, tto: TypeId): pointer {.cdecl.}
   BoolRetFn*  = proc(l, r: pointer): bool {.cdecl.}
   BinOpFn*    = proc(l, r: pointer): pointer {.cdecl.}
   IndexFn*    = proc(c: pointer, i: int, err: var bool): pointer {.cdecl.}
@@ -112,10 +113,10 @@ proc extractRef*[T](item: pointer, decref = false): T =
 template newVTable*(): seq[pointer] =
   newSeq[pointer](int(FMax))
 
-proc cast_identity*(pre: pointer): pointer {.cdecl, exportc.} =
+proc cast_identity*(pre: pointer, t1, t2: TypeId): pointer {.cdecl, exportc.} =
   result = pre
 
-proc cast_to_bool*(pre: pointer): pointer {.cdecl, exportc.} =
+proc cast_to_bool*(pre: pointer, t1, t2: TypeId): pointer {.cdecl, exportc.} =
   if pre != nil:
     return cast[pointer](1)
 
@@ -261,6 +262,20 @@ proc isContainerType*(id: TypeId): bool =
 
   return to.kind in [C4List, C4Dict, C4Tuple]
 
+proc isTupleType*(id: TypeId): bool =
+  let to = id.idToTypeRef()
+
+  return to.kind == C4Tuple
+
+proc isDictType*(id: TypeId): bool =
+  let to = id.idToTypeRef()
+
+  return to.kind == C4Dict
+
+proc isListType*(id: TypeId): bool =
+  let to = id.idToTypeRef()
+
+  return to.kind == C4Dict
 
 proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
   var t = t.followForwards()

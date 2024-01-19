@@ -2,10 +2,9 @@
 #
 # === High priority -- before Chalk integration ===
 #
+# - Dictionary and tuple implementations
 # - Component logic in runtime.
 # - Load default values at beginning of program.
-# - explicit casts -- to(obj, type)
-# - Some auto-casting, especially auto-promoting strings to rich text.
 # - Spec checking after execution.
 # - Re-implement standard library / wrappings.
 # - Saving the spec in the object file.
@@ -14,16 +13,9 @@
 # - Typecheck c vs con4m api for ffi
 # - fix stuff taking lists like u32.
 # - C-level interface to attributes
-# - Dictionary and tuple implementations
-# - Finish the builtin types api, eg. copy operations for all ref builtin types
-# - Swap in hatrack lists (and add rings?).
 # - Update the pretty printer.
 # - Restrict the leading '$' properly.
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
-# - In showCallMistakes(), show which functions have the wrong # of args,
-#   and which parameters are right / wrong.
-# - finish hasExitToOuterBlock in CFG.
-# - Possibly allow generating a C API based on the spec.
 # - Doc API.
 # - Enums should be global by default.  Add a 'private' for enums,
 #   funcs and, when they show up,
@@ -32,11 +24,17 @@
 # - Add code gen for 'lock' operator.
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
-# - Vestigial 'fail' code and hint cleanups
-# - Documentation.
 # - Sort errors by file / line (they come out by phase in IR portion).
+# - Documentation.
+# - When doing second pass for calls, add cast nodes where we could auto-cast.
+# - foo(bar) -> bar.foo(); should they both work?
 
 # == Medium -- before public release ==
+# - explicit casts -- to(obj, type)
+# - In showCallMistakes(), show which functions have the wrong # of args,
+# - Possibly allow generating a C API based on the spec.
+#   and which parameters are right / wrong.
+# - finish hasExitToOuterBlock in CFG.
 # - Remove any exceptions
 # - The attr type info needs to be folded into the same dict as attrs
 #   (it's a race condition for it to be separate)
@@ -80,6 +78,7 @@
 # - Add objects, with typevars that can bind to all fields...
 # - Add oneof
 # - Add ref
+# - Other hatrack data types
 # - Code playground
 # - LSP server
 # - Only generate loop variables if they're used.
@@ -133,7 +132,6 @@ when isMainModule:
 
   if altPath != "":
     session.modulePath = altPath.split(Rune(':'))
-
 
   if "--debug" in params:
     debug = true

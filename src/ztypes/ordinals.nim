@@ -12,17 +12,18 @@ var
   i64Ops  = newVTable()
   u64Ops  = newVTable()
 
-proc cast_i_to_f(pre: pointer): pointer {.cdecl.} =
+proc cast_i_to_f(pre: pointer, tfrom, tto: TypeId): pointer {.cdecl.} =
   let f = float64(cast[int64](pre))
 
   result = cast[pointer](f)
 
-proc cast_u_to_f(pre: pointer): pointer {.cdecl.} =
+proc cast_u_to_f(pre: pointer, tfrom, tto: TypeId): pointer {.cdecl.} =
   let f = float64(cast[uint64](pre))
 
   result = cast[pointer](f)
 
-proc get_cast_func_i8(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_i8(dt: DataType, t1, t2: TypeId,
+                      err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_i_to_f)
   if dt.isBool:
@@ -34,11 +35,13 @@ proc get_cast_func_i8(dt: DataType, err: var string): pointer {.cdecl.} =
 
   result = cast[pointer](cast_identity)
 
-proc get_cast_func_bool(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_bool(dt: DataType, t1, t2: TypeId,
+                        err: var string): pointer {.cdecl.} =
   if dt.isBool:
     return cast[pointer](cast_to_bool)
 
-proc get_cast_func_u8(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_u8(dt: DataType, t1, t2: TypeId,
+                      err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_u_to_f)
   if dt.isBool:
@@ -57,7 +60,8 @@ proc get_cast_func_u8(dt: DataType, err: var string): pointer {.cdecl.} =
 
   result = cast[pointer](cast_identity)
 
-proc get_cast_func_i32(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_i32(dt: DataType, t1, t2: TypeId,
+                       err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_i_to_f)
   if dt.isBool:
@@ -75,7 +79,8 @@ proc get_cast_func_i32(dt: DataType, err: var string): pointer {.cdecl.} =
 
   result = cast[pointer](cast_identity)
 
-proc get_cast_func_u32(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_u32(dt: DataType, t1, t2: TypeId,
+                       err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_u_to_f)
   if dt.isBool:
@@ -96,7 +101,8 @@ proc get_cast_func_u32(dt: DataType, err: var string): pointer {.cdecl.} =
 
   result = cast[pointer](cast_identity)
 
-proc get_cast_func_i64(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_i64(dt: DataType, t1, t2: TypeId,
+                       err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_i_to_f)
   if dt.isBool:
@@ -117,7 +123,8 @@ proc get_cast_func_i64(dt: DataType, err: var string): pointer {.cdecl.} =
 
   result = cast[pointer](cast_identity)
 
-proc get_cast_func_u64(dt: DataType, err: var string): pointer {.cdecl.} =
+proc get_cast_func_u64(dt: DataType, t1, t2: TypeId,
+                       err: var string): pointer {.cdecl.} =
   if dt.fTy:
     return cast[pointer](cast_u_to_f)
   if dt.isBool:

@@ -13,14 +13,14 @@ proc hasFunc*(t: TypeId, fn: int): bool {.exportc, cdecl.} =
 
   return true
 
-proc get_cast_fn*(tcur, tdst: DataType, err: var string): pointer
-    {.exportc, cdecl.} =
+proc get_cast_fn*(tcur, tdst: DataType, tfrom, tto: TypeId,
+                  err: var string): pointer {.exportc, cdecl.} =
   let op = cast[GetCastFn](tcur.ops[FCastFn])
 
   if op == nil:
     err = "CannotCast"
   else:
-    return op(tdst, err)
+    return op(tdst, tfrom, tto, err)
 
 proc can_cast_to_bool*(tid: TypeId): bool {.exportc, cdecl.} =
   var err: string
@@ -30,7 +30,7 @@ proc can_cast_to_bool*(tid: TypeId): bool {.exportc, cdecl.} =
 
   let
     ct = tid.get_container_info()
-    fn = get_cast_fn(ct, tinfo(TBool), err)
+    fn = get_cast_fn(ct, tinfo(TBool), tid, TBool, err)
 
   return fn != nil
 
@@ -45,10 +45,11 @@ proc call_cast*(value: pointer, tcur, tdst: TypeId, err: var string): pointer
   let
     dtcur = get_data_type(tcur)
     dtdst = get_data_type(tdst)
-    fn    = cast[Castfn](dtcur.get_cast_fn(dtdst, err))
+
+    fn = cast[Castfn](dtcur.get_cast_fn(dtdst, tcur, tdst, err))
 
   if fn != nil:
-    return fn(value)
+    return fn(value, tcur, tdst)
 
 template decl_bool_call_fn(fnname: untyped, opid: untyped) =
   proc fnname*(v1, v2: pointer, t: TypeId): bool {.exportc, cdecl.} =

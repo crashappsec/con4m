@@ -563,10 +563,12 @@ proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =
     if to1.intW > to2.intW:
       if not to1.signed and to2.signed:
         result = uint64(to1.signedVariant.dtid)
-        ctx.irWarn("SignToUnsign", @[t1.toString()])
+        if ctx != nil:
+          ctx.irWarn("SignToUnsign", @[t1.toString()])
       elif to1.signed and not to2.signed:
         result = t1
-        ctx.irInfo("SignChange", @[t1.toString(), t2.toString()])
+        if ctx != nil:
+          ctx.irInfo("SignChange", @[t1.toString(), t2.toString()])
       else:
         result = t1
     elif to2.intW > to1.intW:
@@ -576,15 +578,18 @@ proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =
         result = t1
       else:
         if to1.signed:
-          ctx.irWarn("SignToUnsign", @[t2.toString()])
+          if ctx != nil:
+            ctx.irWarn("SignToUnsign", @[t2.toString()])
           result = t1
         else:
-          ctx.irWarn("SignToUnsign", @[t1.toString()])
+          if ctx != nil:
+            ctx.irWarn("SignToUnsign", @[t1.toString()])
           result = t2
   elif t1 == TFloat or t2 == TFloat:
     result = TFloat
   else:
     result = TBottom
     unreachable # Shouldn't get here
+
 
 initTypeStore()
