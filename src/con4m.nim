@@ -7,7 +7,8 @@
 # - Load default values at beginning of program.
 # - Spec checking after execution.
 # - Re-implement standard library / wrappings.
-# - Saving the spec in the object file.
+# - attribute should prob store a ('pointer', type, locked) tuple?
+# - Saving the spec in the object file (and type dict).
 # - Checkpointing runtime state.
 # - Hook up getopts again.
 # - Typecheck c vs con4m api for ffi
@@ -32,6 +33,8 @@
 
 
 # == Medium -- before public release ==
+# - Should strings be mutable? Right now they are not.
+# - Buffers should be mutable.
 # - explicit casts -- to(obj, type)
 # - In showCallMistakes(), show which functions have the wrong # of args,
 # - Possibly allow generating a C API based on the spec.

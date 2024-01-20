@@ -233,7 +233,8 @@ type
   IrNode* = ref object
     parseNode*: Con4mNode
     tid*:       TypeId
-    value*:     Option[pointer]
+    value*:     pointer
+    haveVal*:   bool
     parent*:    IrNode
     contents*:  IrContents
     scope*:     Scope
@@ -388,7 +389,8 @@ type
     defs*:         seq[IrNode]
     fimpls*:       seq[FuncInfo]
     pInfo*:        ParamInfo
-    constValue*:   Option[pointer]
+    constValue*:   pointer
+    haveConst*:    bool
     module*:       Module # Ignored for non-func global vars and attrs.
     global*:       bool
     err*:          bool

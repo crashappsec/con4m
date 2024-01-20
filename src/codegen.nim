@@ -715,9 +715,12 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
 
   else:
     if cur.byVal:
-      ctx.genPushImmediate(cast[int64](n.value.getOrElse(nil)))
-    elif n.value.isSome():
-      let offset = ctx.addStaticObject(n.value.get(), cur.sz)
+      var toPush: int64
+      if n.haveVal:
+        toPush = cast[int64](n.value)
+      ctx.genPushImmediate(toPush)
+    elif n.haveVal:
+      let offset = ctx.addStaticObject(n.value, cur.sz)
       ctx.genCopyStaticObject(offset, cur.sz, n.tid)
 
 proc genMember(ctx: CodeGenState, cur: IrContents) =
@@ -931,7 +934,7 @@ proc genLogic(ctx: CodeGenState, cur: IrContents) =
   ctx.backPatch(backpatchLoc)
 
 proc genLoadValue(ctx: CodeGenState, n: IrNode) =
-  ctx.genPushImmediate(cast[int](n.value.get()), n.tid)
+  ctx.genPushImmediate(cast[int](n.value), n.tid)
 
 proc oneIrNode(ctx: CodeGenState, n: IrNode) =
   # Since accessing subcontents is somewhat verbose, if the op doesn't

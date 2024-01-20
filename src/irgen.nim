@@ -195,10 +195,10 @@ proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
     result = result + atom(" ") + strong(t.toString())
 
 template reprBasicLiteral(ctx: IrNode): string =
-  if ctx.value.isNone():
+  if not ctx.haveVal:
     ""
   else:
-    $(call_static_repr(ctx.value.get(), ctx.tid))
+    $(call_static_repr(ctx.value, ctx.tid))
 
 proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   var
@@ -401,7 +401,7 @@ template parseKid(ctx: Module, i, j, k: int): Con4mNode =
 proc isConstant*(n: IrNode): bool =
   # Doesn't capture everything that can be constant, just things we
   # are currently folding.
-  return n.getTid() != TBottom and n.value.isSome()
+  return n.getTid() != TBottom and n.haveVal
 
 const
   ntLoops        = [ NodeForStmt, NodeWhileStmt ]
@@ -443,7 +443,7 @@ proc convertEnum*(ctx: Module) =
         if not v.getTid().isIntType():
           ctx.irError("EnumInt", w = ctx.parseKid(i))
           continue
-        value = cast[int64](v.value.get())
+        value = cast[int64](v.value)
         if value in usedVals:
           ctx.irWarn("EnumReuse", @[$value], w = ctx.parseKid(i))
         else:
@@ -464,7 +464,8 @@ proc convertEnum*(ctx: Module) =
 
       if symOpt.isSome():
         let sym = symOpt.get()
-        sym.constValue = some(cast[pointer](value))
+        sym.constValue = cast[pointer](value)
+        sym.haveConst = true
         sym.immutable = true
 
 proc convertIdentifier(ctx: Module): IrNode =
@@ -652,7 +653,7 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
                       ctx.pt.children[i])
         let irNode = ctx.downNode(i, 1)
         ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TString]))
-        let cb              = extractRef[Callback](irNode.value.get())
+        let cb              = extractRef[Callback](irNode.value)
         paramInfo.validator = some(cb)
         gotValid            = true
       of "default":
@@ -1198,12 +1199,8 @@ proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
   if err != "":
     ctx.irError(err)
   else:
-    if val == nil:
-      # TODO-- currently, some(nil) errors, which means why the F are we
-      # using option types??
-      result.value          = none(pointer)
-    else:
-      result.value          = some(val)
+    result.value          = val
+    result.haveVal        = true
     result.contents.byVal = byVal
     result.contents.sz    = l
 
@@ -1241,7 +1238,8 @@ proc convertOtherLit(ctx: Module): IrNode =
     if err == "":
       result                = ctx.irNode(IrLit)
       result.tid            = sym.tid
-      result.value          = some(val)
+      result.value          = val
+      result.haveVal        = true
       result.contents.byVal = byVal
       result.contents.sz    = l
       return
@@ -1265,7 +1263,8 @@ proc convertOtherLit(ctx: Module): IrNode =
     if err == "":
       result                = ctx.irNode(IrLit)
       result.tid            = dt.dtid
-      result.value          = some(val)
+      result.value          = val
+      result.haveVal        = true
       result.contents.byVal = byVal
       result.contents.sz    = l
       ctx.irInfo("OtherLit", @[dt.name])
@@ -1289,7 +1288,8 @@ proc convertCharLit(ctx: Module): IrNode =
       val       = layoutLiteral(result.tid, codepoint, StChrQuotes, lmod,
                                 byVal, l, err)
     if err == "":
-        result.value          = some(val)
+        result.value          = val
+        result.haveVal        = true
         result.contents.byVal = byVal
         result.contents.sz    = l
     else:
@@ -1309,10 +1309,11 @@ proc convertTypeLit(ctx: Module): IrNode =
     tinfo: TypeId
 
   tvars.initDict()
-  result        = ctx.irNode(IrLit)
-  result.tid    = tTypeSpec()
-  tinfo         = ctx.pt.buildType(tvars)
-  result.value  = some(tinfo.newRefValue(TTSpec))
+  result         = ctx.irNode(IrLit)
+  result.tid     = tTypeSpec()
+  tinfo          = ctx.pt.buildType(tvars)
+  result.value   = tinfo.newRefValue(TTSpec)
+  result.haveVal = true
 
 proc convertListLit(ctx: Module): IrNode =
   var
@@ -1541,6 +1542,7 @@ proc makeVariant(parent: SymbolInfo): SymbolInfo =
   result.declaredType = parent.declaredType
   result.tid          = tVar()
   result.constValue   = parent.constValue
+  result.haveConst    = parent.haveConst
   result.module       = parent.module
   result.declNode     = parent.declNode
   result.actualSym    = parent
@@ -1934,7 +1936,7 @@ proc convertIndex(ctx: Module): IrNode =
       if not ixStart.isConstant():
         ctx.irError("TupleConstIx", w = ixStart)
         return
-      let v = cast[int64](ixStart.value.get())
+      let v = cast[int64](ixStart.value)
       if v < 0 or v >= tobj.items.len():
         ctx.irError("TupleIxBound", w = ixStart)
         return

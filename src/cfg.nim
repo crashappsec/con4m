@@ -172,7 +172,7 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
     if ctx.handleOneNode(m, n.contents.loopBody, passDown).finishBlock(loopTop):
       if n.contents.condition != nil and n.contents.condition.isConstant():
         let
-          asMixed = n.contents.condition.value.get()
+          asMixed = n.contents.condition.value
           asBool  = cast[bool](asMixed)
         # If the condition evaluates to true (e.g., while true {}),
         # and there's no path to exit outside this loop, then we will

@@ -1,0 +1,13 @@
+x = (1, "foo", 3)
+assert x[0] == 1
+assert x[1] == "foo"
+assert x[2] == 3
+y = x
+assert x[0] == 1
+assert x[1] == "foo"
+assert x[2] == 3
+
+assert y[0] == 1
+assert y[1] == "foo"
+assert y[2] == 3
+

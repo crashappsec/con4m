@@ -1,7 +1,5 @@
 import base, unicode, ordinals
 
-from strutils import tohex, tolowerascii
-
 let richLitMods = @["r", "md", "html", "h1", "h2", "h3",
                     "h4", "h5", "h6", "p", "em", "i", "b",
                     "strong", "underline", "pre", "code",

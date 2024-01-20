@@ -9,10 +9,6 @@ proc get_cast_fn(tcur, tdst: DataType, tfrom, tto: TypeId, err: var string):
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 
-proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
-              contents: seq[pointer], err: var string): FlexArray[pointer] {.
-                exportc, cdecl.}
-
 proc list_repr(c: FlexArray[pointer]): cstring {.exportc, cdecl.} =
   var parts: seq[string]
 
@@ -170,6 +166,16 @@ proc get_cast_func_list(dt, ot: DataType, tfrom, tto: TypeId,
                         err: var string): pointer {.cdecl, exportc.} =
   return cast[pointer](cast_from_list_t)
 
+
+proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
+              contents: seq[pointer], err: var string):
+                FlexArray[pointer] {.exportc, cdecl.} =
+
+  result          = newArrayFromSeq[pointer](contents)
+  result.metadata = cast[pointer](t)
+
+  GC_ref(result)
+
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FCastFn]       = cast[pointer](get_cast_func_list)
 listOps[FContainerLit] = cast[pointer](list_lit)
@@ -186,12 +192,3 @@ TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)
 
 registerSyntax(TList, STList, @["l"], primary = true)
-
-proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
-              contents: seq[pointer], err: var string):
-                FlexArray[pointer] {.importc, cdecl.} =
-
-  result          = newArrayFromSeq[pointer](contents)
-  result.metadata = cast[pointer](t)
-
-  GC_ref(result)

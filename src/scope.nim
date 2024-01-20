@@ -464,8 +464,8 @@ proc toRope*(s: Scope, title = ""): Rope =
     var
       cc     = fgColor("✗", "red")
       isFunc = fgColor("✗", "red")
-    if sym.constValue.isSome():
-      let box = sym.constValue.get()
+    if sym.haveConst:
+      let box = sym.constValue
       cc = fgColor($(call_repr(box, sym.tid)), "atomiclime")
     elif sym.immutable:
       cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")

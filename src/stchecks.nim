@@ -72,7 +72,7 @@ proc useWoDefCheck(ctx: CompileCtx) =
 proc constAssignmentCheck(ctx: CompileCtx) =
   for scope in ctx.getAllScopes(false):
     for (name, sym) in scope.table.items():
-      if sym.immutable and sym.constValue.isNone():
+      if sym.immutable and not sym.haveConst:
         ctx.programError("ConstNotSet", sym, @[name])
 
 proc wholeProgramChecks*(ctx: CompileCtx) =
