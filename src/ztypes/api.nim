@@ -49,7 +49,7 @@ proc call_cast*(value: pointer, tcur, tdst: TypeId, err: var string): pointer
     fn = cast[Castfn](dtcur.get_cast_fn(dtdst, tcur, tdst, err))
 
   if fn != nil:
-    return fn(value, tcur, tdst)
+    return fn(value, tcur, tdst, err)
 
 template decl_bool_call_fn(fnname: untyped, opid: untyped) =
   proc fnname*(v1, v2: pointer, t: TypeId): bool {.exportc, cdecl.} =
@@ -120,7 +120,7 @@ proc call_assign_dict_ix*(c, v, i: pointer, t: TypeId, err: var bool)
     info = t.get_data_type()
     op   = cast[SetDixFn](info.ops[FAssignDIx])
 
-  op(c, v, i, err)
+  op(c, i, v, err)
 
 proc call_assign_slice*(c, v: pointer, i, j: int, t: TypeId,
                      err: var bool) {.exportc, cdecl.} =
@@ -196,6 +196,8 @@ proc runtime_instantiate_container*(t: TypeId, contents: seq[pointer],
                                     err: var string): pointer =
     let
       info = t.getDataType()
+
+    let
       op   = cast[CLitFn](info.ops[FContainerLit])
 
     return op(StNone, "", t, contents, err)

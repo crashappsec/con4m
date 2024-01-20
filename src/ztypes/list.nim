@@ -13,12 +13,11 @@ proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string): FlexArray[pointer] {.
                 exportc, cdecl.}
 
-proc list_repr(pre: pointer): cstring {.exportc, cdecl.} =
-  let c = extractRef[Zlist](pre)
+proc list_repr(c: FlexArray[pointer]): cstring {.exportc, cdecl.} =
   var parts: seq[string]
 
-  for item in c.l:
-    parts.add($(item.call_repr(c.tid)))
+  for item in c.items():
+    parts.add($(item.call_repr(cast[TypeId](c.metadata))))
 
   return cstring("[" & parts.join(", ") & "]")
 
@@ -145,7 +144,7 @@ proc cast_from_list_t(pre: FlexArray[pointer], tfrom, tto: TypeId,
                       err: var string): FlexArray[pointer] {.cdecl, exportc.} =
 
   var
-    s: seq[pointer]
+    s: seq[pointer] = @[]
     t1  = cast[TypeId](pre.metadata)
     to1 = t1.idToTypeRef()
     to2 = tto.idToTypeRef()
@@ -154,15 +153,10 @@ proc cast_from_list_t(pre: FlexArray[pointer], tfrom, tto: TypeId,
     err = "CannotCast"
     return nil
 
-  let
-    dt1 = to1.items[0].getDataType()
-    dt2 = to2.items[0].getDataType()
-
   for item in pre.items():
     let r = call_cast(item,
                     to1.items[0].followForwards(),
                     to2.items[0].followForwards(), err)
-
     s.add(r)
 
     if err != "":
@@ -173,7 +167,7 @@ proc cast_from_list_t(pre: FlexArray[pointer], tfrom, tto: TypeId,
   GC_ref(result)
 
 proc get_cast_func_list(dt, ot: DataType, tfrom, tto: TypeId,
-                        err: var string): pointer {.cdecl.} =
+                        err: var string): pointer {.cdecl, exportc.} =
   return cast[pointer](cast_from_list_t)
 
 listOps[FRepr]         = cast[pointer](list_repr)

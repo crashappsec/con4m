@@ -319,6 +319,7 @@ const errorMsgs = [
                      "function for <em>$1</em>, which is currently not " &
                      "allowed. C function has $3 args, local has $2."),
   ("ArrayIxErr",     "Array index <em>$1</em> is not in bounds."),
+  ("DictKeyErr",     "Could not find dictionary key: <em>$1</em>."),
   ("Debug",          "Debug: $1 $2 $3"),
  ]
 

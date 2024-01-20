@@ -28,43 +28,9 @@ proc isConcrete*(tRef: TypeRef): bool =
 template isGeneric*(x: untyped): bool =
   not x.isConcrete()
 
-proc isValueType*(id: TypeId): bool =
-  let n = id.followForwards()
-  if not n.isBasicType():
-    return false
-  return dataTypeInfo[cast[int](n)].byValue
-
-proc isIntType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.intW != 0
-
-proc isFloatType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.fTy
-
-proc isBoolType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.isBool
-
-proc isSigned*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.signed
+proc isC4StrType*(id: TypeId): bool {.exportc, cdecl.} =
+  if id.followForwards() in [TString, TUtf32, TBuffer]:
+    return true
 
 proc typeHash*(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
                nvars: var int) =

@@ -9,7 +9,8 @@ type
   ReprFn*     = proc(p: pointer): string {.cdecl.}
   GetCastFn*  = proc(dt: DataType, t1, t2: TypeId,
                      err: var string): pointer {.cdecl.}
-  CastFn*     = proc(cur: pointer, tfrom, tto: TypeId): pointer {.cdecl.}
+  CastFn*     = proc(cur: pointer, tfrom, tto: TypeId, err: var string):
+                    pointer {.cdecl.}
   BoolRetFn*  = proc(l, r: pointer): bool {.cdecl.}
   BinOpFn*    = proc(l, r: pointer): pointer {.cdecl.}
   IndexFn*    = proc(c: pointer, i: int, err: var bool): pointer {.cdecl.}
@@ -339,6 +340,45 @@ proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
     op = cast[ReprFn](info.ops[FStaticRepr])
 
   return cstring(op(value))
+
+proc isValueType*(id: TypeId): bool =
+  let n = id.followForwards()
+  if not n.isBasicType():
+    return false
+  return dataTypeInfo[cast[int](n)].byValue
+
+proc isIntType*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.intW != 0
+
+proc isFloatType*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.fTy
+
+proc isBoolType*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.isBool
+
+proc isSigned*(id: TypeId): bool =
+  let n = cast[int](id.followForwards())
+  if n >= 0 and n >= numBuiltinTypes():
+    return false
+  let dtinfo = dataTypeInfo[n]
+
+  return dtinfo.signed
+
 
 # proc call_get_val_for_ffi*(p: pointer, ffitype: int)
 

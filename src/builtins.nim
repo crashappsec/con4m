@@ -24,15 +24,24 @@ proc calltable*(s1: FlexArray[FlexArray[Rope]]): Rope {.exportc, cdecl.} =
   var
     actual: seq[seq[Rope]]
 
-  for item in s1.items():
-    actual.add(item.items())
+  for l in s1.items():
+    var row: seq[Rope] = @[]
+
+    for item in l.items():
+      row.add(item.copy())
+    actual.add(row)
 
   result = actual.quickTable()
   GC_ref(result)
 
 proc callflattable*(s1: FlexArray[Rope]): Rope {.exportc, cdecl.} =
 
-  result = s1.items().instantTable()
+  var l: seq[Rope]
+  for item in s1.items():
+    l.add(item.copy())
+
+  result = l.instantTable()
+
   GC_ref(result)
 
 proc listlen*(arr: FlexArray[pointer]): int {.exportc, cdecl.} =

@@ -458,7 +458,11 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
     ctx.genPushImmediate(immediate)
   else:
     ctx.genPush(sym)
-  ctx.genTCall(FIndex)
+
+  if sym.tid.isDictType():
+    ctx.genTCall(FDictIndex)
+  else:
+    ctx.genTCall(FIndex)
 
 proc genPushStaticString(ctx: CodeGenState, name: string) =
   ctx.emitInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
@@ -473,7 +477,10 @@ proc genAssign(ctx: CodeGenState, tid: TypeId) =
   ctx.emitInstruction(ZAssignToLoc, tid = tid)
 
 proc genLoadFromIx(ctx: CodeGenState, tid: TypeId) =
-  ctx.genTCall(FIndex, tid = tid)
+  if tid.isDictType():
+    ctx.genTCall(FDictIndex, tid = tid)
+  else:
+    ctx.genTCall(FIndex, tid = tid)
 
 proc genLoadFromSlice(ctx: CodeGenState, tid: TypeId) =
   ctx.genTCall(FSlice, tid = tid)
@@ -729,9 +736,9 @@ proc genIndex(ctx: CodeGenState, n: IrNode) =
 
   if cur.indexEnd != nil:
     ctx.oneIrNode(cur.indexEnd)
-    ctx.genLoadFromSlice(n.tid)
+    ctx.genLoadFromSlice(cur.toIx.tid)
   else:
-    ctx.genLoadFromIx(n.tid)
+    ctx.genLoadFromIx(cur.toIx.tid)
 
 proc genIndexLhs(ctx: CodeGenState, n: IrNode) =
   # The actual assignment is generated above us.
@@ -858,8 +865,12 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
     ctx.genTCall(FCopy, cur.assignRhs.tid)
   ctx.oneIrNode(cur.assignLhs)
   if cur.assignLhs.contents.kind == IrIndexLhs:
-    if cur.assignLhs.contents.indexEnd == nil:
-      ctx.genTCall(FAssignIx, cur.assignRhs.tid)
+    let ixNode = cur.assignLhs.contents
+    if ixNode.indexEnd == nil:
+      if ixNode.toIx.tid.isDictType():
+        ctx.genTCall(FAssignDIx, cur.assignRhs.tid)
+      else:
+        ctx.genTCall(FAssignIx, cur.assignRhs.tid)
     else:
       ctx.genTCall(FAssignSlice, cur.assignRhs.tid)
   else:

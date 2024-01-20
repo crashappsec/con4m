@@ -2,7 +2,7 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Dictionary and tuple implementations
+# - Tuple implementation
 # - Component logic in runtime.
 # - Load default values at beginning of program.
 # - Spec checking after execution.
@@ -27,7 +27,9 @@
 # - Sort errors by file / line (they come out by phase in IR portion).
 # - Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
-# - foo(bar) -> bar.foo(); should they both work?
+# - Remove any remaining newRefVal / extractRef calls
+
+
 
 # == Medium -- before public release ==
 # - explicit casts -- to(obj, type)
@@ -51,6 +53,7 @@
 #   but if there's no assignment it should error / warn if one might be
 #   locking something that isn't assigned.
 # - Be able to lock an entire section.
+# - Issue w/ non-consistent views in ht?
 # - Warning when your declared type is more generic than the inferred type.
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
 # - Doc strings

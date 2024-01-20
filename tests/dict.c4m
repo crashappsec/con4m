@@ -1,0 +1,9 @@
+x = { "foo" : "Bar" }
+x["bar"] = "Foo"
+print(x["bar"])
+print(x["foo"])
+print(x["boz"])
+
+
+
+

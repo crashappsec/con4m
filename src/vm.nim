@@ -584,9 +584,35 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
         # No possible error right now.
       of FDictIndex:
-        discard
+        let
+          ix = ctx.stack[ctx.sp]
+          c  = ctx.stack[ctx.sp + 2]
+          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
+          to = ty.idToTypeRef()
+          it = to.items[^1]
+
+        var err: bool
+
+        ctx.sp += 2
+        ctx.stack[ctx.sp]     = call_dict_index(c, ix, ty, err)
+        ctx.stack[ctx.sp + 1] = cast[pointer](it)
+
+        if err:
+          ctx.bailHere("DictKeyErr", @[ $(call_repr(ix, to.items[0])) ])
+
       of FAssignDIx:
-        discard
+        let
+          ix = ctx.stack[ctx.sp]
+          cp = cast[ptr pointer](ctx.stack[ctx.sp + 2])
+          c  = cp[]
+          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
+          ob = ctx.stack[ctx.sp + 4]                 # Data to assign
+
+        var err: bool
+
+        ctx.sp += 6
+        call_assign_dict_ix(c, ob, ix, ty, err)
+
       of FContainerLit:
         var
           num = cast[int](ctx.stack[ctx.sp])

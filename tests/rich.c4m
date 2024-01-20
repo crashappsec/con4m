@@ -6,7 +6,7 @@ func crappylen(x: list[`t]) {
 
 r = "Hello, world!"'h2
 
-print(r)
+r.print()
 
 n =  [["Name",      "Country",   "City"],
       ["John"'em,     "USA",     "NYC"],
@@ -26,4 +26,4 @@ n =  [["Name",      "Country",   "City"],
 assert crappylen(n) == len(n)
 
 print("Hello, world!"'h1 + "Here's " + "emphasis"'em + " for my table: ")
-print(table(n))
+print(n.table())

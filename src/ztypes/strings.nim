@@ -84,7 +84,8 @@ proc rich_copy(r: Rope): Rope {.cdecl, exportc.} =
   result = r.copy()
   GC_ref(result)
 
-proc cast_str_to_u32(pre: C4Str, tfrom, tto: TypeId): C4Str =
+proc cast_str_to_u32(pre: C4Str, tfrom, tto: TypeId, err: var string):
+                    C4Str {.cdecl, exportc.} =
   let
     l = pre.len()
     s = `$`(cast[cstring](pre)).toRunes()
@@ -94,7 +95,9 @@ proc cast_str_to_u32(pre: C4Str, tfrom, tto: TypeId): C4Str =
   if l != 0:
     copyMem(cast[pointer](result), addr s[0], l)
 
-proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId): pointer =
+proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId,
+                      err: var string): pointer {.cdecl, exportc.} =
+
   let s = $(cast[cstring](pre))
   var rope = text(s)
 
@@ -102,7 +105,8 @@ proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId): pointer =
 
   return cast[pointer](rope)
 
-proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId): Rope =
+proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId, err: var string):
+                     Rope {.cdecl, exportc.} =
   var
     l = (pre.len() div 4) * 4
     s = newSeq[Rune](int(l))
@@ -113,7 +117,8 @@ proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId): Rope =
   result = text($(s))
   GC_ref(result)
 
-proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId): C4Str =
+proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId, err: var string):
+                    C4Str {.cdecl, exportc.} =
   var
     l = (pre.len() div 4) * 4
     s = newSeq[Rune](int(l))
@@ -123,7 +128,8 @@ proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId): C4Str =
 
   result = newC4Str($s)
 
-proc cast_rich_to_u32(r: Rope, tfrom, to: TypeId): C4Str =
+proc cast_rich_to_u32(r: Rope, tfrom, to: TypeId, err: var string):
+                     C4Str {.cdecl, exportc.} =
   let
     s = r.toUtf8(r.runeLength())
     u = s.toRunes()
@@ -133,7 +139,8 @@ proc cast_rich_to_u32(r: Rope, tfrom, to: TypeId): C4Str =
   if l != 0:
     copyMem(cast[pointer](result), addr u[0], l)
 
-proc cast_rich_to_str(r: Rope, tfrom, tto: TypeId): C4Str =
+proc cast_rich_to_str(r: Rope, tfrom, tto: TypeId, err: var string):
+                     C4Str {.cdecl, exportc.} =
   return newC4Str(r.toUtf8(r.runeLength()))
 
 proc str_slice(a: pointer, b, c: int, err: bool): pointer =
