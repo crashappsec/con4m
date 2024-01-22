@@ -238,6 +238,8 @@ type
     parent*:    IrNode
     contents*:  IrContents
     scope*:     Scope
+    lock*:      bool
+
 
   IrContents* = ref object
     case kind*: IrNodeType
@@ -259,7 +261,6 @@ type
     of IrAssign:
       assignlhs*:   IrNode
       assignrhs*:   IrNode
-      lock*:      bool
     of IrConditional:
       predicate*:   IrNode
       trueBranch*:  IrNode
@@ -681,6 +682,9 @@ type
      # null / 0 value gets loaded if there's a lookup failure.
      ZLoadFromAttr  = 0x17,
 
+     # Swap the top two stack items.
+     ZSwap          = 0x18,
+
      # Pop a value from the stack, discarding it.
      ZPop           = 0x20,
 
@@ -746,6 +750,9 @@ type
      # Whereas with `ZAssignToLoc`, the stack contains a pointer to a
      # variable, here it contains a pointer to a heap-alloc'd string
      # that is the name of the attribute.
+     #
+     # If there is an argument provided, will lock the attribute,
+     # preventing additional writes.
      ZAssignAttr    = 0x71,
 
      # This just needs to shrink the stack back to the base pointer,
@@ -774,6 +781,11 @@ type
 
      # Halts the program if the stack top is false. Pops the stack.
      ZAssert        = 0xa0,
+
+     # Sets the 'lock-on-write' bit for an attribute whose name is at
+     # the top of the stack. The only way to lock immediately is
+     # through a ZAssignAttr.
+     ZLockOnWrite   = 0xb0,
 
      # A no-op. These double as labels for disassembly too.
      ZNop           = 0xff
@@ -873,6 +885,7 @@ type
     nextEntrypoint*: int32  # A module ID
     funcInfo*:       seq[ZFnInfo]
     ffiInfo*:        seq[ZFfiInfo]
+    spec*:           ValidationSpec
 
   ZModuleInfo* = ref object
     modname*:        string

@@ -12,7 +12,6 @@ const
   TRACE_STACK    = true
   TRACE_SCOPE    = true
 
-
 type
  StackFrame   = object
     callModule:   ZModuleInfo
@@ -20,6 +19,13 @@ type
     targetline:   int32
     targetfunc:   ZFnInfo
     targetmodule: ZModuleInfo # If not targetFunc
+
+ AttrContents = ref object
+   contents:    pointer
+   tid:         TypeId
+   isSet:       bool
+   locked:      bool
+   lockOnWrite: bool
 
  RuntimeState = ref object
     obj:            ZObjectFile
@@ -33,8 +39,7 @@ type
     returnRegister: pointer
     rrType:         pointer
     moduleIds:         seq[seq[pointer]]
-    attrs:          Dict[string, pointer]
-    attrTypes:      Dict[string, TypeId]
+    attrs:          Dict[string, AttrContents]
     externCalls:    seq[CallerInfo]
     externArgs:     seq[seq[FfiType]]
     externFps:      seq[pointer]
@@ -311,18 +316,36 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         ctx.stack[ctx.sp] = nil
     of ZHalt:
       return
+    of ZSwap:
+      var tmptop: pointer
+
+      tmptop                = ctx.stack[ctx.sp]
+      ctx.stack[ctx.sp]     = ctx.stack[ctx.sp + 2]
+      ctx.stack[ctx.sp + 2] = tmptop
+
+      tmptop                = ctx.stack[ctx.sp + 1]
+      ctx.stack[ctx.sp + 1] = ctx.stack[ctx.sp + 3]
+      ctx.stack[ctx.sp + 3] = tmptop
+
     of ZLoadFromAttr:
       let
-        zptr  = cast[int](ctx.stack[ctx.sp])
-        eix   = ctx.obj.staticdata.find('\0', zptr)
-        key   = ctx.obj.staticdata[zptr ..< eix]
-        vopt  = ctx.attrs.lookup(key)
-        val   = vopt.get()
-        topt  = ctx.attrTypes.lookup(key)
-        tval  = cast[pointer](topt.get())
+        zptr   = cast[int](ctx.stack[ctx.sp])
+        eix    = ctx.obj.staticdata.find('\0', zptr)
+        key    = ctx.obj.staticdata[zptr ..< eix]
+        infOpt = ctx.attrs.lookup(key)
 
-      ctx.stack[ctx.sp]     = val
-      ctx.stack[ctx.sp + 1] = tval
+      if infOpt.isNone() or not infOpt.get().isSet:
+        echo zptr.toHex().toLowerAscii()
+        ctx.bailHere("AttrUse", @[$(key)])
+      else:
+        let info = infOpt.get()
+        if instr.arg == 0:
+          ctx.stack[ctx.sp]     = info.contents
+          ctx.stack[ctx.sp + 1] = cast[pointer](info.tid)
+        else:
+          ctx.stack[ctx.sp]     = addr info.contents
+          ctx.stack[ctx.sp + 1] = cast[pointer](info.tid)
+
     of ZAssignAttr:
       let
         zptr  = cast[int](ctx.stack[ctx.sp])
@@ -333,11 +356,64 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
       let value = ctx.stack[ctx.sp]
       ctx.sp += 1
-      let vtype = cast[TypeId](ctx.stack[ctx.sp])
+      let vtype = instr.typeInfo
       ctx.sp += 1
 
-      ctx.attrs[key]     = value
-      ctx.attrTypes[key] = vtype
+      # Create a new one, just to avoid any race conditions.
+      var
+        newInfo = AttrContents(contents: value, tid: vType, isSet: true)
+        oldInfo: AttrContents
+
+      if instr.arg != 0:
+        newInfo.locked = true
+      else:
+        newInfo.locked = false
+
+      let infOpt = ctx.attrs.lookup(key)
+
+      if infOpt.isSome():
+        oldinfo = infOpt.get()
+
+        if oldinfo.locked:
+          if not call_eq(value, oldinfo.contents, oldinfo.tid):
+            ctx.bailHere("LockedAttr",
+                         @[$(key),
+                           $(call_repr(oldinfo.contents, oldinfo.tid)),
+                           $(call_repr(value, vtype))])
+          else:
+            # Setting to the same value is okay.
+            return
+        elif oldinfo.lockOnWrite:
+          newInfo.locked = true
+
+      ctx.attrs[key] = newInfo
+      if oldinfo != nil:
+        GC_unref(oldinfo)
+
+    of ZLockOnWrite:
+      let
+        zptr  = cast[int](ctx.stack[ctx.sp])
+        eix   = ctx.obj.staticdata.find('\0', zptr)
+        key   = ctx.obj.staticdata[zptr ..< eix]
+
+      ctx.sp += 2
+
+      var
+        newInfo = AttrContents(lockOnWrite: true)
+        oldInfo: AttrContents
+
+      let infOpt = ctx.attrs.lookup(key)
+      if infOpt.isSome():
+        oldInfo = infOpt.get()
+        if oldInfo.locked:
+            ctx.bailHere("AlreadyLocked", @[$(key)])
+        newInfo.contents = oldInfo.contents
+        newInfo.tid      = oldInfo.tid
+        newInfo.isSet    = oldInfo.isSet
+
+      ctx.attrs[key] = newInfo
+      if oldinfo != nil:
+        GC_unref(oldinfo)
     of ZStoreTop:
       let
         address  = ctx.storageAddr(instr)
@@ -561,6 +637,8 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           ty = cast[TypeId](ctx.stack[ctx.sp + 3])
           ob = ctx.stack[ctx.sp + 4]                 # Data to assign
 
+        # Do I have to take the address of the container on assign, if
+        # it's an attr? I think so; I think that's what's wrong.
         var err: bool
 
         ctx.sp += 6
@@ -826,6 +904,5 @@ proc executeObject*(obj: ZObjectFile): int =
   for item in obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
   ctx.attrs.initDict()
-  ctx.attrTypes.initDict()
   ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)
   return ctx.runMainExecutionLoop()

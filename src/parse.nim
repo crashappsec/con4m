@@ -1045,10 +1045,11 @@ production(lockAttr, NodeAttrSetLock):
     result.addKid(ctx.opAssign(x))
   of TtColon, TtAssign:
     result.addKid(ctx.assign(x))
-  of TtIdentifier:
-    result.addKid(ctx.memberExpr(x))
   else:
-    ctx.errSkipStmt("BadLock")
+    if x.children[0].kind notin [NodeIdentifier, NodeMember]:
+      print x.toRope()
+      ctx.errSkipStmt("BadLock")
+    result.addKid(x.children[0])
 
 production(elseStmt, NodeElseStmt):
   ctx.advance()

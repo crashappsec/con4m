@@ -140,6 +140,17 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
 
         ty  = text(" ")
         lbl = strong(str)
+    of ZLoadFromAttr:
+      if item.arg != 0:
+        # Right now, we do this when a container is getting indexed,
+        # because assignment always expects us to push the storage
+        # address, even if we're going to assign to an index, not an
+        # entire object.
+        #
+        # This is only needed for index assignment right now, and
+        # should be fixed by not requiring this, and not generating an
+        # needless ref when we are going to end up taking an index.
+        arg1 = text("& (new ref)")
     of ZFFICall:
       let p = addr ctx.staticData[ctx.ffiInfo[item.arg].nameOffset]
       arg1 = text(hex(item.arg))
@@ -222,8 +233,14 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     of ZPushImm:
       arg2 = text($item.immediate)
       lbl  = text(`$`(item.immediate) & " -> (stack)")
-    of ZAssignToLoc, ZAssignAttr:
+    of ZAssignToLoc:
       lbl = text("popx2")
+    of ZAssignAttr:
+      lbl = text("popx2")
+      if item.arg != 0:
+        arg1 = text("+lock")
+    of ZLockOnWrite:
+      lbl = text("pop")
     of ZModuleRet , ZRet, ZHalt:
       ty = text(" ")
     of ZMoveSp:
@@ -252,7 +269,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         lbl = em(s)
       else:
         lbl = text(" ")
-    of ZPop, ZAssert:
+    of ZPop, ZAssert, ZSwap:
       ty = text(" ")
     else:
       discard
@@ -319,6 +336,9 @@ proc genPop(ctx: CodeGenState, sym: SymbolInfo = nil,
 
 proc genNop(ctx: CodeGenState) =
   ctx.emitInstruction(ZNop)
+
+proc genSwap(ctx: CodeGenState) =
+  ctx.emitInstruction(ZSwap)
 
 proc genCopyStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
@@ -467,11 +487,16 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
 proc genPushStaticString(ctx: CodeGenState, name: string) =
   ctx.emitInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
 
-proc genLoadAttr(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZLoadFromAttr, tid = tid)
+proc genLoadAttr(ctx: CodeGenState, tid: TypeId, mode = 0) =
+  ctx.emitInstruction(ZLoadFromAttr, tid = tid, arg = mode)
 
-proc genSetAttr(ctx: CodeGenState, tid: TypeId) =
-  ctx.emitInstruction(ZAssignAttr, tid = tid)
+proc genSetAttr(ctx: CodeGenState, tid: TypeId, lock: bool) =
+  var boolVal = 0
+
+  if lock:
+    boolVal = 1
+
+  ctx.emitInstruction(ZAssignAttr, tid = tid, arg = boolVal)
 
 proc genAssign(ctx: CodeGenState, tid: TypeId) =
   ctx.emitInstruction(ZAssignToLoc, tid = tid)
@@ -723,13 +748,17 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
       let offset = ctx.addStaticObject(n.value, cur.sz)
       ctx.genCopyStaticObject(offset, cur.sz, n.tid)
 
+proc genLockAttr(ctx: CodeGenState, sym: SymbolInfo) =
+  ctx.genPushStaticString(sym.name)
+  ctx.emitInstruction(ZLockOnWrite)
+
 proc genMember(ctx: CodeGenState, cur: IrContents) =
+
   ctx.genPushStaticString(cur.attrSym.name)
   ctx.genLoadAttr(cur.attrSym.tid)
 
 proc genMemberLhs(ctx: CodeGenState, cur: IrContents) =
   ctx.genPushStaticString(cur.attrSym.name)
-  ctx.genSetAttr(cur.attrSym.tid)
 
 proc genIndex(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
@@ -860,6 +889,7 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
   # TODO: Don't push the container's memory storage address if we're
   # doing an index assign (right now the VM knows what to do).
 
+  ctx.genLabel("Starting an assignment")
   let cur = n.contents
 
   ctx.oneIrNode(cur.assignRhs)
@@ -867,8 +897,23 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
     not cur.assignRhs.tid.getDataType().byValue:
     ctx.genTCall(FCopy, cur.assignRhs.tid)
   ctx.oneIrNode(cur.assignLhs)
+
   if cur.assignLhs.contents.kind == IrIndexLhs:
-    let ixNode = cur.assignLhs.contents
+    let
+      ixNode = cur.assignLhs.contents
+
+    case ixNode.toIx.contents.kind
+    of IrLhsLoad:
+      if ixNode.toIx.contents.symbol.isAttr:
+        ctx.genSwap()
+        ctx.genLoadAttr(ixNode.toIx.contents.symbol.tid, mode = 1)
+        ctx.genSwap()
+    of IrMemberLhs:
+      ctx.genSwap()
+      ctx.genLoadAttr(ixNode.toIx.contents.attrSym.tid, mode = 1)
+      ctx.genSwap()
+    else:
+      discard
     if ixNode.indexEnd == nil:
       if ixNode.toIx.tid.isDictType():
         ctx.genTCall(FAssignDIx, cur.assignRhs.tid)
@@ -877,7 +922,21 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
     else:
       ctx.genTCall(FAssignSlice, cur.assignRhs.tid)
   else:
-    ctx.genAssign(cur.assignRhs.tid)
+    var
+      isAttr: bool
+      tid:    TypeId
+
+    if cur.assignLhs.contents.kind == IrLhsLoad:
+      isAttr = cur.assignLhs.contents.symbol.isAttr
+    else: # IrMemberLhs is below us
+      isAttr = true
+
+    if isAttr:
+      ctx.genSetAttr(cur.assignRhs.tid, n.lock)
+    else:
+      ctx.genAssign(cur.assignRhs.tid)
+
+  ctx.genLabel("Finished one assignment")
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
@@ -972,7 +1031,10 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
   of IrLit:
     ctx.genLitLoad(n)
   of IrMember:
-    ctx.genMember(cur)
+    if n.lock:
+      ctx.genLockAttr(cur.attrSym)
+    else:
+      ctx.genMember(cur)
   of IrMemberLhs:
     ctx.genMemberLhs(cur)
   of IrIndex:
@@ -995,7 +1057,10 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
   of IrLhsLoad:
     ctx.genLoadStorageAddress(cur.symbol)
   of IrLoad:
-    ctx.genLoadSymbol(cur.symbol)
+    if n.lock:
+      ctx.genLockAttr(cur.symbol)
+    else:
+      ctx.genLoadSymbol(cur.symbol)
   of IrFold:
     ctx.genLoadValue(n)
   of IrNop:

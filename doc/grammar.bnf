@@ -12,7 +12,7 @@ optionalBody  ::= body |
 
 enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
 enumItem     ::= ID (('=' | ':') expression)?
-lockAttr     ::= '~' (assign | 
+lockAttr     ::= '~' (assign | )
 ifStmt       ::= "if" expression body ("elif" expression body)* ("else" body)?
 
 forStmt      ::= labelStmt? (rangedFor | containerFor)

@@ -309,7 +309,6 @@ const errorMsgs = [
                      "to create."),
   ("AttrUse",        "Attempted to use an attribute <em>$1</em> that has not " &
                      "been set."),
-
   ("RT_BadTOp",      "Unknown function id for internal type API call " &
                      "(<em>$1</em>)"),
   ("ExternZArgCt",   "Local function spec has more arguments than external " &
@@ -320,6 +319,11 @@ const errorMsgs = [
                      "allowed. C function has $3 args, local has $2."),
   ("ArrayIxErr",     "Array index <em>$1</em> is not in bounds."),
   ("DictKeyErr",     "Could not find dictionary key: <em>$1</em>."),
+  ("LockedAttr",     "Attempted to set attribute <em>$1</em>, which is " &
+                     "locked. Current value: <em>$2</em> Attempted value: " &
+                     "<em>$3</em>"),
+  ("AlreadyLocked",  "Tried to set lock-on-write for attribute <em>$1</em>, " &
+                     "but it is already locked."),
   ("Debug",          "Debug: $1 $2 $3"),
  ]
 

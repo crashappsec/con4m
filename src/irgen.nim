@@ -239,7 +239,7 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
     return (fmt("Loop", descriptor, moreinfo),
             @[ctx.contents.condition, ctx.contents.loopBody])
   of IrAssign:
-    if ctx.contents.lock:
+    if ctx.lock:
       moreinfo = "+lock"
     return (fmt("Assign", "", moreinfo, ctx.getTid()),
             @[ctx.contents.assignLhs, ctx.contents.assignRhs])
@@ -270,7 +270,9 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrNop:
     return (fmt("Nop"), @[])
   of IrMember, IrMemberLhs:
-    return (fmt("Member", ctx.contents.name, "", ctx.getTid()), @[])
+    if ctx.lock:
+      moreinfo = "+lock"
+    return (fmt("Member", ctx.contents.name, moreinfo, ctx.getTid()), @[])
   of IrIndex, IrIndexLhs:
     return (fmt("Index"), @[ctx.contents.toIx, ctx.contents.indexStart,
                             ctx.contents.indexEnd])
@@ -300,7 +302,9 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrLhsLoad:
     return (fmt("LhsLoad", ctx.contents.symbol.name, "", ctx.getTid()), @[])
   of IrLoad:
-    return (fmt("Load", ctx.contents.symbol.name, "", ctx.getTid()), @[])
+    if ctx.lock:
+      moreinfo = "+lock"
+    return (fmt("Load", ctx.contents.symbol.name, moreinfo, ctx.getTid()), @[])
   of IrSwitch:
     if ctx.contents.typecase:
       moreinfo = "type"
@@ -1691,6 +1695,12 @@ proc convertConditional(ctx: Module): IrNode =
                 @[result.contents.predicate.getTid().toString()],
                 w = ctx.parseKid(0))
 
+proc convertLock(ctx: Module): IrNode =
+  result      = ctx.downNode(0)
+  result.lock = true
+  if result.contents.kind != IrAssign:
+    result.tid = TVoid
+
 proc convertReturn(ctx: Module): IrNode =
   result = ctx.irNode(IrRet)
   if ctx.numKids() == 1:
@@ -2154,8 +2164,7 @@ proc parseTreeToIr(ctx: Module): IrNode =
     of NodeIfStmt, NodeElifStmt:
       result = ctx.convertConditional()
     of NodeAttrSetLock:
-      result               = ctx.downNode(0)
-      result.contents.lock = true
+      result = ctx.convertLock()
     of NodeReturnStmt:
       result = ctx.convertReturn()
     of NodeAssign:

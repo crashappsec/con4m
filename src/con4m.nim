@@ -2,7 +2,6 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Tuple implementation
 # - Component logic in runtime.
 # - Load default values at beginning of program.
 # - Spec checking after execution.
@@ -11,8 +10,8 @@
 # - Saving the spec in the object file (and type dict).
 # - Checkpointing runtime state.
 # - Hook up getopts again.
+# - Fix up and test 'Other' data types
 # - Typecheck c vs con4m api for ffi
-# - fix stuff taking lists like u32.
 # - C-level interface to attributes
 # - Update the pretty printer.
 # - Restrict the leading '$' properly.
@@ -22,7 +21,6 @@
 #   funcs and, when they show up,
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
-# - Add code gen for 'lock' operator.
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
 # - Sort errors by file / line (they come out by phase in IR portion).
@@ -33,6 +31,7 @@
 
 
 # == Medium -- before public release ==
+# - Check attr to lock and attrs to access against spec statically.
 # - Should strings be mutable? Right now they are not.
 # - Buffers should be mutable.
 # - explicit casts -- to(obj, type)
