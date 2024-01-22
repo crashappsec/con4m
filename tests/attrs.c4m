@@ -1,0 +1,8 @@
+foo.bar = "hello"
+assert foo.bar == "hello"
+foo.bar = "goodbye"
+assert foo.bar == "goodbye"
+boo.hoo = [0,1,2,3]
+assert boo.hoo[2] == 2
+boo.hoo[2] = 4
+assert boo.hoo[2] == 4
