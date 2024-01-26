@@ -1,0 +1,4 @@
+extern con4m_print(a: ptr) -> cvoid {
+  local: print(`x) -> void
+  pure: false
+}

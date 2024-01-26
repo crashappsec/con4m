@@ -1,0 +1,9 @@
+extern exit(status: cint) -> cvoid {
+  local: exit(int) -> void
+  pure: false
+}
+
+extern abort() -> cvoid {
+  local: abort() -> void
+  pure: false
+}

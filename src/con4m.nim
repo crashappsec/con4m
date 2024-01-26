@@ -7,7 +7,6 @@
 # - con4m-accessible API for setting specs.
 # - Apply component logic in runtime.
 # - Re-implement standard library / wrappings.
-# - Save the type dictionary in the object.
 # - Checkpointing runtime state.
 # - Hook up getopts again.
 # - Fix up and test 'Other' data types
@@ -15,6 +14,7 @@
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
 # - Doc strings
+# - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show

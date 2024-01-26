@@ -1,0 +1,15 @@
+extern validate_spec() -> cvoid {
+  local: validate_spec() -> void
+  pure: true
+}
+
+extern lock_spec() -> cvoid {
+  local: lock_spec() -> void
+  pure: true
+}
+
+extern load_spec() -> cvoid {
+  local: load_spec() -> void
+  pure: true
+}
+

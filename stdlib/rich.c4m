@@ -3,19 +3,9 @@ extern callflattable(a: ptr) -> ptr {
   pure: true
 }
 
-extern callprint(a: ptr) -> cvoid {
-  local: print(rich) -> void
-  pure: false
-}
-
 extern calltable(a: ptr) -> ptr {
   local: table(list[list[rich]]) -> rich
   pure: true
-}
-
-extern listlen(p: ptr) -> ci64 {
-   local: len(list[`t]) -> int
-   pure: true
 }
 
 extern ropeplus(a: ptr, b: ptr) -> ptr {

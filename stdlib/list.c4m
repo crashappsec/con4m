@@ -3,3 +3,7 @@ extern listlen(p: ptr) -> ci64 {
    pure: true
 }
 
+extern listadd(l1: ptr, l2: ptr) -> ptr {
+  local: __plus__(list[`t], list[`t]) -> list[`t]
+  pure: true
+}

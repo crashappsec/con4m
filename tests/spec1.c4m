@@ -11,5 +11,3 @@ _spec {
   }
   x: 1
 }
-
-print("hi"'h1)
