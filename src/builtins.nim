@@ -1,4 +1,4 @@
-import nimutils, strutils, ffi, ztypes/base
+import nimutils, strutils, ffi, specs, ztypes/api
 
 proc splitwrap*(s1: cstring, s2: cstring):
               FlexArray[cstring] {.exportc, cdecl.} =
@@ -34,6 +34,26 @@ proc calltable*(s1: FlexArray[FlexArray[Rope]]): Rope {.exportc, cdecl.} =
   result = actual.quickTable()
   GC_ref(result)
 
+proc con4m_print(p: pointer) {.exportc, cdecl.} =
+  # Once we properly integrate the 'Mixed' type we can make this
+  # take a variable number of arguments.
+
+  var n: Mixed = cast[Mixed](p)
+
+  if unify(TRich, n.t) != TBottom:
+    print(cast[Rope](n.value))
+    return
+
+  var err = ""
+
+  let asRope = cast[Rope](call_cast(n.value, n.t, TRich, err))
+
+  if err == "":
+    print(asRope)
+    return
+
+  echo call_repr(n.value, n.t)
+
 proc callflattable*(s1: FlexArray[Rope]): Rope {.exportc, cdecl.} =
 
   var l: seq[Rope]
@@ -59,6 +79,7 @@ addStaticFunction("splitwrap", splitwrap)
 addStaticFunction("echoanint",  echoanint)
 addStaticFunction("callecho",  callecho)
 addStaticFunction("callprint", callprint)
+addStaticFunction("con4m_print", con4mprint)
 addStaticFunction("calltable", calltable)
 addStaticFunction("callflattable", callflattable)
 addStaticFunction("listlen", listlen)

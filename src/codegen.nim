@@ -32,7 +32,7 @@ type
     fcur:            FuncInfo
     curNode:         IrNode
     callBackpatches: seq[(FuncInfo, Module, int)]
-
+    strCache:        Dict[string, int]
 
 var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
                        "*", "/", "//", "%", "<<", ">>", "&", "|", "^",
@@ -65,17 +65,31 @@ proc addStaticObject(ctx: CodeGenState, p: pointer, l: int): int =
   for i in 0 ..< l:
     ctx.zobj.staticData.add(arr[i])
 
+  # Let's 64-bit align.
+  let overage = ctx.zobj.staticData.len() mod 8
+  for i in 0 ..< ((8 - overage) mod 8):
+    ctx.zobj.staticData.add('\x00')
   #dealloc(p)
 
-proc addStaticObject(ctx: CodeGenState, s: string, addnil = true): int =
+proc addStaticObject(ctx: CodeGenState, s: string): int =
   if s.len() == 0:
     return 0
+
+  let cacheOpt = ctx.strCache.lookup(s)
+  if cacheOpt.isSome():
+    return cacheOpt.get()
 
   result = ctx.zobj.staticData.len()
 
   ctx.zobj.staticData &= s
-  if addnil:
+  ctx.zobj.staticData.add('\x00')
+
+  let overage = (ctx.zobj.staticData.len() + 1) mod 8
+
+  for i in 0 ..< ((8 - overage) mod 8):
     ctx.zobj.staticData.add('\x00')
+
+  ctx.strCache[s] = result
 
 proc getLocation(ctx: CodeGenState): int32 =
   let n = ctx.curNode
@@ -889,7 +903,6 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
   # TODO: Don't push the container's memory storage address if we're
   # doing an index assign (right now the VM knows what to do).
 
-  ctx.genLabel("Starting an assignment")
   let cur = n.contents
 
   ctx.oneIrNode(cur.assignRhs)
@@ -935,8 +948,6 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
       ctx.genSetAttr(cur.assignRhs.tid, n.lock)
     else:
       ctx.genAssign(cur.assignRhs.tid)
-
-  ctx.genLabel("Finished one assignment")
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
@@ -1216,15 +1227,15 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
         let itemType = typeinfo.items[i].idToTypeRef()
         if itemType.kind == C4TVar:
-          ourType = -1
+          ourType = RTAsMixed
         else:
           let dsttype = typeinfo.items[i].followForwards()
           if dsttype.isBasicType():
             ourType = int32(dsttype)
           else:
-            ourType = -1
+            ourType = RTAsPtr
 
-        if ourType == -1:
+        if ourType < 0:
           cArgType = int16(cTypeNames.find("ptr"))
 
         var paramInfo = ZffiArgInfo(argType: cArgType, ourType: ourType)
@@ -1278,6 +1289,29 @@ proc fillCallBackpatches(ctx: CodeGenState) =
 
     dstmodule.objInfo.instructions[patchloc] = cur
 
+proc cacheAllTypeInfo(ctx: CodeGenState) =
+  # For the moment, instead of keeping type IDs for only types we
+  # output, we go ahead and keep any type that does not forward.  This
+  # is far less error prone than trying to make sure we always
+  # remember to save off type info, but it might end up causing too
+  # much bloat. I doubt it, though! However, we definitely should
+  # collect metrics on this.
+
+  for (id, tObj) in typeStore.items():
+    if tObj.typeId != id:
+      continue
+
+    let
+      typeName = id.toString()
+      loc      = ctx.addStaticObject(typeName)
+
+    discard ctx.zobj.tInfo.add(id, loc)
+
+  var typeCache: seq[string]
+  for (k, v) in ctx.zobj.tInfo.items():
+    typeCache.add($(cast[int](k)))
+    typeCache.add($(cast[cstring](addr ctx.zobj.staticdata[v])))
+
 proc generateCode*(cc: CompileCtx): ZObjectFile =
   var ctx = CodeGenState()
 
@@ -1285,7 +1319,9 @@ proc generateCode*(cc: CompileCtx): ZObjectFile =
   ctx.cc   = cc
   ctx.zobj = result
 
+  ctx.cacheAllTypeInfo()
   ctx.minfo.initDict()
+  ctx.strCache.initDict()
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()

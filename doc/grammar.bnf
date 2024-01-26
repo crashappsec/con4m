@@ -12,7 +12,7 @@ optionalBody  ::= body |
 
 enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
 enumItem     ::= ID (('=' | ':') expression)?
-lockAttr     ::= '~' (assign | )
+lockAttr     ::= '~' (assign | memberExpr)
 ifStmt       ::= "if" expression body ("elif" expression body)* ("else" body)?
 
 forStmt      ::= labelStmt? (rangedFor | containerFor)
@@ -44,7 +44,6 @@ varArgsFormal ::= '*' ID
 formal        ::= ID (':' typeSpec)
 argList       ::= formal (', ' formal)* varArgsFormal?
 formalList    ::= '(' (varArgsFormal | argList | <empty> ) ')' 
-
 
 varStmt     ::= "var" ("const")? varSymInfo EOS
 globalStmt  ::= "global" ("const")? varsymInfo EOS

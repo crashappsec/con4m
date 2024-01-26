@@ -2,25 +2,29 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Component logic in runtime.
-# - Load default values at beginning of program.
-# - Spec checking after execution.
+# - Move the late error stuff around so we can get stack traces.
+# - Test loading of default values at beginning of program and defaults.
+# - con4m-accessible API for setting specs.
+# - Apply component logic in runtime.
 # - Re-implement standard library / wrappings.
-# - attribute should prob store a ('pointer', type, locked) tuple?
-# - Saving the spec in the object file (and type dict).
+# - Save the type dictionary in the object.
 # - Checkpointing runtime state.
 # - Hook up getopts again.
 # - Fix up and test 'Other' data types
 # - Typecheck c vs con4m api for ffi
-# - C-level interface to attributes
+# - Enumerate function pointer literals and assume they're always live
+#   and called as part of the entry point.
+# - Doc strings
+
+# === Semi-high priority -- could ship internally w/ known issues ===
+# - Capture location info for runtime attr def locations, and show
+#   all def locations for things like spec errors.
 # - Update the pretty printer.
 # - Restrict the leading '$' properly.
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - Doc API.
 # - Enums should be global by default.  Add a 'private' for enums,
 #   funcs and, when they show up,
-# - Enumerate function pointer literals and assume they're always live
-#   and called as part of the entry point.
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
 # - Sort errors by file / line (they come out by phase in IR portion).
@@ -29,36 +33,29 @@
 # - Remove any remaining newRefVal / extractRef calls
 
 
-
 # == Medium -- before public release ==
+# - Redo code gen for assignment to get rid of the extra ref/deref for index ops
 # - Check attr to lock and attrs to access against spec statically.
-# - Should strings be mutable? Right now they are not.
-# - Buffers should be mutable.
-# - explicit casts -- to(obj, type)
+# - Buffers should be mutable (like strings, they currently are not).
+# - explicit casts -- to(obj, type) OR type(obj) (decide which)
 # - In showCallMistakes(), show which functions have the wrong # of args,
 # - Possibly allow generating a C API based on the spec.
 #   and which parameters are right / wrong.
 # - finish hasExitToOuterBlock in CFG.
-# - Remove any exceptions
-# - The attr type info needs to be folded into the same dict as attrs
-#   (it's a race condition for it to be separate)
-# - Share dup'd strings when loading static data.
 # - Have `const` items move to module-specific static storage.
 # - Allow assignment inside var / global / const statements.
 # - Use No-side-effect prop for funcs to allow calling functions at compile
 #   time (and mark native f() no-side-effect if they do not use external state).
 #   Lots more folding work should be done.
-# - Merge var/attr assign nodes.
 # - Fold container literals wherever possible.
 # - Access controls around extern and extensibility features.
 # - ~ operator should be renamed to 'lock' and not require an assignment,
 #   but if there's no assignment it should error / warn if one might be
 #   locking something that isn't assigned.
 # - Be able to lock an entire section.
-# - Issue w/ non-consistent views in ht?
+# - Issue w/ non-consistent views in hatrack?
 # - Warning when your declared type is more generic than the inferred type.
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
-# - Doc strings
 # - Implement _ as a 'discard' variable.
 # - C api and bindings to other languages.
 # - dlclose stuff.
@@ -87,6 +84,7 @@
 # - Code playground
 # - LSP server
 # - Only generate loop variables if they're used.
+# - Ideally, target LLVM
 
 # == Lower priority ==
 # - For errors, make it easy to see "previous instance", and remove
@@ -111,26 +109,15 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import compile, specs, codegen, vm, os
+import compile, codegen, vm, os
 export compile
 
 when isMainModule:
   useCrashTheme()
 
-  proc buildTestSpec(): ValidationSpec =
-    result   = newSpec()
-    let
-      root = result.getRootSection()
-      q    = result.newSingleton("q")
-      r    = result.newInstanceSection("r")
-    root.addField("x", "int")
-    result.allow(root, "q", "r")
-    q.addField("z", "int", default = some(cast[pointer](12)))
-
   var
     params = commandLineParams()
     debug  = false
-    spec   = buildTestSpec()
     session = newCompileContext(nil)
 
   let altPath = $(getEnv("CON4M_PATH"))

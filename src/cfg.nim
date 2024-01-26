@@ -15,7 +15,7 @@ proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =
      sym in bb.defInBlock or sym in bb.errorsInBlock:
     return
 
-  if not sym.isAttr or sym.defaultVal.isNone():
+  if not sym.isAttr or not sym.haveDefault:
     ctx.irNonFatal("UseBeforeDef", w = n, @[sym.name])
     bb.errorsInBlock.add(sym)
 

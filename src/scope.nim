@@ -116,7 +116,7 @@ proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
         ctx.irError("NotASection", @[subSecName])
 
     if subSecOpt.isNone():
-      if curSpec != nil and not curSpec.singleton and i != 0:
+      if curSpec != nil and curSpec.maxAllowed > 1 and i != 0:
         if n[i - 1] in curSpec.allowedSections:
           ctx.irError("4gotObjName?", @[subSecName, n[i - 1]])
           return nil
@@ -126,7 +126,7 @@ proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
     i += 1
 
     curSpec = subSecOpt.get()
-    if not curSpec.singleton:
+    if curSpec.maxAllowed > 1:
       if i == n.len():
         ctx.irError("NotASingleton", @[subSecName])
         return nil
@@ -180,7 +180,8 @@ proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
   if fi.tid == TBottom:
     fi.tid = tVar()
 
-  sym.defaultVal = fi.defaultVal
+  sym.defaultVal            = fi.defaultVal
+  sym.haveDefault           = fi.haveDefault
   ctx.usedAttrs.table[name] = sym
   ctx.usedAttrs.numSyms    += 1
 
@@ -324,7 +325,8 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
     # Don't mess up other sections if there's a type variable..
     sym = SymbolInfo(name: name, tid: fieldInfo.tid.tCopy(), isAttr: true)
     ctx.usedattrs.numSyms += 1
-    sym.defaultVal = fieldInfo.defaultVal
+    sym.defaultVal  = fieldInfo.defaultVal
+    sym.haveDefault = fieldInfo.haveDefault
   of FsObjectType:
     ctx.irError("AssignToSec", loc, @[name])
   of FsSingleton:
@@ -358,7 +360,6 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
 
   if sym.module == nil:
     sym.module = ctx
-
 
   sym.defs.add(loc)
   result = some(sym)

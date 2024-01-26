@@ -1542,7 +1542,8 @@ proc makeVariant(parent: SymbolInfo): SymbolInfo =
   result.name         = parent.name
   result.isAttr       = parent.isAttr
   result.inFunc       = parent.inFunc
-  result.defaultVal  = parent.defaultVal
+  result.defaultVal   = parent.defaultVal
+  result.haveDefault  = parent.haveDefault
   result.declaredType = parent.declaredType
   result.tid          = tVar()
   result.constValue   = parent.constValue
@@ -1872,7 +1873,7 @@ proc convertSection(ctx: Module): IrNode =
 
      ctx.curSecSpec = specOpt.get()
 
-     if ctx.curSecSpec.singleton:
+     if ctx.curSecSpec.maxAllowed == 1:
        if ctx.pt.children.len() == 3:
          ctx.irError("NotASingleton", @[result.contents.sectName])
      elif ctx.pt.children.len() == 2:

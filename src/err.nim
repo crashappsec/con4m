@@ -324,6 +324,18 @@ const errorMsgs = [
                      "<em>$3</em>"),
   ("AlreadyLocked",  "Tried to set lock-on-write for attribute <em>$1</em>, " &
                      "but it is already locked."),
+  ("DupeSection",    "Section <em>$1</em> cannot be both a singleton " &
+                     "section and an instantiatable section."),
+  ("SpecFieldType",  "Specification field <em>$1</em> was expected to be " &
+                     "of type <em>$3</em>, but was of type <em>$2</em>"),
+  ("RequiredProp",   "Specified field <em>$1</em> does not have the " &
+                     "required property <em>$2</em>."),
+  ("SpecLock",       "Cannot make changes to the attribute specification; " &
+                     "it is locked."),
+  ("NoSecSpec",      "When processing <em>$1</em>, there is no section " &
+                     "specification for <em>$2</em>"),
+  ("MissingField",   "Attribute <em>$1</em> must be set, but was not " &
+                     "provided."),
   ("Debug",          "Debug: $1 $2 $3"),
  ]
 
@@ -590,7 +602,6 @@ proc formatLateError*(err: string, severity: Con4mSeverity,
 
   result.add(markdown(msg))
 
-
 proc runtimeWarn*(err: string, args: seq[string] = @[]) =
   let
     cells   = @[err.formatLateError(LlWarn, args)]
@@ -598,12 +609,19 @@ proc runtimeWarn*(err: string, args: seq[string] = @[]) =
 
   print(toPrint, file = stderr)
 
-proc lateError*(err: string, args: seq[string] = @[]) =
-  let
-    cells   = @[err.formatLateError(LlErr, args)]
-    toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
+template printItAndQuitIt(cells: seq[seq[Rope]]) =
+  let toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
 
   toPrint.colWidths([(7, true), (0, false)])
   toPrint.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
   print(toPrint, file = stderr)
   quit(-2)
+
+proc lateError*(err: string, args: seq[string] = @[]) =
+  printItAndQuitIt(@[err.formatLateError(LlErr, args)])
+
+proc exitOnValidationError*(err: Rope) =
+  if err == nil:
+    return
+
+  printItAndQuitIt(@[@[fgColor("error:", "red"), err]])

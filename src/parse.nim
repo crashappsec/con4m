@@ -1798,7 +1798,8 @@ production(body, NodeBody):
       case kind
       of TtEof:
         ctx.curTokIx = savedIx
-        ctx.parseError("EofInBlock")
+        ctx.parseErrorNoBackup("EofInBlock")
+        return
       of TtRBrace:
         ctx.nesting -= 1
         ctx.advance()
@@ -2080,7 +2081,7 @@ proc buildType*(n: Con4mNode): TypeId =
   tvars.initDict()
   return n.buildType(tvars)
 
-proc parseType*(s: string): TypeId =
+proc parseType*(s: string): TypeId {.exportc: "parse_con4m_type", cdecl.} =
   var
     errs:  seq[Con4mError]
     tvars: Dict[string, TypeId]

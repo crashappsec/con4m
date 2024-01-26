@@ -171,7 +171,7 @@ proc str_load_lit(cstr: cstring, l: cint): pointer =
 
   result = cast[pointer](s)
 
-proc rich_load_lit(cstr: cstring, l: cint): pointer =
+proc rich_load_lit(cstr: cstring, l: cint): pointer {.cdecl, exportc.} =
   let
     full = $cstr
     f    = full.find(':')

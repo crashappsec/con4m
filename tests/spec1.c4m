@@ -1,0 +1,15 @@
+_spec {
+  object test {
+    field audit_location {
+      type:   string
+      default: "test 1"
+    }
+  }
+
+  root {
+    allow test {}
+  }
+  x: 1
+}
+
+print("hi"'h1)

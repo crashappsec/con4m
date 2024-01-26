@@ -217,6 +217,7 @@ proc baseunify*(ref1, ref2: TypeRef): TypeId {.cdecl, exportc.} =
 
   if result != type1.typeid or typestore.lookup(type1.typeid).isNone():
     typestore[type1.typeId] = resObj
+
   if result != type2.typeId or typestore.lookup(type1.typeId).isNone():
     typestore[type2.typeId] = type1
 

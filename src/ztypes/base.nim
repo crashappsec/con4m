@@ -40,7 +40,7 @@ var
   syntaxInfo*:   array[int(StMax), SyntaxInfo]
   typeStore*:      Dict[TypeId, TypeRef]
   primitiveTypes*: Dict[string, TypeRef]
-  TList*, TDict*, TTuple*: TypeId
+  TList*, TDict*, TTuple*, TTSpec*: TypeId
 
   allBiNames =   @["dict", "tuple", "struct", "ref", "set", "maybe", "oneof",
                    "typespec"]
@@ -223,9 +223,9 @@ proc followForwards*(id: TypeId): TypeId =
 proc followForwards*(x: TypeRef): TypeRef =
   let optObj = typestore.lookup(x.typeId)
   if optObj.isSome():
-    return typestore[x.typeId.followForwards()]
+    result = typestore[x.typeId.followForwards()]
   else:
-    return x
+    result = x
 
 template getTid*(x: TypeId): TypeId =
   x.followForwards()
@@ -233,11 +233,14 @@ template getTid*(x: TypeId): TypeId =
 proc typeNameFromId*(id: TypeId): string =
   let n = int(id.followForwards())
   # Assumes it's definitely a builtin type.
+  if n >= dataTypeInfo.len():
+    # Where are these coming from??
+    return ""
   let dtinfo = datatypeInfo[n]
   return dtinfo.name
 
 proc idToTypeRef*(t: TypeId): TypeRef {.exportc, cdecl.} =
-  return typeStore[t].followForwards()
+  result = typeStore[t].followForwards()
 
 proc getContainerInfo*(t: TypeId): DataType {.exportc, cdecl.}=
   let to = t.idToTypeRef()
@@ -278,11 +281,20 @@ proc isListType*(id: TypeId): bool =
 
   return to.kind == C4Dict
 
+proc isTypeSpec*(id: TypeId): bool =
+  let to = id.idToTypeRef()
+
+  return to.kind == C4TypeSpec
+
+proc toString(x: TypeId): string {.importc, cdecl.}
 proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
   var t = t.followForwards()
 
   if t.isBasicType():
     return t.tinfo()
+
+  if t.isTypeSpec():
+    return TTSpec.tinfo()
 
   return t.getContainerInfo()
 

@@ -1,4 +1,4 @@
-import compile, specs, codegen, vm, nimutils, os, re
+import compile, nimutils, os, re
 from strutils import split, join, contains
 
 template error(msg: Rope) =

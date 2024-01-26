@@ -59,6 +59,15 @@ const
   OpGte*         = 131
   OpLte*         = 132
 
+  MAX_CALL_DEPTH* = 200
+  STACK_SIZE*     = 1 shl 20
+  USE_TRACE*      = false # Also requires one of the below to be true
+  TRACE_INSTR*    = true
+  TRACE_STACK*    = true
+  TRACE_SCOPE*    = true
+  RTAsMixed*      = -2
+  RTAsPtr*        = -1
+
 type
   SyntaxType* = enum
     STNone      = -1,
@@ -379,20 +388,21 @@ type
 
   SymbolInfo* = ref object
     name*:         string
-    isFunc*:       bool
-    inFunc*:       bool
-    isAttr*:       bool
-    defaultVal*:   Option[pointer] # Only for attributes.
-    declaredType*: bool
-    immutable*:    bool
     tid*:          TypeId
+    module*:       Module # Ignored for non-func global vars and attrs.
     uses*:         seq[IrNode]
     defs*:         seq[IrNode]
     fimpls*:       seq[FuncInfo]
     pInfo*:        ParamInfo
+    defaultVal*:   pointer
     constValue*:   pointer
+    isFunc*:       bool
+    inFunc*:       bool
+    isAttr*:       bool
+    declaredType*: bool
+    immutable*:    bool
+    haveDefault*:  bool
     haveConst*:    bool
-    module*:       Module # Ignored for non-func global vars and attrs.
     global*:       bool
     err*:          bool
     formal*:       bool
@@ -451,21 +461,13 @@ type
 
   AttrDict*      = Dict[string, pointer]
 
-  # Some specification info is checked during compilation, but most of
-  # it is validation done at points where the validation is supposed
-  # to be consistent... for instance, after a config executes, and
-  # then after subsequent callbacks.
-  #
-  # Validator gets passed the attr dict, the attribute, the type, the
-  # value at the end of execution, and then any parameters (like a set
-  # of valid options).
-  #
-  # Each validation routine should indicate what params it can accept.
-  ValidationFn* = proc (i0: AttrDict, i1: string, i2: TypeId,
-                        i3: Option[pointer], i4: seq[pointer]): Rope {.cdecl.}
+  SecValidator* =    proc(i0: RuntimeState, i1: string, i2: seq[string],
+                          i3: seq[pointer]): Rope {.cdecl.}
+  FieldValidator* =  proc(i0: RuntimeState, i1: string, i2: pointer,
+                          i3: TypeId, i4:seq[pointer]): Rope {.cdecl.}
 
   Validator*     = object
-    fn*:          ValidationFn
+    fn*:          pointer
     params*:      seq[pointer]
 
   FsKind* = enum
@@ -476,11 +478,12 @@ type
   FieldSpec* = ref object
     name*:                 string
     tid*:                  TypeId
-    lockOnWrite*:          bool
-    defaultVal*:           Option[pointer]
-    addDefaultsBeforeRun*: bool = true
-    validators*:           seq[Validator]
+    lockOnWrite*:          bool   # Enforced at runtime.
+    defaultVal*:           pointer
+    haveDefault*:          bool
+    validators*:           seq[Validator] # Applied on request.
     hidden*:               bool
+    required*:             bool
     doc*:                  Rope
     shortdoc*:             Rope
     fieldKind*:            FsKind
@@ -493,7 +496,9 @@ type
     ## automatically run at completion for any fields changed.
 
     name*:             string
-    singleton*:        bool
+    minAllowed*:       int # Not implemented yet; currently always 0
+    maxAllowed*:       int # Right now, this is just high() if it's not a
+                           # singleton.
     fields*:           Dict[string, FieldSpec]
     userDefOk*:        bool
     validators*:       seq[Validator]
@@ -501,10 +506,12 @@ type
     doc*:              Rope
     shortdoc*:         Rope
     allowedSections*:  seq[string]
+    cycle*:            bool # Private, used to avoid populating cyclic defs.
 
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
     secSpecs*: Dict[string, SectionSpec]
+    locked*:   bool
 
   Scope* = ref object
     table*:       Dict[string, SymbolInfo]
@@ -878,7 +885,8 @@ type
     zcObjectVers*:   int = 0x01
     staticData*:     string
     globals*:        Dict[int, string]
-    symTypes*:       seq[(int, TypeId)]
+    tInfo*:          Dict[TypeId, int]   # Index into static Data for repr
+    symTypes*:       seq[(int, TypeId)]  # address : TypeId
     globalScopeSz*:  int
     moduleContents*: seq[ZModuleInfo]
     entrypoint*:     int32  # A module ID
@@ -903,6 +911,45 @@ type
   ZList* = ref object
     l*:   seq[pointer]
     tid*: TypeId
+
+  # Used in vm.nim
+  StackFrame*   = object
+    callModule*:   ZModuleInfo
+    calllineno*:   int32
+    targetline*:   int32
+    targetfunc*:   ZFnInfo
+    targetmodule*: ZModuleInfo # If not targetFunc
+
+  AttrContents* = ref object
+   contents*:    pointer
+   tid*:         TypeId
+   isSet*:       bool
+   locked*:      bool
+   lockOnWrite*: bool
+
+  RuntimeState* = ref object
+    obj*:            ZObjectFile
+    frameInfo*:      array[MAX_CALL_DEPTH, StackFrame]
+    numFrames*:      int
+    stack*:          array[STACK_SIZE, pointer]
+    curModule*:      ZModuleInfo
+    sp*:             int
+    fp*:             int
+    ip*:             int      # Index into instruction array, not bytes.
+    returnRegister*: pointer
+    rrType*:         pointer
+    moduleIds*:      seq[seq[pointer]]
+    attrs*:          Dict[string, AttrContents]
+    externCalls*:    seq[CallerInfo]
+    externArgs*:     seq[seq[FfiType]]
+    externFps*:      seq[pointer]
+    specLock*:       bool
+
+  MixedObj* = object
+    t*:     TypeId
+    value*: pointer
+
+  Mixed* = ptr MixedObj
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

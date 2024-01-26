@@ -171,6 +171,7 @@ proc layout_literal*(id: TypeId, s: pointer, st: SyntaxType, litmod: string,
 
   result = op(s, st, litmod, l, err)
 
+import strutils
 proc instantiate_literal*(t: TypeId, s: pointer, l: int):
                         pointer {.exportc, cdecl.} =
   let

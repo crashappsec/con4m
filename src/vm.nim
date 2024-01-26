@@ -1,48 +1,10 @@
 # This is just a basic runtime with no thought to performance; we'll
 # do one more focused on performance later, probably directly in C.
 
-import common, nimutils, stchecks, strutils, ffi
+import common, nimutils, stchecks, strutils, ffi, attrstore, err, ztypes/api, ztypes/base
+export err, attrstore, ffi, api
 
-const
-  MAX_CALL_DEPTH = 200
-  STACK_SIZE     = 1 shl 20
-  sz             = sizeof(ZInstruction)
-  USE_TRACE      = false # Also requires one of the below to be true
-  TRACE_INSTR    = true
-  TRACE_STACK    = true
-  TRACE_SCOPE    = true
-
-type
- StackFrame   = object
-    callModule:   ZModuleInfo
-    calllineno:   int32
-    targetline:   int32
-    targetfunc:   ZFnInfo
-    targetmodule: ZModuleInfo # If not targetFunc
-
- AttrContents = ref object
-   contents:    pointer
-   tid:         TypeId
-   isSet:       bool
-   locked:      bool
-   lockOnWrite: bool
-
- RuntimeState = ref object
-    obj:            ZObjectFile
-    frameInfo:      array[MAX_CALL_DEPTH, StackFrame]
-    numFrames:      int
-    stack:          array[STACK_SIZE, pointer]
-    curModule:      ZModuleInfo
-    sp:             int
-    fp:             int
-    ip:             int      # Index into instruction array, not bytes.
-    returnRegister: pointer
-    rrType:         pointer
-    moduleIds:         seq[seq[pointer]]
-    attrs:          Dict[string, AttrContents]
-    externCalls:    seq[CallerInfo]
-    externArgs:     seq[seq[FfiType]]
-    externFps:      seq[pointer]
+const sz = sizeof(ZInstruction)
 
 when USE_TRACE:
   import codegen # For instr.toString()
@@ -332,19 +294,16 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         zptr   = cast[int](ctx.stack[ctx.sp])
         eix    = ctx.obj.staticdata.find('\0', zptr)
         key    = ctx.obj.staticdata[zptr ..< eix]
-        infOpt = ctx.attrs.lookup(key)
+        byAddr = if instr.arg == 0: false else: true
 
-      if infOpt.isNone() or not infOpt.get().isSet:
-        echo zptr.toHex().toLowerAscii()
+      var err = false
+
+      let dst = cast[ptr TypeId](addr ctx.stack[ctx.sp + 1])
+
+      ctx.stack[ctx.sp] = ctx.get(key, err, dst, byAddr)
+
+      if err:
         ctx.bailHere("AttrUse", @[$(key)])
-      else:
-        let info = infOpt.get()
-        if instr.arg == 0:
-          ctx.stack[ctx.sp]     = info.contents
-          ctx.stack[ctx.sp + 1] = cast[pointer](info.tid)
-        else:
-          ctx.stack[ctx.sp]     = addr info.contents
-          ctx.stack[ctx.sp + 1] = cast[pointer](info.tid)
 
     of ZAssignAttr:
       let
@@ -359,36 +318,20 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       let vtype = instr.typeInfo
       ctx.sp += 1
 
-      # Create a new one, just to avoid any race conditions.
-      var
-        newInfo = AttrContents(contents: value, tid: vType, isSet: true)
-        oldInfo: AttrContents
+      let lock = if instr.arg != 0: true else: false
 
-      if instr.arg != 0:
-        newInfo.locked = true
-      else:
-        newInfo.locked = false
+      if not ctx.set(key, value, vType, lock):
+        var
+          olditem: pointer
+          oldtype: TypeId
+          err:     bool
 
-      let infOpt = ctx.attrs.lookup(key)
+        olditem = ctx.get(key, err, addr oldType)
 
-      if infOpt.isSome():
-        oldinfo = infOpt.get()
-
-        if oldinfo.locked:
-          if not call_eq(value, oldinfo.contents, oldinfo.tid):
-            ctx.bailHere("LockedAttr",
-                         @[$(key),
-                           $(call_repr(oldinfo.contents, oldinfo.tid)),
-                           $(call_repr(value, vtype))])
-          else:
-            # Setting to the same value is okay.
-            return
-        elif oldinfo.lockOnWrite:
-          newInfo.locked = true
-
-      ctx.attrs[key] = newInfo
-      if oldinfo != nil:
-        GC_unref(oldinfo)
+        ctx.bailHere("LockedAttr",
+                     @[$(key),
+                       $(call_repr(olditem, oldtype)),
+                       $(call_repr(value, vtype))])
 
     of ZLockOnWrite:
       let
@@ -789,13 +732,26 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         sp      = ctx.sp
         argAddr = pointer(nil)
         args: seq[pointer]
+        m =    MixedObj.create()
 
       # For each data type, we should be calling the type API to
       # handle translation, memory management, etc.
       # But for now, we'll just directly send stuff along and
       # assume this implementation.
+      #
+      # The only difference is if a local parameter is declared to be
+      # generic, then we currently will box the parameter into a
+      # Mixed object.
+
       for i in 0 ..< n:
-        args.add(addr ctx.stack[sp])
+        let t = cast[TypeId](int64(ffiObj.argInfo[i].ourType))
+
+        if ffiObj.argInfo[i].ourType == RTAsMixed:
+          m.t     = cast[TypeId](ctx.stack[sp + 1])
+          m.value = ctx.stack[sp]
+          args.add(addr m)
+        else:
+          args.add(addr ctx.stack[sp])
         sp += 2
 
       if n > 0:
@@ -888,15 +844,32 @@ proc setupFfi(ctx: var RuntimeState) =
     var retType = ffiTypeNameMapping[item.argInfo[^1].argType]
     ffi_prep_cif(ctx.externCalls[i], ffiAbi, numargs, retType, argp)
 
+proc applyDefaultAttributes(ctx: RuntimeState) =
+  if ctx.obj.spec == nil:
+    return
+
+  ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
+
+# The current runtime, so that builtin functions can access the state.
+var currentRuntime: RuntimeState
+
+proc get_con4m_runtime*(): RuntimeState {.cdecl, exportc.} =
+  return currentRuntime
+
 proc executeObject*(obj: ZObjectFile): int =
+  ## This call is intended for first execution, not for save /
+  ## resumption.
   var ctx = RuntimeState()
 
-  ctx.obj       = obj
-  ctx.curModule = obj.moduleContents[obj.nextEntrypoint - 1]
-  ctx.numFrames = 1
-  ctx.sp        = STACK_SIZE
-  ctx.fp        = ctx.sp
+  currentRuntime = ctx
+  ctx.obj        = obj
+  ctx.curModule  = obj.moduleContents[obj.nextEntrypoint - 1]
+  ctx.numFrames  = 1
+  ctx.sp         = STACK_SIZE
+  ctx.fp         = ctx.sp
 
+
+  ctx.applyDefaultAttributes()
   # Add moduleIds.
   ctx.setupFfi()
   ctx.setupArena(obj.symTypes, obj.globalScopeSz)
