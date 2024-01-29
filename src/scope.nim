@@ -3,10 +3,15 @@ import parse, strutils, specs
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.getTid()
 
+var next_id = 1
+
 proc initScope*(fn = false): Scope =
   result         = Scope()
   result.fnScope = fn
   result.table.initDict()
+
+  result.debugId = next_id
+  next_id        = next_id + 1
 
 proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
                    ext, url, key: string): Module =
@@ -19,7 +24,7 @@ proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
   result.attrSpec    = ctx.attrSpec
   ctx.modules[key]   = result
 
-proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
+proc lookupOrAdd(ctx: Module, scope: Scope, n: string,
                  isFunc: bool, tid = TBottom): Option[SymbolInfo] =
   # This is a helper function to look up a symbol in the given scope,
   # or create the symbol in the scope, if it is not found.
@@ -58,7 +63,7 @@ proc lookupOrAdd(ctx: Module, scope: var Scope, n: string,
        (ctx.funcScope == nil and scope != ctx.usedAttrs):
       sym.heapAlloc = true
 
-proc scopeDeclare*(ctx: Module, scope: var Scope, n: string,
+proc scopeDeclare*(ctx: Module, scope: Scope, n: string,
                    isfunc: bool, tid = TBottom, immutable = false,
                   declnode = ctx.pt):
                      Option[SymbolInfo] =

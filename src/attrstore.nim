@@ -10,18 +10,26 @@ proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
   # ends up being the first write to some new object section, we call
   # this to populate any defaults in the object.
 
+  echo "HI! In attrstore.nim applying some defaults... ", sec.name
   for (fname, fspec) in sec.fields.items():
+    echo "checking ", fname
     if fspec.haveDefault:
+      echo "Setting!"
       discard ctx.set(prefix & fname, fspec.defaultVal, fspec.tid,
                                fspec.lockOnWrite)
 
   for secName in sec.allowedSections:
     let newSec = ctx.obj.spec.secSpecs[secName]
     if newSec.maxAllowed == 1:
+      echo "Descend into ", secName
       ctx.applyOneSectionSpecDefaults(prefix & secName & ".", newSec)
 
+  echo "Return"
+
 proc populateDefaults(ctx: RuntimeState, key: string) =
-  let parts = key.split(".")
+  let
+    parts = key.split(".")
+
   var
     cur   = parts[0]
     path  = cur

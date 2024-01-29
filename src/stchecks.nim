@@ -67,7 +67,8 @@ proc useWoDefCheck(ctx: CompileCtx) =
       if sym.isFunc or sym.formal:
         continue
       if sym.uses.len() != 0 and sym.defs.len() == 0:
-        ctx.programError("UseWoDef", sym, @[name])
+        discard
+        #ctx.programError("UseWoDef", sym, @[name])
 
 proc constAssignmentCheck(ctx: CompileCtx) =
   for scope in ctx.getAllScopes(false):

@@ -5,8 +5,36 @@
 import parse, scope, strutils
 export parse, scope
 
+proc newSpec(): ValidationSpec {.importc, cdecl.}
+proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
+# When we are indexing into a tuple, we go ahead and constant-fold the
+# index immediately, instead of waiting till the folding pass.
+proc foldDown(ctx: Module, newNode: IrNode) {.importc, cdecl.}
+proc parseTreeToIr(ctx: Module): IrNode
+
+proc sectionValidator(attrs: var AttrDict, path: string, t: TypeId,
+                      val: Option[pointer],
+                      args: seq[pointer]): Rope {.importc, cdecl.}
+
+proc rangeValidator(attrs: var AttrDict, path: string, t: TypeId,
+                    val: Option[pointer],
+                    args: seq[pointer]): Rope {.importc, cdecl.}
+
+proc choiceValidator(attrs: var AttrDict, path: string, t: TypeId,
+                     val: Option[pointer],
+                     args: seq[pointer]): Rope {.importc, cdecl.}
+
+proc mutexValidator(attrs: var AttrDict, path: string, t: TypeId,
+                    val: Option[pointer], args: seq[pointer]): Rope
+                     {.importc, cdecl.}
+
 template getTid*(n: untyped): TypeId =
   n.tid.followForwards()
+
+proc isConstant*(n: IrNode): bool =
+  # Doesn't capture everything that can be constant, just things we
+  # are currently folding.
+  return n.getTid() != TBottom and n.haveVal
 
 proc lockFn*(impl: FuncInfo) =
   impl.frozen = true
@@ -29,6 +57,16 @@ template withFnLock(fi: FuncInfo, code: untyped) =
     code
   finally:
     tobj.isLocked = lock
+
+proc evalConstExpr(ctx: Module, n: ParseNode, prop: string): IrNode =
+  ctx.current = nil
+  ctx.pt      = n
+  result      = ctx.parseTreeToIr()
+  ctx.foldDown(result)
+
+  if not result.isConstant():
+    ctx.irError("NotConst", @[prop])
+    return nil
 
 proc findPromotionType(ctx: Module, t1, t2: TypeId): TypeId =
   # Assumes we're trying to promote either type into either type.
@@ -183,6 +221,18 @@ proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
   #   # with type errors.
   ctx.funcsToResolve.add((n, callType, name))
 
+proc extractLongDoc(n: ParseNode): Rope =
+  if n == nil or n.docNodes == nil:
+    return nil
+  else:
+    return text(n.docNodes.children[0].getText())
+
+proc extractShortDoc(n: ParseNode): Rope =
+  if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
+    return nil
+  else:
+    return text(n.docNodes.children[1].getText())
+
 proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
   result = atom(s).fgColor("atomiclime")
   if x != "":
@@ -334,8 +384,6 @@ proc irNode(ctx: Module, kind: IrNodeType): IrNode =
   result = IrNode(parseNode: ctx.pt, contents: payload, parent: ctx.current)
   ctx.current = result
 
-proc parseTreeToIr(ctx: Module): IrNode
-
 proc downNode(ctx: Module, which: int): IrNode =
   var saved   = ctx.current
   var savedpt = ctx.pt
@@ -387,25 +435,20 @@ template numKids(ctx: Module, i: int): int =
 template numKids(ctx: Module, i, j: int): int =
   ctx.pt.children[i].children[j].children.len()
 
-template kidKind(ctx: Module, i: int): Con4mNodeKind =
+template kidKind(ctx: Module, i: int): ParseNodeKind =
   ctx.pt.children[i].kind
 
-template kidKind(ctx: Module, i, j: int): Con4mNodeKind =
+template kidKind(ctx: Module, i, j: int): ParseNodeKind =
   ctx.pt.children[i].children[j].kind
 
-template parseKid(ctx: Module, i: int): Con4mNode =
+template parseKid(ctx: Module, i: int): ParseNode =
   ctx.pt.children[i]
 
-template parseKid(ctx: Module, i, j: int): Con4mNode =
+template parseKid(ctx: Module, i, j: int): ParseNode =
   ctx.pt.children[i].children[j]
 
-template parseKid(ctx: Module, i, j, k: int): Con4mNode =
+template parseKid(ctx: Module, i, j, k: int): ParseNode =
   ctx.pt.children[i].children[j].children[k]
-
-proc isConstant*(n: IrNode): bool =
-  # Doesn't capture everything that can be constant, just things we
-  # are currently folding.
-  return n.getTid() != TBottom and n.haveVal
 
 const
   ntLoops        = [ NodeForStmt, NodeWhileStmt ]
@@ -541,12 +584,12 @@ proc convertMember(ctx: Module): IrNode =
     result.contents.attrSym = sym.get()
     result.tid              = result.contents.attrSym.getTid()
 
-proc extractSymInfo(ctx: Module, scope: var Scope, isConst = false,
+proc extractSymInfo(ctx: Module, scope: Scope, isConst = false,
                     checkdollar = false): SymbolInfo {.discardable.} =
   # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
   var
-    toAdd: seq[(string, TypeId, Con4mNode)]
+    toAdd: seq[(string, TypeId, ParseNode)]
 
   for varNode in ctx.pt.children:
     if varNode.kind in [NodeGlobalStmt, NodeVarStmt, NodeConstStmt]:
@@ -692,7 +735,7 @@ proc convertParamBlock(ctx: Module) =
   ctx.convertParamBody(sym)
   ctx.pt = savedPt
 
-proc extractCTypes(ctx: Module, n: Con4mNode, fn: var FuncInfo) =
+proc extractCTypes(ctx: Module, n: ParseNode, fn: var FuncInfo) =
   var info = ExternFnInfo()
 
   for i, kid in n.children:
@@ -771,11 +814,11 @@ proc extractCTypes(ctx: Module, n: Con4mNode, fn: var FuncInfo) =
 
   fn.externInfo = info
 
-proc extractLocalSym(n: Con4mNode, info: FuncInfo) =
+proc extractLocalSym(n: ParseNode, info: FuncInfo) =
   info.name = n.children[0].getText()
   info.tid  = n.children[1].buildType()
 
-proc checkHolds(ctx: Module, n: Con4mNode, info: var ExternFnInfo) =
+proc checkHolds(ctx: Module, n: ParseNode, info: var ExternFnInfo) =
   var argNames: seq[string]
 
   for item in n.children:
@@ -795,7 +838,7 @@ proc checkHolds(ctx: Module, n: Con4mNode, info: var ExternFnInfo) =
     else:
       info.heldParams.add(n)
 
-proc checkAllocs(ctx: Module, n: Con4mNode, info: var ExternFnInfo) =
+proc checkAllocs(ctx: Module, n: ParseNode, info: var ExternFnInfo) =
   var argNames: seq[string]
 
   for item in n.children:
@@ -915,7 +958,7 @@ proc convertExternBlock(ctx: Module) =
 
   sym.fimpls.add(fn)
 
-proc convertFormal(info: FuncInfo, n: Con4mNode) =
+proc convertFormal(info: FuncInfo, n: ParseNode) =
   var formalInfo = FormalInfo()
 
   if n.children[0].kind == NodeIdentifier:
@@ -934,7 +977,7 @@ proc convertFormal(info: FuncInfo, n: Con4mNode) =
   info.params.add(formalInfo)
   info.paramNames.add(formalInfo.name) # TODO: redundant w/ formalInfo.name
 
-proc setupTypeSignature(info: FuncInfo, n: Con4mNode) =
+proc setupTypeSignature(info: FuncInfo, n: ParseNode) =
   if n != nil:
     info.retVal     = FormalInfo(name: "result")
     info.retval.tid = n.buildType()
@@ -987,7 +1030,7 @@ proc handleFuncdefSymbols(ctx:   Module,
   if symOpt.isSome():
     symOpt.get().fimpls.add(info)
 
-proc findDeclarations(ctx: Module, n: Con4mNode)
+proc findDeclarations(ctx: Module, n: ParseNode)
 
 proc convertFuncDefinition(ctx: Module) =
   ## This converts the declaration portion, NOT the body. For now, the
@@ -997,7 +1040,7 @@ proc convertFuncDefinition(ctx: Module) =
   var
     funcName   = ctx.getText(0)
     info       = FuncInfo(defModule: ctx)
-    returnType = Con4mNode(nil)
+    returnType = ParseNode(nil)
 
   # Params are in the second node, and the last item there might
   # have the varargs marker, which changes what we insert into the symbol
@@ -1067,7 +1110,253 @@ proc convertUseStmt(ctx: Module): IrNode =
   else:
     ctx.irError("ModuleNotFound", @[modName])
 
-proc findDeclarations(ctx: Module, n: Con4mNode) =
+template boolPropConvert(guard: untyped, name: string): bool =
+  if guard:
+    ctx.irError("DupeProp", @[name])
+    false
+  else:
+    guard       = true
+    let tree    = ctx.evalConstExpr(n.children[1], name)
+    if tree == nil:
+      false
+    elif tree.tid.unify(TBool) == TBottom:
+        ctx.irError("NotBool", @[name])
+        false
+    else:
+        cast[bool](tree.value)
+
+proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
+  var
+    name         = f.children[0].getText()
+    gotType      = false
+    gotLock      = false
+    gotDef       = false
+    gotChoice    = false
+    gotRange     = false
+    gotHidden    = false
+    gotReq       = false
+    gotValidator = false
+    lock         = false
+    hidden       = false
+    required     = false
+
+    exclude:    seq[string]
+    def:        pointer
+    tid:        TypeId
+    defType:    TypeId
+    choiceType: TypeId
+
+  result = FieldSpec(name: name, fieldKind: FSField)
+  for i in 1 ..< f.children.len():
+    let n = f.children[i]
+    case n.children[0].getText()
+    of "type":
+      if gotType:
+        ctx.irError("DupeProp", @["type"])
+        continue
+      gotType = true
+
+      if n.children[1].kind != NodeIdentifier:
+        result.tid = n.children[1].buildType()
+      else:
+        result.deferredType = n.children[1].getText()
+    of "default":
+      if gotDef:
+        ctx.irError("DupeProp", @["default"])
+        continue
+      gotDef   = true
+      let tree = ctx.evalConstExpr(n.children[1], "default")
+
+      if tree != nil:
+        result.defaultVal  = tree.value
+        result.haveDefault = true
+        defType            = tree.tid
+    of "lock", "locked":
+      result.lockOnWrite = boolPropConvert(gotLock, "lock")
+    of "hide", "hidden":
+      result.hidden = boolPropConvert(gotHidden, "hide")
+    of "require", "required":
+      result.required = boolPropConvert(gotReq, "required")
+    of "choice", "choices":
+      if gotChoice:
+        ctx.irError("DupeProp", @["choices"])
+        continue
+      if gotRange:
+        ctx.irError("RangeAndChoice")
+        continue
+
+      gotChoice = true
+
+      let listLit = n.children[1]
+      var s: seq[pointer]
+
+      for i, item in listLit.children:
+        let tree = ctx.evalConstExpr(item, "choices")
+        if tree == nil:
+          s = @[]
+          break
+        elif i == 0:
+          choiceType = tree.tid
+        else:
+          if choiceType.unify(tree.tid) == TBottom:
+            ctx.irError("TyDiffListItem", @[choiceType.toString(),
+                                            tree.tid.toString()])
+            s = @[]
+            break
+          s.add(tree.value)
+      if s.len() != 0:
+        result.validators.add(Validator(fn: choiceValidator, params: s))
+    of "range":
+      if gotRange:
+        ctx.irError("DupeProp", @["range"])
+        continue
+      if gotChoice:
+        ctx.irError("RangeAndChoice")
+        continue
+      let
+        startNode = ctx.evalConstExpr(n.children[1], "range")
+        endNode   = ctx.evalConstExpr(n.children[2], "range")
+
+      if startNode != nil and endNode != nil:
+        # This isn't yet checking the actual type, which is a bit
+        # problematic.
+        if startNode.tid.unify(TInt) == TBottom or
+           endNode.tid.unify(TInt) == TBottom:
+          ctx.irError("RangeInt")
+        else:
+          var s: seq[pointer]
+          s.add(startNode.value)
+          s.add(endNode.value)
+          let
+            startVal = cast[int](startNode.value)
+            endVal   = cast[int](endNode.value)
+
+          if startVal >= endVal:
+            ctx.irError("BadRangeSpec")
+
+          result.validators.add(Validator(fn: rangeValidator, params: s))
+    of "exclude", "exclusions":
+      discard
+    of "validator":
+      discard
+    else:
+      unreachable
+  # TODO: doc strings
+
+proc convertOneSection(ctx: Module, sec: ParseNode) =
+  var
+    rootSection = false
+    maxAllowed  = 1
+    startIx     = 2
+    userDefOk   = false
+    gotDefOk    = false
+    gotHidden   = false
+    hidden      = false
+    specLocal   = ctx.declaredSpec
+    sectionL:  SectionSpec
+    fields:    Dict[string, FieldSpec]
+    allows:    seq[string]
+    requires:  seq[string]
+    validator: Validator
+    secName:   string
+
+  if ctx.attrSpec.locked:
+    ctx.irError("SpecWhenLocked")
+
+  if sec.children[0].getText() == "root":
+    rootSection = true
+    startIx     = 1
+  else:
+    secName = sec.children[1].getText()
+    if sec.children[0].getText() == "named":
+      maxAllowed = high(int)
+
+  fields.initDict()
+
+  for i in startIx ..< sec.children.len():
+    let n = sec.children[i]
+    if n.kind == NodeFieldSpec:
+      let fs = ctx.convertOneField(n)
+      if not fields.add(fs.name, fs):
+        ctx.irError("DupeSpecField", @[fs.name])
+    else:
+      case n.children[0].getText()
+      of "user_def_ok":
+        if gotDefOk:
+          ctx.irWarn("DupUseDefOk")
+      of "hidden", "hide":
+        if gotHidden:
+          ctx.irWarn("DupHidden")
+      of "validator":
+        if validator != nil:
+          ctx.irError("DupeSpecValidator")
+        else:
+          ctx.current = nil
+          ctx.pt      = n.children[1]
+          validator   = Validator(nodes: @[ctx.parseTreeToIr()])
+      of "allow", "allowed":
+        for i in 1 ..< n.children.len():
+          let secName = n.children[i].getText()
+          if secName in allows:
+            ctx.irWarn("DupeAllow", @[secName])
+          elif secName in requires:
+            ctx.irWarn("AllowInReq", @[secName])
+          else:
+            allows.add(secName)
+      of "require", "required":
+        for i in 1 ..< n.children.len():
+          let secName = n.children[i].getText()
+          if secName in requires:
+            ctx.irWarn("DupeRequire", @[secName])
+          elif secName in allows:
+            ctx.irWarn("ReqAfterAllow", @[secName])
+          requires.add(secName)
+      else:
+        unreachable
+
+  if rootSection:
+    if specLocal.rootSpec != nil:
+      ctx.irWarn("DupeRootSpec")
+    sectionL = specLocal.getRootSection()
+
+    for (n, fs) in fields.items():
+      sectionL.fields[n] = fs
+
+  else:
+    sectionL = SectionSpec(name: secName)
+    specLocal.secSpecs[secName] = sectionL
+
+  # Fields we dealt w/ differently since we might add to the root section
+  # a second time, and the error checking needed to be different.
+  # For these things, we're ok.
+  sectionL.maxAllowed = maxAllowed
+  sectionL.userDefOk  = userDefOk
+  if validator != nil:
+    sectionL.validators.add(validator)
+  let
+    long  = sec.docNodes.extractLongDoc()
+    short = sec.docNodes.extractShortDoc()
+
+  sectionL.doc              = long
+  sectionL.shortdoc         = short
+  sectionL.hidden           = hidden
+  sectionL.allowedSections  = allows
+  sectionL.requiredSections = requires
+
+proc convertConfSpec(ctx: Module) =
+  if ctx.declaredSpec == nil:
+    ctx.declaredSpec = newSpec()
+  if ctx.attrSpec == nil:
+    ctx.attrSpec = newSpec()
+
+  var pt = ctx.pt
+  ctx.pt = nil
+  for item in pt.children:
+    ctx.convertOneSection(item)
+
+  ctx.pt = pt
+
+proc findDeclarations(ctx: Module, n: ParseNode) =
   ## To make life easier for us when handling def's and uses, we will
   ## scan through either the module scope or individual function scopes
   ## in their entirety, looking just for 'var' and 'global' statements,
@@ -1103,6 +1392,8 @@ proc findDeclarations(ctx: Module, n: Con4mNode) =
       ctx.convertParamBlock()
     of NodeExternBlock:
       ctx.convertExternBlock()
+    of NodeConfSpec:
+      ctx.convertConfSpec()
     of NodeUseStmt:
       ctx.processUseStmt()
     else:
@@ -1175,7 +1466,7 @@ proc statementsToIr(ctx: Module): IrNode =
     # further processing, but that happens before the main body is
     # processed; this function gets called for those nodes seprately.
     of NodeEnumStmt, NodeFuncDef, NodeParamBlock, NodeVarStmt, NodeGlobalStmt,
-         NodeConstStmt, NodeExternBlock:
+         NodeConstStmt, NodeExternBlock, NodeConfSpec:
       continue
     else:
       discard  # An expression.
@@ -1412,6 +1703,8 @@ proc convertCallbackLit(ctx: Module): IrNode =
   var cb: Callback
 
   result = ctx.irNode(IrLit)
+  return
+
   cb.name = ctx.getText(0)
   if ctx.numKids() == 2:
     var
@@ -1895,9 +2188,6 @@ proc convertSection(ctx: Module): IrNode =
   ctx.curSecSpec    = savedSecSpec
   ctx.secDefContext = savedInSection
 
-# When we are indexing into a tuple, we go ahead and constant-fold the
-# index immediately, instead of waiting till the folding pass.
-proc foldDown*(ctx: Module, newNode: IrNode) {.importc, cdecl.}
 
 proc convertIndex(ctx: Module): IrNode =
   # The logic for when to generate address loads instead of value
@@ -2035,6 +2325,75 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
 
 proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): Rope =
   fmtImplementationList(fname, fns, t).quicktable()
+
+proc mergeStaticSpec*(ctx: CompileCtx, m: Module) =
+  if m.declaredSpec != nil:
+    # TODO: add where to the error reporting here.
+    if ctx.attrSpec.locked:
+      m.irError("SpecLock")
+
+    for (name, obj) in m.declaredSpec.secSpecs.items():
+      if not ctx.attrSpec.secSpecs.add(name, obj):
+        let val = ctx.attrSpec.secSpecs[name]
+
+        if val != obj:
+          m.irError("DupeSection", @[name])
+
+        continue
+
+    let
+      allSectionNames = ctx.attrSpec.secSpecs.keys()
+      globalRootSec   = ctx.attrSpec.getRootSection()
+      localRootSec    = m.declaredSpec.getRootSection()
+
+    if not localRootSec.userDefOk:
+      globalRootSec.userDefOk = false
+
+    for validator in localRootSec.validators:
+      globalRootSec.validators.add(validator)
+
+    if localRootSec.doc != nil:
+      if globalRootSec.doc != nil:
+        m.irWarn("RootOverwrite", @["doc field"])
+      globalRootSec.doc = localRootSec.doc
+
+    if localRootSec.shortdoc != nil:
+      if globalRootSec.shortdoc != nil:
+        m.irWarn("RootOverwrite", @["shortdoc field"])
+      globalRootSec.shortdoc = localRootSec.shortdoc
+
+    for item in localRootSec.requiredSections:
+      if item notin allSectionNames:
+        m.irError("MissingSec", @[item, "require"])
+
+      if item notin globalRootSec.requiredSections:
+        globalRootSec.requiredSections.add(item)
+
+    for item in localRootSec.allowedSections:
+      if item notin allSectionNames:
+        m.irError("MissingSec", @[item, "allow"])
+
+      if item notin globalRootSec.allowedSections:
+        globalRootSec.allowedSections.add(item)
+
+
+    # for item in allows:
+    #   if item in sectionG.allowedSections:
+    #     ctx.irWarn("DupeAllow", @[item])
+    #   elif item in sectionG.requiredSections:
+    #     ctx.irWarn("AllowInReq", @[item])
+    #   else:
+    #     sectionG.allowedSections.add(secName)
+
+    # for item in requires:
+    #   if item in sectionG.requiredSections:
+    #     ctx.irWarn("DupeRequire", @[item])
+    #   else:
+    #     sectionG.requiredSections.add(item)
+    #     if item in sectionG.allowedSections:
+    #       ctx.irWarn("ReqAfterAllow", @[item])
+
+
 
 proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
   for (n, t, name) in m.funcsToResolve:

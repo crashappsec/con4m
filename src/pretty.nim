@@ -58,7 +58,7 @@ template addToComment(state: var PrettyState, s: string, multiline = false) =
   else:
     state.curComments[^1].add(s)
 
-proc buildCommentGroups(node: Con4mNode, state: var PrettyState): bool =
+proc buildCommentGroups(node: ParseNode, state: var PrettyState): bool =
   # Returns true if there are comments.
   let curTok    = node.token.get()
   var prevWasNl = false
@@ -224,7 +224,7 @@ proc undoLineBreakIfNeeded(state: var PrettyState) =
 
     state.commentStartRope = textAtoms[^1]
 
-proc handleComments(node: Con4mNode, state: var PrettyState) =
+proc handleComments(node: ParseNode, state: var PrettyState) =
   if not node.buildCommentGroups(state):
     return
 
@@ -252,7 +252,7 @@ proc handleComments(node: Con4mNode, state: var PrettyState) =
   echo "after indent: ", state.curComments
   state.outputFormattedComments()
 
-proc pretty(n: Con4mNode, state: var PrettyState)
+proc pretty(n: ParseNode, state: var PrettyState)
 
 template prettyDown(stmt = false) =
   for item in n.children:
@@ -294,7 +294,7 @@ template prettySimpleLiteral(field: untyped) =
     state.r += text(txt)
 
 
-proc collectKids(n: Con4mNode, state: var PrettyState): seq[Rope] =
+proc collectKids(n: ParseNode, state: var PrettyState): seq[Rope] =
   let savedOut = state.r
   for item in n.children:
     state.r = nil
@@ -303,7 +303,7 @@ proc collectKids(n: Con4mNode, state: var PrettyState): seq[Rope] =
 
   state.r = savedOut
 
-proc containerLiteral(n:              Con4mNode,
+proc containerLiteral(n:              ParseNode,
                       lDelim, rDelim: string,
                       state:          var PrettyState,
                       initialPad = 2) =
@@ -358,10 +358,10 @@ proc containerLiteral(n:              Con4mNode,
         state.r += state.style.comma
     state.r += rFmt
 
-template keyword(n: Con4mNode): Rope =
+template keyword(n: ParseNode): Rope =
   prettyColor(text(n.getTokenText() & " "), keywordColor)
 
-proc pretty(n: Con4mNode, state: var PrettyState) =
+proc pretty(n: ParseNode, state: var PrettyState) =
   if n.token.isSome():
     n.handleComments(state)
 
@@ -613,7 +613,7 @@ proc pretty(n: Con4mNode, state: var PrettyState) =
     state.r += n.keyword()
     prettyDown()
 
-proc pretty*(n: Con4mNode, style = getCurrentCodeStyle()): Rope =
+proc pretty*(n: ParseNode, style = getCurrentCodeStyle()): Rope =
   var state = PrettyState(style: style)
 
   if state.style.comma == nil:

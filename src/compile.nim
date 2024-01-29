@@ -1,6 +1,13 @@
 import nimutils, os, strutils, httpclient, net, uri, streams, stchecks, builtins
 export nimutils, os, net, uri, streams, stchecks, builtins
 
+proc newSpec(): ValidationSpec {.importc, cdecl.}
+proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
+proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.exportc,
+                                                                       cdecl.}
+proc loadModule(ctx: CompileCtx, module: Module)
+
+
 proc loadSourceFromFile(ctx: CompileCtx, url: string): Option[string] =
   try:
     return some(readFile(url))
@@ -31,10 +38,6 @@ proc loadSourceFromInsecureUrl(ctx: CompileCtx, url: string):
   else:
     ctx.loadWarn("InsecureUrl", url)
     return some(response.bodyStream.readAll())
-
-proc loadModule(ctx: CompileCtx, module: Module)
-proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.exportc,
-                                                                       cdecl.}
 
 proc loadModuleFromLocation(ctx: CompileCtx, location: string,
                             fname: string, ext = ""): Option[Module] =
@@ -142,9 +145,18 @@ proc buildIr(ctx: CompileCtx, module: Module) =
 
   # Currently the compile context is only needed during IR gen / folding
   # to look up other modules that we use.
+  if ctx.attrSpec == nil:
+    ctx.attrSpec = newSpec()
+
+  if ctx.attrSpec.rootSpec == nil:
+    discard ctx.attrSpec.getRootSection()
+
   module.compileCtx = ctx
+  module.attrSpec   = ctx.attrSpec
   module.toIr()
   module.compileCtx = nil
+  if module.attrSpec != nil:
+    ctx.mergeStaticSpec(module)
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
   if module == nil or module.didFoldingPass:
@@ -168,6 +180,7 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.handleFolding(ctx.entrypoint)
   ctx.buildCfg(ctx.entrypoint)
   ctx.buildAllUnbuiltCfgs(ctx.entrypoint)
+  ctx.mergeStaticSpec(ctx.entrypoint)
 
   for module in ctx.modules.values():
     ctx.buildCfg(module)

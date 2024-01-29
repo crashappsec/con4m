@@ -278,12 +278,12 @@ template unify*(t1, t2: TypeId): TypeId =
   else:
     unify(opt1.get(), opt2.get())
 
-proc typeError*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
+proc typeError*(ctx: Module, t1, t2: TypeId, where: ParseNode = nil,
                 err = "TypeMismatch") =
   var where = if where == nil: ctx.pt else: where
   ctx.irError(err, @[t1.toString(), t2.toString()], where)
 
-proc typeCheck*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
+proc typeCheck*(ctx: Module, t1, t2: TypeId, where: ParseNode = nil,
                 err = "TypeMismatch"): TypeId {.discardable.} =
 
   result = t1.getTid().unify(t2.getTid())
@@ -293,6 +293,6 @@ proc typeCheck*(ctx: Module, t1, t2: TypeId, where: Con4mNode = nil,
     ctx.typeError(t1, t2, where, err)
 
 proc typeCheck*(ctx: Module, sym: SymbolInfo, t: TypeId,
-              where: Con4mNode = nil, err = "TypeMismatch"):
+              where: ParseNode = nil, err = "TypeMismatch"):
                 TypeId {.discardable.} =
   return ctx.typeCheck(sym.tid, t, where, err)

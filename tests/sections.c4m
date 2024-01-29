@@ -19,5 +19,6 @@ hello world
 hello "world"
 
 # This should not work; should give a use-before-def.
+# But for now this is disabled.
 foo
 

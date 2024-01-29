@@ -1,5 +1,6 @@
 # This is just a basic runtime with no thought to performance; we'll
 # do one more focused on performance later, probably directly in C.
+proc load_spec() {.cdecl, importc.}
 
 import common, nimutils, stchecks, strutils, ffi, attrstore, err, ztypes/api, ztypes/base
 export err, attrstore, ffi, api
@@ -730,9 +731,9 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         s       = $(cast[cstring](p))
         n       = ffiObj.argInfo.len() - 1 # Last is the return value
         sp      = ctx.sp
-        argAddr = pointer(nil)
-        args: seq[pointer]
-        m =    MixedObj.create()
+        argAddr: pointer = pointer(nil)
+        args:    seq[pointer]
+        m =      MixedObj.create()
 
       # For each data type, we should be calling the type API to
       # handle translation, memory management, etc.
@@ -842,6 +843,7 @@ proc setupFfi(ctx: var RuntimeState) =
       argp = addr ctx.externArgs[i][0]
 
     var retType = ffiTypeNameMapping[item.argInfo[^1].argType]
+
     ffi_prep_cif(ctx.externCalls[i], ffiAbi, numargs, retType, argp)
 
 proc applyDefaultAttributes(ctx: RuntimeState) =

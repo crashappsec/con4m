@@ -15,6 +15,7 @@
 #   and called as part of the entry point.
 # - Doc strings
 # - Documentation.
+# - attr.x for disambiguation of top-level attr vs var.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show
@@ -31,7 +32,10 @@
 # - Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
 # - Remove any remaining newRefVal / extractRef calls
-
+# - Be more forgiving in configspec properties; right now, most only
+#   allow a direct value or a single var, not any expression that folds.
+# - Folding for lists should be generalized, instead of the one-off for
+#   `choice` fields we have now.
 
 # == Medium -- before public release ==
 # - Redo code gen for assignment to get rid of the extra ref/deref for index ops

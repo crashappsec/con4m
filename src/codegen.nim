@@ -1327,6 +1327,7 @@ proc generateCode*(cc: CompileCtx): ZObjectFile =
   ctx.fillCallBackpatches()
   result.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
   result.nextEntrypoint = int32(cc.entrypoint.objInfo.moduleId)
+  result.spec           = ctx.cc.attrSpec
 
 # TODO -- pushTypeOf needs to handle attributes.
 # TODO -- varargs for func entry.

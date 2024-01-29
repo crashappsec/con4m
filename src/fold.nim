@@ -503,11 +503,15 @@ proc foldIr(ctx: Module) =
     for item in ctx.current.contents.stmts:
       ctx.foldDown(item)
   of IrLoop:
+    ctx.branchOrLoopDepth += 1
     ctx.loopFold()
+    ctx.branchOrLoopDepth -= 1
   of IrAssign:
     ctx.assignFold()
   of IrConditional:
+    ctx.branchOrLoopDepth += 1
     ctx.conditionalFold()
+    ctx.branchOrLoopDepth -= 1
   of IrRet:
     ctx.retFold()
   of IrLit:

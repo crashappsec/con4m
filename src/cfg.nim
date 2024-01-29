@@ -16,7 +16,7 @@ proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =
     return
 
   if not sym.isAttr or not sym.haveDefault:
-    ctx.irNonFatal("UseBeforeDef", w = n, @[sym.name])
+    #ctx.irWarn("UseBeforeDef", w = n, @[sym.name])
     bb.errorsInBlock.add(sym)
 
   if n notin sym.uses:
@@ -499,7 +499,7 @@ proc handleModule(ctx: CompileCtx, m: Module, start: seq[SymbolInfo]) =
   # `finishBlock` will add the end node if it wasn't a jump, and
   # return true if it adds the block.
   if not ctx.handleOneNode(m, m.ir, cur).finishBlock(m.cfg):
-    var where: Con4mNode
+    var where: ParseNode
     # Warn if the module doesn't exit out the bottom.
     # Right now that'd only happen if it ended w/ a clear infinite loop.
     # This probably doesn't matter if the module is the main module,
@@ -569,7 +569,10 @@ proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
   for function in module.allFunctions():
     if function.cfg != nil:
       continue
-    let startDefs = ctx.globalScope.allVars() & module.moduleScope.allVars()
+
+    var startDefs = ctx.globalScope.allVars()
+
+    startDefs &= module.moduleScope.allVars()
 
     module.definingFn = function
     ctx.handleOneFunc(function, startDefs)
@@ -633,7 +636,7 @@ proc prepGraph(n: CfgNode, i: var int, fns: var seq[FuncInfo],
 
   n.nextBlock.prepGraph(i, fns, mods)
 
-proc fmtCfgLoc(n: Con4mNode, m: Con4mNode = nil): Rope =
+proc fmtCfgLoc(n: ParseNode, m: ParseNode = nil): Rope =
   if m == nil:
     return text(" (line " & $(n.token.lineNo) & ") ")
   else:

@@ -1,13 +1,14 @@
-toplevel ::= (';' | '\n' | enumStmt | lockAttr | ifStmt | forStmt | whileStmt |
+toplevel ::= docString?
+             (';' | '\n' | enumStmt | lockAttr | ifStmt | forStmt | whileStmt |
               typeOfStmt | valueOfStmt | funcDef | varStmt | globalStmt |
               constStmt | assertStmt | useStmt | parameterBlock |
-              externBlock | assign | section | expression)*
+              externBlock | confSpec | assign | section | expression)*
 
 bodyItem ::= lockAttr | ifStmt | forStmt | whileStmt | typeOfStmt |
              valueOfStmt | continueStmt | breakStmt | returnStmt |
              varStmt | globalStmt | constStmt | labelStmt | useStmt
 
-body          ::= '{' (bodyItem? EOS)* '}'
+body          ::= '{' docString? (bodyItem? EOS)* '}'
 optionalBody  ::= body | 
 
 enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
@@ -68,6 +69,31 @@ externParam     ::= ID ':' CTYPE | CTYPE
 externField ::= externLocalDef | externDllName | externPure |
                 externHolds | externAllocs
 
+# IDs in a spec are restricted to declared const values (enums included).
+fieldType        ::= 'type'    ':' (typeSpec | '->' ID) EOS
+fieldDefault     ::= 'default' ':' (ID|literal) EOS
+fieldRequire     ::= 'require' ':' (ID|BOOL) EOS
+fieldChoice      ::= 'choice' ':' (bracketLit | ID) EOS
+fieldExclusions  ::= 'exclusions' ':' ID (',' ID)* EOS
+fieldLock        ::= 'lock' ':' (ID|BOOL) EOS
+fieldValidator   ::= 'validator' ':' (ID|callbackLit) EOS
+fieldHidden      ::= 'hidden' ':' (BOOL | ID) EOS
+fieldRange       ::= 'range ':' (int | ID) ':' (int | ID) EOS
+fieldProps       ::= fieldType | fieldDefault | fieldRequire |
+                     fieldChoice | fieldExclusions | fieldLock |
+                     fieldValidator | fieldHidden | fieldRange 
+fieldSpec        ::= 'field' ID '{' docString (fieldProps)* '}'
+allow            ::= 'allow' ':' ID (',' ID) EOS
+secRequire       ::= 'require' ':' ID (', ID) EOS
+sectionProp      ::= ('user_def_ok' ':' (BOOL | ID) EOS) |
+                     ('validator' ':' (ID|callbackLit) EOS)
+sectionContents  ::= (sectionProp | fieldSpec | allow | secRequire)*
+rootSpec         ::= 'root' '{' docString sectionContents* '}'
+instantiableSpec ::= 'multi' ID '{' docString sectionContents* '}'
+singletonSpec    ::= 'singleton' ID '{' docString sectionContents* '}'
+specObject       ::= singletonSpec | instantiableSpec | rootSpec
+confSpec         ::= confSpec '{' docString specObject* '}'
+
 # Currently, only dll can appear multiple times. It should eventually
 # take a list instead.
 externLocalDef ::= "local" (":" | "=") ID typeSpec EOS
@@ -80,7 +106,7 @@ assign       ::= expression assignmentOp expression EOS
 assignmentOp ::= ':' | '=' | '+=' | '-=' | '*=' | '/=' | '|=' | '&=' |
                  '^=' | '>>=' | '<<='
 section      ::= ID body | ID (ID | STR) opttionalBody
-docstring    ::= STR ('\n' STR)
+docstring    ::= (STR ('\n' STR))?
 
 oneVarDecl  ::= ID (":" typeSpec)
 

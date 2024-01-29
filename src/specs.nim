@@ -1,16 +1,16 @@
-import strutils, parse,vm
+import strutils, parse, vm
 
-proc newSpec*(): ValidationSpec =
-  result = ValidationSpec()
-  initDict(result.secSpecs)
-
-proc getRootSection*(spec: ValidationSpec): SectionSpec =
+proc getRootSection*(spec: ValidationSpec): SectionSpec {.exportc, cdecl.} =
   if spec.rootSpec != nil:
     result = spec.rootSpec
   else:
     result        = SectionSpec()
     spec.rootSpec = result
     initDict(result.fields)
+
+proc newSpec*(): ValidationSpec {.exportc, cdecl.} =
+  result = ValidationSpec()
+  initDict(result.secSpecs)
 
 proc addField*(sec: SectionSpec, name: string, typeInfo: string,
                doc: Rope = nil, shortDoc: Rope = nil,
@@ -140,13 +140,13 @@ proc newInstanceSection*(spec: ValidationSpec, n: string,
                          allowed = seq[string](@[]),
                          validators = seq[Validator](@[]), hidden = false,
                          doc = Rope(nil), shortdoc = Rope(nil),
-                         userDefOk = false): SectionSpec =
+                         userDefOk = false): SectionSpec {.cdecl, exportc.} =
   result = baseNewSection(spec, n, allowed, validators, hidden, doc,
                           shortdoc, userDefOk)
 
 proc oneChoiceValidator*(attrs: AttrDict, path: string, t: TypeId,
                          val: Option[pointer], args: seq[pointer]):
-                           Rope {.cdecl.} =
+                           Rope {.exportc, cdecl.} =
   # This validator doesn't care about whether fields are required.
   if val.isNone():
     return nil
@@ -172,25 +172,26 @@ proc oneChoiceValidator*(attrs: AttrDict, path: string, t: TypeId,
 
 proc sectionValidator*(attrs: var AttrDict, path: string, t: TypeId,
                         val: Option[pointer],
-                        args: seq[pointer]): Rope {.cdecl.} =
+                        args: seq[pointer]): Rope {.exportc, cdecl.} =
   # Todo-- need to implement this; call the user-defined function.
   discard
 
 proc rangeValidator*(attrs: var AttrDict, path: string, t: TypeId,
                         val: Option[pointer],
-                        args: seq[pointer]): Rope {.cdecl.} =
+                        args: seq[pointer]): Rope {.exportc, cdecl.} =
   # Todo-- need to implement this; call the user-defined function.
   discard
 
 proc choiceValidator*(attrs: var AttrDict, path: string, t: TypeId,
                         val: Option[pointer],
-                        args: seq[pointer]): Rope {.cdecl.} =
+                        args: seq[pointer]): Rope {.exportc, cdecl.} =
   # Todo-- need to implement this; call the user-defined function.
   discard
 
 
 proc mutexValidator*(attrs: var AttrDict, path: string, t: TypeId,
-                     val: Option[pointer], args: seq[pointer]): Rope {.cdecl.} =
+                     val: Option[pointer], args: seq[pointer]): Rope
+                     {.exportc, cdecl.} =
   let
     parts = path.split(".")
     base  = if len(parts) == 1: "" else: parts[0 ..< 1].join(".") & "."
@@ -283,6 +284,9 @@ proc add_field(ctx: RuntimeState, path: string, sec: SectionSpec) =
     field.validators.add(Validator(fn: cast[pointer](choiceValidator),
                                    params: @[choices]))
 
+  sec.fields[path] = field
+  echo "Added field, ", path
+
   # TODO: required ...
 proc load_one_section_spec(ctx: RuntimeState, path: string, sec: SectionSpec) =
   var
@@ -317,7 +321,6 @@ proc load_one_section_spec(ctx: RuntimeState, path: string, sec: SectionSpec) =
   else:
     sec.validators.add(Validator(fn: sectionValidator,
                                   params: @[validator]))
-
   # TODO: extract doc and shortdoc from the section.
   # TODO: mutual exclusion.
 
@@ -507,7 +510,7 @@ proc validateSpec*(ctx: RuntimeState) =
 
   ctx.validateSection(root, ctx.obj.spec.rootSpec, "")
 
-proc validate_spec*() {.cdecl, exportc.} =
+proc validate_con4m_spec*() {.cdecl, exportc.} =
   get_con4m_runtime().validateSpec()
 
 proc lock_spec*() {.cdecl, exportc.} =
@@ -516,15 +519,13 @@ proc lock_spec*() {.cdecl, exportc.} =
 proc load_spec*() {.cdecl, exportc.} =
   get_con4m_runtime().load_con4m_spec()
 
-proc apply_defaults*() {.cdecl, exportc.} =
+proc apply_spec_defaults*() {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
 
   if ctx.obj.spec != nil:
     ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
-  else:
-    lateError("...")
 
-addStaticFunction("validate_spec", "validate_spec")
-addStaticFunction("load_spec", "load_spec")
-addStaticFunction("lock_spec", "lock_spec")
-addStaticFunction("apply_defaults", "apply_defaults")
+addStaticFunction("validate_spec", validate_con4m_spec)
+addStaticFunction("load_spec", load_spec)
+addStaticFunction("lock_spec", lock_spec)
+addStaticFunction("apply_defaults", apply_spec_defaults)

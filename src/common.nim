@@ -195,19 +195,20 @@ type
     litType*:     string
     adjustment*:  int
 
-  Con4mNode* = ref object
+  ParseNode* = ref object
     ## The actual parse tree node type.  Should generally not be exposed.
     id*:           int
     prevTokenIx*:  int
     depth*:        int
-    kind*:         Con4mNodeKind
+    kind*:         ParseNodeKind
     token*:        Con4mToken
-    children*:     seq[Con4mNode]
-    parent*:       Con4mNode
+    children*:     seq[ParseNode]
+    parent*:       ParseNode
     commentLocs*:  seq[int]
     err*:          bool
+    docNodes*:     ParseNode
 
-  Con4mNodeKind* = enum
+  ParseNodeKind* = enum
     ## Parse tree nodes types. Really no reason for these to be
     ## exposed either, other than the fact that they're contained in
     ## state objects that are the primary object type exposed to the
@@ -230,7 +231,8 @@ type
     NodeExternDll, NodeExternPure, NodeExternHolds, NodeExternAllocs,
     NodeExternReturn, NodeExpression, NodeFormal, NodeLabelStmt, NodeBitOr,
     NodeBitXor, NodeBitAnd, NodeShl, NodeShr, NodeNilLit, NodeCase,
-    NodeCaseCondition, NodeRange, NodeDocString, NodeAssert
+    NodeCaseCondition, NodeRange, NodeDocString, NodeAssert, NodeConfSpec,
+    NodeSecSpec, NodeSecProp, NodeFieldSpec, NodeFieldProp
 
   IrNodeType* = enum
     IrBlock, IrLoop, IrAssign, IrConditional, IrCast,
@@ -240,7 +242,7 @@ type
     IrAssert
 
   IrNode* = ref object
-    parseNode*: Con4mNode
+    parseNode*: ParseNode
     tid*:       TypeId
     value*:     pointer
     haveVal*:   bool
@@ -261,7 +263,7 @@ type
       blk*:      IrNode
       spec*:     SectionSpec
     of IrLoop:
-      label*:      Con4mNode # Any type of loop.
+      label*:      ParseNode # Any type of loop.
       loopVars*:   seq[SymbolInfo]
       whileLoop*:  bool
       condition*:  IrNode    # For loops, this is the range or a container.
@@ -336,7 +338,7 @@ type
     tid*:  TypeId
     va*:   bool
     sym*:  SymbolInfo
-    loc*:  Con4mNode
+    loc*:  ParseNode
 
   ExternFnInfo* = ref object
     externName*:    string
@@ -359,7 +361,7 @@ type
     externInfo*:     ExternFnInfo
     name*:           string
     externName*:     string   # Somehow the string inside eI is getting lost?
-    rawImpl*:        Con4mNode
+    rawImpl*:        ParseNode
     implementation*: IrNode
     tid*:            TypeId
     params*:         seq[FormalInfo]
@@ -383,7 +385,7 @@ type
     shortdoc*:      Option[string]
     doc*:           Option[string]
     validator*:     Option[Callback]
-    defaultParse*:  Option[Con4mNode]
+    defaultParse*:  Option[ParseNode]
     defaultIr*:     Option[IrNode]
 
   SymbolInfo* = ref object
@@ -406,7 +408,7 @@ type
     global*:       bool
     err*:          bool
     formal*:       bool
-    declNode*:     Con4mNode
+    declNode*:     ParseNode
     # heapalloc is only true for global variables and
     # indicates that the offset generated won't be relative to the
     # stack, but from some start offset associated with the module
@@ -466,14 +468,17 @@ type
   FieldValidator* =  proc(i0: RuntimeState, i1: string, i2: pointer,
                           i3: TypeId, i4:seq[pointer]): Rope {.cdecl.}
 
-  Validator*     = object
+  Validator*     = ref object
     fn*:          pointer
     params*:      seq[pointer]
+    nodes*:       seq[IrNode]
 
   FsKind* = enum
     FsField, FsObjectType, FsSingleton, FsUserDefField, FsObjectInstance,
     FsErrorNoSpec, FsErrorSecUnderField, FsErrorNoSuchsec,
     FsErrorSecNotAllowed, FsErrorFieldNotAllowed
+
+
 
   FieldSpec* = ref object
     name*:                 string
@@ -488,6 +493,8 @@ type
     shortdoc*:             Rope
     fieldKind*:            FsKind
     errIx*:                int
+    deferredType*:         string # Name of the field that's going to contain
+                                  # our type.
 
   SectionSpec* = ref object
     ## This specification is only applied to attributes.  It is used
@@ -496,9 +503,8 @@ type
     ## automatically run at completion for any fields changed.
 
     name*:             string
-    minAllowed*:       int # Not implemented yet; currently always 0
-    maxAllowed*:       int # Right now, this is just high() if it's not a
-                           # singleton.
+    minAllowed*:       int    # This is useless actually
+    maxAllowed*:       int    # And this can be a bool for singleton.
     fields*:           Dict[string, FieldSpec]
     userDefOk*:        bool
     validators*:       seq[Validator]
@@ -506,6 +512,7 @@ type
     doc*:              Rope
     shortdoc*:         Rope
     allowedSections*:  seq[string]
+    requiredSections*: seq[string]
     cycle*:            bool # Private, used to avoid populating cyclic defs.
 
   ValidationSpec* = ref object
@@ -514,6 +521,7 @@ type
     locked*:   bool
 
   Scope* = ref object
+    debugid*:     int
     table*:       Dict[string, SymbolInfo]
     scopeSize*:   int
     attr*:        bool
@@ -539,7 +547,7 @@ type
     errors*:      seq[Con4mError]
     s*:           StringCursor      # Source
     tokens*:      seq[Con4mToken]
-    root*:        Con4mNode         # Parse tree root
+    root*:        ParseNode         # Parse tree root
     ir*:          IrNode
     cfg*:         CfgNode
     exitNode*:    CfgNode
@@ -563,9 +571,9 @@ type
     # available (stashed in attrSpec).
 
     # First two fields are refs to the one in the compile context.
-    globalScope*: Scope
-    attrSpec*:    ValidationSpec
-
+    globalScope*:   Scope
+    attrSpec*:      ValidationSpec
+    declaredSpec*:  ValidationSpec
     moduleScope*:    Scope
     funcScope*:      Scope
     usedAttrs*:      Scope
@@ -588,11 +596,11 @@ type
     literalDepth*:   int
     loopDepth*:      int
     cachedComments*: seq[int]
-    prevNode*:       Con4mNode
+    prevNode*:       ParseNode
 
     # Used for IR generation only.
     # This should move to a tmp object.
-    pt*:             Con4mNode
+    pt*:             ParseNode
     definingFn*:     FuncInfo
     current*:        IrNode
     blockScopes*:    seq[Scope]   # Stack of loop iteration vars.
@@ -603,11 +611,25 @@ type
     curSym*:         SymbolInfo
     usedModules*:    seq[(string, string)]
     funcsToResolve*: seq[(IrNode, TypeId, string)]
-    labelNode*:      Con4mNode
+    labelNode*:      ParseNode
     curSecPrefix*:   string
     curSecSpec*:     SectionSpec
     didFoldingPass*: bool # Might not be using this anymore.
     maxOffset*:      int
+
+
+    # These help us to fold.
+    branchOrLoopDepth*: int
+
+    # We currently lift out any attrs set from a module if they are
+    # not nested in any control flow or function, if the values are
+    # constant, and there are no uses earlier in the file, or in a
+    # function.
+    #
+    # This is particularly useful for being able to statically apply
+    # specs.
+
+    staticAttrs*:   Dict[string, AttrContents]
 
     # Used in code generation.
     processed*:     bool

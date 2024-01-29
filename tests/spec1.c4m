@@ -1,13 +1,36 @@
-_spec {
-  object test {
+confspec {
+  singleton test {  
+    user_def_ok: true
+    validator: func somethingcool(int) -> bool
     field audit_location {
       type:   string
       default: "test 1"
+      range: 0, 100
+      validator: func somethingcool(int) -> bool
+    }
+  }
+  
+  named test2 {
+    field audit_location {
+      type:   string
+      default: "test 1"
+      range: 0, 100
+      validator: func somethingcool(int) -> bool
     }
   }
 
   root {
-    allow test {}
+    allow:   test
+    require: test2
+    
+    field log_level {
+     type:    string
+     require: true
+     default: "info"
+     choices: ["trace", "info", "warn", "error", "fatal"]
+    }
   }
-  x: 1
 }
+
+load_spec()
+print(test.audit_location)

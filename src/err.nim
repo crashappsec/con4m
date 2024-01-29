@@ -324,8 +324,7 @@ const errorMsgs = [
                      "<em>$3</em>"),
   ("AlreadyLocked",  "Tried to set lock-on-write for attribute <em>$1</em>, " &
                      "but it is already locked."),
-  ("DupeSection",    "Section <em>$1</em> cannot be both a singleton " &
-                     "section and an instantiatable section."),
+  ("DupeSection",    "Section <em>$1</em> cannot be specified twice"),
   ("SpecFieldType",  "Specification field <em>$1</em> was expected to be " &
                      "of type <em>$3</em>, but was of type <em>$2</em>"),
   ("RequiredProp",   "Specified field <em>$1</em> does not have the " &
@@ -336,6 +335,16 @@ const errorMsgs = [
                      "specification for <em>$2</em>"),
   ("MissingField",   "Attribute <em>$1</em> must be set, but was not " &
                      "provided."),
+  ("NoSecType",      "In the top level of a <em>confspec</em> block, got " &
+                     "<em>$1</em> but only allowed contents are: " &
+                     "<em>root</em>, <em>singleton</em> or <em>named</em>" &
+                     " blocks."),
+  ("InstSecStart",   "Was expecting this to start an instantiation " &
+                     "of a <em>$1</em> section named <em>$2</em>, but " &
+                     "would need a <em>{</em> here."),
+  ("RootOverwrite",  "Overwriting an existing root $1."),
+  ("MissingSec",     "Spec tries to <em>$2</em> a section of type <em>$1</em>" &
+                     ", but no section named <em>$1</em> has been spec'd yet."),
   ("Debug",          "Debug: $1 $2 $3"),
  ]
 
@@ -389,7 +398,7 @@ proc lexFatal*(ctx: Module, basemsg: string, t: Con4mToken = nil) =
 template lexError*(msg: string, t: Con4mToken = nil) =
   ctx.lexFatal(msg, t)
 
-proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
+proc baseError*(list: var seq[Con4mError], code: string, node: ParseNode,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
                 extra = seq[string](@[]), detail: Rope = nil, trace = "",
                 ii = none(InstantiationInfo)) =
@@ -406,7 +415,7 @@ proc baseError*(list: var seq[Con4mError], code: string, node: Con4mNode,
                  detail, trace, ii)
 
 template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
-                  w = Con4mNode(nil), detail = Rope(nil)) =
+                  w = ParseNode(nil), detail = Rope(nil)) =
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra,
                        detail)
@@ -418,7 +427,7 @@ template irError*(ctx: Module, msg: string, w: IrNode,
                        detail)
 
 template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
-                w = Con4mNode(nil)) =
+                w = ParseNode(nil)) =
   # Things we consider errors, but we may end up allowing. Currently, this
   # is just for use-before-def errors.
   var where = if w == nil: ctx.pt else: w
@@ -432,7 +441,7 @@ template irNonFatal*(ctx: Module, msg: string, w: IrNode,
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
 
 template irWarn*(ctx: Module, msg: string, extra: seq[string] = @[],
-                w = Con4mNode(nil)) =
+                w = ParseNode(nil)) =
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
 
@@ -442,7 +451,7 @@ template irWarn*(ctx: Module, msg: string, w: IrNode,
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
 
 template irInfo*(ctx: Module, msg: string, extra: seq[string] = @[],
-                w = Con4mNode(nil)) =
+                w = ParseNode(nil)) =
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
 
@@ -453,11 +462,11 @@ template irInfo*(ctx: Module, msg: string, w: IrNode,
 
 template loadError*(ctx: CompileCtx, msg: string, modname: string,
                     extra: seq[string] = @[]) =
-  ctx.errors.baseError(msg, Con4mNode(nil), modname, ErrLoad, LlFatal, extra)
+  ctx.errors.baseError(msg, ParseNode(nil), modname, ErrLoad, LlFatal, extra)
 
 template loadWarn*(ctx: CompileCtx, msg: string, modname: string,
                     extra: seq[string] = @[]) =
-  ctx.errors.baseError(msg, Con4mNode(nil), modname, ErrLoad, LlWarn, extra)
+  ctx.errors.baseError(msg, ParseNode(nil), modname, ErrLoad, LlWarn, extra)
 
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:
