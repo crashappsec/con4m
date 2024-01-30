@@ -1319,9 +1319,10 @@ proc generateCode*(cc: CompileCtx): ZObjectFile =
   ctx.cc   = cc
   ctx.zobj = result
 
-  ctx.cacheAllTypeInfo()
+  ctx.zobj.tinfo.initDict()
   ctx.minfo.initDict()
   ctx.strCache.initDict()
+  ctx.cacheAllTypeInfo()
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()

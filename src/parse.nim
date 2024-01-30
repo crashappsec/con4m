@@ -593,7 +593,6 @@ proc describeLastNode(ctx: Module): string =
 
 proc endOfStatement(ctx: Module, errIfNotThere = true) =
   if errIfNotThere and not ctx.atEndOfLine():
-    echo getStackTrace()
     ctx.errSkipStmtNoBackup("StmtEnd", @[ctx.describeLastNode()])
   else:
     while not ctx.atEndOfLine():
@@ -1282,6 +1281,7 @@ production(typeofStmt, NodeTypeOfStmt):
     of TtElse:
       result.addKid(ctx.caseElseBlock())
       ctx.expect(TtRBrace, consume = true)
+      ctx.ignoreAllNewlines()
       return
     else:
       ctx.errBail("NextCase")
@@ -1305,6 +1305,7 @@ production(valueofStmt, NodeValueOfStmt):
     of TtElse:
       result.addKid(ctx.caseElseBlock())
       ctx.expect(TtRBrace, consume = true)
+      ctx.ignoreAllNewlines()
       return
     else:
       ctx.errBail("NextCase")
@@ -1754,6 +1755,7 @@ production(externBlock, NodeExternBlock):
   while true:
     if ctx.curKind() == TtRBrace:
       ctx.advance()
+      ctx.ignoreAllNewlines()
       return
     case ctx.curTok.getText()
     of "local":
@@ -1837,7 +1839,6 @@ production(fieldSpec, NodeFieldSpec):
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
 
-  ctx.nesting += 1
   let savedIx = ctx.curTokIx
 
   while true:
@@ -1847,7 +1848,6 @@ production(fieldSpec, NodeFieldSpec):
       ctx.parseErrorNoBackup("EofInBlock")
       con4mLongJmp("BAIL")
     of TtRBrace:
-      ctx.nesting -= 1
       ctx.advance()
       ctx.ignoreAllNewlines()
       return
@@ -1904,7 +1904,6 @@ production(objectSpec, NodeSecSpec):
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
 
-  ctx.nesting += 1
   let savedIx = ctx.curTokIx
 
   while true:
@@ -1914,7 +1913,6 @@ production(objectSpec, NodeSecSpec):
       ctx.parseErrorNoBackup("EofInBlock")
       con4mLongJmp("BAIL")
     of TtRBrace:
-      ctx.nesting -= 1
       ctx.advance()
       ctx.ignoreAllNewlines()
       return
@@ -1938,7 +1936,6 @@ production(confSpecBlock, NodeConfSpec):
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
 
-  ctx.nesting += 1
   let savedIx = ctx.curTokIx
   while true:
     let kind = ctx.curKind()
@@ -1948,7 +1945,6 @@ production(confSpecBlock, NodeConfSpec):
       ctx.parseErrorNoBackup("EofInBlock")
       con4mLongJmp("BAIL")
     of TtRBrace:
-      ctx.nesting -= 1
       ctx.advance()
       ctx.ignoreAllNewlines()
       return
@@ -2204,10 +2200,12 @@ production(topLevel, NodeModule):
           continue
         of "confspec":
           result.addKid(ctx.confSpecBlock())
+          continue
         else:
           discard
       else:
         discard
+
       let x = ctx.expression()
       case ctx.curKind()
       of TtPlusEq, TTMinusEq, TtMulEq, TtDivEq, TtModEq, TtBitAndEq,

@@ -34,12 +34,12 @@ type
     litmods*: seq[(string, DataType)]
 
 var
-  dataTypeInfo*: seq[DataType]
-  dtNameMap*:    Dict[string, DataType]
-  refCount*:     int
-  syntaxInfo*:   array[int(StMax), SyntaxInfo]
   typeStore*:      Dict[TypeId, TypeRef]
   primitiveTypes*: Dict[string, TypeRef]
+  dtNameMap*:      Dict[string, DataType]
+  dataTypeInfo*:   seq[DataType]
+  refCount*:       int
+  syntaxInfo*:     array[int(StMax), SyntaxInfo]
   TList*, TDict*, TTuple*, TTSpec*: TypeId
 
   allBiNames =   @["dict", "tuple", "struct", "ref", "set", "maybe", "oneof",

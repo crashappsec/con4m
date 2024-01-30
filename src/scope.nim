@@ -343,6 +343,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
     ctx.irError("SecUnderField", loc, @[subname])
   of FsErrorNoSuchSec:
     if fieldInfo.errIx == 0:
+      echo getStackTrace()
       ctx.irError("RootNoSec", loc, @[name])
     else:
       let subname = parts[0 ..< fieldInfo.errIx].join(".")
@@ -371,7 +372,8 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
 
 proc addDef*(ctx: Module, name: string, loc: IRNode,
              tid = TBottom): Option[SymbolInfo] =
-  if ctx.attrContext:
+  if ctx.attrContext or '.' in name or
+     ctx.attrSpec.getRootSection().fields.lookup(name).isSome():
     result = ctx.addAttrDef(name, loc, tid, ctx.ambigAssign)
   else:
     result = ctx.addVarDef(name, loc, tid)

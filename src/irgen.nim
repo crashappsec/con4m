@@ -5,11 +5,10 @@
 import parse, scope, strutils
 export parse, scope
 
-proc newSpec(): ValidationSpec {.importc, cdecl.}
-proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
 # When we are indexing into a tuple, we go ahead and constant-fold the
 # index immediately, instead of waiting till the folding pass.
 proc foldDown(ctx: Module, newNode: IrNode) {.importc, cdecl.}
+proc mergeStaticSpec(m: Module) {.cdecl, importc.}
 proc parseTreeToIr(ctx: Module): IrNode
 
 proc sectionValidator(attrs: var AttrDict, path: string, t: TypeId,
@@ -23,10 +22,13 @@ proc rangeValidator(attrs: var AttrDict, path: string, t: TypeId,
 proc choiceValidator(attrs: var AttrDict, path: string, t: TypeId,
                      val: Option[pointer],
                      args: seq[pointer]): Rope {.importc, cdecl.}
-
+proc newSpec(): ValidationSpec {.importc, cdecl.}
 proc mutexValidator(attrs: var AttrDict, path: string, t: TypeId,
                     val: Option[pointer], args: seq[pointer]): Rope
                      {.importc, cdecl.}
+
+proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
+
 
 template getTid*(n: untyped): TypeId =
   n.tid.followForwards()
@@ -1279,6 +1281,8 @@ proc convertOneSection(ctx: Module, sec: ParseNode) =
       let fs = ctx.convertOneField(n)
       if not fields.add(fs.name, fs):
         ctx.irError("DupeSpecField", @[fs.name])
+      else:
+        fields[fs.name] = fs
     else:
       case n.children[0].getText()
       of "user_def_ok":
@@ -1323,7 +1327,7 @@ proc convertOneSection(ctx: Module, sec: ParseNode) =
       sectionL.fields[n] = fs
 
   else:
-    sectionL = SectionSpec(name: secName)
+    sectionL = SectionSpec(name: secName, fields: fields)
     specLocal.secSpecs[secName] = sectionL
 
   # Fields we dealt w/ differently since we might add to the root section
@@ -1346,9 +1350,12 @@ proc convertOneSection(ctx: Module, sec: ParseNode) =
 proc convertConfSpec(ctx: Module) =
   if ctx.declaredSpec == nil:
     ctx.declaredSpec = newSpec()
+
   if ctx.attrSpec == nil:
     ctx.attrSpec = newSpec()
 
+  ctx.attrSpec.used     = true
+  ctx.declaredSpec.used = true
   var pt = ctx.pt
   ctx.pt = nil
   for item in pt.children:
@@ -1422,6 +1429,8 @@ proc findDeclarations*(ctx: Module) =
       continue
     else:
       ctx.findDeclarations(item)
+
+  ctx.mergeStaticSpec()
 
 proc statementsToIr(ctx: Module): IrNode =
   result = ctx.irNode(IrBlock)
@@ -2146,7 +2155,7 @@ proc convertLogicOp(ctx: Module): IrNode =
 
 proc convertSection(ctx: Module): IrNode =
   var
-    haveSpec     = ctx.attrSpec != nil
+    haveSpec     = ctx.attrSpec != nil and ctx.attrSpec.used
     savedSecSpec = ctx.curSecSpec
   result                   = ctx.irNode(IrSection)
   result.contents.prefix   = ctx.curSecPrefix
@@ -2326,75 +2335,6 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
 proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): Rope =
   fmtImplementationList(fname, fns, t).quicktable()
 
-proc mergeStaticSpec*(ctx: CompileCtx, m: Module) =
-  if m.declaredSpec != nil:
-    # TODO: add where to the error reporting here.
-    if ctx.attrSpec.locked:
-      m.irError("SpecLock")
-
-    for (name, obj) in m.declaredSpec.secSpecs.items():
-      if not ctx.attrSpec.secSpecs.add(name, obj):
-        let val = ctx.attrSpec.secSpecs[name]
-
-        if val != obj:
-          m.irError("DupeSection", @[name])
-
-        continue
-
-    let
-      allSectionNames = ctx.attrSpec.secSpecs.keys()
-      globalRootSec   = ctx.attrSpec.getRootSection()
-      localRootSec    = m.declaredSpec.getRootSection()
-
-    if not localRootSec.userDefOk:
-      globalRootSec.userDefOk = false
-
-    for validator in localRootSec.validators:
-      globalRootSec.validators.add(validator)
-
-    if localRootSec.doc != nil:
-      if globalRootSec.doc != nil:
-        m.irWarn("RootOverwrite", @["doc field"])
-      globalRootSec.doc = localRootSec.doc
-
-    if localRootSec.shortdoc != nil:
-      if globalRootSec.shortdoc != nil:
-        m.irWarn("RootOverwrite", @["shortdoc field"])
-      globalRootSec.shortdoc = localRootSec.shortdoc
-
-    for item in localRootSec.requiredSections:
-      if item notin allSectionNames:
-        m.irError("MissingSec", @[item, "require"])
-
-      if item notin globalRootSec.requiredSections:
-        globalRootSec.requiredSections.add(item)
-
-    for item in localRootSec.allowedSections:
-      if item notin allSectionNames:
-        m.irError("MissingSec", @[item, "allow"])
-
-      if item notin globalRootSec.allowedSections:
-        globalRootSec.allowedSections.add(item)
-
-
-    # for item in allows:
-    #   if item in sectionG.allowedSections:
-    #     ctx.irWarn("DupeAllow", @[item])
-    #   elif item in sectionG.requiredSections:
-    #     ctx.irWarn("AllowInReq", @[item])
-    #   else:
-    #     sectionG.allowedSections.add(secName)
-
-    # for item in requires:
-    #   if item in sectionG.requiredSections:
-    #     ctx.irWarn("DupeRequire", @[item])
-    #   else:
-    #     sectionG.requiredSections.add(item)
-    #     if item in sectionG.allowedSections:
-    #       ctx.irWarn("ReqAfterAllow", @[item])
-
-
-
 proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
   for (n, t, name) in m.funcsToResolve:
 
@@ -2412,6 +2352,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
         possibles = sym.fimpls
 
     symOpt = ctx.globalScope.table.lookup(name)
+
     if symOpt.isSome():
       symbolExists = true
       let sym = symOpt.get()

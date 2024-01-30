@@ -155,8 +155,6 @@ proc buildIr(ctx: CompileCtx, module: Module) =
   module.attrSpec   = ctx.attrSpec
   module.toIr()
   module.compileCtx = nil
-  if module.attrSpec != nil:
-    ctx.mergeStaticSpec(module)
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
   if module == nil or module.didFoldingPass:
@@ -180,7 +178,6 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.handleFolding(ctx.entrypoint)
   ctx.buildCfg(ctx.entrypoint)
   ctx.buildAllUnbuiltCfgs(ctx.entrypoint)
-  ctx.mergeStaticSpec(ctx.entrypoint)
 
   for module in ctx.modules.values():
     ctx.buildCfg(module)

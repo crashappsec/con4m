@@ -30,9 +30,11 @@ proc newDict(t: TypeId): Con4mDict =
   else:
     hashApproach = KtPtr
 
-  result = Con4mDict(t: t)
-  result.obj.hatrack_dict_init(hashApproach)
-  result.obj.hatrack_dict_set_consistent_views(true)
+  result     = Con4mDict(t: t)
+  result.obj = Dict[pointer, pointer]()
+
+  result.obj.raw = hatrack_dict_new(hashApproach)
+  result.obj.raw.hatrack_dict_set_consistent_views(true)
 
   GC_ref(result)
 

@@ -1,4 +1,4 @@
-import options, store
+import options, store, strutils
 export store
 
 proc baseunify*(id1, id2: TypeId): TypeId

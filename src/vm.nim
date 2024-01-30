@@ -852,12 +852,6 @@ proc applyDefaultAttributes(ctx: RuntimeState) =
 
   ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
 
-# The current runtime, so that builtin functions can access the state.
-var currentRuntime: RuntimeState
-
-proc get_con4m_runtime*(): RuntimeState {.cdecl, exportc.} =
-  return currentRuntime
-
 proc executeObject*(obj: ZObjectFile): int =
   ## This call is intended for first execution, not for save /
   ## resumption.
@@ -870,7 +864,7 @@ proc executeObject*(obj: ZObjectFile): int =
   ctx.sp         = STACK_SIZE
   ctx.fp         = ctx.sp
 
-
+  ctx.attrs.initDict()
   ctx.applyDefaultAttributes()
   # Add moduleIds.
   ctx.setupFfi()
@@ -878,6 +872,6 @@ proc executeObject*(obj: ZObjectFile): int =
 
   for item in obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
-  ctx.attrs.initDict()
+
   ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)
   return ctx.runMainExecutionLoop()

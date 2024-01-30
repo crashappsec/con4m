@@ -1,13 +1,16 @@
 confspec {
+
   singleton test {  
     user_def_ok: true
     validator: func somethingcool(int) -> bool
+    
     field audit_location {
       type:   string
       default: "test 1"
       range: 0, 100
       validator: func somethingcool(int) -> bool
     }
+    
   }
   
   named test2 {
@@ -32,5 +35,4 @@ confspec {
   }
 }
 
-load_spec()
-print(test.audit_location)
+assert test.audit_location == "test 1"

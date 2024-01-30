@@ -518,6 +518,7 @@ type
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
     secSpecs*: Dict[string, SectionSpec]
+    used*:     bool
     locked*:   bool
 
   Scope* = ref object
@@ -1003,3 +1004,11 @@ template debug*(s: string, s2: string, moreargs: varargs[string]) =
   cells.add(@["trace", getStackTrace()])
 
   debug(cells.quickTable(verticalHeaders = true))
+
+# The current runtime, so that builtin functions can access the state.
+# Was having a weird link error so moved this here.
+
+var currentRuntime*: RuntimeState
+
+proc get_con4m_runtime*(): RuntimeState =
+  return currentRuntime
