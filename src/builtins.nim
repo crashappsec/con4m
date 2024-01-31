@@ -1,4 +1,4 @@
-import nimutils, strutils, ffi, specs, ztypes/api
+import nimutils, strutils, ffi, ztypes/api
 
 proc splitwrap*(s1: cstring, s2: cstring):
               FlexArray[cstring] {.exportc, cdecl.} =

@@ -21,7 +21,6 @@ proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
     if newSec.maxAllowed == 1:
       ctx.applyOneSectionSpecDefaults(prefix & secName & ".", newSec)
 
-
 proc populateDefaults(ctx: RuntimeState, key: string) =
   let
     parts = key.split(".")

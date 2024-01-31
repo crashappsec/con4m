@@ -2,28 +2,28 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Move the late error stuff around so we can get stack traces.
-# - Test loading of default values at beginning of program and defaults.
-# - con4m-accessible API for setting specs.
+# - Move the late error stuff around so we can get stack traces and line
+#   numbers.
+# - Finish validation.
 # - Apply component logic in runtime.
 # - Re-implement standard library / wrappings.
 # - Checkpointing runtime state.
 # - Hook up getopts again.
 # - Fix up and test 'Other' data types
-# - Typecheck c vs con4m api for ffi
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
-# - Doc strings
+# - Doc strings.
 # - Documentation.
-# - attr.x for disambiguation of top-level attr vs var.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors.
 # - Update the pretty printer.
 # - Restrict the leading '$' properly.
+# - attr.x for disambiguation of top-level attr vs var.
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - Doc API.
+# - Typecheck c vs con4m api for ffi
 # - Enums should be global by default.  Add a 'private' for enums,
 #   funcs and, when they show up,
 # - Some basic memory management in the runtime (dynamic alllocs are
@@ -36,6 +36,7 @@
 #   allow a direct value or a single var, not any expression that folds.
 # - Folding for lists should be generalized, instead of the one-off for
 #   `choice` fields we have now.
+# - Get control flow stuff working properly.
 
 # == Medium -- before public release ==
 # - Redo code gen for assignment to get rid of the extra ref/deref for index ops

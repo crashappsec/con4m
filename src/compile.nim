@@ -3,9 +3,11 @@ export nimutils, os, net, uri, streams, stchecks, builtins
 
 proc newSpec(): ValidationSpec {.importc, cdecl.}
 proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
+proc mergeStaticSpec(m: Module) {.cdecl, importc.}
 proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.exportc,
                                                                        cdecl.}
 proc loadModule(ctx: CompileCtx, module: Module)
+
 
 
 proc loadSourceFromFile(ctx: CompileCtx, url: string): Option[string] =
@@ -111,16 +113,32 @@ proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] =
   return ctx.findAndLoadModule(loc, name, ext)
 
 proc loadModule(ctx: CompileCtx, module: Module) =
+  # This is the thing that actually orchestrates the load once found.
+  #
   # The module's global scope is for its own view on what symbols
   # it will use as a global, whether it imports them or exports them.
   #
   # We will check global variables against each other when we do our
   # internal linking pass.
 
+  if module.loaded:
+    return
+
   var err = not parseTopLevel(module)
+
+  if ctx.attrSpec == nil:
+    ctx.attrSpec = newSpec()
+
+  if ctx.attrSpec.rootSpec == nil:
+    discard ctx.attrSpec.getRootSection()
+
+  module.attrSpec   = ctx.attrSpec
+  module.compileCtx = ctx
 
   if not err:
     module.findDeclarations()
+    module.mergeStaticSpec()
+
     for (loc, modname) in module.usedModules:
       let depOpt = ctx.findAndLoadModule(loc, modname, "")
       if depOpt.isNone():
@@ -132,36 +150,26 @@ proc loadModule(ctx: CompileCtx, module: Module) =
 
   if err:
     ctx.fatal = true
+  else:
+    module.loaded = true
 
   module.fatalErrors = err
+
 
 proc buildIr(ctx: CompileCtx, module: Module) =
   if module == nil or module.ir != nil:
     # Already been done.
     return
-
-  # Even if one phase fails, go through as much as possible to buffer up as
-  # many errors as possible.
-
-  # Currently the compile context is only needed during IR gen / folding
-  # to look up other modules that we use.
-  if ctx.attrSpec == nil:
-    ctx.attrSpec = newSpec()
-
-  if ctx.attrSpec.rootSpec == nil:
-    discard ctx.attrSpec.getRootSection()
-
-  module.compileCtx = ctx
-  module.attrSpec   = ctx.attrSpec
   module.toIr()
-  module.compileCtx = nil
+
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
   if module == nil or module.didFoldingPass:
     return
 
   for item in module.imports:
-    ctx.buildIr(item)
+    if item.ir == nil:
+      ctx.buildIr(item)
 
   module.foldingPass()
 

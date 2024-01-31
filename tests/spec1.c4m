@@ -1,3 +1,7 @@
+func somethingcool(x: int) {
+  return true
+}
+
 confspec {
 
   singleton test {  
@@ -36,3 +40,6 @@ confspec {
 }
 
 assert test.audit_location == "test 1"
+assert log_level == "info"
+log_level = "warn"
+assert log_level == "warn"

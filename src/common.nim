@@ -540,6 +540,7 @@ type
     # When we cache info after a successful transformation of the thing
     # into what is essentially our byte code, we copy over only
     # what we need to keep around into the Module object.
+    loaded*:      bool
     url*:         string
     where*:       string
     modname*:     string

@@ -8,7 +8,6 @@ export parse, scope
 # When we are indexing into a tuple, we go ahead and constant-fold the
 # index immediately, instead of waiting till the folding pass.
 proc foldDown(ctx: Module, newNode: IrNode) {.importc, cdecl.}
-proc mergeStaticSpec(m: Module) {.cdecl, importc.}
 proc parseTreeToIr(ctx: Module): IrNode
 
 proc sectionValidator(attrs: var AttrDict, path: string, t: TypeId,
@@ -1430,8 +1429,6 @@ proc findDeclarations*(ctx: Module) =
     else:
       ctx.findDeclarations(item)
 
-  ctx.mergeStaticSpec()
-
 proc statementsToIr(ctx: Module): IrNode =
   result = ctx.irNode(IrBlock)
 
@@ -1712,7 +1709,6 @@ proc convertCallbackLit(ctx: Module): IrNode =
   var cb: Callback
 
   result = ctx.irNode(IrLit)
-  return
 
   cb.name = ctx.getText(0)
   if ctx.numKids() == 2:

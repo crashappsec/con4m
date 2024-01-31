@@ -171,6 +171,19 @@ addStaticFunction("lock_spec", lock_spec)
 addStaticFunction("apply_defaults", apply_spec_defaults)
 
 
+proc declareTopLevelSpecItems(m: Module) =
+  # Whenever we have a spec, we will go through the top-level
+  # items and pre-delcare them as attributes, otherwise they will
+  # get picked up as variables.
+  #
+  # We don't currently have to worry about anything beyond
+  # the top-level, since those things automatically have to
+  # be attributes; the only ambiguity is at the root.
+
+  discard
+  #for (fname, fspec) in m.attrSpec.getRootSection().fields.items():
+  #  m.usedAttrs.table[
+
 proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
   if m.declaredSpec != nil:
     # TODO: add where to the error reporting here.
@@ -220,23 +233,32 @@ proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
       if item notin globalRootSec.allowedSections:
         globalRootSec.allowedSections.add(item)
 
-  for (name, item) in m.usedAttrs.table.items():
-    let info = m.attrSpec.getFieldInfo(name.split('.'))
-    if info.fieldKind == FsField:
-      m.typeCheck(info.tid.tCopy(), item.tid)
+    for (fname, fspec) in localRootSec.fields.items():
+      let rOpt = globalRootSec.fields.lookup(fname)
+      if rOpt.isSome():
+        m.irError("RootOverwrite", @[fname])
+      globalRootSec.fields[fname] = fspec
 
-    # for item in allows:
-    #   if item in sectionG.allowedSections:
-    #     ctx.irWarn("DupeAllow", @[item])
-    #   elif item in sectionG.requiredSections:
-    #     ctx.irWarn("AllowInReq", @[item])
-    #   else:
-    #     sectionG.allowedSections.add(secName)
 
-    # for item in requires:
-    #   if item in sectionG.requiredSections:
-    #     ctx.irWarn("DupeRequire", @[item])
-    #   else:
-    #     sectionG.requiredSections.add(item)
-    #     if item in sectionG.allowedSections:
-    #       ctx.irWarn("ReqAfterAllow", @[item])
+  # The below should now not be necessary; it's all moved.
+  # Leaving for now just in case I missed something.
+  #
+  #for (name, item) in m.usedAttrs.table.items():
+  #  let info = m.attrSpec.getFieldInfo(name.split('.'))
+  #  if info.fieldKind == FsField:
+  #    m.typeCheck(info.tid.tCopy(), item.tid)
+  # for item in allows:
+  #   if item in sectionG.allowedSections:
+  #     ctx.irWarn("DupeAllow", @[item])
+  #   elif item in sectionG.requiredSections:
+  #     ctx.irWarn("AllowInReq", @[item])
+  #   else:
+  #     sectionG.allowedSections.add(secName)
+
+  # for item in requires:
+  #   if item in sectionG.requiredSections:
+  #     ctx.irWarn("DupeRequire", @[item])
+  #   else:
+  #     sectionG.requiredSections.add(item)
+  #     if item in sectionG.allowedSections:
+  #       ctx.irWarn("ReqAfterAllow", @[item])

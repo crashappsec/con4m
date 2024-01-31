@@ -343,7 +343,6 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
     ctx.irError("SecUnderField", loc, @[subname])
   of FsErrorNoSuchSec:
     if fieldInfo.errIx == 0:
-      echo getStackTrace()
       ctx.irError("RootNoSec", loc, @[name])
     else:
       let subname = parts[0 ..< fieldInfo.errIx].join(".")
