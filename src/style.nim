@@ -29,7 +29,7 @@ type
     breaksAfterBlock*: int    = 0
     spaceB4CallArgs*:  bool   = false
     comma*:            Rope
-    
+
 let defaultCodeStyle = CodeStyle()
 
 var codeStyle = defaultCodeStyle

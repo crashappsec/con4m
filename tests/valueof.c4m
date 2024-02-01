@@ -1,13 +1,3 @@
-extern callecho(a: ptr) -> cvoid {
-  local: print(string) -> void
-  pure: false
-}
-
-extern echoanint(a: cint) -> cvoid {
-  local: print(int) -> void
-  pure: false
-}
-
 func fib(x) {
   switch x {
     case 0:
@@ -20,5 +10,5 @@ func fib(x) {
 }
 
 x = fib(10)
-
 assert x == 55
+assert repr(x) == "55"

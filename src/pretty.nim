@@ -1,7 +1,8 @@
-import types, lex, parse, nimutils, style, unicode, strutils, options
+import parse, style, strutils
 
 type PrettyState = object
   r:                Rope
+  bodyUseColon:     bool
   style:            CodeStyle
   pad:              string
   printingType:     int
@@ -59,47 +60,49 @@ template addToComment(state: var PrettyState, s: string, multiline = false) =
     state.curComments[^1].add(s)
 
 proc buildCommentGroups(node: ParseNode, state: var PrettyState): bool =
-  # Returns true if there are comments.
-  let curTok    = node.token.get()
-  var prevWasNl = false
+  return false
+  when false:
+    # Returns true if there are comments.
+    let curTok    = node.token
+    var prevWasNl = false
 
-  if curTok.id <= state.lastIx:
-    return
+    if curTok.id <= state.lastIx:
+      return
 
-  state.curComments  = @[@[]]
-  state.lineComments = @[true]
-  state.noPreBreak   = true
+    state.curComments  = @[@[]]
+    state.lineComments = @[true]
+    state.noPreBreak   = true
 
-  for i in state.lastIx .. curTok.id:
-    let tok = node.allTokens.tokAt(i)
+    for i in state.lastIx .. curTok.id:
+      let tok = node.allTokens.tokAt(i)
 
-    case tok.kind:
-      of TtNewLine, TtSof:
-        if state.noCommentsYet():
-          state.noPreBreak = false
-        elif prevWasNl and not state.currentSetIsEmpty():
-          state.endCurComments()
-        prevWasNl = true
-      of TtLineComment:
-        prevWasNl = false
-        state.addToComment($tok)
-      of TtLongComment:
-        prevWasNl = false
-        state.addToComment(`$`(tok), multiline = true)
+      case tok.kind:
+        of TtNewLine, TtSof:
+          if state.noCommentsYet():
+            state.noPreBreak = false
+          elif prevWasNl and not state.currentSetIsEmpty():
+            state.endCurComments()
+          prevWasNl = true
+        of TtLineComment:
+          prevWasNl = false
+          state.addToComment($tok)
+        of TtLongComment:
+          prevWasNl = false
+          state.addToComment(`$`(tok), multiline = true)
 
-      else:
-        continue
+        else:
+          continue
 
-  state.lastIx      = curTok.id
-  state.noPostBreak = not prevWasNl
+    state.lastIx      = curTok.id
+    state.noPostBreak = not prevWasNl
 
-  if state.noCommentsYet():
-    return false
+    if state.noCommentsYet():
+      return false
 
-  if state.curComments[^1].len() == 0:
-    state.curComments = state.curComments[0 ..< ^1]
+    if state.curComments[^1].len() == 0:
+      state.curComments = state.curComments[0 ..< ^1]
 
-  return true
+    return true
 
 proc removeLeadingPadding(state: var PrettyState) =
   ## This treats a leading "#", "# " or " * " as pad and removes,
@@ -247,23 +250,27 @@ proc handleComments(node: ParseNode, state: var PrettyState) =
     state.longForm = false
     state.addBackPaddingAndHash()
 
-  echo "after +pad: ", state.curComments
   state.indentComments()
-  echo "after indent: ", state.curComments
   state.outputFormattedComments()
 
 proc pretty(n: ParseNode, state: var PrettyState)
 
-template prettyDown(stmt = false) =
-  for item in n.children:
+template prettyDown(stmt = false, start = 0, addColon = false, newline = true) =
+  let l = n.children[start .. ^1]
+
+  for i, item in l:
+    if addColon:
+      state.bodyUseColon = true # Will immediately be turned off.
+
     if stmt:
       state.r += text(state.pad)
       item.pretty(state)
-      state.r += text("\n")
+      if newline or i != l.len() - 1:
+        state.r += text("\n")
     else:
       item.pretty(state)
 
-template indentDown() =
+template applyIndent(code: untyped) =
   var addedPad = ""
   for i in 0 ..< state.style.blockIndent:
     addedPad.add(' ')
@@ -274,19 +281,20 @@ template indentDown() =
 
   state.pad = newPad
 
-  prettyDown(true)
+  code
 
   state.pad = savedPad
   state.r += text(state.pad)
 
+template indentDown(s = 0, colon = false, nl = true) =
+  applyIndent:
+    n.docNodes.pretty(state)
+    prettyDown(stmt = true, start = s, addColon = colon, newline = nl)
+
 template prettySimpleLiteral(field: untyped) =
   var
-    tok      = n.token.get()
-    modifier = tok.litType
-    txt      = tok.getTokenText(adjust = true)
-
-  if modifier != "":
-    txt &= "'" & modifier
+    tok      = n.token
+    txt      = tok.getText(adjust = true)
 
   if state.style.field != "":
     state.r += text(txt).fgColor(state.style.field)
@@ -349,7 +357,7 @@ proc containerLiteral(n:              ParseNode,
       state.r += text($(Rune(' ').repeat(colPad)))
 
     state.pad = oldPad
-    state.r += text("\n" & oldPad)+ rFmt
+    state.r += text("\n" & oldPad) + rFmt
 
   else:
     for i, item in kidValues:
@@ -358,20 +366,30 @@ proc containerLiteral(n:              ParseNode,
         state.r += state.style.comma
     state.r += rFmt
 
-template keyword(n: ParseNode): Rope =
-  prettyColor(text(n.getTokenText() & " "), keywordColor)
+proc keyword(n: ParseNode, state: var PrettyState, space = " "): Rope =
+  var baseText: string
+
+  if n.kind == NodeMember:
+    baseText = n.children[0].getText()
+  else:
+    baseText = n.getText()
+
+  prettyColor(text(baseText & space), keywordColor)
 
 proc pretty(n: ParseNode, state: var PrettyState) =
-  if n.token.isSome():
-    n.handleComments(state)
+  # We don't check before passing in docnodes where they might appear.
+  if n == nil:
+    return
 
   case n.kind
   of NodeModule:
+    n.docNodes.pretty(state)
     prettyDown(stmt = true)
-  of NodeExpression, NodeType, NodeLiteral:
+  of NodeExpression, NodeLiteral, NodeTypeBuiltin, NodeCase:
     prettyDown()
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt, NodeNot,
-     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeTypeRef:
+     NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv, NodeTypeRef,
+    NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
     let operands = n.collectKids(state)
 
     # Unary operands don't print anything on the LHS. NodePlus and
@@ -383,36 +401,42 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     if operands.len() == 2:
       state.r += operands[0] + text(" ")
 
-    state.r += prettyColor(text(n.getTokenText()), operatorColor)
+    state.r += prettyColor(text(n.getText()), operatorColor)
     state.r += text(" ") + operands[^1]
 
   of NodeAttrSetLock, NodeTypeVar, NodeTypeVararg:
-    state.r += prettyColor(text(n.getTokenText()), operatorColor)
+    state.r += prettyColor(text(n.getText()), operatorColor)
     prettyDown()
   of NodeIdentifier:
     if state.printingType > 0:
-      state.r += prettyColor(text(n.getTokenText()), typeNameColor)
+      state.r += prettyColor(text(n.getText()), typeNameColor)
     else:
-      state.r += prettyColor(text(n.getTokenText()), identColor)
+      state.r += prettyColor(text(n.getText()), identColor)
   of NodeBody:
+    let colon = state.bodyUseColon
+    state.bodyUseColon = false
+
     if n.children.len() != 0:
       let toAdd =
-        if state.style.brB4Bracket:  text("\n" & state.pad & "{")
-        else:                        text(" {\n")
+        if colon:                     text(":\n")
+        elif state.style.brB4Bracket: text("\n" & state.pad & "{")
+        else:                         text(" {\n")
 
       state.r += prettyColor(toAdd, otherDelimColor)
-      indentDown()
-      state.r += prettyColor(text("}"), otherDelimColor)
+      indentDown(nl = not colon)
+
+      if not colon:
+        state.r += prettyColor(text("}"), otherDelimColor)
 
   of NodeStringLit:
     prettySimpleLiteral(stringLitColor)
   of NodeCharLit:
     prettySimpleLiteral(charLitColor)
-  of NodeIntLit, NodeFloatLit:
+  of NodeIntLit, NodeFloatLit, NodeHexLit:
     prettySimpleLiteral(numericLitColor)
   of NodeBoolLit:
     prettySimpleLiteral(boolLitColor)
-  of NodeOtherLit:
+  of NodeOtherLit, NodeNilLit:
     prettySimpleLiteral(otherLitColor)
   of NodeDictLit:
     n.containerLiteral("{", "}", state)
@@ -420,36 +444,32 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     n.containerLiteral("[", "]", state)
   of NodeTupleLit:
     n.containerLiteral("(", ")", state)
-  of NodeUnpack:
-    n.containerLiteral("", "", state, 0)
   of NodeKVPair:
     let kidValues = n.collectKids(state)
     state.r += kidValues[0] + prettyColor(text(" : "), otherDelimColor)
     state.r += kidValues[1]
   of NodeIfStmt, NodeElifStmt, NodeWhileStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
     n.children[0].pretty(state)
     state.r += text(" ")
     n.children[1].pretty(state)
   of NodeElseStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state, space = if state.bodyUseColon: "" else: " ")
     prettyDown()
   of NodeForStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
     n.children[0].pretty(state)
-    state.r += text(" from ")
-    n.children[1].pretty(state)
 
-    if n.children.len() == 4:
-      state.r += text(" to ")
-      n.children[2].pretty(state)
+    if n.children[1].kind == NodeRange:
+      state.r += text(" from ")
+    else:
+      state.r += text(" in ")
 
-    state.r += text(" ")
-    n.children[^1].pretty(state)
+    prettyDown(start = 1)
   of NodeBreakStmt, NodeContinueStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
   of NodeReturnStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
     prettyDown()
   of NodeAssign:
     n.children[0].pretty(state)
@@ -457,42 +477,41 @@ proc pretty(n: ParseNode, state: var PrettyState) =
       let op = text(" " & state.style.forcedAttrChar & " ")
       state.r += prettyColor(op, operatorColor)
     else:
-      let attrChr = n.getTokenText()
+      let attrChr = n.getText()
       if attrChr == ":":
         state.r += prettyColor(text(": "), operatorColor)
       else:
         state.r += prettyColor(text(" = "), operatorColor)
       n.children[1].pretty(state)
-  of NodeVarAssign:
-    n.children[0].pretty(state)
-    state.r += prettyColor(text(" := "), operatorColor)
-    n.children[1].pretty(state)
   of NodeMember:
     let operands = n.collectKids(state)
 
-    state.r += operands[0] + prettyColor(text("."), operatorColor) + operands[1]
+    for i, item in operands:
+      if i != 0:
+        state.r += prettyColor(text("."), operatorColor)
+      state.r += item
+
   of NodeIndex:
     let ixPad = if state.style.padIndexOps: " " else: ""
     n.children[0].pretty(state)
     state.r += prettyColor(text("[" & ixPad), otherDelimColor)
     n.children[1].pretty(state)
     state.r += prettyColor(text(ixPad & "]"), otherDelimColor)
-  of NodeEnumStmt, NodeExportStmt:
-    state.r += n.keyword()
-    n.containerLiteral("", "", state, 5)
-  of NodeTypeSpec:
+  of NodeType:
+
     state.printingType += 1
     let kids = n.collectKids(state)
 
-    for i, item in kids:
-      state.r += item
+    for i, k in n.children:
+      k.pretty(state)
       if i != kids.len() - 1:
         state.r += prettyColor(text(" or "), operatorColor)
 
     state.printingType -= 1
-  of NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeTuple:
+  of NodeTypeList, NodeTypeDict, NodeTypeObj, NodeTypeTuple, NodeTypeOneOf,
+       NodeTypeMaybe:
     let
-      name    = n.getTokenText()
+      name    = n.getText()
       kidVals = n.collectKids(state)
 
     state.r += prettyColor(text(name), typeNameColor)
@@ -503,8 +522,6 @@ proc pretty(n: ParseNode, state: var PrettyState) =
         state.r += state.style.comma
     state.r += prettyColor(text("]"), otherDelimColor)
 
-  of NodeTypeBuiltin:
-    state.r += prettyColor(text(n.getTokenText()), typeNameColor)
   of NodeTypeTypeSpec:
     state.r += prettyColor(text("typespec"), operatorColor)
     if n.children.len() != 0:
@@ -522,11 +539,12 @@ proc pretty(n: ParseNode, state: var PrettyState) =
 
     state.r += prettyColor(text(")"), otherDelimColor)
     state.r += prettyColor(text(" -> "), operatorColor)
+    state.r += kidValues[^1]
   of NodeReturnType:
     if n.children.len() == 0:
       state.r += prettyColor(text("void"), typeNameColor)
     else:
-      prettyDown()
+      n.children[0].pretty(state)
   of NodeFormal:
     n.children[0].pretty(state)
     if n.children.len() == 2:
@@ -543,8 +561,8 @@ proc pretty(n: ParseNode, state: var PrettyState) =
 
     state.r += prettyColor(text(")"), otherDelimColor)
   of NodeFuncDef:
-    state.r += n.keyword()
-    state.r += prettyColor(text(n.children[0].getTokenText()), funcNameColor)
+    state.r += n.keyword(state)
+    state.r += prettyColor(text(n.children[0].getText()), funcNameColor)
     n.children[1].pretty(state)
 
     if n.children.len() == 4:
@@ -586,32 +604,202 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     n.children[^1].pretty(state)
     state.r += text($(Rune('\n').repeat(state.style.breaksAfterSec)))
   of NodeCallbackLit:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
     prettyDown()
-  of NodeNoCallbackName:
-    discard
   of NodeUseStmt:
-    state.r += n.keyword()
+    state.r += n.keyword(state)
     n.children[0].pretty(state)
     if n.children.len() == 2:
       state.r += prettyColor(text(" from "), keywordColor)
       n.children[1].pretty(state)
-  of NodeVarStmt:
-    state.r += n.keyword()
+  of NodeVarSymInfo:
+    for i in 0 ..< n.children.len():
+      if i == n.children.len() - 1:
+        if n.children[i].kind == NodeType:
+          state.r += prettyColor(text(": "), operatorColor)
+        elif i != 0:
+          state.r += prettyColor(text(", "), operatorColor)
+      elif i != 0:
+        state.r += prettyColor(text(", "), operatorColor)
+
+      n.children[i].pretty(state)
+  of NodeVarStmt, NodeGlobalStmt, NodeConstStmt:
+    var start = 0
+    state.r += n.keyword(state)
+
+    if n.children[0].kind != NodeVarSymInfo:
+      n.children[0].pretty(state)
+      start  = 1
+
+    for i in start ..< n.children.len():
+      if i != 0:
+        state.r += prettyColor(text(", "), operatorColor)
+
+      n.children[i].pretty(state)
+
+  of NodeParamBlock:
+    state.r += n.keyword(state)
+    prettyDown()
+
+  of NodeCast:
+    discard # Not generated yet.
+
+  of NodeTypeOfStmt, NodeValueOfStmt:
+    state.r += n.keyword(state)
     n.children[0].pretty(state)
+
+    state.r += prettyColor(text(" {\n"), otherDelimColor)
+    indentDown(1, colon = true)
+    state.r += prettyColor(text("}\n"), otherDelimColor)
+  of NodeEnumStmt:
+    state.r += n.keyword(state)
+    n.containerLiteral("", "", state, 5)
+
+  of NodeEnumItem:
+    n.children[0].pretty(state)
+    if n.children.len() == 2:
+      state.r += prettyColor(text(" = "), operatorColor)
+      n.children[1].pretty(state)
+
+  of NodeVarargsFormal:
+    state.r += prettyColor(text("*"), operatorColor)
+    n.children[0].pretty(state)
+    if n.children.len() == 2:
+      state.r += prettyColor(text(": "), otherDelimColor)
+      n.children[1].pretty(state)
+
+  of NodeExternBlock:
+    state.r += n.keyword(state)
+    n.children[0].pretty(state)
+    n.children[1].pretty(state)
+    let toAdd =
+      if state.style.brB4Bracket:  text("\n" & state.pad & "{")
+      else:                        text(" {\n")
+
+    state.r += prettyColor(toAdd, otherDelimColor)
+
+    applyIndent:
+      n.docNodes.pretty(state)
+      for item in n.children[2 .. ^1]:
+        state.r += text(state.pad)
+        item.pretty(state)
+        state.r += text("\n")
+
+    state.r += text(state.pad & "}\n")
+  of NodeExternSig:
+    if n.children.len() == 1:
+      state.r += text("()")
+    else:
+      state.r += text("(")
+      for i, item in n.children[0 ..< ^1]:
+        if i != 0:
+          state.r += text(", ")
+        item.pretty(state)
+
+      state.r += text(")")
+
+    state.r += prettyColor(text(" -> "), operatorColor)
+    n.children[^1].pretty(state)
+  of NodeExternParam:
+    state.r += n.children[0].keyword(state, space = "")
+
     if n.children.len() > 1:
       state.r += prettyColor(text(": "), operatorColor)
-      n.children[1].pretty(state)
-  of NodeVarSymNames:
-    let kidValues = n.collectKids(state)
+      for i, item in n.children[1 ..< ^1]:
+        if i != 0:
+          state.r += text(" ")
+        item.pretty(state)
 
-    for i, item in kidValues:
-      state.r += item
-      if i != kidValues.len() - 1:
-        state.r += state.style.comma
-  of NodeParamBlock:
-    state.r += n.keyword()
+      n.children[^1].pretty(state)
+  of NodeExternDll, NodeExternPure, NodeExternLocal:
+    state.r += n.keyword(state, space = "")
+    state.r += prettyColor(text(": "), operatorColor)
     prettyDown()
+  of NodeExternHolds, NodeExternAllocs:
+    state.r += n.keyword(state)
+    let parts = n.collectKids(state)
+    state.r += parts[0] + text(": ")
+    state.r += join(parts[1 .. ^1], text(", "))
+  of NodeExternReturn:
+    state.r += n.keyword(state)
+  of NodeLabelStmt:
+    prettyDown()
+    state.r +=  prettyColor(text(":\n"), otherDelimColor)
+  of NodeCaseCondition:
+    state.r +=   prettyColor(text("case "), keywordColor)
+    let numConditions = n.children.len() - 1
+
+    for i in  0 ..< numConditions:
+      if i != 0:
+        state.r += text(", ")
+      n.children[i].pretty(state)
+
+    n.children[^1].pretty(state)
+  of NodeRange:
+    n.children[0].pretty(state)
+    state.r += text(" to ")
+    n.children[1].pretty(state)
+  of NodeDocString:
+    for item in n.children:
+      item.pretty(state)
+      state.r += text("\n")
+
+    state.r += text("\n")
+  of NodeAssert:
+    state.r += n.keyword(state)
+    prettyDown()
+  of NodeConfSpec:
+    state.r += n.keyword(state)
+    let toAdd =
+      if state.style.brB4Bracket:  text("\n" & state.pad & "{")
+      else:                        text(" {\n")
+
+    state.r += prettyColor(toAdd, otherDelimColor)
+    indentDown(1)
+    state.r += prettyColor(text("}\n"), otherDelimColor)
+  of NodeSecSpec:
+    state.r += n.keyword(state)
+    var start = 1
+
+    if n.children[0].getText() != "root":
+      n.children[1].pretty(state)
+      state.r += text(" ")
+      start = 2
+
+    let toAdd =
+      if state.style.brB4Bracket:  text("\n" & state.pad & "{")
+      else:                        text(" {\n")
+
+    state.r += prettyColor(toAdd, otherDelimColor)
+
+    indentDown(start)
+
+    state.r += text("}\n")
+
+  of NodeFieldSpec:
+    state.r += n.keyword(state)
+
+    n.children[0].pretty(state)
+
+    let toAdd =
+      if state.style.brB4Bracket:  text("\n" & state.pad & "{")
+      else:                        text(" {\n")
+
+    state.r += prettyColor(toAdd, otherDelimColor)
+
+    indentDown(1)
+
+    state.r += text("}")
+
+
+  of NodeSecProp, NodeFieldProp:
+    state.r += prettyColor(text(n.children[0].getText()), keywordColor)
+    state.r += prettyColor(text(": "), otherDelimColor)
+
+    for i, item in n.children[1 .. ^1]:
+      if i != 0:
+        state.r += text(", ")
+      item.pretty(state)
 
 proc pretty*(n: ParseNode, style = getCurrentCodeStyle()): Rope =
   var state = PrettyState(style: style)

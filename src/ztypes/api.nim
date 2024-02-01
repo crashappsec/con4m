@@ -45,11 +45,13 @@ proc call_cast*(value: pointer, tcur, tdst: TypeId, err: var string): pointer
   let
     dtcur = get_data_type(tcur)
     dtdst = get_data_type(tdst)
-
-    fn = cast[Castfn](dtcur.get_cast_fn(dtdst, tcur, tdst, err))
+    fn    = cast[Castfn](dtcur.get_cast_fn(dtdst, tcur, tdst, err))
 
   if fn != nil:
     return fn(value, tcur, tdst, err)
+  else:
+    err = "CastInvalid"
+    return nil
 
 template decl_bool_call_fn(fnname: untyped, opid: untyped) =
   proc fnname*(v1, v2: pointer, t: TypeId): bool {.exportc, cdecl.} =

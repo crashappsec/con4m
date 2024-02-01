@@ -836,7 +836,7 @@ proc `$`*(tok: Con4mToken): string =
       result = $(tok.cursor.slice(tok.startPos, tok.endPos))
 
   if tok.litType != "":
-    result = tok.litType & result
+    result &= "'" & tok.litType
 
 proc toRope*(tok: Con4mToken): Rope =
   result = atom(`$`tok)

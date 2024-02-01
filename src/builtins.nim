@@ -51,8 +51,8 @@ proc con4m_print(p: pointer) {.exportc, cdecl.} =
   if err == "":
     print(asRope)
     return
-
-  echo call_repr(n.value, n.t)
+  else:
+    echo call_repr(n.value, n.t)
 
 proc callflattable*(s1: FlexArray[Rope]): Rope {.exportc, cdecl.} =
 
@@ -75,11 +75,17 @@ proc listadd(l1, l2: FlexArray[pointer]): FlexArray[pointer]
     {.exportc, cdecl.}=
   return l1 + l2
 
+proc con4m_repr(p: pointer): cstring {.exportc, cdecl.} =
+  var n: Mixed = cast[Mixed](p)
+
+  return cstring(call_repr(n.value, n.t))
+
 addStaticFunction("splitwrap", splitwrap)
 addStaticFunction("echoanint",  echoanint)
 addStaticFunction("callecho",  callecho)
 addStaticFunction("callprint", callprint)
 addStaticFunction("con4m_print", con4mprint)
+addStaticFunction("con4m_repr", con4m_repr)
 addStaticFunction("calltable", calltable)
 addStaticFunction("callflattable", callflattable)
 addStaticFunction("listlen", listlen)

@@ -6,13 +6,13 @@ confspec {
 
   singleton test {  
     user_def_ok: true
-    validator: func somethingcool(int) -> bool
+    #validator: func somethingcool(int) -> bool
     
     field audit_location {
       type:   string
       default: "test 1"
       range: 0, 100
-      validator: func somethingcool(int) -> bool
+      #validator: func somethingcool(int) -> bool
     }
     
   }
@@ -22,7 +22,7 @@ confspec {
       type:   string
       default: "test 1"
       range: 0, 100
-      validator: func somethingcool(int) -> bool
+      #validator: func somethingcool(int) -> bool
     }
   }
 

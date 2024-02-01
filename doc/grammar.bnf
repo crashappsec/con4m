@@ -64,7 +64,7 @@ paramVarDecl    ::= "var" oneVarDecl
 
 externBlock     ::= 'extern' ID externSignature docString ('{' externField '}')*
 externSignature ::= '(' (externParam (',', externParam)*)? ')' '->' externParam
-externParam     ::= ID ':' CTYPE | CTYPE
+externParam     ::= ID ':' CTYPE+ | CTYPE+
 
 externField ::= externLocalDef | externDllName | externPure |
                 externHolds | externAllocs

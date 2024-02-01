@@ -12,7 +12,7 @@ var
 
 proc str_new_lit(s: string, st: SyntaxType, lmod: string, l: var int,
                  err: var string): pointer {.cdecl.} =
-  l = s.len() + 1
+  l = s.len()
   result = cast[pointer](newC4Str(l))
   copyMem(result, addr s[0], l)
 

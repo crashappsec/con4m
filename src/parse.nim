@@ -1491,7 +1491,11 @@ production(formal, NodeFormal):
     result.addKid(ctx.typeSpec())
 
 production(varargsFormal, NodeVarargsFormal):
+  ctx.advance()
   result.addKid(ctx.identifier())
+  if ctx.curKind() == TtColon:
+    ctx.advance()
+    result.addKid(ctx.typeSpec())
 
 production(formalList, NodeFormalList):
   ctx.advance()

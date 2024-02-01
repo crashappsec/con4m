@@ -53,13 +53,6 @@ proc get_cast_func_u8(dt: DataType, t1, t2: TypeId,
   if dt.signed and dt.intW == 1:
     err = "UToSSameSz"
 
-  # 0 for OK
-  # -1 for No
-  # 1 for Yes, to smaller size
-  # 2 for Yes, but sign issue (i to u)
-  # 3 for Yes, but smaller size and sign issue
-  # 4 for Yes, but can overflow (u to i of same size)
-
   result = cast[pointer](cast_identity)
 
 proc get_cast_func_i32(dt: DataType, t1, t2: TypeId,
@@ -539,17 +532,17 @@ proc xor_u64(a: pointer, b: pointer): pointer {.cdecl.} =
 
   result = cast[pointer](l xor r)
 
-proc bool_repr(n: pointer): string {.cdecl.} =
-  return $(cast[bool](n))
+proc bool_repr(n: pointer): C4Str {.cdecl.} =
+  return newC4Str($(cast[bool](n)))
 
-proc signed_int_repr(n: pointer): string {.cdecl.} =
-  return $(cast[int64](n))
+proc signed_int_repr(n: pointer): C4Str {.cdecl.} =
+  return newC4Str($(cast[int64](n)))
 
-proc unsigned_int_repr(n: pointer): string {.cdecl.} =
-  return $(cast[uint64](n))
+proc unsigned_int_repr(n: pointer): C4Str {.cdecl.} =
+  return newC4Str($(cast[uint64](n)))
 
-proc char_repr(n: pointer): string {.cdecl.} =
-  return $(cast[Rune](n))
+proc char_repr(n: pointer): C4Str {.cdecl.} =
+  return newC4Str($(cast[Rune](n)))
 
 proc parseHex128(s: string, res: var uint128): int {.cdecl.} =
   var

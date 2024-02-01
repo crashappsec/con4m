@@ -12,13 +12,11 @@
 # - Fix up and test 'Other' data types
 # - Enumerate function pointer literals and assume they're always live
 #   and called as part of the entry point.
-# - Doc strings.
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors.
-# - Update the pretty printer.
 # - Restrict the leading '$' properly.
 # - attr.x for disambiguation of top-level attr vs var.
 # - Get callbacks working (eg ConvertCallbackLit type secolution)
@@ -32,13 +30,12 @@
 # - Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
 # - Remove any remaining newRefVal / extractRef calls
-# - Be more forgiving in configspec properties; right now, most only
-#   allow a direct value or a single var, not any expression that folds.
 # - Folding for lists should be generalized, instead of the one-off for
 #   `choice` fields we have now.
 # - Get control flow stuff working properly.
 
 # == Medium -- before public release ==
+# - Test for tuple packign
 # - Redo code gen for assignment to get rid of the extra ref/deref for index ops
 # - Check attr to lock and attrs to access against spec statically.
 # - Buffers should be mutable (like strings, they currently are not).
@@ -114,7 +111,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import compile, codegen, vm, os
+import compile, codegen, vm, os, pretty
 export compile
 
 when isMainModule:
@@ -123,20 +120,25 @@ when isMainModule:
   var
     params = commandLineParams()
     debug  = false
+    format = false
     session = newCompileContext(nil)
+    newParams: seq[string]
 
   let altPath = $(getEnv("CON4M_PATH"))
 
   if altPath != "":
     session.modulePath = altPath.split(Rune(':'))
 
-  if "--debug" in params:
-    debug = true
-    var newParams: seq[string]
-    for item in params:
-      if item != "--debug":
-        newParams.add(item)
-    params = newParams
+  for item in params:
+    case item
+    of "--pretty":
+      format = true
+    of "--debug":
+      debug = true
+    else:
+      newParams.add(item)
+
+  params = newParams
 
   if params.len() != 1:
     print h2("Cannot con4m")
@@ -175,12 +177,28 @@ when isMainModule:
     print(h1("Global CFG"))
     session.printProgramCfg()
 
-  if session.printErrors():
+  if format:
+    print pretty(session.entrypoint.root)
+
+    if debug:
+      print(h2("Raw source"))
+      echo $(session.entrypoint.s.runes)
+
+  if session.printErrors() and not format:
     var generatedCode = session.generateCode()
     if debug:
+      print h1("Disassembly")
       print generatedCode.disassembly()
+      print h1("Entrypoint Source")
+      print pretty(session.entrypoint.root)
+      print h1("Executing...")
 
-    quit(generatedCode.executeObject())
+    let exitCode = generatedCode.executeObject()
+
+    if debug:
+      print h1("Execution completed.")
+
+    quit(exitCode)
   else:
     print h2("Program loading failed.")
     quit(1)

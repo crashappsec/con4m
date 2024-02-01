@@ -6,7 +6,7 @@ export common
 
 
 type
-  ReprFn*     = proc(p: pointer): string {.cdecl.}
+  ReprFn*     = proc(p: pointer): C4Str {.cdecl.}
   GetCastFn*  = proc(dt: DataType, t1, t2: TypeId,
                      err: var string): pointer {.cdecl.}
   CastFn*     = proc(cur: pointer, tfrom, tto: TypeId, err: var string):
@@ -328,15 +328,15 @@ proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
     info = getDataType(t)
 
   if info.ops.len() == 0:
-    return cstring("void")
+    return cast[cstring](newC4Str("void"))
 
   let
     op   = cast[ReprFn](info.ops[FRepr])
 
   if op == nil:
-    return cstring("?")
+    return cast[cstring](newC4Str("?"))
 
-  return cstring(op(value))
+  return cast[cstring](op(value))
 
 proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
   let info = getDataType(t)
@@ -351,7 +351,7 @@ proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
   else:
     op = cast[ReprFn](info.ops[FStaticRepr])
 
-  return cstring(op(value))
+  return cast[cstring](op(value))
 
 proc isValueType*(id: TypeId): bool =
   let n = id.followForwards()
