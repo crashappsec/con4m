@@ -1,9 +1,10 @@
-import ../common
+import ".."/common
 export common
 
 # These all assume we're using 64 bit storage. This won't work
 # on smaller word sizes.
 
+proc toString(x: TypeId): string {.importc, cdecl.}
 
 type
   ReprFn*     = proc(p: pointer): C4Str {.cdecl.}
@@ -36,11 +37,10 @@ type
 var
   typeStore*:      Dict[TypeId, TypeRef]
   primitiveTypes*: Dict[string, TypeRef]
-  dtNameMap*:      Dict[string, DataType]
-  dataTypeInfo*:   seq[DataType]
-  refCount*:       int
+  dtNameMap:       Dict[string, DataType]
+  dataTypeInfo:    seq[DataType]
   syntaxInfo*:     array[int(StMax), SyntaxInfo]
-  TList*, TDict*, TTuple*, TTSpec*: TypeId
+  TList*, TDict*, TTuple*, TTSpec*, TFunc*: TypeId
 
   allBiNames =   @["dict", "tuple", "struct", "ref", "set", "maybe", "oneof",
                    "typespec"]
@@ -87,9 +87,82 @@ proc addDataType*(name: string, concrete: bool, ops: seq[pointer],
 template numBuiltinTypes*(): int =
   numConcrete
 
+proc followForwards*(id: TypeId): TypeId =
+  # When we resolve generic types, we change the type ID field to
+  # forward it to it's new (refined) type. Therefore, every check
+  # involving an ID for a generic type should check to see if the
+  # type has been updated.
+  #
+  # The stack detects recursive types; we probably should disallow
+  # those, but right now, just shrugging it off.
+
+  if cast[int](id) >= 0 and cast[int](id) <= dataTypeInfo.len():
+    return id
+
+  var
+    stack = @[id]
+    refs: seq[TypeRef]
+
+  while true:
+    let trefOpt = typeStore.lookup(stack[^1])
+    if trefOpt.isNone():
+      return id
+    let tref = trefOpt.get()
+    if tref.typeId in stack:
+      for i, item in refs:
+        item.typeId = tref.typeId
+        typeStore[stack[i]] = tref
+
+      return tref.typeId
+
+    stack.add(tref.typeId)
+    refs.add(tref)
+
+proc followForwards*(x: TypeRef): TypeRef =
+  let optObj = typestore.lookup(x.typeId)
+  if optObj.isSome():
+    result = typestore[x.typeId.followForwards()]
+  else:
+    result = x
+
+proc idToTypeRef*(t: TypeId): TypeRef {.exportc, cdecl.} =
+  result = typeStore[t].followForwards()
+
+proc getDataType*(t: TypeId): DataType {.cdecl, exportc.} =
+  let n = cast[int](t)
+
+  if n >= 0 and n < dataTypeInfo.len():
+    return dataTypeInfo[n]
+
+  else:
+    let to = t.idToTypeRef()
+
+    case to.kind
+    of C4Primitive:
+      if n >= dataTypeInfo.len():
+        return dataTypeInfo[0]
+      return dataTypeInfo[n]
+    of C4List:
+      return TList.getDataType()
+    of C4Dict:
+      return TDict.getDataType()
+    of C4Tuple:
+      return TTuple.getDataType()
+    of C4Func:
+      return TFunc.getDataType()
+    of C4TypeSpec:
+      return TTSpec.getDataType()
+    else:
+      echo to.kind
+      # Eventually will need to add objects, maybes, etc.
+      unreachable
+
+proc tinfo*(t: TypeId): TypeId {.cdecl, exportc.} =
+  return t.getDataType().dtid
+
 proc registerSyntax*(dtid: TypeId, syntax: SyntaxType, litmods: seq[string],
                      primary = false) =
-  let dt = dataTypeInfo[dtid]
+  let dt = dtid.getDataType()
 
   if primary:
     syntaxInfo[int(syntax)].primary = dt
@@ -177,88 +250,27 @@ proc parseInt128*(s: string, res: var uint128, sign: var bool): int {.cdecl.} =
     else:
       return 1
 
-proc tinfo*(t: TypeId): DataType =
-  let
-    n = int(t)
-
-  if n < dataTypeInfo.len():
-    return dataTypeInfo[n]
-
 proc box*[T](item: T, t: TypeId): pointer =
-  let info = tinfo(t)
+  let info = getDataType(t)
 
   if info == nil or not info.byValue:
     return newRefValue[T](item, t)
   else:
     return cast[pointer](item)
 
-proc followForwards*(id: TypeId): TypeId =
-  # When we resolve generic types, we change the type ID field to
-  # forward it to it's new (refined) type. Therefore, every check
-  # involving an ID for a generic type should check to see if the
-  # type has been updated.
-  #
-  # The stack detects recursive types; we probably should disallow
-  # those, but right now, just shrugging it off.
-
-  var
-    stack = @[id]
-    refs: seq[TypeRef]
-
-  while true:
-    let trefOpt = typeStore.lookup(stack[^1])
-    if trefOpt.isNone():
-      return id
-    let tref = trefOpt.get()
-    if tref.typeId in stack:
-      for i, item in refs:
-        item.typeId = tref.typeId
-        typeStore[stack[i]] = tref
-
-      return tref.typeId
-
-    stack.add(tref.typeId)
-    refs.add(tref)
-
-proc followForwards*(x: TypeRef): TypeRef =
-  let optObj = typestore.lookup(x.typeId)
-  if optObj.isSome():
-    result = typestore[x.typeId.followForwards()]
-  else:
-    result = x
-
 template getTid*(x: TypeId): TypeId =
   x.followForwards()
 
-proc typeNameFromId*(id: TypeId): string =
-  let n = int(id.followForwards())
-  # Assumes it's definitely a builtin type.
-  if n >= dataTypeInfo.len():
-    # Where are these coming from??
-    return ""
-  let dtinfo = datatypeInfo[n]
-  return dtinfo.name
-
-proc idToTypeRef*(t: TypeId): TypeRef {.exportc, cdecl.} =
-  result = typeStore[t].followForwards()
-
-proc getContainerInfo*(t: TypeId): DataType {.exportc, cdecl.}=
-  let to = t.idToTypeRef()
-
-  case to.kind
-  of C4List:
-    return tinfo(TList)
-  of C4Dict:
-    return tinfo(TDict)
-  of C4Tuple:
-    return tinfo(TTuple)
-  else:
-    unreachable
+template typeNameFromId*(id: TypeId): string =
+  id.getDataType().name
 
 proc isBasicType*(id: TypeId): bool =
   var n = cast[int](id.followForwards())
 
   if n >= 0 and n < len(dataTypeInfo):
+    return true
+
+  if id.idToTypeRef().kind == C4Func:
     return true
 
 proc isContainerType*(id: TypeId): bool =
@@ -286,24 +298,12 @@ proc isTypeSpec*(id: TypeId): bool =
 
   return to.kind == C4TypeSpec
 
-proc toString(x: TypeId): string {.importc, cdecl.}
-proc getDataType*(t: TypeId): DataType {.exportc, cdecl.} =
-  var t = t.followForwards()
-
-  if t.isBasicType():
-    return t.tinfo()
-
-  if t.isTypeSpec():
-    return TTSpec.tinfo()
-
-  return t.getContainerInfo()
-
 proc isVarargs*(id: TypeId): bool {.exportc, cdecl.} =
   let tr = typestore[id.followForwards()]
   return tr.va
 
 proc getVarargsContainerTid*(id: TypeId): TypeId {.exportc, cdecl.} =
-  return tinfo(TList).dtid
+  return getDataType(TList).dtid
 
 proc getNumFormals*(id: TypeId): int {.exportc, cdecl.} =
   let tr = typestore[id.followForwards()]
@@ -353,43 +353,20 @@ proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
 
   return cast[cstring](op(value))
 
-proc isValueType*(id: TypeId): bool =
-  let n = id.followForwards()
-  if not n.isBasicType():
-    return false
-  return dataTypeInfo[cast[int](n)].byValue
+template isValueType*(id: TypeId): bool =
+  id.getDataType().byValue
 
-proc isIntType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
+template isIntType*(id: TypeId): bool =
+  id.getDataType().intW != 0
 
-  return dtinfo.intW != 0
+template isFloatType*(id: TypeId): bool =
+  id.getDataType().fTy
 
-proc isFloatType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
+template isBoolType*(id: TypeId): bool =
+  id.getDataType().isBool
 
-  return dtinfo.fTy
-
-proc isBoolType*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.isBool
-
-proc isSigned*(id: TypeId): bool =
-  let n = cast[int](id.followForwards())
-  if n >= 0 and n >= numBuiltinTypes():
-    return false
-  let dtinfo = dataTypeInfo[n]
-
-  return dtinfo.signed
+template isSigned*(id: TypeId): bool =
+  id.getDataType().signed
 
 
 # proc call_get_val_for_ffi*(p: pointer, ffitype: int)

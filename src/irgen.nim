@@ -248,6 +248,13 @@ proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
 template reprBasicLiteral(ctx: IrNode): string =
   if not ctx.haveVal:
     ""
+  elif ctx.tid.tinfo() == TFunc:
+    # Special cased because I am weary.
+    let v = cast[ptr Callback](ctx.value)
+    if v == nil:
+      "buggy_callback()"
+    else:
+      ($(v.name) & v.tid.toString())
   else:
     $(call_static_repr(ctx.value, ctx.tid))
 
@@ -1548,7 +1555,6 @@ proc convertOtherLit(ctx: Module): IrNode =
       ctx.irError(err)
       return
 
-
   if text.len() >= 2:
     if (text[0] == text[^1] and text[0] in ['"', '\'']):
       ctx.irWarn("OtherQuotes")
@@ -1705,6 +1711,14 @@ proc convertTupleLit(ctx: Module): IrNode =
   if err:
     ctx.irError("BadLitMod", @[lmod, "tuple"])
 
+proc newCallbackFromFuncInfo(s: FuncInfo): ptr Callback =
+  result = Callback.create()
+  result.name = s.name
+  result.tid  = s.tid
+  result.impl = s
+
+  GC_ref(s)
+
 proc convertCallbackLit(ctx: Module): IrNode =
   var cb: Callback
 
@@ -1713,7 +1727,7 @@ proc convertCallbackLit(ctx: Module): IrNode =
   cb.name = ctx.getText(0)
   if ctx.numKids() == 2:
     var
-      tvars: Dict[string, TypeId]
+      tvars = newDict[string, TypeId]()
     cb.tid = ctx.pt.children[1].buildType(tvars)
     result.tid = cb.getTid()
   else:
@@ -2376,7 +2390,11 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       withFnLock(matches[0]):
         discard matches[0].tid.unify(t)
         discard n.tid.unify(t)
-      n.contents.toCall = matches[0]
+      if n.contents.kind == IrLit:
+        n.value   = cast[pointer](newCallbackFromFuncInfo(matches[0]))
+        n.haveval = true
+      else:
+        n.contents.toCall = matches[0]
       continue
     elif matches.len() == 0:
       let info = showCallMistakes(n.contents.fname, fails, t)

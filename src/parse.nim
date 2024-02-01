@@ -2234,7 +2234,7 @@ production(topLevel, NodeModule):
           break
         ctx.advance()
 
-proc buildType*(n: ParseNode, tvars: var Dict[string, TypeId]): TypeId =
+proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
   case n.kind
   of NodeTypeBuiltin:
     let biname = n.children[0].getText()

@@ -135,9 +135,9 @@ type
       discard
 
   Callback* = object
-    name*: string
-    tid*:  TypeId
-    impl*: FuncInfo
+    name*:    string
+    tid*:     TypeId
+    impl*:    FuncInfo
 
   Con4mErrPhase* = enum
     ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrCodeGen, ErrRuntime
@@ -478,8 +478,6 @@ type
     FsErrorNoSpec, FsErrorSecUnderField, FsErrorNoSuchsec,
     FsErrorSecNotAllowed, FsErrorFieldNotAllowed
 
-
-
   FieldSpec* = ref object
     name*:                 string
     tid*:                  TypeId
@@ -619,7 +617,6 @@ type
     didFoldingPass*: bool # Might not be using this anymore.
     maxOffset*:      int
 
-
     # These help us to fold.
     branchOrLoopDepth*: int
 
@@ -713,8 +710,18 @@ type
      # null / 0 value gets loaded if there's a lookup failure.
      ZLoadFromAttr  = 0x17,
 
+     # Just to expedite our implementation, we special-case loading
+     # function pointer literals. We do this because most literals can
+     # be generated fully generically, w/o having to worry about the
+     # object layout, but not function pointers.  Yes, this is all
+     # ick at the moment.
+     ZPushFfiPtr    = 0x18,
+     ZPushVmPtr     = 0x19,
+
      # Swap the top two stack items.
-     ZSwap          = 0x18,
+     ZSwap          = 0x1a,
+
+
 
      # Pop a value from the stack, discarding it.
      ZPop           = 0x20,
@@ -872,6 +879,12 @@ type
     va*:         bool
     dlls*:       seq[int]
     argInfo*:    seq[ZffiArgInfo]
+
+  ZCallback* = object
+    impl*:       pointer
+    nameoffset*: int
+    tid*:        TypeId
+    ffi*:        bool
 
   ZFnInfo* = ref object
     # This field maps offsets to the name of the field. Frame

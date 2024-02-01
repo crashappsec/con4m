@@ -1,5 +1,8 @@
-import base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
-       duration, size, datetime, url, strutils, ../err
+import strutils
+import "."/[base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
+            duration, size, datetime, url, function]
+import ".."/err
+
 export base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
        duration, size, datetime, url, err
 
@@ -522,8 +525,8 @@ proc resultingNumType*(ctx: Module, t1, t2: TypeId): TypeId =
   var
     t1  = t1.followForwards()
     t2  = t2.followForwards()
-    to1 = dataTypeInfo[t1]
-    to2 = dataTypeInfo[t2]
+    to1 = t1.getDataType()
+    to2 = t2.getDataType()
 
   if to1.intW != 0 and to2.intW != 0:
     if to1.intW > to2.intW:

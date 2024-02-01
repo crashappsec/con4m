@@ -717,7 +717,6 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
                     mobj)
 
       ctx.curModule = mobj
-
     of ZRet:
       leaveFrame()
     of ZModuleRet:
@@ -761,6 +760,28 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ffi_call(ctx.externCalls[instr.arg], ctx.externFps[instr.arg],
                addr ctx.returnRegister, argAddr)
       ctx.rrType = cast[pointer](int64(ffiObj.argInfo[^1].ourType))
+    of ZPushFfiPtr:
+      var cb        = ZCallback.create()
+      cb.impl       = cast[pointer](instr.arg)
+      cb.nameoffset = int(instr.immediate)
+      cb.tid        = instr.typeInfo
+      cb.ffi        = true
+
+      ctx.sp           -= 1
+      ctx.stack[ctx.sp] = cast[pointer](cb.tid)
+      ctx.sp           -= 1
+      ctx.stack[ctx.sp] = cb
+    of ZPushVmPtr:
+      var cb        = ZCallback.create()
+      cb.impl       = cast[pointer](instr.arg)
+      cb.nameoffset = int(instr.immediate)
+      cb.tid        = instr.typeInfo
+      cb.ffi        = false
+
+      ctx.sp           -= 1
+      ctx.stack[ctx.sp] = cast[pointer](cb.tid)
+      ctx.sp           -= 1
+      ctx.stack[ctx.sp] = cb
     of ZSObjNew:
       # TODO: memory management.
       let

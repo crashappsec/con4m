@@ -235,7 +235,6 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         dstName = tmpOpt.get()
 
       lbl = text(tmp & " -> " & dstName)
-
     of ZPushStaticPtr:
       arg1 = text("+" & hex(item.arg))
       lbl  = text(mem.findStringAt(item.arg))
@@ -285,6 +284,9 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
         lbl = text(" ")
     of ZPop, ZAssert, ZSwap:
       ty = text(" ")
+    of ZPushFfiPtr, ZPushVmPtr:
+      arg1 = text(hex(item.arg))
+      arg2 = em(ctx.staticData.findStringAt(int(item.immediate)))
     else:
       discard
 
@@ -742,6 +744,37 @@ proc genJump(ctx: CodeGenState, cur: IrContents) =
   else:
     ctx.genBackwardsJump(cur.targetNode)
 
+proc genCallbackLoad(ctx: CodegenState, cb: ptr Callback) =
+  if cb.impl.externInfo != nil:
+    # External function pointer.
+    for i, item in ctx.zobj.ffiInfo:
+      let
+        p = cast[pointer](addr ctx.zobj.staticData[item.nameOffset])
+        s = $(cast[cstring](p))
+
+      if s == cb.impl.externName:
+        ctx.emitInstruction(ZPushFfiPtr,
+                            arg       = i,
+                            immediate = item.nameOffset,
+                            tid       = cb.tid)
+        return
+
+    unreachable
+  else:
+    let
+      moduleKey = cb.impl.defModule.key
+      minf      = ctx.minfo[moduleKey]
+      p         = cast[pointer](ctx.addStaticObject(cb.impl.name))
+
+    if cb.impl.codeOffset == 0:
+      ctx.callBackpatches.add((cb.impl, ctx.mCur, ctx.codeLoc()))
+
+    ctx.emitInstruction(ZPushVMPtr,
+                        arg       = cb.impl.internalId,
+                        immediate = cast[int](p),
+                        tid       = cb.tid,
+                        moduleId  = minf.objInfo.moduleId)
+
 proc genLitLoad(ctx: CodeGenState, n: IrNode) =
   let cur = n.contents
 
@@ -751,6 +784,10 @@ proc genLitLoad(ctx: CodeGenState, n: IrNode) =
 
     ctx.genPushImmediate(cur.items.len())
     ctx.genTCall(FContainerLit, n.tid)
+  elif n.tid.tinfo() == TFunc:
+    # It's a callback...
+    assert n.haveval
+    ctx.genCallbackLoad(cast[ptr Callback](n.value))
 
   else:
     if cur.byVal:

@@ -1,0 +1,9 @@
+func somethingcool(x: int) {
+  return true
+}
+
+x = func somethingcool(int) -> bool
+y = func print(`x) -> void
+print(x)
+print(y)
+#print(x(2))

@@ -7,7 +7,7 @@
 # - Finish validation.
 # - Apply component logic in runtime.
 # - Re-implement standard library / wrappings.
-# - Checkpointing runtime state.
+# - Checkpointing (and restoring) runtime state.
 # - Hook up getopts again.
 # - Fix up and test 'Other' data types
 # - Enumerate function pointer literals and assume they're always live
@@ -19,7 +19,6 @@
 #   all def locations for things like spec errors.
 # - Restrict the leading '$' properly.
 # - attr.x for disambiguation of top-level attr vs var.
-# - Get callbacks working (eg ConvertCallbackLit type secolution)
 # - Doc API.
 # - Typecheck c vs con4m api for ffi
 # - Enums should be global by default.  Add a 'private' for enums,
@@ -35,7 +34,13 @@
 # - Get control flow stuff working properly.
 
 # == Medium -- before public release ==
-# - Test for tuple packign
+
+# - Implement a way to call function pointers; quite likely with good ol' ();
+#   This really won't be too hard; the checker currently forbids it, and
+#   there'd need to be some changes to code gen and the vm too, but it is all
+#   minor; it's more about what syntax works for beginners, fp() or
+#   maybe something like call(fp, ...)
+# - Test for tuple unpacking; I think I probably haven't done it.
 # - Redo code gen for assignment to get rid of the extra ref/deref for index ops
 # - Check attr to lock and attrs to access against spec statically.
 # - Buffers should be mutable (like strings, they currently are not).

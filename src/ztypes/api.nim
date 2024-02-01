@@ -29,8 +29,8 @@ proc can_cast_to_bool*(tid: TypeId): bool {.exportc, cdecl.} =
     return true
 
   let
-    ct = tid.get_container_info()
-    fn = get_cast_fn(ct, tinfo(TBool), tid, TBool, err)
+    ct = tid.get_data_type()
+    fn = get_cast_fn(ct, TBool.get_data_type(), tid, TBool, err)
 
   return fn != nil
 
@@ -43,8 +43,8 @@ proc int_bits*(tid: TypeId): int {.exportc, cdecl.} =
 proc call_cast*(value: pointer, tcur, tdst: TypeId, err: var string): pointer
                 {.exportc, cdecl.} =
   let
-    dtcur = get_data_type(tcur)
-    dtdst = get_data_type(tdst)
+    dtcur = tcur.get_data_type()
+    dtdst = tdst.get_data_type()
     fn    = cast[Castfn](dtcur.get_cast_fn(dtdst, tcur, tdst, err))
 
   if fn != nil:
@@ -184,7 +184,7 @@ proc instantiate_literal*(t: TypeId, s: pointer, l: int):
 proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,
                             contents: seq[pointer], err: var string):
                             pointer {.exportc, cdecl.} =
-  let info = t.getContainerInfo()
+  let info = t.get_data_type()
 
   if info == nil:
     err = "BadLitMod"
