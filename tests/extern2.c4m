@@ -1,0 +1,9 @@
+extern callecho(a: ptr) -> ptr {
+  local: print(string) -> void
+  pure: false
+}
+
+ extern splitwrap(a: cstring, cstring) -> ptr {
+  local: split(x: string, y: string) -> list[string]
+  pure: true
+}
