@@ -1,5 +1,10 @@
-import base, ../common
+import "."/[base, tup]
+import ".."/common
+
 from strutils import join
+
+proc tTuple(l: seq[TypeId]): TypeId {.importc, cdecl.}
+proc tList(item: TypeId): TypeId {.importc, cdecl.}
 
 var dictOps = newVTable()
 
@@ -14,7 +19,7 @@ proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
 proc isC4StrType(id: TypeId): bool {.importc, cdecl.}
 
-proc newDict(t: TypeId): Con4mDict =
+proc newDict*(t: TypeId): Con4mDict =
   var hashApproach: DictKeyType
 
   let
@@ -201,3 +206,66 @@ proc dict_lit(st: SyntaxType, litmod: string, t: TypeId, items: seq[pointer],
   while i < items.len():
     `[]=`(result.obj, items[i], items[i + 1])
     i += 2
+
+proc dict_contains(d: Con4mDict, item: pointer): bool {.exportc, cdecl.} =
+  result = false
+
+  let
+    to   = d.t.idToTypeRef()
+    kt   = to.items[0]
+    view = d.obj.keys()
+
+  for k in view:
+    if call_eq(item, k, kt):
+      result = true
+
+addStaticFunction("dict_contains", dict_contains)
+
+proc dict_items(d: Con4mDict): FlexArray[pointer] {.exportc, cdecl.} =
+  let
+    to   = d.t.idToTypeRef()
+    kt   = to.items[0]
+    vt   = to.items[1]
+    tupT = tTuple(@[kt, vt])
+    resT = tList(tupT)
+    view = d.obj.items()
+
+  result          = newArray[pointer](view.len())
+  result.metadata = cast[pointer](resT)
+
+  for i, (k, v) in view:
+    let tup = newTuple(tupT)
+    discard flexarray_set(tup.obj, 0, k)
+    discard flexarray_set(tup.obj, 1, v)
+    discard flexarray_set(result.arr, uint64(i), cast[pointer](tup))
+
+addStaticFunction("dict_items", dict_items)
+
+proc dict_keys(d: Con4mDict): FlexArray[pointer] {.exportc, cdecl.} =
+  let
+    to   = d.t.idToTypeRef()
+    kt   = to.items[0]
+    view = d.obj.keys()
+
+  result          = newArray[pointer](view.len())
+  result.metadata = cast[pointer](tList(kt))
+
+  for i, k in view:
+    discard flexarray_set(result.arr, uint64(i), k)
+
+addStaticFunction("dict_keys", dict_keys)
+
+
+proc dict_values(d: Con4mDict): FlexArray[pointer] {.exportc, cdecl.} =
+  let
+    to   = d.t.idToTypeRef()
+    kt   = to.items[0]
+    view = d.obj.values()
+
+  result          = newArray[pointer](view.len())
+  result.metadata = cast[pointer](tList(kt))
+
+  for i, k in view:
+    discard flexarray_set(result.arr, uint64(i), k)
+
+addStaticFunction("dict_values", dict_values)

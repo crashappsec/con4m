@@ -1,0 +1,169 @@
+extern con4m_repr(a: ptr) -> ptr {
+  "Generic implementation of repr()" 
+  local: repr(s: `x) -> string
+  pure: true
+}
+
+extern str_strip(s: ptr) -> ptr {
+"""
+Returns a copy of the input, with any leading or trailing white space
+removed.
+"""
+  local: strip(s: string) -> string
+  pure: true
+}
+
+extern str_pad(s: ptr, n: i64) -> ptr {
+   """
+Return a copy of the input `string` that is at least as wide as indicated by the integer parameter. If the input `string` is not long enough, spaces are added to the end.
+"""
+  local: pad(s: string, n: int) -> string
+  pure: true
+}
+
+extern str_contains(s1: ptr, s2: ptr) -> bool {
+  "Returns `true` if the first argument contains the second argument."
+  local: contains(s1: string, s2: string) -> bool
+  pure: true
+}
+
+extern str_starts_with(s1: ptr, s2: ptr) -> bool {
+  "Returns `true` if the first argument starts with the second argument."
+  local: starts_with(s1: string, s2: string) -> bool
+  pure: true
+}
+
+extern str_ends_with(s1: ptr, s2: ptr) -> bool {
+  "Returns `true` if the first argument ends with the second argument."
+  local: ends_with(s1: string, s2: string) -> bool
+  pure: true
+}
+
+extern str_find(s1: ptr, s2: ptr) -> bool {
+"""
+If the first argument contains the first `string` anywhere in it, this
+returns the index of the first match. Otherwise, it returns -1 to
+indicate no match.
+"""
+  local: find(s1: string, s2: string) -> int
+  pure: true
+}
+
+extern str_len(s: ptr) -> ci64 {
+"""
+Returns the length of a `string` in bytes. This does NOT return the number
+of characters if there are multi-byte characters. `utf8_len()` does that.
+"""
+  local: len(s: string) -> int
+  pure: true
+}
+
+extern str_upper(s1: ptr) -> ptr {
+"""
+Converts any unicode characters to their upper-case representation, where
+possible, leaving them alone where not.
+"""
+  local: upper(s: string) -> string
+  pure: true
+}
+
+extern str_lower(s1: ptr) -> ptr {
+"""
+Converts any unicode characters to their lower-case representation, where
+possible, leaving them alone where not.
+"""
+  local: lower(s: string) -> string
+  pure: true
+}
+
+extern str_split(s1: ptr, s2: ptr) -> ptr {
+"""
+Turns a list into an array by splitting the first `string` based on the
+second `string`. The second `string` will not appear in the output.
+"""
+  local: split(s1: string, s2: string) -> list[string]
+  pure: true
+}
+
+extern str_join(l: ptr, s1: ptr) -> ptr {
+"""
+Creates a single `string` from a list of `string`, by adding the second
+value between each item in the list.
+"""
+  local: join(l: list[string], s: string) -> string
+  pure: true
+}
+
+extern str_replace(base: ptr, match: ptr, replacement: ptr) -> ptr {
+"""
+Return a copy of the first argument, where any instances of the second
+argument are replaced with the third argument.
+"""
+  local: replace(s1: string, s2: string, s3: string) -> string
+  pure: true
+}
+
+# These probably can / should move.
+
+extern str_base64(s1: ptr) -> ptr {
+"""
+Returns a base64-encoded version of the `string`, using the
+traditional Base64 character set.
+"""
+  local: base64(s: string) -> string
+  pure: true
+}
+
+extern str_base64_web(s1: ptr) -> ptr {
+"""
+Returns a base64-encoded version of the `string`, using the web-safe
+Base64 character set.
+"""
+  local: base64_web(s: string) -> string
+  pure: true
+}
+
+extern str_decode(s1: ptr) -> ptr {
+  "Decodes a base64 encoded `string`, accepting either common character set."
+  local: debase64(s: string) -> string
+  pure: true
+}
+
+extern str_to_hex(s1: ptr) -> ptr {
+  "Hex-encodes a string."
+  local: hex(s: string) -> string
+  pure: true
+}
+
+extern str_to_hex_int(s1: ptr) -> ptr {
+  "Turns an integer into a hex-encoded `string`."
+  local: hex(s: int) -> string
+  pure: true
+}
+
+extern str_from_hex(s1: ptr) -> ptr {
+"""
+Takes a hex-encoded `string`, and returns a `string` with the
+hex-decoded bytes.
+"""
+  local: dehex(s1: string) -> string
+  pure: true
+}
+
+extern str_sha256(s1: ptr) -> ptr {
+"""
+Computes the SHA-256 hash of a `string`, returning the result as a
+hex-encoded `string`.
+"""
+  local: sha256(s: string) -> string
+  pure: true
+}
+
+extern str_sha512(s1: ptr) -> ptr {
+"""
+Computes the SHA-512 hash of a `string`, returning the result as a
+hex-encoded `string`.
+"""
+  local: sha512(s: string) -> string
+  pure: true
+}

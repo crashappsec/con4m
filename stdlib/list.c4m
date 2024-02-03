@@ -1,9 +1,29 @@
-extern listlen(p: ptr) -> ci64 {
-   local: len(list[`t]) -> int
+extern listlen(p: ptr) -> i64 {
+"""
+Returns the number of elements in a list. Note that lists are safe in
+multi-threaded situations, and this may lead to race conditions if you
+depend on the size while another thread has resized.
+"""
+
+   local: len(l: list[`t]) -> int
    pure: true
 }
 
 extern listadd(l1: ptr, l2: ptr) -> ptr {
-  local: __plus__(list[`t], list[`t]) -> list[`t]
+"""
+Return a new list, appending the contents of both lists.
+"""
+  local: __plus__(l1: list[`t], l2: list[`t]) -> list[`t]
   pure: true
 }
+
+extern list_contains(l1: ptr, l2: ptr) -> bool {
+"""
+Returns true if, at the time checked, the value in the second parameter
+appears in the list.
+"""
+  
+  local: contains(l: list[`t], value: `t) -> bool
+  pure: true
+}
+

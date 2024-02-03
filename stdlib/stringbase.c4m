@@ -1,4 +1,0 @@
-extern con4m_repr(a: ptr) -> ptr {
-  local: repr(`x) -> string
-  pure: true
-}  

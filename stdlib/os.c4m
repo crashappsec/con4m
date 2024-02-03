@@ -1,9 +1,63 @@
-extern exit(status: cint) -> cvoid {
-  local: exit(int) -> void
-  pure: false
-}
-
-extern abort() -> cvoid {
+extern abort() -> void {
+"""
+Causes abnormal program termination to occur, generally raising
+`SIGABRT`, unless caught and squelched.
+"""
   local: abort() -> void
   pure: false
 }
+
+extern getenv(n: ptr) -> ptr {
+"""
+Return the value of a given environment variable, or the empty string if
+it doesn't exist.
+
+Note that this call cannot distinguish whether an empty string return is
+due to the environment variable being unset; use `env_exists()` for that.
+"""
+  local: env(name: string) -> string
+  pure: false
+}
+
+extern unsetenv(n: ptr) -> cint {
+"""
+Unsets the given environment variable in the program's environment.
+"""
+  local: delete_env(name: string) -> bool
+  pure: false
+}
+
+extern setenv(n: ptr, v: ptr, overwrite: cint) -> cint {
+"""
+Explicitly sets the given environment variable specified in the first
+parameter by the value in the second parameter. The third parameter
+controls whether or not a write happens if the variable already
+exists. If this value is `true`, then the write succeeds.
+"""
+  local: set_env(name: string, value: string, overwrite: bool) -> bool
+  pure:  false
+}
+
+extern env_exists(n: ptr) -> bool {
+"""
+Returns `true` if an environment variable with the given name exists.
+"""
+  local: exists_env(name: string) -> bool
+  pure: false
+}
+
+extern env_all() -> ptr {
+  "Returns a dictionary with the entire environment." 
+  local: env() -> dict[string, string]
+  pure:  false
+}
+
+
+extern exit(status: cint) -> void {
+"""
+Causes the program to exit, and return the passed error code to the OS.
+"""
+  local: exit(code: int) -> void
+  pure: false
+}
+

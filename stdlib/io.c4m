@@ -1,4 +1,8 @@
-extern con4m_print(a: ptr) -> cvoid {
-  local: print(`x) -> void
+extern con4m_print(a: ptr) -> void {
+"""
+Outputs to the terminal, by applying the `repr()` function for its data type.
+Currently, this only accepts one argument, and always adds a newline.
+"""
+  local: print(value: `x) -> void
   pure: false
 }

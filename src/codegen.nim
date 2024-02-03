@@ -1252,14 +1252,16 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
       if typeinfo.items.len() > cinfo.cArgTypes.len():
         lateError("ExternZArgCt", @[name, $(typeinfo.items.len()),
-                                    $(cinfo.cArgTypes.len())])
+                                    $(cinfo.cArgTypes.len()),
+                                    typeinfo.typeId.toString()])
+
 
       elif typeinfo.items.len() < cinfo.cArgTypes.len():
         lateError("ExternCArgCt", @[name, $(typeinfo.items.len()),
                                     $(cinfo.cArgTypes.len())])
       for i, param in cinfo.cArgTypes:
         var
-          cArgType  = int16(cTypeNames.find(param[0]))
+          cArgType  = mapCArgType(param[0])
           ourType: int32
 
         let itemType = typeinfo.items[i].idToTypeRef()
@@ -1273,7 +1275,7 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
             ourType = RTAsPtr
 
         if ourType < 0:
-          cArgType = int16(cTypeNames.find("ptr"))
+          cArgType = mapCArgType("ptr")
 
         var paramInfo = ZffiArgInfo(argType: cArgType, ourType: ourType)
 

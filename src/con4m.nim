@@ -15,6 +15,7 @@
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
+# - Signal handler should print out runtime stack trace.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors.
 # - Restrict the leading '$' properly.

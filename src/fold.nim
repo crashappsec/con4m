@@ -118,8 +118,9 @@ proc replaceCall*(ctx: Module, n: IrNode, name: string, sig: TypeId,
     newcontents = IrContents(kind: IrCall, replacement: true)
 
   newcontents.fname   = name
-  newcontents.toCall  = ctx.beginFunctionResolution(n, name, sig)
   newcontents.actuals = actuals
+
+  ctx.funcsToResolve.add((n, sig, name))
 
   n.contents = newcontents
 

@@ -1,0 +1,7 @@
+s = ["this", "is", "a", "test"]
+
+l = join(s, " ")
+assert join(s, " ") == "this is a test"
+assert upper(l) == "THIS IS A TEST"
+assert split(join(s, " "), " ") == s
+assert pad("foo", 10) == "foo       "

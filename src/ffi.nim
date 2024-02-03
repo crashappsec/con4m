@@ -1,12 +1,5 @@
 import nimutils
 
-const
-  cTypeNames* = ["cvoid", "cu8", "ci8", "cu16", "ci16", "cu32", "ci32", "cu64",
-                 "ci64", "cfloat", "cdouble", "cuchar", "cchar", "cshort",
-                 "cushort", "cint", "cuint", "clong", "culong", "cbool",
-                 "csize", "cssize", "ptr", "cstring", "carray"]
-  cTypeTakesParam* = ["ptr", "carray"]
-
 type
   FfiObj* = object
     size*:      csize_t
@@ -127,6 +120,27 @@ else:
     ffiSizeT*  = ffiU64
 
 
+const
+  cTypeNames = ["cvoid", "cu8", "ci8", "cu16", "ci16", "cu32", "ci32", "cu64",
+                "ci64", "cfloat", "cdouble", "cuchar", "cchar", "cshort",
+                "cushort", "cint", "cuint", "clong", "culong", "cbool",
+                "csize", "cssize", "ptr", "cstring", "carray"]
+
+  cTypeTakesParam* = ["ptr", "carray", "array"]
+
+  tAliases = ["void", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64",
+                 "float", "double", "uchar", "", "short", "ushort", "", "",
+                 "long", "ulong", "bool", "size", "ssize", "", "", "array"]
+
+proc mapCArgType*(s: string): int16 =
+  var ix = cTypeNames.find(s)
+
+  if ix == -1:
+    ix = tAliases.find(s)
+
+  return int16(ix)
+
+
 let
   ffiTypeNameMapping* = [ ffiVoid, ffiU8, ffiI8, ffiU16, ffiI16, ffiU32,
                           ffiI32, ffiU64, ffiI64, ffiFloat, ffiDouble,
@@ -134,6 +148,12 @@ let
                           ffiUint, ffiLong, ffiULong, ffiU8, ffiSizeT,
                           ffiSSizet, addr ffiPtrO, addr ffiPtrO,
                           addr ffiPtrO ]
+
+assert ctypeNames.len() == tAliases.len()
+assert ctypeNames.len() == ffiTypeNameMapping.len()
+
+proc lookupFfiArgType*(s: string): ptr FfiObj =
+  return ffiTypeNameMapping[s.mapCArgType()]
 
 proc ffi_prep_cif*(cif: var CallerInfo, abi: cuint, nargs: cuint,
                    rtype: ptr FfiObj, argTypes:

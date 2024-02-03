@@ -1,0 +1,31 @@
+extern dict_contains(d: ptr, l2: ptr) -> bool {
+"""
+Returns `true` if the second argument is a set key in the dictionary, `false`
+otherwise.
+"""
+  local: contains(d: dict[`t, `v], item: `t) -> bool
+  pure: true
+}
+
+extern dict_items(d: ptr) -> ptr {
+"""
+Returns a list containing two-tuples representing the keys and values in a
+dictionary.
+"""
+  local: items(d: dict[`x, `y]) -> list[tuple[`x, `y]]
+  pure: true
+}
+
+extern dict_keys(d: ptr) -> ptr {
+  "Returns a list of the keys in a dictionary."
+  local: keys(d: dict[`x, `y]) -> list[`x]
+  pure: true
+}
+
+extern dict_values(d: ptr) -> ptr {
+  "Returns a list of the values in a dictionary."
+  local: items(d: dict[`x, `y]) -> list[`y]
+  pure: true
+
+
+}

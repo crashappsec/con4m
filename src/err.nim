@@ -75,8 +75,6 @@ const errorMsgs = [
   ("PureBool",       "The <em>'pure'</em> property for external functions " &
                      "must be a boolean value (<em>true</em> or " &
                      "<em>false</em>)"),
-  ("DupeCTypeParam", "Duplicate parameter name for an external function " &
-                     "specification (<em>$1</em>)"),
   ("DupeExtField",   "Duplicate field <em>$1</em> provided for an <em>" &
                      "extern</em> block."),
   ("DupeDllName",    "Duplicate DLL name <em>$1</em> provided for an " &
@@ -311,9 +309,13 @@ const errorMsgs = [
                      "been set."),
   ("RT_BadTOp",      "Unknown function id for internal type API call " &
                      "(<em>$1</em>)"),
+  ("NeedExName",     "Local function specs must include names for every " &
+                     "parameter."),
+  ("DupeExParam",    "Duplicate parameter name for local function: " &
+                     "<em>$1</em>"),
   ("ExternZArgCt",   "Local function spec has more arguments than external " &
                      "function for <em>$1</em>, which is currently not " &
-                     "allowed. C function has $3 args, local has $2."),
+                     "allowed. C function has $3 args, local has $2 ($4)."),
   ("ExternCArgCt",   "External function spec has more arguments than local " &
                      "function for <em>$1</em>, which is currently not " &
                      "allowed. C function has $3 args, local has $2."),

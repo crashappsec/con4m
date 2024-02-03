@@ -1,0 +1,70 @@
+extern char_rune_len(c: cint) -> cint {
+"""
+Returns the number of bytes needed to encode this character in UTF8.
+"""  
+  local: len(c: char) -> int
+  pure: true
+}
+
+extern char_is_lower(c: cint) -> bool {
+"""
+Returns `true` if the given character is a lower case character,
+`false` otherwise. This function is unicode aware.
+"""
+  local: lower?(c: char) -> bool
+  pure:  true
+}
+
+extern char_is_upper(cint) -> bool {
+"""
+Returns `true` if the given character is an upper case character,
+`false` otherwise. This function is unicode aware.
+"""
+  local: upper?(c: char) -> bool
+  pure: true
+}
+
+extern char_is_combining(c: cint) -> bool {
+"""
+Returns `true` if a character is a Unicode combining character, and
+`false` otherwise.
+"""
+  local: combining?(c: char) -> bool
+  pure: true
+}
+
+extern char_is_space(c: cint) -> bool {
+"""
+Returns `true` if the given character is a valid space character, per
+the Unicode specification.
+"""
+  local: space?(c: char) -> bool
+  pure: true
+}
+
+extern char_is_alpha(c: cint) -> bool {
+"""
+Returns `true` if the given character is considered an alphabet character
+in the Unicode spec.
+"""
+  local: alphabetic?(c: char) -> bool
+  pure: true
+}
+
+extern char_is_num(c: cint) -> bool {
+"""
+Returns `true` if the given character is considered an number in the
+Unicode spec.
+"""
+  local: numeric?(c: char) -> bool
+  pure:  true
+}
+
+extern char_is_alpha_num(c: cint) -> bool {
+"""
+Returns `true` if the given character is considered an alpha-numeric
+character in the Unicode spec.
+"""
+  local: alphanum?(c: char) -> bool
+  pure: true
+}

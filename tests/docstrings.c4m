@@ -7,12 +7,12 @@ Here is one of its two doc strings.
 extern callecho(a: ptr) -> cvoid {
   "This has some docs too."
   
-  local: print(string) -> void
+  local: print(x: string) -> void
   pure: false
 }
 
 extern echoanint(a: cint) -> cvoid {
-  local: print(int) -> void
+  local: print(x: int) -> void
   pure: false
 }
 

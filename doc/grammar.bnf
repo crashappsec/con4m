@@ -64,7 +64,7 @@ paramVarDecl    ::= "var" oneVarDecl
 
 externBlock     ::= 'extern' ID externSignature docString ('{' externField '}')*
 externSignature ::= '(' (externParam (',', externParam)*)? ')' '->' externParam
-externParam     ::= ID ':' CTYPE+ | CTYPE+
+externParam     ::= (ID ':')? CTYPE+
 
 externField ::= externLocalDef | externDllName | externPure |
                 externHolds | externAllocs
@@ -96,8 +96,9 @@ confSpec         ::= confSpec '{' docString specObject* '}'
 
 # Currently, only dll can appear multiple times. It should eventually
 # take a list instead.
-externLocalDef ::= "local" (":" | "=") ID typeSpec EOS
 externDllName  ::= "dll" (":" | "=") STRING EOS
+# Actually, formalList is slightly wrong; we constrain to require var names.
+externLocalDef ::= "local" (":" | "=") ID formalList -> returnType EOS
 externPure     ::= "pure" BOOL
 externHolds    ::= "holds" ID+
 externAllocs   ::= "allocs" | ID* ("return") | ID+

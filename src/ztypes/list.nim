@@ -124,15 +124,17 @@ proc list_copy(p: FlexArray[pointer], t: TypeId): FlexArray[pointer]
                {.exportc, cdecl.} =
   var
     dup: seq[pointer]
-    view = p.items()
-    tid  = cast[TypeId](p.metadata)
-    tobj = tid.idToTypeRef()
+    view    = p.items()
+    tid     = cast[TypeId](p.metadata)
+    tobj    = tid.idToTypeRef()
+    subtype = tobj.items[0]
 
-  for item in view:
-    dup.add(call_copy(cast[pointer](item), tobj.items[0]))
+  for i, item in view:
+    let item = call_copy(cast[pointer](item), subtype)
+    dup.add(item)
 
   result          = newArrayFromSeq[pointer](dup)
-  result.metadata = p.metadata
+  result.metadata = cast[pointer](tid)
 
   GC_ref(result)
 
@@ -192,3 +194,20 @@ TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)
 
 registerSyntax(TList, STList, @["l"], primary = true)
+
+
+proc list_contains(s: FlexArray[pointer], m: pointer): bool {.exportc,
+                                                              cdecl.} =
+  result = false
+
+  let
+    t    = cast[TypeId](s.metadata)
+    to   = t.idToTypeRef()
+    view = s.items()
+
+  for item in view:
+    if call_eq(m, item, to.items[0]):
+      result = true
+      # Keep looping, try to avoid timing attacks.
+
+addStaticFunction("list_contains", list_contains)

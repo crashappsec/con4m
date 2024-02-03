@@ -1,14 +1,26 @@
 extern callflattable(a: ptr) -> ptr {
-  local: table(list[rich]) -> rich
+"""
+Automatically arranges text into boxes fit to the current terminal width.
+This assumes the data is not inherently columnar, meaning it chooses where
+to wrap based on best fit.
+"""
+  local: table(t: list[rich]) -> rich
   pure: true
 }
 
 extern calltable(a: ptr) -> ptr {
-  local: table(list[list[rich]]) -> rich
+"""
+This creates a table fit to the current terminal width, and stylizes the first
+row as a 'header' row.
+"""
+  local: table(t: list[list[rich]]) -> rich
   pure: true
 }
 
 extern ropeplus(a: ptr, b: ptr) -> ptr {
-  local: __plus__(rich, rich) -> rich
+"""
+Adds two rich text objects.
+"""
+  local: __plus__(r1: rich, r2: rich) -> rich
   pure: true
 }

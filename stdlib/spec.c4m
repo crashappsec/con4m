@@ -1,9 +1,9 @@
-extern lock_spec() -> cvoid {
+extern lock_spec() -> void {
   local: lock_spec() -> void
   pure: true
 }
 
-extern apply_defaults() -> cvoid {
+extern apply_defaults() -> void {
   local: apply_defaults() -> void
   pure: true
 }

@@ -1,10 +1,10 @@
 import strutils
-import "."/[base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
-            duration, size, datetime, url, function]
+import "."/[base, ordinals, chars, floats, strings, list, dict, tup, typespec,
+            ipaddr, duration, size, datetime, url, function]
 import ".."/err
 
-export base, ordinals, floats, strings, list, dict, tup, typespec, ipaddr,
-       duration, size, datetime, url, err
+export base, ordinals, chars, floats, strings, list, dict, tup, typespec,
+       ipaddr, duration, size, datetime, url, err
 
 # We do this last, after all the imports above, to make sure 'string'
 # is the last resort for inferring := literals.
@@ -46,7 +46,7 @@ proc typeHash*(x: TypeRef, ctx: var Sha256Ctx, tvars: var Dict[TypeId, int],
   # it easy to ensure distinct boundaries on types to avoid accidental
   # collisions.
   ctx.update("\n")
-  if x.typeId != 0 and x.typeId < TypeId(numBuiltinTypes()):
+  if x.typeId != 0 and x.typeId < TypeId(numDataTypes()):
     ctx.update(typeNameFromId(x.typeId))
     return
 
@@ -176,7 +176,7 @@ template newList*(item: TypeId): TypeRef =
 template newList*(item: TypeRef): TypeRef =
   newContainerType(C4List, @[item.followForwards().typeId])
 
-template tList*(item: TypeId): TypeId =
+proc tList*(item: TypeId): TypeId {.exportc, cdecl.} =
   newContainerType(C4List, @[item]).typeId
 
 template newDict*(ktype: TypeId, vtype: TypeId): TypeRef =
@@ -198,7 +198,7 @@ template newTuple*(l: seq[TypeRef]): TypeRef =
     idSeq.add(item.followForwards().typeId)
   newContainerType(C4Tuple, idSeq)
 
-template tTuple*(l: seq[TypeId]) : TypeId =
+proc tTuple*(l: seq[TypeId]) : TypeId {.exportc, cdecl.} =
   newContainerType(C4Tuple, l).typeId
 
 template newRef*(item: TypeId): TypeRef =

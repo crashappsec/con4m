@@ -14,10 +14,13 @@ proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
 proc call_eq(v1, v2: pointer, t: TypeId): bool {.importc, cdecl.}
 
-proc newTuple(t: TypeId): Con4mTuple =
+proc newTuple*(t: TypeId): Con4mTuple =
   let n = t.idToTypeRef()
 
-  result = Con4mTuple(t: t, obj: flexarray_new(uint64(n.items.len())))
+  result     = Con4mTuple()
+  result.t   = t
+  result.obj = flexarray_new(uint64(n.items.len()))
+
   GC_ref(result)
 
 proc items*(c: Con4mTuple): seq[pointer] =

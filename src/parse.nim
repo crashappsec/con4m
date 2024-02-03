@@ -1655,8 +1655,11 @@ production(externLocalDef, NodeExternLocal):
   result.addKid(ctx.identifier())
   if ctx.curKind() != TtLParen:
     ctx.errSkipStmtNoBackup("NeedSig")
-  result.addKid(ctx.typeSpec())
-  ctx.endOfStatement()
+  else:
+    result.addKid(ctx.formalList())
+    ctx.expect(TtArrow)
+    result.addKid(ctx.returnType())
+    ctx.endOfStatement()
 
 production(externDllName, NodeExternDll):
   ctx.commonExternStart()
@@ -1721,14 +1724,14 @@ production(externParam, NodeExternParam):
     result.addKid(asId)
 
   let ctype = result.children[^1].getText()
-  if ctype notin cTypeNames:
+  if ctype.mapCArgType() == -1:
     ctx.errSkipStmtNoBackup("BadCType", @[ctype])
 
   while result.children[^1].getText() in cTypeTakesParam:
     if ctx.curKind() != TtIdentifier:
       break
     result.addKid(ctx.identifier())
-    if result.children[^1].getText() notin cTypeNames:
+    if result.children[^1].getText().mapCArgType() == -1:
       ctx.errSkipStmtNoBackup("BadCType")
 
 production(externSignature, NodeExternSig):
@@ -1749,6 +1752,7 @@ production(externSignature, NodeExternSig):
 
 production(externBlock, NodeExternBlock):
   ctx.advance()
+
   result.addKid(ctx.identifier())
   result.addKid(ctx.externSignature())
   ctx.expect(TtLBrace, consume = true)

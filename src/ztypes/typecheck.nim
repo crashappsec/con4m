@@ -94,7 +94,7 @@ proc baseunify*(ref1, ref2: TypeRef): TypeId {.cdecl, exportc.} =
     type2.items = newItems
 
     type1.typeid = type1.typeHash()
-    id1 = type1.typeid
+    id1          = type1.typeid
 
     result = id1
   of C4Func:

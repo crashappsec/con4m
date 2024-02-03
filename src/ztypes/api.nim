@@ -152,9 +152,6 @@ proc get_tid_for_container_lit*(st: SyntaxType, litmod: string,
   let dt = get_tinfo_from_lit(st, litmod)
 
   if dt != nil:
-    if dt.concrete:
-      return dt.dtid
-
     return newContainerType(dt.ckind, ids).typeId
   else:
     err = true

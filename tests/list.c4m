@@ -6,11 +6,6 @@
 # 5. slicing
 # 6. assigning slices
 
-extern echoanint(a: ci64) -> cvoid {
-  local: print(int) -> void
-  pure: false
-}
-
 x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 y = x
 

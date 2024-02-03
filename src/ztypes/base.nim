@@ -1,5 +1,6 @@
+import nimutils
 import ".."/common
-export common
+export nimutils, common
 
 # These all assume we're using 64 bit storage. This won't work
 # on smaller word sizes.
@@ -42,7 +43,7 @@ var
   syntaxInfo*:     array[int(StMax), SyntaxInfo]
   TList*, TDict*, TTuple*, TTSpec*, TFunc*: TypeId
 
-  allBiNames =   @["dict", "tuple", "struct", "ref", "set", "maybe", "oneof",
+  allBiNames =   @["dict", "tuple", "object", "ref", "set", "maybe", "oneof",
                    "typespec"]
   numConcrete:   int
 
@@ -54,7 +55,13 @@ proc idFromTypeName*(n: string): TypeId =
 
 proc getAllBuiltinTypeNames*(): seq[string] =
   once:
-    allBiNames &= dtNameMap.keys(sort=true)
+    let mustHaves = allBiNames
+
+    allBiNames = dtNameMap.keys(sort=true)
+
+    for item in mustHaves:
+      if item notin allBiNames:
+        allBiNames.add(item)
 
   return allBiNames
 
@@ -84,8 +91,8 @@ proc addDataType*(name: string, concrete: bool, ops: seq[pointer],
 
   dataTypeInfo.add(dt)
 
-template numBuiltinTypes*(): int =
-  numConcrete
+proc numDataTypes*(): int =
+  return dataTypeInfo.len()
 
 proc followForwards*(id: TypeId): TypeId =
   # When we resolve generic types, we change the type ID field to
@@ -96,7 +103,7 @@ proc followForwards*(id: TypeId): TypeId =
   # The stack detects recursive types; we probably should disallow
   # those, but right now, just shrugging it off.
 
-  if cast[int](id) >= 0 and cast[int](id) <= dataTypeInfo.len():
+  if cast[int](id) >= 0 and cast[int](id) <= numDataTypes():
     return id
 
   var
@@ -139,9 +146,11 @@ proc getDataType*(t: TypeId): DataType {.cdecl, exportc.} =
 
     case to.kind
     of C4Primitive:
-      if n >= dataTypeInfo.len():
+      let m = cast[int](to.typeId)
+      if m >= 0 and m < dataTypeInfo.len():
+        return dataTypeInfo[m]
+      else:
         return dataTypeInfo[0]
-      return dataTypeInfo[n]
     of C4List:
       return TList.getDataType()
     of C4Dict:

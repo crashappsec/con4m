@@ -183,45 +183,6 @@ proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
   n1     = nodes[0]
   n2     = nodes[1]
 
-proc beginFunctionResolution*(ctx: Module, n: IrNode, name: string,
-                              callType: TypeId): FuncInfo =
-  # var
-  #   symOpt   = ctx.moduleScope.table.lookup(name)
-  #   sym:     SymbolInfo
-  #   matches: seq[FuncInfo]
-
-  # if symOpt.isSome():
-  #   sym = symOpt.get()
-  #   if sym.isFunc:
-  #     for fimpl in sym.fimpls:
-  #       withFnLock(fimpl):
-  #         if callType.copyType().typeId.unify(fimpl.tid) != TBottom:
-  #           matches.add(fimpl)
-
-  # # All our functions generally will already be in the global scope,
-  # # so there's a bit of redundancy we could remove here.
-  # if matches.len() == 0:
-  #   symOpt = ctx.globalScope.table.lookup(name)
-  #   if symOpt.isSome():
-  #     sym = symOpt.get()
-  #     if sym.isFunc:
-  #       for fimpl in sym.fimpls:
-  #         withFnLock(fimpl):
-  #           if callType.unify(fimpl.tid.tcopy()) != TBottom:
-  #             matches.add(fimpl)
-  # if matches.len() == 1:
-  #   result = matches[0]
-
-  #   withFnLock(matches[0]):
-  #     discard callType.unify(matches[0].tid)
-  #   if matches[0].implementation == nil and matches[0].externInfo == nil:
-  #     ctx.funcsToResolve.add((n, callType, name))
-  # else:
-  #   # Try again after functions have had a chance to be fully inferred.
-  #   # Even if there's no match, it'll allow us to be more accurate
-  #   # with type errors.
-  ctx.funcsToResolve.add((n, callType, name))
-
 proc extractLongDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil:
     return nil
@@ -744,7 +705,8 @@ proc convertParamBlock(ctx: Module) =
   ctx.pt = savedPt
 
 proc extractCTypes(ctx: Module, n: ParseNode, fn: var FuncInfo) =
-  var info = ExternFnInfo()
+  var
+    info = ExternFnInfo()
 
   for i, kid in n.children:
     var
@@ -766,53 +728,7 @@ proc extractCTypes(ctx: Module, n: ParseNode, fn: var FuncInfo) =
       s = item.getText()
       l.add(s)
 
-    case l[0]
-    of "cvoid":
-      info.ffiArgTypes[i] = ffiVoid
-    of "cu8", "cbool":
-      info.ffiArgTypes[i] = ffiU8
-    of "ci8":
-      info.ffiArgTypes[i] = ffiI8
-    of "cu16":
-      info.ffiArgTypes[i] = ffiU16
-    of "ci16":
-      info.ffiArgTypes[i] = ffiI16
-    of "cu32":
-      info.ffiArgTypes[i] = ffiU32
-    of "ci32":
-      info.ffiArgTypes[i] = ffiI32
-    of "cu64":
-      info.ffiArgTypes[i] = ffiU64
-    of "ci64":
-      info.ffiArgTypes[i] = ffiI64
-    of "cfloat":
-      info.ffiArgTypes[i] = ffiFloat
-    of "cdouble":
-      info.ffiArgTypes[i] = ffiDouble
-    of "cuchar":
-      info.ffiArgTypes[i] = ffiUChar
-    of "cchar":
-      info.ffiArgTypes[i] = ffiChar
-    of "cshort":
-      info.ffiArgTypes[i] = ffiShort
-    of "cushort":
-      info.ffiArgTypes[i] = ffiUShort
-    of "cint":
-      info.ffiArgTypes[i] = ffiInt
-    of "cuint":
-      info.ffiArgTypes[i] = ffiUint
-    of "clong":
-      info.ffiArgTypes[i] = ffiLong
-    of "culong":
-      info.ffiArgTypes[i] = ffiULong
-    of "csize":
-      info.ffiArgTypes[i] = ffiSizeT
-    of "cssize":
-      info.ffiArgTypes[i] = ffiSSizeT
-    of "ptr", "cstring", "carray":
-      info.ffiArgTypes[i] = ffiPtr
-    else:
-      unreachable
+    info.ffiArgTypes[i] = l[0].lookupFfiArgType()
     info.cArgTypes.add(l)
 
   let sz = n.children.len()
@@ -822,9 +738,68 @@ proc extractCTypes(ctx: Module, n: ParseNode, fn: var FuncInfo) =
 
   fn.externInfo = info
 
-proc extractLocalSym(n: ParseNode, info: FuncInfo) =
+proc convertFormal(info: FuncInfo, n: ParseNode) =
+  var formalInfo = FormalInfo()
+
+  if n.children[0].kind == NodeIdentifier:
+    formalInfo.name = n.children[0].getText()
+    formalInfo.loc  = n.children[0]
+  else:
+    formalInfo.va   = true
+    formalInfo.name = n.children[0].children[0].getText()
+    formalInfo.loc  = n.children[0].children[0]
+
+  if n.children.len() == 2:
+    formalInfo.tid = n.children[1].buildType()
+  else:
+    formalInfo.tid = tVar()
+
+  info.params.add(formalInfo)
+  info.paramNames.add(formalInfo.name) # TODO: redundant w/ formalInfo.name
+
+proc setupTypeSignature(info: FuncInfo, n: ParseNode) =
+  if n != nil:
+    info.retVal     = FormalInfo(name: "result")
+    info.retval.tid = n.buildType()
+  else:
+    info.retVal = FormalInfo(name: "result", tid: tVar())
+
+  var
+    actTypes: seq[TypeId]
+    va = false
+
+  if info.params.len() != 0 and info.params[^1].va:
+    va = true
+
+  for actual in info.params:
+    actTypes.add(actual.getTid())
+
+  actTypes.add(info.retVal.getTid())
+
+  info.tid = tFunc(actTypes, va)
+
+  if va == true:
+    # From the body of the function, the named parameter collects
+    # all arguments of the given type into a list. This sets the
+    # ACTUAL type that we'll add to the function's symbol table.
+    info.params[^1].tid = tList(info.params[^1].getTid())
+
+proc extractLocalSym(ctx: Module, n: ParseNode, info: FuncInfo) =
   info.name = n.children[0].getText()
-  info.tid  = n.children[1].buildType()
+  for item in n.children[1].children:
+     if item.children.len() == 1:
+      ctx.irError("NeedExName", w = item)
+      return
+     info.convertFormal(item)
+
+  var paramNames: seq[string]
+  for item in info.params:
+    if item.name in paramNames:
+      ctx.irError("DupeExParam", @[item.name], w = item.loc)
+    else:
+      paramNames.add(item.name)
+  info.setupTypeSignature(n.children[^1].children[0])
+  info.lockFn()
 
 proc checkHolds(ctx: Module, n: ParseNode, info: var ExternFnInfo) =
   var argNames: seq[string]
@@ -883,13 +858,6 @@ proc convertExternBlock(ctx: Module) =
     gotAlloc = false
     gotDll   = false
 
-
-  # For some reason, info.externName is getting dropped...
-  # Turning off GC doesn't fix, so I'm probably overwriting the
-  # fn object somehow??
-  #
-  # For now as a quick hack.
-
   fn.externName = info.externName
   fn.externInfo = info
 
@@ -907,7 +875,7 @@ proc convertExternBlock(ctx: Module) =
         ctx.irError("DupeExtField", @["local"])
         continue
       gotLocal = true
-      k.extractLocalSym(fn)
+      ctx.extractLocalSym(k, fn)
     of NodeExternDll:
       gotDll = true
 
@@ -966,51 +934,6 @@ proc convertExternBlock(ctx: Module) =
 
   sym.fimpls.add(fn)
 
-proc convertFormal(info: FuncInfo, n: ParseNode) =
-  var formalInfo = FormalInfo()
-
-  if n.children[0].kind == NodeIdentifier:
-    formalInfo.name = n.children[0].getText()
-    formalInfo.loc  = n.children[0]
-  else:
-    formalInfo.va   = true
-    formalInfo.name = n.children[0].children[0].getText()
-    formalInfo.loc  = n.children[0].children[0]
-
-  if n.children.len() == 2:
-    formalInfo.tid = n.children[1].buildType()
-  else:
-    formalInfo.tid = tVar()
-
-  info.params.add(formalInfo)
-  info.paramNames.add(formalInfo.name) # TODO: redundant w/ formalInfo.name
-
-proc setupTypeSignature(info: FuncInfo, n: ParseNode) =
-  if n != nil:
-    info.retVal     = FormalInfo(name: "result")
-    info.retval.tid = n.buildType()
-  else:
-    info.retVal = FormalInfo(name: "result", tid: tVar())
-
-  var
-    actTypes: seq[TypeId]
-    va = false
-
-  if info.params.len() != 0 and info.params[^1].va:
-    va = true
-
-  for actual in info.params:
-    actTypes.add(actual.getTid())
-
-  actTypes.add(info.retVal.getTid())
-
-  info.tid = tFunc(actTypes, va)
-
-  if va == true:
-    # From the body of the function, the named parameter collects
-    # all arguments of the given type into a list. This sets the
-    # ACTUAL type that we'll add to the function's symbol table.
-    info.params[^1].tid = tList(info.params[^1].getTid())
 
 proc handleFuncdefSymbols(ctx:   Module,
                           info:  FuncInfo) =
@@ -1644,6 +1567,7 @@ proc convertListLit(ctx: Module): IrNode =
                   result.contents.items[errIx].getTid().toString()])
     return
 
+
   result.tid = getTidForContainerLit(STList, lmod, @[itemType], err)
 
   if err:
@@ -1733,7 +1657,7 @@ proc convertCallbackLit(ctx: Module): IrNode =
   else:
     result.tid = tFunc(@[])
 
-  cb.impl = ctx.beginFunctionResolution(result, cb.name, result.tid)
+  ctx.funcsToResolve.add((result, result.tid, cb.name))
 
 proc convertForStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)
@@ -2284,8 +2208,9 @@ proc convertIndex(ctx: Module): IrNode =
 proc convertCall(ctx: Module): IrNode =
   result                = ctx.irNode(IrCall)
   result.contents.fname = ctx.getText(0)
-  result.tid            = tVar()
   result.parseNode      = ctx.parseKid(0)
+  result.tid            = tVar()
+
   var
     fArgs: seq[TypeId]
 
@@ -2295,8 +2220,8 @@ proc convertCall(ctx: Module): IrNode =
     fArgs.add(oneActual.tid)
 
   fArgs.add(result.tid)
-  result.contents.toCall =
-      ctx.beginFunctionResolution(result, result.contents.fname, tFunc(fArgs))
+
+  ctx.funcsToResolve.add((result, tFunc(fArgs), result.contents.fname))
 
 proc convertAssert(ctx: Module): IrNode =
   result                    = ctx.irNode(IrAssert)
@@ -2347,6 +2272,7 @@ proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): Rope =
 
 proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
   for (n, t, name) in m.funcsToResolve:
+    let retvalType = typeStore[t].items[^1]
 
     var
       possibles:    seq[FuncInfo]
@@ -2381,7 +2307,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
 
     for item in possibles:
       withFnLock(item):
-        if item.tid.unify(t.copyType().typeId) == TBottom:
+        if item.tid.tCopy().unify(t.copyType().typeId) == TBottom:
           fails.add(item)
         else:
           matches.add(item)
@@ -2389,7 +2315,6 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
     if matches.len() == 1:
       withFnLock(matches[0]):
         discard matches[0].tid.unify(t)
-        discard n.tid.unify(t)
       if n.contents.kind == IrLit:
         n.value   = cast[pointer](newCallbackFromFuncInfo(matches[0]))
         n.haveval = true
