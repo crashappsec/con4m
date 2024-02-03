@@ -1336,7 +1336,7 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
   # much bloat. I doubt it, though! However, we definitely should
   # collect metrics on this.
 
-  for (id, tObj) in typeStore.items():
+  for (id, tObj) in typeStore.items(sort=true):
     if tObj.typeId != id:
       continue
 
@@ -1347,7 +1347,7 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
     discard ctx.zobj.tInfo.add(id, loc)
 
   var typeCache: seq[string]
-  for (k, v) in ctx.zobj.tInfo.items():
+  for (k, v) in ctx.zobj.tInfo.items(sort=true):
     typeCache.add($(cast[int](k)))
     typeCache.add($(cast[cstring](addr ctx.zobj.staticdata[v])))
 

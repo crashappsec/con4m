@@ -282,6 +282,14 @@ proc printAttrsUsed*(ctx: Module) =
   if ctx.usedAttrs != nil:
     print ctx.usedAttrs.toRope("Used attributes")
 
+proc printTypeCatalog*(obj: ZObjectFile) =
+  var cells: seq[seq[string]] = @[@["Type", "ID"]]
+
+  for k in obj.tInfo.keys(sort = true):
+    cells.add(@[k.toString(), cast[int](k).toHex().toLowerAscii()])
+
+  print cells.quickTable().colWidths([(40, false), (18, true)])
+
 proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
   var errsToPrint: seq[Con4mError]
 

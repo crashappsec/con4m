@@ -150,7 +150,7 @@ proc getDataType*(t: TypeId): DataType {.cdecl, exportc.} =
       if m >= 0 and m < dataTypeInfo.len():
         return dataTypeInfo[m]
       else:
-        return dataTypeInfo[0]
+        return DataType(name: "Future builtin type", dtid: to.typeId)
     of C4List:
       return TList.getDataType()
     of C4Dict:

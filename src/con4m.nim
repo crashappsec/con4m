@@ -2,8 +2,6 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Move the late error stuff around so we can get stack traces and line
-#   numbers.
 # - Finish validation.
 # - Apply component logic in runtime.
 # - Checkpointing (and restoring) runtime state.
@@ -12,11 +10,9 @@
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
-# - Signal handler should print out runtime stack trace.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors.
 # - Restrict the leading '$' properly.
-# - attr.x for disambiguation of top-level attr vs var.
 # - Doc API.
 # - Typecheck c vs con4m api for ffi
 # - Enums should be global by default.  Add a 'private' for enums,
@@ -32,7 +28,7 @@
 # - Get control flow stuff working properly.
 
 # == Medium -- before public release ==
-
+# - attr.x for disambiguation of top-level attr vs var.
 # - Implement a way to call function pointers; quite likely with good ol' ();
 #   This really won't be too hard; the checker currently forbids it, and
 #   there'd need to be some changes to code gen and the vm too, but it is all
@@ -58,7 +54,6 @@
 #   but if there's no assignment it should error / warn if one might be
 #   locking something that isn't assigned.
 # - Be able to lock an entire section.
-# - Issue w/ non-consistent views in hatrack?
 # - Warning when your declared type is more generic than the inferred type.
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
 # - Implement _ as a 'discard' variable.
@@ -78,7 +73,6 @@
 #   local:: I think?
 # - Keyword arguments
 # - Some sort of debugger?
-# - What's wrong w/ hatrack add??
 # - Add maybe / null checking
 # - Should add variable aliases for $i and $label
 # - Implement FFI Varargs.
@@ -191,6 +185,8 @@ when isMainModule:
   if session.printErrors() and not format:
     var generatedCode = session.generateCode()
     if debug:
+      print h1("Type info stored in object file: ")
+      generatedCode.printTypeCatalog()
       print h1("Disassembly")
       print generatedCode.disassembly()
       print h1("Entrypoint Source")

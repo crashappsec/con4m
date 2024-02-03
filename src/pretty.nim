@@ -404,8 +404,11 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     state.r += prettyColor(text(n.getText()), operatorColor)
     state.r += text(" ") + operands[^1]
 
-  of NodeAttrSetLock, NodeTypeVar, NodeTypeVararg:
+  of NodeAttrSetLock, NodeTypeVararg:
     state.r += prettyColor(text(n.getText()), operatorColor)
+    prettyDown()
+  of NodeTypeVar:
+    state.r += prettyColor(text(n.getText()), typeNameColor)
     prettyDown()
   of NodeIdentifier:
     if state.printingType > 0:
@@ -711,10 +714,17 @@ proc pretty(n: ParseNode, state: var PrettyState) =
         item.pretty(state)
 
       n.children[^1].pretty(state)
-  of NodeExternDll, NodeExternPure, NodeExternLocal:
+  of NodeExternDll, NodeExternPure:
     state.r += n.keyword(state, space = "")
     state.r += prettyColor(text(": "), operatorColor)
     prettyDown()
+  of NodeExternLocal:
+    state.r += n.keyword(state, space = "")
+    state.r += prettyColor(text(": "), operatorColor)
+    n.children[0].pretty(state)
+    n.children[1].pretty(state)
+    state.r += prettyColor(text(" -> "), operatorColor)
+    n.children[2].pretty(state)
   of NodeExternHolds, NodeExternAllocs:
     state.r += n.keyword(state)
     let parts = n.collectKids(state)
