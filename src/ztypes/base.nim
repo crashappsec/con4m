@@ -1,6 +1,5 @@
-import nimutils
 import ".."/common
-export nimutils, common
+export common
 
 # These all assume we're using 64 bit storage. This won't work
 # on smaller word sizes.

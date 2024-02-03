@@ -5,7 +5,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022
 
-import lex, ztypes/api
+import "."/lex
+import ztypes/api
 export lex, api
 
 proc tokenId(n: ParseNode): Rope =

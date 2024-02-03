@@ -1,7 +1,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023, Crash Override, Inc.
 
-import nimutils, posix, tables, std/terminal, std/termios
+import std/[posix, tables, terminal, termios]
+import pkg/nimutils
 
 proc cap10ThemeSetup*() =
   useCrashTheme()

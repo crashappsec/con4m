@@ -1,4 +1,6 @@
-import os, nimutils, common, json, strutils, unicode
+import std/[os, json, strutils, unicode]
+import pkg/nimutils
+import "."/common
 
 proc escapeAllJson*(s: string, result: var string) =
   # If we use the built-in Nim version of this, we end up generating

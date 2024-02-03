@@ -1,4 +1,5 @@
-import parseutils, base
+import std/parseutils
+import "."/base
 
 type Size* = uint64
 
@@ -29,7 +30,7 @@ proc new_size(s: string, st: SyntaxType, lmod: string,
     return
 
 
-  case s[letterix .. ^1].strip()
+  case unicode.strip(s[letterix .. ^1])
   of "b", "B", "Bytes", "bytes":
     multiple = 1
   of "k", "K", "kb", "Kb", "KB":

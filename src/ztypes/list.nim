@@ -1,4 +1,4 @@
-import base, ../common, strutils
+import "."/base
 
 # TODO: this is currently using Nim seq's until we fully wrap hatrack.
 

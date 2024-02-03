@@ -2,7 +2,7 @@
 ## Ideally, we will keep refining the nodes until we can use them essentially
 ## as fat VM instructions that we can directly marshal.
 
-import parse, scope, strutils
+import "."/[parse, scope]
 export parse, scope
 
 # When we are indexing into a tuple, we go ahead and constant-fold the

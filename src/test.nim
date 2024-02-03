@@ -1,5 +1,5 @@
-import compile, nimutils, os, re
-from strutils import split, join, contains
+import std/re
+import "."/compile
 
 template error(msg: Rope) =
   print(fgcolor("error: ", "red") + msg, file = stderr)
@@ -40,8 +40,8 @@ proc runInitialTests(verbose = true) =
 
     let
       output = runCmdGetEverything("./con4m", @["--debug", item])
-      kat    = tryToLoadFile(dir.joinPath(name & ".kat")).strip()
-      errout = output.getStderr().strip()
+      kat    = unicode.strip(tryToLoadFile(dir.joinPath(name & ".kat")))
+      errout = unicode.strip(output.getStderr())
       excode = output.getExit()
     if kat == "":
       if errout != "" and errout != "\e[0m":

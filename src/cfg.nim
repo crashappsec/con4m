@@ -7,7 +7,7 @@
 # non-fatal ones; meaning, we might be willing to compile and run the
 # code anyway.
 
-import fold
+import "."/fold
 export fold
 
 proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =

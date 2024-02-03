@@ -1,4 +1,4 @@
-import base, ../common, strutils
+import "."/base
 
 proc toString(x: TypeId): string {.importc, cdecl.}
 

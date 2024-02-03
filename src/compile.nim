@@ -1,5 +1,6 @@
-import nimutils, os, strutils, httpclient, net, uri, streams, stchecks, builtins
-export nimutils, os, net, uri, streams, stchecks, builtins
+import std/[httpclient, net, uri, streams]
+import "."/[stchecks, builtins]
+export net, uri, streams, stchecks, builtins
 
 proc newSpec(): ValidationSpec {.importc, cdecl.}
 proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}

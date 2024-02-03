@@ -1,4 +1,5 @@
-import strutils, common, attrstore, common, ztypes/api
+import "."/[common, attrstore]
+import ztypes/api
 
 proc getRootSection*(spec: ValidationSpec): SectionSpec {.exportc, cdecl.} =
   if spec.rootSpec != nil:

@@ -1,4 +1,5 @@
-import base, math
+import std/math
+import "."/base
 
 var
   f32Ops = newVTable()

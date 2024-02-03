@@ -1,7 +1,9 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023, Crash Override, Inc.
 
-import common, record, tables, nimutils, re, posix, os, sugar
+import std/[tables, re, posix, os, sugar]
+import pkg/nimutils
+import "."/[common, record]
 
 type ExpectObject* = object
   captureFile*:  File

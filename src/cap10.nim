@@ -5,7 +5,8 @@
 ## after my next batch of con4m work. Until then, a lot
 ## of the options are going to stay hardcoded.
 
-import nimutils, os, std/terminal
+import std/[os, terminal]
+import pkg/nimutils
 import cap10/[record, play, expect, convert, common]
 export record, play, expect, convert, common
 

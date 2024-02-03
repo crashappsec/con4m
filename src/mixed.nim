@@ -1,4 +1,4 @@
-import unicode
+import std/unicode
 
 type
   MixedContainer[T] = ref object of RootRef

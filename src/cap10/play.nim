@@ -1,7 +1,9 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023, Crash Override, Inc.
 
-import os, nimutils, posix, common, json
+import std/[os, posix, json]
+import pkg/nimutils
+import "."/common
 
 var
   paused = false

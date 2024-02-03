@@ -1,7 +1,4 @@
 import "."/[base, tup]
-import ".."/common
-
-from strutils import join
 
 proc tTuple(l: seq[TypeId]): TypeId {.importc, cdecl.}
 proc tList(item: TypeId): TypeId {.importc, cdecl.}

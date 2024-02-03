@@ -1,4 +1,5 @@
-import posix, parseutils, base
+import std/[posix, parseutils]
+import "."/base
 
 type Duration* = ref Timeval
 
@@ -26,7 +27,7 @@ proc new_duration(s: string, st: SyntaxType, lmod: string, l: var int,
                   err: var string): pointer {.cdecl.} =
   var
     parts: seq[(string, string)] = @[]
-    s                            = s.strip()
+    s                            = unicode.strip(s)
     startix                      = 0
     ix                           = 0
     duration                     = 0'u64  # In microseconds.

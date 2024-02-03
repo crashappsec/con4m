@@ -4,14 +4,15 @@
 #
 # - Finish validation.
 # - Apply component logic in runtime.
-# - Checkpointing (and restoring) runtime state.
 # - Hook up getopts again.
+# - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors.
+# - Remainder of needed stdlib stuff
 # - Restrict the leading '$' properly.
 # - Doc API.
 # - Typecheck c vs con4m api for ffi
@@ -29,6 +30,7 @@
 
 # == Medium -- before public release ==
 # - attr.x for disambiguation of top-level attr vs var.
+# - Comments in pretty()
 # - Implement a way to call function pointers; quite likely with good ol' ();
 #   This really won't be too hard; the checker currently forbids it, and
 #   there'd need to be some changes to code gen and the vm too, but it is all

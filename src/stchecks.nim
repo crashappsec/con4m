@@ -1,6 +1,6 @@
 # Whole program / cross-module checks.
 
-import cfg, strutils
+import "."/cfg
 export cfg
 
 proc programErrBase(ctx: CompileCtx, code: string, sym: SymbolInfo,

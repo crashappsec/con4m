@@ -4,7 +4,7 @@
 #
 # We'll do more as time progresses.
 
-import irgen
+import "."/irgen
 export irgen
 
 proc fold[T](n: IrNode, val: T) =

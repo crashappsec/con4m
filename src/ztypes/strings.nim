@@ -1,4 +1,4 @@
-import base, unicode, ordinals, strutils
+import "."/[base, ordinals]
 
 proc tList(item: TypeId): TypeId {.importc, cdecl.}
 

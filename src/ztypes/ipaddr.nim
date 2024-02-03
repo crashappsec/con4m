@@ -1,4 +1,5 @@
-import posix, base
+import std/posix
+import "."/base
 
 type
   IPv4*     = Sockaddr_in

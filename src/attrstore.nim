@@ -1,4 +1,5 @@
-import ztypes/api, nimutils, strutils
+import ztypes/api
+export api
 
 proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
           lock = false, override = false, internal = false):

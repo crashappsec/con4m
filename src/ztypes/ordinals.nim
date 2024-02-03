@@ -1,6 +1,6 @@
 ## Includes our bool and character data types.
 
-import base, unicode
+import "."/base
 
 var
   boolOps = newVTable()

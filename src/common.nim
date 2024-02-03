@@ -3,8 +3,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2023
 
-import unicode, nimutils, options, ffi
-export unicode, nimutils, options, ffi
+import std/[unicode, options, os, strutils]
+import pkg/nimutils
+import "."/ffi
+export unicode, options, nimutils, ffi, os, strutils
 
 # These consts are for calls in our internal Type API. It's meant to be
 # used both during compilation and interpretation.

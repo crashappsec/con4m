@@ -22,7 +22,8 @@
 # in the year 10,000, but I don't think there are enough cases where
 # someone needs to specify "200 AD" in a config file to deal w/ the
 # challenges with not fixing the length of the year field.
-import posix, parseutils, base
+import std/[posix, parseutils]
+import "."/base
 
 type
   DTFlags* = enum
@@ -460,7 +461,7 @@ proc new_date_time(s: string, st: SyntaxType, lmod: string,
 
   var dt: DateTime = cast[DateTime](result)
 
-  if not otherLitToNativeDateTime(s.strip(), dt):
+  if not otherLitToNativeDateTime(unicode.strip(s), dt):
     err = "BadDateTime"
     dealloc(result)
     return nil
@@ -473,7 +474,7 @@ proc new_date(s: string, st: SyntaxType, lmod: string,
 
   var dt: DateTime = cast[DateTime](result)
 
-  if not otherLitToNativeDateTime(s.strip(), dt):
+  if not otherLitToNativeDateTime(unicode.strip(s), dt):
     err = "BadDate"
     dealloc(result)
     return nil
@@ -486,7 +487,7 @@ proc new_time(s: string, st: SyntaxType, lmod: string,
 
   var dt: DateTime = cast[DateTime](result)
 
-  if not otherLitToNativeDateTime(s.strip(), dt):
+  if not otherLitToNativeDateTime(unicode.strip(s), dt):
     err = "BadTime"
     dealloc(result)
     return nil

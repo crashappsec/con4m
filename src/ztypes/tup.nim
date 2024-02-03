@@ -1,5 +1,4 @@
-import base, ../common, nimutils
-from strutils import join
+import "."/base
 
 var tupOps = newVTable()
 

@@ -5,8 +5,9 @@
 ## If you call the API directly, and didn't do the input checking,
 ## results are undefined :)
 
-import unicode, options, tables, os, sequtils, types, nimutils, st, eval,
-       algorithm, typecheck, std/terminal
+import std/[os, unicode, options, tables, os, sequtils, algorithm, terminal]
+import pkg/nimutils
+import "."/[common, st, eval,typecheck]
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"
@@ -987,7 +988,7 @@ proc getCommandList(cmd: CommandSpec): Rope =
   var
     title = "Available commands"
     cmds: seq[string]
-  
+
   for k, sub in cmd.commands:
     if sub.reportingName notin cmds and sub.reportingName != "":
       cmds.add(sub.reportingName)
@@ -1091,7 +1092,7 @@ proc getOneCmdHelp(cmd: CommandSpec): Rope =
      result += cmd.getCommandList()
 
   var f = cmd.getFlagHelp()
-  result += f  
+  result += f
 
   if len(cmd.extraHelpTopics) != 0:
     result += cmd.getAdditionalTopics()
@@ -1130,11 +1131,11 @@ proc getHelp(corpus: Corpus, inargs: seq[string]): string =
   result = $(r)
 
   print(result)
-  
+
 proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
 
   var rope: Rope
-  
+
   if len(args) == 0:
     rope = getOneCmdHelp(cmd)
   else:

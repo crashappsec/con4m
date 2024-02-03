@@ -3,7 +3,7 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022, 2023
 
-import strcursor, style, err
+import "."/[strcursor, style, err]
 export strcursor, style, err
 
 
@@ -828,7 +828,7 @@ proc `$`*(tok: Con4mToken): string =
   of TtEof:            result = "~eof~"
   of ErrorTok:         result = "~err~"
   of TtOtherLit:
-    result = `$`(tok.cursor.slice(tok.startPos, tok.endPos)).strip()
+    result = unicode.strip(`$`(tok.cursor.slice(tok.startPos, tok.endPos)))
   else:
     if tok.cursor == nil:
       return ""

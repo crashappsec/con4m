@@ -2,11 +2,8 @@
 # do one more focused on performance later, probably directly in C.
 proc load_spec() {.cdecl, importc.}
 
-import std/strutils
-import pkg/nimutils
-import "."/[common, stchecks, ffi, attrstore, err]
-import ztypes/[api, base]
-export err, attrstore, ffi, api
+import "."/[stchecks, attrstore]
+export attrstore
 
 const sz = sizeof(ZInstruction)
 

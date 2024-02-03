@@ -1,4 +1,4 @@
-import typecheck
+import "."/typecheck
 export typecheck
 
 

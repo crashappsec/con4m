@@ -2,7 +2,7 @@
 # we can directly translate to the C API, for the sake of the
 # interpreter being able to statically use libffi to call these items,
 # we explicitly pull them all in.
-import nimutils, strutils, ffi, ztypes/api, os
+import ztypes/api
 
 proc splitwrap*(s1: cstring, s2: cstring):
               FlexArray[cstring] {.exportc, cdecl.} =

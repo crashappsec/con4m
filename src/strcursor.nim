@@ -3,7 +3,7 @@
 # resumption.
 #
 # Plus, I'd prefer to keep UTF32 instead of UTF8.
-import common
+import "."/common
 export common
 
 proc newStringCursor*(s: string): StringCursor =

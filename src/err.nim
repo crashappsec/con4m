@@ -1,4 +1,5 @@
-import posix, nimutils, options, strutils, strcursor, unicode, tables, common
+import std/posix
+import "."/common
 
 ## If we have to bail on control flow, we'll do so here.
 proc newCon4mException*(errs: seq[Con4mError] = @[]): Con4mException =
@@ -639,7 +640,7 @@ proc exitOnValidationError*(err: Rope) =
 
 let sigNameMap = { 1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL",
                    6: "SIGABRT",7: "SIGBUS", 9: "SIGKILL", 11: "SIGSEGV",
-                   15: "SIGTERM" }.toTable()
+                   15: "SIGTERM" }.toDict()
 var
   LC_ALL {.importc, header: "<locale.h>".}: cint
   savedTermState: Termcap

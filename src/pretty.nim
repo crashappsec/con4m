@@ -1,4 +1,4 @@
-import parse, style, strutils
+import "."/[parse, style]
 
 type PrettyState = object
   r:                Rope

@@ -18,7 +18,8 @@
 # defer typing things at the top-level; this will be a subtlety we
 # deal with when we get to doing the REPL.
 
-import ztypes/api, strutils, irgen
+import "."/irgen
+import ztypes/api
 
 proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
                       Option[Module] {.importc, cdecl.}

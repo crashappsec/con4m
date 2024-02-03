@@ -1,4 +1,3 @@
-import strutils
 import "."/[base, ordinals, chars, floats, strings, list, dict, tup, typespec,
             ipaddr, duration, size, datetime, url, function]
 import ".."/err

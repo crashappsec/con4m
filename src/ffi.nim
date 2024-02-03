@@ -1,4 +1,4 @@
-import nimutils
+import pkg/nimutils
 
 type
   FfiObj* = object

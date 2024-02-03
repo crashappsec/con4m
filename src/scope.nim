@@ -1,4 +1,4 @@
-import parse, strutils, specs
+import "."/[parse, specs]
 
 template getTid*(s: SymbolInfo): TypeId =
   s.tid.getTid()

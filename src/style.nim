@@ -1,6 +1,6 @@
 ## This will evolve.
 
-import nimutils
+import pkg/nimutils
 
 type
   CodeStyle* = object
