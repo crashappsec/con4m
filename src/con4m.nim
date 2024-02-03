@@ -6,12 +6,9 @@
 #   numbers.
 # - Finish validation.
 # - Apply component logic in runtime.
-# - Re-implement standard library / wrappings.
 # - Checkpointing (and restoring) runtime state.
 # - Hook up getopts again.
 # - Fix up and test 'Other' data types
-# - Enumerate function pointer literals and assume they're always live
-#   and called as part of the entry point.
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
@@ -27,7 +24,7 @@
 # - Some basic memory management in the runtime (dynamic alllocs are
 #   currently just leaked).
 # - Sort errors by file / line (they come out by phase in IR portion).
-# - Documentation.
+# - More Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
 # - Remove any remaining newRefVal / extractRef calls
 # - Folding for lists should be generalized, instead of the one-off for
@@ -117,11 +114,12 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import compile, codegen, vm, os, pretty
+import compile, codegen, vm, os, pretty, err
 export compile
 
 when isMainModule:
   useCrashTheme()
+  setupSignalHandlers()
 
   var
     params = commandLineParams()

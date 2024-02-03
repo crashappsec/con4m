@@ -845,13 +845,13 @@ type
     validator*: pointer # An< offset to validation code in the global moduleId.
     default*:   pointer # Depending on the type, either a value, or a ptr
     status*:    int32   # 0 for no value present.
-    moduleId*:   int32
+    moduleId*:  int32
 
   ZInstruction* = object
     # Compilers should all pad this structure to 24 bytes, but just in case...
     op*:        ZOp     # 1 byte
     pad:        byte
-    moduleId*:     int16   # Right now, 0 for global variables,
+    moduleId*:  int16   # Right now, 0 for global variables,
                         # -1 for stack, and then a positive number for
                         # modules. These don't really need to live in
                         # separate memory moduleIds, but we computed

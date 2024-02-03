@@ -2,7 +2,10 @@
 # do one more focused on performance later, probably directly in C.
 proc load_spec() {.cdecl, importc.}
 
-import common, nimutils, stchecks, strutils, ffi, attrstore, err, ztypes/api, ztypes/base
+import std/strutils
+import pkg/nimutils
+import "."/[common, stchecks, ffi, attrstore, err]
+import ztypes/[api, base]
 export err, attrstore, ffi, api
 
 const sz = sizeof(ZInstruction)
@@ -99,12 +102,18 @@ else:
     discard
 
 template getModName(ctx: RuntimeState): string =
-  ctx.curModule.modName
+  ctx.curModule.modName & ".c4m"
 
 template getLineNo(ctx: RuntimeState): int =
   ctx.curModule.instructions[ctx.ip].lineNo
 
-proc getStackTrace*(ctx: RuntimeState): Rope =
+proc getSourceLoc*(ctx: RuntimeState): string =
+  ## Decode the source location of the current runtime state from
+  ## the current instruction.
+  return ctx.getModName() & " (line #" & $(ctx.getLineNo()) & ")"
+
+
+proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
                                    "Call target"]]
 
@@ -126,7 +135,8 @@ proc getStackTrace*(ctx: RuntimeState): Rope =
 
     cells.add(row)
 
-  result = cells.quicktable(title = "Stack trace")
+  result = cells.quicktable(title =  "Stack trace",
+                            caption = "Source location: " & ctx.getSourceLoc())
   result.colWidths([(17, true), (15, true), (20, true)])
   result.tpad(0, true).bpad(0, true)
 

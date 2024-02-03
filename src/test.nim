@@ -18,7 +18,7 @@ proc extractErrorCodes(s: string): seq[string] =
   if s == "":
     return
   else:
-    return s.findAll(re"\([A-Z0-9][a-zA-Z0-9$_]*\)")
+    return s.findAll(re"\([A-Z0-9][a-zA-Z0-9$_]+\)")
 
 proc runInitialTests(verbose = true) =
   var
