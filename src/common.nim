@@ -315,6 +315,7 @@ type
       fname*:       string
       actuals*:     seq[IrNode]
       toCall*:      FuncInfo
+      cbSymbol*:    SymbolInfo
     of IrUse:
       targetModule*: string
       targetLoc*:    string
@@ -776,6 +777,9 @@ type
      # of a module.
      ZCallModule    = 0x36,
 
+     # Callback was pushed on the stack;
+     ZRunCallback   = 0x37,
+
      # Logical not. Currently there's no bitwise not.
      ZNot           = 0x50,
 
@@ -886,6 +890,7 @@ type
     impl*:       pointer
     nameoffset*: int
     tid*:        TypeId
+    mid*:        int16
     ffi*:        bool
 
   ZFnInfo* = ref object
@@ -972,6 +977,7 @@ type
     numFrames*:      int
     stack*:          array[STACK_SIZE, pointer]
     curModule*:      ZModuleInfo
+    foreignModule*:  ZModuleInfo
     sp*:             int
     fp*:             int
     ip*:             int      # Index into instruction array, not bytes.
@@ -983,6 +989,7 @@ type
     externArgs*:     seq[seq[FfiType]]
     externFps*:      seq[pointer]
     specLock*:       bool
+    running*:        bool
 
   MixedObj* = object
     t*:     TypeId

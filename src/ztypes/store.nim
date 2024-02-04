@@ -3,7 +3,7 @@ import "."/[base, ordinals, chars, floats, strings, list, dict, tup, typespec,
 import ".."/err
 
 export base, ordinals, chars, floats, strings, list, dict, tup, typespec,
-       ipaddr, duration, size, datetime, url, err
+       ipaddr, duration, size, datetime, url, function, err
 
 # We do this last, after all the imports above, to make sure 'string'
 # is the last resort for inferring := literals.

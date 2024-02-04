@@ -2279,23 +2279,31 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       matches:      seq[FuncInfo]
       fails:        seq[FuncInfo]
       symbolExists: bool
+      sym:          SymbolInfo
       symOpt = m.moduleScope.table.lookup(name)
 
     if symOpt.isSome():
       symbolExists = true
-      let sym = symOpt.get()
+      sym = symOpt.get()
       if sym.isFunc:
         possibles = sym.fimpls
+      elif sym.tid.tCopy().unify(t.copyType().typeId) != TBottom:
+        n.contents.cbSymbol = sym
+        continue
 
     symOpt = ctx.globalScope.table.lookup(name)
 
     if symOpt.isSome():
       symbolExists = true
-      let sym = symOpt.get()
+      sym = symOpt.get()
+
       if sym.isFunc:
         for item in sym.fimpls:
           if item notin possibles:
             possibles.add(item)
+      elif sym.tid.tCopy().unify(t.copyType().typeId) != TBottom:
+        n.contents.cbSymbol = sym
+        continue
 
     if possibles.len() == 0:
       if symbolExists:
@@ -2322,6 +2330,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
         n.contents.toCall = matches[0]
       continue
     elif matches.len() == 0:
+
       let info = showCallMistakes(n.contents.fname, fails, t)
       m.irError("BadSig", n, @[n.contents.fname, t.toString(), "call"],
                 detail = info)

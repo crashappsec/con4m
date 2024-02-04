@@ -171,7 +171,6 @@ proc apply_spec_defaults*() {.cdecl, exportc.} =
 addStaticFunction("lock_spec", lock_spec)
 addStaticFunction("apply_defaults", apply_spec_defaults)
 
-
 proc declareTopLevelSpecItems(m: Module) =
   # Whenever we have a spec, we will go through the top-level
   # items and pre-delcare them as attributes, otherwise they will

@@ -155,18 +155,6 @@ proc bailHere(ctx: RuntimeState, errCode: string, extra: seq[string] = @[]) =
   ctx.printStackTrace()
   quit(-1)
 
-template pushFrame(ctx: RuntimeState, cm: ZModuleInfo, cl: int32,
-                   tl: int32, tf: ZFnInfo, tm: ZModuleInfo) =
-  ctx.frameInfo[ctx.numFrames].callmodule   = cm
-  ctx.frameInfo[ctx.numFrames].calllineno   = cl
-  ctx.frameInfo[ctx.numFrames].targetline   = tl
-  ctx.frameInfo[ctx.numFrames].targetfunc   = tf
-  ctx.frameInfo[ctx.numFrames].targetmodule = tm
-  ctx.numFrames += 1
-
-template popFrame(ctx: RuntimeState) =
-  ctx.numFrames -= 1
-
 proc storageAddr(ctx: RuntimeState, x: ZInstruction,
                      p: int64): ptr pointer =
   if x.moduleId == -1:
@@ -681,30 +669,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         ctx.bailHere("RT_badTOp", @[$(instr.arg)])
 
     of Z0Call:
-      # `toSave` will get pushed onto the stack, and it's the current
-      # instruction pointer plus the module ID in one word.
-      let
-        toSave     = ctx.ip shl 32 or ctx.curModule.moduleId
-        fobj       = ctx.obj.funcInfo[instr.arg - 1]
-        oldModule  = ctx.curModule
-
-      # push toSave.
-      ctx.sp           -= 1
-      ctx.stack[ctx.sp] = cast[pointer](toSave)
-      # push the old frame pointer.
-      ctx.sp           -= 1
-      ctx.stack[ctx.sp] = cast[pointer](ctx.fp)
-      # The new frame pointer is wherever the stack is.
-      ctx.fp            = ctx.sp
-      # Calculate the new instruction ponter; the fobj has a byte offset,
-      # but we're indexing by instruction.
-      ctx.ip            = fobj.offset div sz
-
-      ctx.curModule       = ctx.obj.moduleContents[instr.moduleId - 1]
-      let nextInstruction = ctx.curModule.instructions[ctx.ip]
-
-      ctx.pushFrame(oldmodule, instr.lineno, nextInstruction.lineno,
-                    fobj, ctx.curModule)
+      ctx.z_native_call(instr.arg, instr.moduleId, instr)
       continue
     of ZCallModule:
       let
@@ -724,6 +689,11 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
                     mobj)
 
       ctx.curModule = mobj
+    of ZRunCallback:
+      let cbObj = cast[ptr ZCallback](ctx.stack[ctx.sp])
+
+      ctx.sp += 2
+      ctx.run_callback(cbObj)
     of ZRet:
       leaveFrame()
     of ZModuleRet:
@@ -731,42 +701,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         return
       leaveFrame()
     of ZFFICall:
-      var
-        ffiObj  = ctx.obj.ffiInfo[instr.arg]
-        p       = addr ctx.obj.staticData[ffiObj.nameOffset]
-        s       = $(cast[cstring](p))
-        n       = ffiObj.argInfo.len() - 1 # Last is the return value
-        sp      = ctx.sp
-        argAddr: pointer = pointer(nil)
-        args:    seq[pointer]
-        m =      MixedObj.create()
-
-      # For each data type, we should be calling the type API to
-      # handle translation, memory management, etc.
-      # But for now, we'll just directly send stuff along and
-      # assume this implementation.
-      #
-      # The only difference is if a local parameter is declared to be
-      # generic, then we currently will box the parameter into a
-      # Mixed object.
-
-      for i in 0 ..< n:
-        let t = cast[TypeId](int64(ffiObj.argInfo[i].ourType))
-
-        if ffiObj.argInfo[i].ourType == RTAsMixed:
-          m.t     = cast[TypeId](ctx.stack[sp + 1])
-          m.value = ctx.stack[sp]
-          args.add(addr m)
-        else:
-          args.add(addr ctx.stack[sp])
-        sp += 2
-
-      if n > 0:
-        argAddr = addr args[0]
-
-      ffi_call(ctx.externCalls[instr.arg], ctx.externFps[instr.arg],
-               addr ctx.returnRegister, argAddr)
-      ctx.rrType = cast[pointer](int64(ffiObj.argInfo[^1].ourType))
+      ctx.z_ffi_call(instr.arg)
     of ZPushFfiPtr:
       var cb        = ZCallback.create()
       cb.impl       = cast[pointer](instr.arg)
@@ -784,6 +719,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       cb.nameoffset = int(instr.immediate)
       cb.tid        = instr.typeInfo
       cb.ffi        = false
+      cb.mid        = instr.moduleId
 
       ctx.sp           -= 1
       ctx.stack[ctx.sp] = cast[pointer](cb.tid)
@@ -880,7 +816,14 @@ proc applyDefaultAttributes(ctx: RuntimeState) =
 
   ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
 
-proc executeObject*(obj: ZObjectFile): int =
+proc run_0c00l_vm*(ctx: RuntimeState): int {.exportc, cdecl.} =
+  ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)
+  ctx.running = true
+  result = ctx.runMainExecutionLoop()
+  ctx.running = false
+  ctx.popFrame()
+
+proc execute_object*(obj: ZObjectFile): int {.exportc, cdecl.} =
   ## This call is intended for first execution, not for save /
   ## resumption.
   var ctx = RuntimeState()
@@ -901,5 +844,4 @@ proc executeObject*(obj: ZObjectFile): int =
   for item in obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
 
-  ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)
-  return ctx.runMainExecutionLoop()
+  return ctx.run_0c00l_vm()

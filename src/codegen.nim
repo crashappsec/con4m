@@ -847,7 +847,7 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
     ctx.oneIrNode(cur.actuals[i])
 
 
-  tid = cur.toCall.getTid().idToTypeRef().items[^1].tcopy()
+  tid = cur.toCall.getTid().idToTypeRef().items[^1].tCopy()
 
   for i, item in ctx.zobj.ffiInfo:
     let
@@ -855,7 +855,7 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
       s = $(cast[cstring](p))
 
     if s == cur.toCall.externName:
-      ctx.emitInstruction(ZFFICall, arg = i, tid = cur.toCall.tid)
+      ctx.emitInstruction(ZFFICall, arg = i, tid = tid)
       found = true
       break
 
@@ -867,7 +867,30 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
   if tid != TVoid:
     ctx.emitInstruction(ZPushRes, tid = tid)
 
+proc genRunCallback(ctx: CodeGenState, cur: IrContents) =
+  var
+    i = cur.actuals.len()
+    tid: TypeId
+    found: bool
+
+  while i != 0:
+    i = i - 1
+    ctx.oneIrNode(cur.actuals[i])
+
+  tid = cur.cbSymbol.getTid().idToTypeRef().items[^1].tCopy()
+
+  ctx.genPush(cur.cbSymbol)
+  ctx.emitInstruction(ZRunCallback, arg = i, tid = tid)
+  ctx.emitInstruction(ZMoveSp, - cur.actuals.len())
+
+  if tid != TVoid:
+    ctx.emitInstruction(ZPushRes, tid = tid)
+
 proc genCall(ctx: CodeGenState, cur: IrContents) =
+  if cur.cbSymbol != nil:
+    ctx.genRunCallback(cur)
+    return
+
   if cur.toCall.defModule == nil:
     ctx.genExternCall(cur)
     return
