@@ -2,12 +2,13 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Finish validation.
+# - Test validation, including "->"
+# - Pretty is dropping our singleton
+# - Range needs to constrain type field to an int.
 # - Apply component logic in runtime.
 # - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
-# - -> field
 # - Documentation.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
@@ -106,8 +107,8 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import compile, codegen, vm, os, pretty, err
-export compile
+import std/os
+import "."/[compile, codegen, vm, specs, pretty, err]
 
 when isMainModule:
   useCrashTheme()
@@ -195,6 +196,21 @@ when isMainModule:
 
     if debug:
       print h1("Execution completed.")
+
+    let validation_errors = validate_state()
+    if len(validation_errors) != 0:
+      print(h4("Validation failed!"))
+      var bullets: seq[Rope]
+      for item in validation_errors.items():
+        bullets.add(li(cast[Rope](item)))
+      print(ol(bullets), file = stderr)
+
+    print(h1("Attributes"))
+
+    if debug:
+      getcon4mRuntime().print_attributes()
+      print(h4("Spec"))
+      generatedCode.spec.print_spec()
 
     quit(exitCode)
   else:

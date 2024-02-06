@@ -174,3 +174,10 @@ proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback):
     ctx.z_native_call(cast[int](cb.impl), int(cb.mid), cur_instruction)
   else:
     return ctx.foreign_z_call(cast[int](cb.impl), int(cb.mid))
+
+proc push_call_param*(ctx: RuntimeState, p: pointer,
+                      t: TypeId) {.exportc, cdecl.} =
+  ctx.sp -= 1
+  ctx.stack[ctx.sp] = cast[pointer](t)
+  ctx.sp -= 1
+  ctx.stack[ctx.sp] = p

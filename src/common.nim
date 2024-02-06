@@ -253,7 +253,6 @@ type
     scope*:     Scope
     lock*:      bool
 
-
   IrContents* = ref object
     case kind*: IrNodeType
     of IrBlock:
@@ -466,15 +465,16 @@ type
 
   AttrDict*      = Dict[string, pointer]
 
-  SecValidator* =    proc(i0: RuntimeState, i1: string, i2: seq[string],
-                          i3: seq[pointer]): Rope {.cdecl.}
-  FieldValidator* =  proc(i0: RuntimeState, i1: string, i2: pointer,
-                          i3: TypeId, i4:seq[pointer]): Rope {.cdecl.}
+  SecValidator* =    proc(i0: RuntimeState, i1: C4Str, i2: pointer,
+                          i3: pointer): Rope {.cdecl.}
+  FieldValidator* =  proc(i0: RuntimeState, i1: C4Str, i2: TypeId,
+                          i3: pointer, i4: pointer): Rope {.cdecl.}
 
   Validator*     = ref object
     fn*:          pointer
-    params*:      seq[pointer]
-    nodes*:       seq[IrNode]
+    params*:      pointer
+    node*:        IrNode # For user-defined validators; fn will be blank in IR.
+
 
   FsKind* = enum
     FsField, FsObjectType, FsSingleton, FsUserDefField, FsObjectInstance,
@@ -494,6 +494,7 @@ type
     shortdoc*:             Rope
     fieldKind*:            FsKind
     errIx*:                int
+    exclusions*:           seq[string]
     deferredType*:         string # Name of the field that's going to contain
                                   # our type.
 
@@ -985,10 +986,10 @@ type
     rrType*:         pointer
     moduleIds*:      seq[seq[pointer]]
     attrs*:          Dict[string, AttrContents]
+    allSections*:    Dict[string, bool] # Todo: change to a set.
     externCalls*:    seq[CallerInfo]
     externArgs*:     seq[seq[FfiType]]
     externFps*:      seq[pointer]
-    specLock*:       bool
     running*:        bool
 
   MixedObj* = object
@@ -996,6 +997,11 @@ type
     value*: pointer
 
   Mixed* = ptr MixedObj
+
+  AttrTree* = ref object
+    path*:      string
+    kids*:      seq[AttrTree]
+
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

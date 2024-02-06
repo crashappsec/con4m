@@ -289,7 +289,7 @@ proc printTypeCatalog*(obj: ZObjectFile) =
   for k in obj.tInfo.keys(sort = true):
     cells.add(@[k.toString(), cast[int](k).toHex().toLowerAscii()])
 
-  print cells.quickTable().colWidths([(40, false), (18, true)])
+  print cells.quickTable().colWidths([(40, false), (18, true)]).tpad(0).bpad(0)
 
 proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
   var errsToPrint: seq[Con4mError]

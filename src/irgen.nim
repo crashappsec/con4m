@@ -10,21 +10,19 @@ export parse, scope
 proc foldDown(ctx: Module, newNode: IrNode) {.importc, cdecl.}
 proc parseTreeToIr(ctx: Module): IrNode
 
-proc sectionValidator(attrs: var AttrDict, path: string, t: TypeId,
-                      val: Option[pointer],
-                      args: seq[pointer]): Rope {.importc, cdecl.}
+proc rangeValidator(ctx: RuntimeState, path: string, t: TypeId, val: pointer,
+                     param: FlexArray[pointer]): Rope {.importc, cdecl.}
 
-proc rangeValidator(attrs: var AttrDict, path: string, t: TypeId,
-                    val: Option[pointer],
-                    args: seq[pointer]): Rope {.importc, cdecl.}
+proc choiceValidator(ctx: RuntimeState, path: string, t: TypeId, val: pointer,
+                      param: FlexArray[pointer]): Rope {.importc, cdecl.}
+proc userFieldValidator(ctx: RuntimeState, path: string, t: TypeId,
+                        val: pointer, param: ptr ZCallback): Rope
+                                                         {.importc, cdecl.}
+proc userSectionValidator(ctx: RuntimeState, path: string,
+                          fields: FlexArray[pointer], cb: ptr ZCallback): Rope
+                             {.importc, cdecl.}
 
-proc choiceValidator(attrs: var AttrDict, path: string, t: TypeId,
-                     val: Option[pointer],
-                     args: seq[pointer]): Rope {.importc, cdecl.}
 proc newSpec(): ValidationSpec {.importc, cdecl.}
-proc mutexValidator(attrs: var AttrDict, path: string, t: TypeId,
-                    val: Option[pointer], args: seq[pointer]): Rope
-                     {.importc, cdecl.}
 
 proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
 
@@ -353,6 +351,14 @@ proc irNode(ctx: Module, kind: IrNodeType): IrNode =
   result = IrNode(parseNode: ctx.pt, contents: payload, parent: ctx.current)
   ctx.current = result
 
+proc downNode(ctx: Module, n: ParseNode): IrNode =
+  var saved   = ctx.current
+  var savedpt = ctx.pt
+  ctx.pt      = n
+  result      = ctx.parseTreeToIr()
+  ctx.pt      = savedpt
+  ctx.current = saved
+
 proc downNode(ctx: Module, which: int): IrNode =
   var saved   = ctx.current
   var savedpt = ctx.pt
@@ -661,14 +667,11 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
         paramInfo.doc = some(ctx.getText(i, 1))
         gotLong = true
       of "validator":
-        if gotValid:
-          ctx.irError("DupeParamProp", @["validator"], ctx.pt.children[i])
-          continue
         if ctx.kidKind(i, 1) != NodeCallbackLit:
           ctx.irError("ParamType", @["validator", "callback"],
                       ctx.pt.children[i])
         let irNode = ctx.downNode(i, 1)
-        ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TString]))
+        ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TRich]))
         let cb              = extractRef[Callback](irNode.value)
         paramInfo.validator = some(cb)
         gotValid            = true
@@ -1066,7 +1069,6 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
     gotRange     = false
     gotHidden    = false
     gotReq       = false
-    gotValidator = false
     lock         = false
     hidden       = false
     required     = false
@@ -1135,8 +1137,15 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
             s = @[]
             break
           s.add(tree.value)
+
+      var
+        raw = newArrayFromSeq[pointer](s)
+        arr = cast[pointer](raw)
+
+      GC_ref(raw)
+
       if s.len() != 0:
-        result.validators.add(Validator(fn: choiceValidator, params: s))
+        result.validators.add(Validator(fn: choiceValidator, params: arr))
     of "range":
       if gotRange:
         ctx.irError("DupeProp", @["range"])
@@ -1155,9 +1164,10 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
            endNode.tid.unify(TInt) == TBottom:
           ctx.irError("RangeInt")
         else:
-          var s: seq[pointer]
-          s.add(startNode.value)
-          s.add(endNode.value)
+          var f = newArray[pointer](2)
+
+          GC_ref(f)
+
           let
             startVal = cast[int](startNode.value)
             endVal   = cast[int](endNode.value)
@@ -1165,14 +1175,31 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
           if startVal >= endVal:
             ctx.irError("BadRangeSpec")
 
-          result.validators.add(Validator(fn: rangeValidator, params: s))
+          f[0] = startNode.value
+          f[1] = endNode.value
+
+          f.metadata = cast[pointer](tList(TInt))
+
+          var arr = cast[pointer](f)
+          echo cast[int](arr).toHex().toLowerAscii()
+          result.validators.add(Validator(fn: rangeValidator, params: arr))
+
     of "exclude", "exclusions":
-      discard
+      for kid in n.children[1 .. ^1]:
+        let exclusion = kid.getText()
+        if exclusion in result.exclusions:
+          ctx.irWarn("DupeExclusion", @["exclusion"])
+        else:
+          result.exclusions.add(exclusion)
     of "validator":
-      discard
+      if n.children[1].kind != NodeCallbackLit:
+        ctx.irError("ParamType", @["validator", "callback"], n.children[1])
+      let irNode = ctx.downNode(n.children[1])
+      ctx.typeCheck(irNode.tid, tfunc(@[TString, tVar(), TRich]))
+
+      let v = Validator(fn: userFieldValidator, node: irNode)
     else:
       unreachable
-  # TODO: doc strings
 
 proc convertOneSection(ctx: Module, sec: ParseNode) =
   var
@@ -1221,12 +1248,13 @@ proc convertOneSection(ctx: Module, sec: ParseNode) =
         if gotHidden:
           ctx.irWarn("DupHidden")
       of "validator":
-        if validator != nil:
-          ctx.irError("DupeSpecValidator")
-        else:
-          ctx.current = nil
-          ctx.pt      = n.children[1]
-          validator   = Validator(nodes: @[ctx.parseTreeToIr()])
+        # The fn paramer is moot; we only ever assign one value for
+        # sections for the moment. But we set it anyway, just in case
+        # we want more built-in constraints later.
+        ctx.current = nil
+        ctx.pt      = n.children[1]
+        validator   = Validator(fn:   userSectionValidator,
+                                node: ctx.parseTreeToIr())
       of "allow", "allowed":
         for i in 1 ..< n.children.len():
           let secName = n.children[i].getText()
@@ -1644,20 +1672,17 @@ proc newCallbackFromFuncInfo(s: FuncInfo): ptr Callback =
   GC_ref(s)
 
 proc convertCallbackLit(ctx: Module): IrNode =
-  var cb: Callback
-
   result = ctx.irNode(IrLit)
 
-  cb.name = ctx.getText(0)
   if ctx.numKids() == 2:
-    var
-      tvars = newDict[string, TypeId]()
-    cb.tid = ctx.pt.children[1].buildType(tvars)
-    result.tid = cb.getTid()
+    var tvars = newDict[string, TypeId]()
+
+    result.tid = ctx.pt.children[1].buildType(tvars)
   else:
     result.tid = tFunc(@[])
 
-  ctx.funcsToResolve.add((result, result.tid, cb.name))
+  ctx.funcsToResolve.add((result, result.tid, ctx.getText(0)))
+
 
 proc convertForStmt(ctx: Module): IrNode =
   result                    = ctx.irNode(IrLoop)

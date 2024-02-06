@@ -1,6 +1,45 @@
 import "."/[common, attrstore]
 import ztypes/api
 
+
+proc print_one_section(spec: SectionSpec, n: string) =
+  var cells: seq[seq[Rope]]
+
+  cells.add(@[text("Name"), text(n)])
+  cells.add(@[text("Instantiable?"), if spec.maxAllowed != 1:
+                                       fgColor("✓", "atomiclime")
+                                     else:
+                                       fgColor("✗", "red")])
+  cells.add(@[text("User-defined fields?"), if spec.userDefOk:
+                                              fgColor("✓", "atomiclime")
+                                            else:
+                                              fgColor("✗", "red")])
+  print quickTable(cells,
+                   verticalHeaders = true).colWidths([(40, true),
+                           (20, true)]).tpad(0).bpad(0)
+
+  cells = @[@[text("Field"), text("Type"), text("Required"), text("Lock")]]
+
+  for (k, fs) in spec.fields.items():
+    cells.add(@[text(k), em(fs.tid.toString()),
+                if fs.required:
+                  fgColor("✓", "atomiclime")
+                else:
+                  fgColor("✗", "red"),
+                if fs.lockOnWrite:
+                  fgColor("✓", "atomiclime")
+                else:
+                  fgColor("✗", "red")])
+
+  print quickTable(cells)
+
+
+proc print_spec*(s: ValidationSpec) =
+  print_one_section(s.rootSpec, "Top-level section")
+
+  for (name, sec) in s.secSpecs.items():
+    print_one_section(sec, name)
+
 proc getRootSection*(spec: ValidationSpec): SectionSpec {.exportc, cdecl.} =
   if spec.rootSpec != nil:
     result = spec.rootSpec
@@ -85,72 +124,65 @@ proc getFieldInfo*(spec: ValidationSpec, parts: seq[string]): FieldSpec {.
         return FieldSpec(fieldKind: FsObjectInstance)
     i = i + 1
 
-proc oneChoiceValidator*(attrs: AttrDict, path: string, t: TypeId,
-                         val: Option[pointer], args: seq[pointer]):
-                           Rope {.exportc, cdecl.} =
-  # This validator doesn't care about whether fields are required.
-  if val.isNone():
-    return nil
-
-  var box = val.get()
-
-  if not t.isBasicType():
-    raise newException(ValueError,
-                       "Choice validator only works with primitive types.")
-
-  for item in args:
-    if item.call_eq(box, t):
-      return nil
-
-  result = atom("Invalid choice for field: ") + em(path) +
-           atom(". Got value: ") + em($(box.call_repr(t))) +
-           atom(", but valid choices are: ")
-
-  for i, item in args:
-    result += em($(item.call_repr(t)))
-    if i != args.len() - 1:
-      result += atom(", ")
-
-proc sectionValidator*(attrs: var AttrDict, path: string, t: TypeId,
-                        val: Option[pointer],
-                        args: seq[pointer]): Rope {.exportc, cdecl.} =
-  # Todo-- need to implement this; call the user-defined function.
-  discard
-
-proc rangeValidator*(attrs: var AttrDict, path: string, t: TypeId,
-                        val: Option[pointer],
-                        args: seq[pointer]): Rope {.exportc, cdecl.} =
-  # Todo-- need to implement this; call the user-defined function.
-  discard
-
-proc choiceValidator*(attrs: var AttrDict, path: string, t: TypeId,
-                        val: Option[pointer],
-                        args: seq[pointer]): Rope {.exportc, cdecl.} =
-  # Todo-- need to implement this; call the user-defined function.
-  discard
-
-
-proc mutexValidator*(attrs: var AttrDict, path: string, t: TypeId,
-                     val: Option[pointer], args: seq[pointer]): Rope
-                     {.exportc, cdecl.} =
+proc rangeValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
+                     param: FlexArray[pointer]): Rope {.exportc, cdecl.} =
   let
-    parts = path.split(".")
-    base  = if len(parts) == 1: "" else: parts[0 ..< 1].join(".") & "."
-    this  = parts[^1]
+    lowval = cast[int](param[0])
 
-  # No conflict if the value isn't set.
-  if val.isNone():
-    return
+  let
+    hival  = cast[int](param[1])
+    v      = cast[int](val)
 
-  for item in args:
-    let
-      toCmp      = extractRef[string](item)
-      toCmpFull  = base & toCmp
-      valOpt     = attrs.lookup(toCmpFull)
+  if v >= lowval and v <= hival:
+    return nil # Success!
 
-    if valOpt.isSome():
-      result = atom("Fields ") + em(this) + atom(" and ") + em(toCmp) +
-               atom(" may not appear together in this section.")
+  else:
+    let args = @[$(cast[cstring](path)),$(v), $(lowval), $(hival)]
+    return format_validation_error("BadRange", args)
+
+proc choiceValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
+                      param: FlexArray[pointer]): Rope {.exportc, cdecl.} =
+  let
+    choices = param.items()
+
+  for item in choices:
+    if call_eq(item, val, t) == true:
+      return nil # Success
+
+  var choice_list: seq[string]
+
+  for item in choices:
+    choice_list.add($(call_repr(item, t)))
+
+  return format_validation_error("BadChoice", @[ $(cast[cstring](path)),
+                                                 $(call_repr(val, t)),
+                                                 choice_list.join(", ")])
+
+proc userFieldValidator*(ctx: RuntimeState, path: C4Str, t: TypeId,
+                         val: pointer, cb: ptr ZCallback): Rope
+                                                         {.exportc, cdecl.} =
+  # 1. Push the value.
+  # 2. Push the path.
+  # 3. call run_callback()
+  ctx.push_call_param(val, t)
+  ctx.push_call_param(cast[pointer](path), TString)
+
+  let cb_result = cast[Rope](ctx.run_callback(cb))
+  if cb_result != nil:
+    result = custom_validation_error(cb_result)
+
+proc userSectionValidator*(ctx: RuntimeState, path: C4Str, f: pointer,
+                           cb: ptr ZCallback): Rope
+                             {.exportc, cdecl.} =
+  # 1. Push the list of fields.
+  # 2. Push the path.
+  # 3. call run_callback()
+  ctx.push_call_param(f, tList(TString))
+  ctx.push_call_param(cast[pointer](path), TString)
+
+  let cb_result = cast[Rope](ctx.run_callback(cb))
+  if cb_result != nil:
+    result = custom_validation_error(cb_result)
 
 proc lock_con4m_spec*(ctx: RuntimeState) {.cdecl, exportc.} =
   if ctx.obj.spec != nil:
@@ -239,26 +271,165 @@ proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
         m.irError("RootOverwrite", @[fname])
       globalRootSec.fields[fname] = fspec
 
+proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
+                      errs: var seq[Rope]) =
+  ## To validate a section we must:
+  ## 1. Look for sections that are present, but are not allowed.
+  ## 2. Look for required subsections that do not exist.
+  ## 3. Recurse into subsections to validate.
+  ## 3. Look for fields that exist, but shouldn't.
+  ## 4. Look for fields that don't exist, but should. (noting exclusions)
+  ## 5. Check types of any fields with deferredType set in its spec.
+  ## 6. Call any validation routines for the fields that do exist.
+  ## 7. Call any validation routines that cover the entire section.
 
-  # The below should now not be necessary; it's all moved.
-  # Leaving for now just in case I missed something.
-  #
-  #for (name, item) in m.usedAttrs.table.items():
-  #  let info = m.attrSpec.getFieldInfo(name.split('.'))
-  #  if info.fieldKind == FsField:
-  #    m.typeCheck(info.tid.tCopy(), item.tid)
-  # for item in allows:
-  #   if item in sectionG.allowedSections:
-  #     ctx.irWarn("DupeAllow", @[item])
-  #   elif item in sectionG.requiredSections:
-  #     ctx.irWarn("AllowInReq", @[item])
-  #   else:
-  #     sectionG.allowedSections.add(secName)
+  ## For instantiable sections, we do #3 once for each object (which will
+  ## cause #7 to run once for each object too).
 
-  # for item in requires:
-  #   if item in sectionG.requiredSections:
-  #     ctx.irWarn("DupeRequire", @[item])
-  #   else:
-  #     sectionG.requiredSections.add(item)
-  #     if item in sectionG.allowedSections:
-  #       ctx.irWarn("ReqAfterAllow", @[item])
+  if spec == nil:
+    return
+
+  var
+    found_fields:     seq[(string, AttrTree)]
+    found_sections:   seq[(int, string)]
+    found_f_names:    seq[string]
+    found_s_names:    seq[string]
+    field_specs:      seq[string]
+    excluded_fields:  seq[string]
+    ready_to_append:  string
+
+  if tree.path == "":
+    tree.path = "the top-level configuration"
+  else:
+    ready_to_append = tree.path & "."
+
+  for i, item in tree.kids:
+    let last = item.path.split(".")[^1]
+    if item.kids.len() == 0:
+      found_fields.add((last, item))
+      found_f_names.add(last)
+    else:
+      found_sections.add((i, last))
+      found_s_names.add(last)
+
+  for (i, secname) in found_sections:
+    if secname notin spec.allowedSections and
+       secname notin spec.requiredSections:
+
+      errs.add(format_validation_error("BadSection", @[tree.path, secname]))
+    else:
+      let newSpec = ctx.obj.spec.secSpecs[secname]
+      if newSpec.maxAllowed == 1:
+        ctx.validate_section(tree.kids[i], newSpec, errs)
+      else:
+        for item in tree.kids[i].kids:
+          ctx.validate_section(item, newSpec, errs)
+
+  for requirement in spec.requiredSections:
+    if requirement notin found_s_names:
+      errs.add(format_validation_error("MissingSection",
+                                       @[tree.path, requirement]))
+
+  if not spec.userDefOk:
+    for name in found_f_names:
+      if spec.fields.lookup(name).isNone():
+        errs.add(format_validation_error("BadField",
+                                         @[tree.path, name, spec.name]))
+
+  for name in found_f_names:
+    let specOpt = spec.fields.lookup(name)
+    if specOpt.isSome():
+      let fieldSpec = specOpt.get()
+      for item in fieldSpec.exclusions:
+        if item in found_f_names:
+          errs.add(format_validation_error("FieldMutex",
+                                           @[tree.path, name, item]))
+        else:
+          excluded_fields.add(item)
+
+  for (name, field_spec) in spec.fields.items():
+    if name notin (found_f_names & excluded_fields) and field_spec.required:
+      errs.add(format_validation_error("MissingField", @[tree.path, name]))
+    else:
+      var
+        expected_type = TBottom
+        found_type: TypeId
+        full_path:  string
+        err:        bool
+        value:      pointer
+        found_val:  bool = false
+
+      if field_spec.deferredType != "":
+        full_path = ready_to_append & field_spec.deferredType
+
+        expectedType = cast[TypeId](ctx.get(full_path, err, addr foundType))
+        if err:
+          continue
+
+        if unify(tTypeSpec(), foundType) == TBottom:
+
+          errs.add(format_validation_error("NotTSpec",
+                                           @[ready_to_append, name, full_path]))
+          continue
+
+      full_path = ready_to_append & name
+
+      for (n, tree) in found_fields:
+
+        if n  == tree.path.split(".")[^1]:
+          value     = ctx.get(full_path, err, addr found_type, by_addr = false,
+                              expected_type = expected_type)
+          found_val = true
+          break
+
+      if not found_val:
+        if field_spec.required:
+          # This is in some sense a dupe check to above, but it's possible
+          # for us to att an entry w/o setting a value.
+          errs.add(format_validation_error("MissingField", @[tree.path, name]))
+        continue
+
+      for valid_obj in field_spec.validators:
+        let
+          fn = cast[FieldValidator](valid_obj.fn)
+          r  = fn(ctx, newC4Str(full_path), found_type,
+                    value, valid_obj.params)
+
+        if r != nil:
+          errs.add(r)
+
+  if spec.validators.len() == 0:
+    return
+
+  var fields_to_pass = newArray[pointer](found_f_names.len())
+
+  for i, item in found_f_names:
+    fields_to_pass[i] = newC4Str(item)
+
+  for validator in spec.validators:
+      let
+        fn   = cast[SecValidator](validator.fn)
+        flds = cast[pointer](fields_to_pass)
+        r    = fn(ctx, newC4str(tree.path), flds, validator.params)
+
+      if r != nil:
+        errs.add(r)
+
+proc validate_state*(): FlexArray[pointer] {.cdecl, exportc.} =
+  var
+    ctx = get_con4m_runtime()
+    errs: seq[Rope]
+
+  if ctx.obj.spec == nil or not ctx.obj.spec.used:
+    return newArrayFromSeq[pointer](cast[seq[pointer]](errs))
+
+  # We're going to first create the attribute tree as is, without any
+  # validation whatsoever, and then walk it. That'll make our life
+  # easier.
+
+  let tree = ctx.build_attr_tree()
+
+  ctx.validate_section(tree, ctx.obj.spec.rootSpec, errs)
+
+  result          = newArrayFromSeq[pointer](cast[seq[pointer]](errs))
+  result.metadata = cast[pointer](tList(TRich))

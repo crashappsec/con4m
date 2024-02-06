@@ -1,3 +1,4 @@
+import std/algorithm
 import ztypes/api
 export api
 
@@ -12,51 +13,124 @@ proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
   # ends up being the first write to some new object section, we call
   # this to populate any defaults in the object.
 
+  var
+    prefix    = if (prefix != "" and prefix[^1] != '.'): prefix & "." else: ""
+    attrToSet: string
+
   for (fname, fspec) in sec.fields.items():
     if fspec.haveDefault:
-      discard ctx.set(prefix & fname, fspec.defaultVal, fspec.tid,
-                               fspec.lockOnWrite, internal = true)
+      attrToSet = prefix & fname
+      discard ctx.set(attrToSet, fspec.defaultVal, fspec.tid,
+                      fspec.lockOnWrite, internal = true)
 
   for secName in sec.allowedSections:
     let newSec = ctx.obj.spec.secSpecs[secName]
     if newSec.maxAllowed == 1:
-      ctx.applyOneSectionSpecDefaults(prefix & secName & ".", newSec)
+      ctx.applyOneSectionSpecDefaults(prefix & secName, newSec)
+
+proc ensure_sections(ctx: RuntimeState, key: string): (string, seq[string]) =
+  # For any section that's been created, we add an entry in
+  # ctx.allSections, which mainly is about saving is from applying
+  # defaults to the same section multiple times.  We return a prefix,
+  # along with an array of sections to populate.
+
+  var
+    parts = key.split(".")[0 ..< ^1]
+    i     = 0
+    ensured: string
+    cur:     string
+
+  # First setting.
+  if ctx.allSections.lookup("").isNone():
+    return ("", @[""] & parts)
+
+  if parts.len() == 0:
+    return ("", @[])
+
+  ensured = ""
+
+  while i < len(parts):
+    if i == 0:
+      cur = parts[i]
+    else:
+      cur &= "." & parts[i]
+
+    if ctx.allSections.lookup(cur).isNone():
+      return (ensured, parts[i ..< ^1])
+
+    ensured = cur
+    i       = i + 1
+
+  return (key, @[])
 
 proc populateDefaults(ctx: RuntimeState, key: string) =
+
+  var
+    (ensured, toPopulate) = ctx.ensure_sections(key)
+
+  if toPopulate.len() == 0:
+    return
+
   let
     parts = key.split(".")
 
   var
-    cur   = parts[0]
-    path  = cur
-    i     = 0
-    l     = parts.len()
+    i   = 0
+    sec = ctx.obj.spec.rootSpec
+    path: string
 
-  while true:
-    let secOpt = ctx.obj.spec.secSpecs.lookup(cur)
-    if secOpt.isNone():
+  if toPopulate[0] == "":
+    ctx.allSections[""] = true
+    ctx.applyOneSectionSpecDefaults("", sec)
+    if toPopulate.len() == 0:
       return
+    else:
+      toPopulate = toPopulate[1 .. ^1]
 
-    let
-      sec         = secOpt.get()
-      existingOpt = ctx.attrs.lookup(path)
+  while path.len() < ensured.len():
+    if sec == nil:
+      path = ensured
+      break
+    let secOpt = ctx.obj.spec.secSpecs.lookup(parts[i])
+    if secOpt.isNone():
+      sec = nil
+      break
+    sec  = secOpt.get()
+    path = path & parts[i] & "."
+
+    i = i + 1
 
     if sec.maxAllowed == 1:
-      if existingOpt.isNone():
-        ctx.applyOneSectionSpecDefaults(path, sec)
+      continue
+
+    # It's an instantiable section, yet we haven't seen this object before.
+    # This generally shouldn't ever be true, but just in case.
+    if path == ensured:
+      ctx.allSections[path] = true
+
+  i = 0
+
+  let l = toPopulate.len()
+
+  while i < l:
+    let
+      cur    = toPopulate[i]
+      secOpt = ctx.obj.spec.secSpecs.lookup(cur)
+    if secOpt.isNone():
+      return
+    sec   = secOpt.get()
+    path &= cur
+
+    i = i + 1
+    if sec.maxAllowed == 1:
+      ctx.applyOneSectionSpecDefaults(path, sec)
     else:
-      i += 1
-      if i == l:
-        break
-      path &= "." & cur[i]
-
-      if existingOpt.isNone():
+      if i != len(toPopulate):
+        path &= "." & toPopulate[i]
         ctx.applyOneSectionSpecDefaults(path, sec)
+        i += 1
 
-    i += 1
-    if i == l:
-      break
-    path &= "." & cur[i]
+    path &= "."
 
 proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
           lock = false, override = false, internal = false):
@@ -65,6 +139,8 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
   # with multiple threads updating via reference.
   if ctx.obj.spec != nil and not internal:
     ctx.populateDefaults(key)
+  else:
+    discard ctx.ensure_sections(key)
 
   var
     newInfo = AttrContents(contents: value, tid: tid, isSet: true, locked: lock)
@@ -132,3 +208,55 @@ proc get_section_contents*(ctx: RuntimeState, key: string, oneLevel = true):
 
 proc get_all_keys*(ctx: RuntimeState): seq[string] =
   result = ctx.attrs.keys()
+
+proc attr_walker(attr: AttrTree): (Rope, seq[AttrTree]) =
+  let last = text(attr.path.split(".")[^1])
+  if attr.kids.len() != 0:
+    result = (last, attr.kids)
+  else:
+    var
+      tid: TypeId
+      err: bool
+      val = get_con4m_runtime().get(attr.path, err, addr tid)
+
+    var rep = $(call_repr(val, tid))
+
+    result = (text(attr.path) + text(" ") + em(rep), @[])
+
+proc print_attributes*(tree: AttrTree) =
+  print tree.quickTree(attr_walker)
+
+proc build_attr_tree*(ctx: RuntimeState): AttrTree =
+  result = AttrTree()
+
+  for item in ctx.get_all_keys():
+    var
+      cur   = result
+      parts = item.split(".")
+      i     = 0
+      l     = parts.len()
+
+    while i < l:
+      let
+        n = parts[i]
+        p = parts[0 .. i].join(".")
+
+      var found = false
+
+      for kid in cur.kids:
+        if kid.path == p:
+          found = true
+          cur   = kid
+          break
+
+      if not found:
+        let node = AttrTree(path: p)
+        cur.kids.add(node)
+        cur = node
+
+      i = i + 1
+
+    cur.kids.sort()
+
+proc print_attributes*(ctx: RuntimeState) =
+  ctx.build_attr_tree.print_attributes()

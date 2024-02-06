@@ -8,9 +8,9 @@ confspec {
     user_def_ok: true
     #validator: func somethingcool(int) -> bool
     
-    field audit_location {
-      type:   string
-      default: "test 1"
+    field audit_id {
+      type:   int
+      default: 176
       range: 0, 100
       #validator: func somethingcool(int) -> bool
     }
@@ -21,7 +21,6 @@ confspec {
     field audit_location {
       type:   string
       default: "test 1"
-      range: 0, 100
       #validator: func somethingcool(int) -> bool
     }
   }
@@ -39,7 +38,8 @@ confspec {
   }
 }
 
-assert test.audit_location == "test 1"
+test.audit_id = 177
+assert test.audit_id == 177
 assert log_level == "info"
 log_level = "warn"
 assert log_level == "warn"

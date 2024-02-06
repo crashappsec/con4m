@@ -348,7 +348,30 @@ const errorMsgs = [
   ("RootOverwrite",  "Overwriting an existing root $1."),
   ("MissingSec",     "Spec tries to <em>$2</em> a section of type <em>$1</em>" &
                      ", but no section named <em>$1</em> has been spec'd yet."),
-  ("Debug",          "Debug: $1 $2 $3"),
+
+  ("BadRange",       "When validating <em>$1</em>, an invalid value, " &
+                     "<em>$2</em>, was chosen. But the value must be no less " &
+                     "than <em>$3</em> and no greater than <em>$4</em>."),
+  ("BadChoice",      "When validating <em>$1</em>, an invalid value, " &
+                     "<em>$2</em>, was chosen. Valid choices are: <em>$3</em>"),
+  ("MissingSection", "When validating <em>$1</em>, expected a required " &
+                     "section named <em>$2</em>, which was not provided."),
+  ("MissingField",   "When validating <em>$1</em>, expected a required " &
+                     "field named <em>$2</em>, but it was not found."),
+  ("BadSection",     "When validating <em>$1</em>, the section <em>$2</em> " &
+                     "is not allowed."),
+  ("NotTSpec",       "When attempting to determine the type of the " &
+                     "value <em>$1$2</em>, the field <em>$3</em> was " &
+                     "expected to specify the value's type, but " &
+                     "that field did not contain a type specification."),
+  ("BadField",       "When validating <em>$1</em>, found the field " &
+                     "<em>$2</em>, which is not a valid field name for a " &
+                     "<em>$3</em> section."),
+  ("FieldMutex",     "When validating <em>$1</em>, found the field " &
+                     "<em>$2</em>, which is specified to not be able " &
+                     "to appear together in a section with the field " &
+                     "<em>$3</em> (which was also present)."),
+
  ]
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
@@ -614,6 +637,15 @@ proc formatLateError*(err: string, severity: Con4mSeverity,
 
   result.add(markdown(msg))
 
+proc formatValidationError*(err: string, args: seq[string]): Rope =
+  var msg = err.lookupMsg() & "<i> (" & err & ")</i>"
+  performSubs(args, msg)
+
+  return htmlStringToRope(msg, add_div = false)
+
+proc customValidationError*(msg: Rope): Rope =
+  return msg + italic(" (CustomValidator)")
+
 proc runtimeWarn*(err: string, args: seq[string] = @[]) =
   let
     cells   = @[err.formatLateError(LlWarn, args)]
@@ -660,6 +692,9 @@ proc regularTerminationSignal(signal: cint) {.noconv.} =
 
   if rt != nil:
     print(getCon4mRuntime().getStackTrace(), file = stderr)
+
+  print(h4("Nim stack trace:"))
+  echo getStackTrace()
 
   var sigset:  SigSet
 

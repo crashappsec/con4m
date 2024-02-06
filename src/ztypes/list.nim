@@ -12,8 +12,12 @@ proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
 proc list_repr(c: FlexArray[pointer]): cstring {.exportc, cdecl.} =
   var parts: seq[string]
 
+  let
+    list_type = cast[TypeId](c.metadata)
+    to        = list_type.idToTypeRef()
+
   for item in c.items():
-    parts.add($(item.call_repr(cast[TypeId](c.metadata))))
+    parts.add($(item.call_repr(to.items[0])))
 
   return cstring("[" & parts.join(", ") & "]")
 

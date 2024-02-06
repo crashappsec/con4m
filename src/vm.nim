@@ -810,12 +810,6 @@ proc setupFfi(ctx: var RuntimeState) =
 
     ffi_prep_cif(ctx.externCalls[i], ffiAbi, numargs, retType, argp)
 
-proc applyDefaultAttributes(ctx: RuntimeState) =
-  if ctx.obj.spec == nil:
-    return
-
-  ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
-
 proc run_0c00l_vm*(ctx: RuntimeState): int {.exportc, cdecl.} =
   ctx.pushFrame(ctx.curModule, 0, 0, nil, ctx.curModule)
   ctx.running = true
@@ -836,7 +830,7 @@ proc execute_object*(obj: ZObjectFile): int {.exportc, cdecl.} =
   ctx.fp         = ctx.sp
 
   ctx.attrs.initDict()
-  ctx.applyDefaultAttributes()
+  ctx.allSections.initDict()
   # Add moduleIds.
   ctx.setupFfi()
   ctx.setupArena(obj.symTypes, obj.globalScopeSz)
