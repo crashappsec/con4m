@@ -2,7 +2,6 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Pretty is dropping our singleton
 # - Apply component logic in runtime.
 # - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.
@@ -11,7 +10,7 @@
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Capture location info for runtime attr def locations, and show
-#   all def locations for things like spec errors.
+#   all def locations for things like spec errors (anything runtime).
 # - Remainder of needed stdlib stuff
 # - Restrict the leading '$' properly.
 # - Doc API.

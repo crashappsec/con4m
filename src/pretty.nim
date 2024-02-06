@@ -762,10 +762,10 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     state.r += n.keyword(state)
     let toAdd =
       if state.style.brB4Bracket:  text("\n" & state.pad & "{")
-      else:                        text(" {\n")
+      else:                        text("{\n")
 
     state.r += prettyColor(toAdd, otherDelimColor)
-    indentDown(1)
+    indentDown()
     state.r += prettyColor(text("}\n"), otherDelimColor)
   of NodeSecSpec:
     state.r += n.keyword(state)
@@ -778,7 +778,7 @@ proc pretty(n: ParseNode, state: var PrettyState) =
 
     let toAdd =
       if state.style.brB4Bracket:  text("\n" & state.pad & "{")
-      else:                        text(" {\n")
+      else:                        text("{\n")
 
     state.r += prettyColor(toAdd, otherDelimColor)
 
