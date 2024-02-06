@@ -3,7 +3,6 @@
 # === High priority -- before Chalk integration ===
 #
 # - Pretty is dropping our singleton
-# - Range needs to constrain type field to an int.
 # - Apply component logic in runtime.
 # - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.

@@ -33,7 +33,6 @@ proc print_one_section(spec: SectionSpec, n: string) =
 
   print quickTable(cells)
 
-
 proc print_spec*(s: ValidationSpec) =
   print_one_section(s.rootSpec, "Top-level section")
 

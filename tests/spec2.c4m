@@ -1,0 +1,32 @@
+confspec {
+
+  singleton test {  
+    user_def_ok: true
+    
+    field audit_id {
+      type:   string
+      default: "foo"
+      range: "please", "fail"
+    }
+  }
+  
+  named test2 {
+    field audit_location {
+      type:   string
+      default: "test 1"
+    }
+  }
+
+  root {
+    allow: test
+    allow: test2
+    
+    field log_level {
+     type:    string
+     require: true
+     default: "info"
+     choices: ["trace", "info", "warn", "error", "fatal"]
+    }
+  }
+}
+

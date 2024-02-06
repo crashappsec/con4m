@@ -430,6 +430,17 @@ template errBail(ctx: Module, msg: string) =
   ctx.parseErrorNoBackup(msg)
   con4mLongJmp("BAIL")
 
+template lineSkipRecover() =
+      if getCurrentException().msg == "BAIL":
+        raise
+      while true:
+        if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
+          ctx.advance()
+          break
+        else:
+          ctx.advance()
+
+
 # When it comes to whitespace in Con4m, we always skip whitespace
 # tokens. There's no white space token sensitivity after the lexing
 # phase.
@@ -1189,13 +1200,7 @@ production(caseBody, NodeBody):
         ctx.endOfStatement()
         continue
     except:
-      if getCurrentException().msg == "BAIL":
-        raise
-      while true:
-        if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
-          ctx.advance()
-          break
-        ctx.advance()
+      lineSkipRecover()
 
 production(caseElseBlock, NodeElseStmt):
   ctx.advance()
@@ -1762,23 +1767,26 @@ production(externBlock, NodeExternBlock):
     result.docNodes = ctx.docString()
 
   while true:
-    if ctx.curKind() == TtRBrace:
-      ctx.advance()
-      ctx.ignoreAllNewlines()
-      return
-    case ctx.curTok.getText()
-    of "local":
-      result.addKid(ctx.externLocalDef())
-    of "dll":
-      result.addKid(ctx.externDllName())
-    of "pure":
-      result.addKid(ctx.externPure())
-    of "holds":
-      result.addKid(ctx.externHolds())
-    of "allocs":
-      result.addKid(ctx.externAllocs())
-    else:
-      ctx.errSkipStmtNoBackup("BadExternField")
+    try:
+      if ctx.curKind() == TtRBrace:
+        ctx.advance()
+        ctx.ignoreAllNewlines()
+        return
+      case ctx.curTok.getText()
+      of "local":
+        result.addKid(ctx.externLocalDef())
+      of "dll":
+        result.addKid(ctx.externDllName())
+      of "pure":
+        result.addKid(ctx.externPure())
+      of "holds":
+        result.addKid(ctx.externHolds())
+      of "allocs":
+        result.addKid(ctx.externAllocs())
+      else:
+        ctx.errSkipStmtNoBackup("BadExternField")
+    except:
+      lineSkipRecover()
 
 production(fieldProp, NodeFieldProp):
   case ctx.curTok().getText()
@@ -1851,22 +1859,25 @@ production(fieldSpec, NodeFieldSpec):
   let savedIx = ctx.curTokIx
 
   while true:
-    case ctx.curKind()
-    of TTEof:
-      ctx.curTokIx = savedIx
-      ctx.parseErrorNoBackup("EofInBlock")
-      con4mLongJmp("BAIL")
-    of TtRBrace:
-      ctx.advance()
-      ctx.ignoreAllNewlines()
-      return
-    of TtSemi, TtNewline:
-      ctx.advance()
-      continue
-    of TtIdentifier:
-      result.addKid(ctx.fieldProp())
-    else:
-      ctx.errSkipStmt("BadFieldPart")
+    try:
+      case ctx.curKind()
+      of TTEof:
+        ctx.curTokIx = savedIx
+        ctx.parseErrorNoBackup("EofInBlock")
+        con4mLongJmp("BAIL")
+      of TtRBrace:
+        ctx.advance()
+        ctx.ignoreAllNewlines()
+        return
+      of TtSemi, TtNewline:
+        ctx.advance()
+        continue
+      of TtIdentifier:
+        result.addKid(ctx.fieldProp())
+      else:
+        ctx.errSkipStmt("BadFieldPart")
+    except:
+      lineSkipRecover()
 
 production(sectionProp, NodeSecProp):
   case ctx.curTok().getText()
@@ -1916,25 +1927,28 @@ production(objectSpec, NodeSecSpec):
   let savedIx = ctx.curTokIx
 
   while true:
-    case ctx.curKind()
-    of TtEof:
-      ctx.curTokIx = savedIx
-      ctx.parseErrorNoBackup("EofInBlock")
-      con4mLongJmp("BAIL")
-    of TtRBrace:
-      ctx.advance()
-      ctx.ignoreAllNewlines()
-      return
-    of TtSemi, TtNewline:
-      ctx.advance()
-      continue
-    of TtIdentifier:
-      if ctx.curTok.getText() == "field":
-        result.addKid(ctx.fieldSpec())
+    try:
+      case ctx.curKind()
+      of TtEof:
+        ctx.curTokIx = savedIx
+        ctx.parseErrorNoBackup("EofInBlock")
+        con4mLongJmp("BAIL")
+      of TtRBrace:
+        ctx.advance()
+        ctx.ignoreAllNewlines()
+        return
+      of TtSemi, TtNewline:
+        ctx.advance()
+        continue
+      of TtIdentifier:
+        if ctx.curTok.getText() == "field":
+          result.addKid(ctx.fieldSpec())
+        else:
+          result.addKid(ctx.sectionProp())
       else:
-        result.addKid(ctx.sectionProp())
-    else:
-      ctx.errSkipStmt("BadSecPart")
+        ctx.errSkipStmt("BadSecPart")
+    except:
+      lineSkipRecover()
 
 production(confSpecBlock, NodeConfSpec):
   ctx.advance()
@@ -1947,27 +1961,30 @@ production(confSpecBlock, NodeConfSpec):
 
   let savedIx = ctx.curTokIx
   while true:
-    let kind = ctx.curKind()
-    case kind
-    of TtEof:
-      ctx.curTokIx = savedIx
-      ctx.parseErrorNoBackup("EofInBlock")
-      con4mLongJmp("BAIL")
-    of TtRBrace:
-      ctx.advance()
-      ctx.ignoreAllNewlines()
-      return
-    of TtSemi, TtNewline:
-      ctx.advance()
-      continue
-    of TtIdentifier:
-      case ctx.curTok().getText()
-      of "named", "singleton", "root":
-        result.addKid(ctx.objectSpec())
+    try:
+      let kind = ctx.curKind()
+      case kind
+      of TtEof:
+        ctx.curTokIx = savedIx
+        ctx.parseErrorNoBackup("EofInBlock")
+        con4mLongJmp("BAIL")
+      of TtRBrace:
+        ctx.advance()
+        ctx.ignoreAllNewlines()
+        return
+      of TtSemi, TtNewline:
+        ctx.advance()
+        continue
+      of TtIdentifier:
+        case ctx.curTok().getText()
+        of "named", "singleton", "root":
+          result.addKid(ctx.objectSpec())
+        else:
+          ctx.errSkipStmt("NoSecType", @[ctx.curTok.getText()])
       else:
-        ctx.errSkipStmt("NoSecType", @[ctx.curTok.getText()])
-    else:
-      ctx.errSkipStmt("NoSecType", @[$(kind)])
+        ctx.errSkipStmt("NoSecType", @[$(kind)])
+    except:
+      lineSkipRecover()
 
 production(optionalBody, NodeBody):
   if ctx.curKind() == TtLBrace:
@@ -1990,8 +2007,6 @@ idStmtProd(section, NodeSection):
     ctx.errSkipStmtNoBackup("InstSecStart", secNames)
   else:
     result.addKid(ctx.body())
-
-
 
 production(returnStmt, NodeReturnStmt):
   ctx.advance()
@@ -2126,13 +2141,7 @@ production(body, NodeBody):
         ctx.endOfStatement()
         continue
     except:
-      if getCurrentException().msg == "BAIL":
-        raise
-      while true:
-        if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
-          ctx.advance()
-          break
-        ctx.advance()
+      lineSkipRecover()
 
 production(topLevel, NodeModule):
   # Instead of being under token 1, we really want Module to be bound to
@@ -2231,13 +2240,7 @@ production(topLevel, NodeModule):
         ctx.endOfStatement()
         continue
     except:
-      if getCurrentException().msg == "BAIL":
-        return
-      while true:
-        if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
-          ctx.advance()
-          break
-        ctx.advance()
+      lineSkipRecover()
 
 proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
   case n.kind
