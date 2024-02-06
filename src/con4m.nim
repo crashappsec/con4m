@@ -2,7 +2,6 @@
 #
 # === High priority -- before Chalk integration ===
 #
-# - Test validation, including "->"
 # - Pretty is dropping our singleton
 # - Range needs to constrain type field to an int.
 # - Apply component logic in runtime.
@@ -199,7 +198,7 @@ when isMainModule:
 
     let validation_errors = validate_state()
     if len(validation_errors) != 0:
-      print(h4("Validation failed!"))
+      print(h4("Post-execution validation failed!"))
       var bullets: seq[Rope]
       for item in validation_errors.items():
         bullets.add(li(cast[Rope](item)))

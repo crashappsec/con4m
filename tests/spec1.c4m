@@ -38,8 +38,7 @@ confspec {
   }
 }
 
-test.audit_id = 177
-assert test.audit_id == 177
+assert test.audit_id == 176
 assert log_level == "info"
 log_level = "warn"
 assert log_level == "warn"

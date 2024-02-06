@@ -1,9 +1,10 @@
 # This is just a basic runtime with no thought to performance; we'll
 # do one more focused on performance later, probably directly in C.
-proc load_spec() {.cdecl, importc.}
-
 import "."/[stchecks, attrstore]
 export attrstore
+
+proc load_spec() {.cdecl, importc.}
+proc using_spec(ctx: RuntimeState): bool {.importc, cdecl.}
 
 const sz = sizeof(ZInstruction)
 
@@ -831,6 +832,9 @@ proc execute_object*(obj: ZObjectFile): int {.exportc, cdecl.} =
 
   ctx.attrs.initDict()
   ctx.allSections.initDict()
+  if ctx.using_spec():
+    ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
+
   # Add moduleIds.
   ctx.setupFfi()
   ctx.setupArena(obj.symTypes, obj.globalScopeSz)

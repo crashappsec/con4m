@@ -415,12 +415,15 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
       if r != nil:
         errs.add(r)
 
+proc using_spec*(ctx: RuntimeState): bool {.exportc, cdecl.} =
+  return ctx.obj.spec != nil and ctx.obj.spec.used
+
 proc validate_state*(): FlexArray[pointer] {.cdecl, exportc.} =
   var
     ctx = get_con4m_runtime()
     errs: seq[Rope]
 
-  if ctx.obj.spec == nil or not ctx.obj.spec.used:
+  if not ctx.usingSpec():
     return newArrayFromSeq[pointer](cast[seq[pointer]](errs))
 
   # We're going to first create the attribute tree as is, without any
