@@ -64,11 +64,9 @@ proc conditionalFold(ctx: Module) =
 proc retFold(ctx: Module) =
   discard
 
-#[
 proc listLitFold(ctx: Module) =
   var
     values: seq[pointer]
-    err:    string
 
   let n = ctx.current
 
@@ -76,13 +74,11 @@ proc listLitFold(ctx: Module) =
     ctx.foldDown(item)
     if not item.isConstant():
       return
-    values.add(item.value.get())
+    values.add(item.value)
 
-  let c = instantiateContainer(n.tid, STList, "", values, err)
-  if err == "":
-    n.fold(c)
-  else:
-    ctx.irError(err, w = n)
+  let c = newArrayFromSeq[pointer](values)
+  c.metadata = cast[pointer](n.tid)
+  n.fold(c)
 
 proc dictLitFold(ctx: Module) =
   discard
@@ -102,7 +98,6 @@ proc litFold(ctx: Module) =
     ctx.tupLitFold()
   else:
     discard
-]#
 
 proc indexFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.indexStart)
@@ -516,10 +511,7 @@ proc foldIr(ctx: Module) =
   of IrRet:
     ctx.retFold()
   of IrLit:
-    # ctx.litFold()
-    # Currently, our code generation doesn't pre-initialize container types;
-    # it builds them at runtime.  Then you can freeze them...
-    discard
+    ctx.litFold()
   of IrIndex, IrIndexLhs:
     ctx.indexFold()
   of IrCall:

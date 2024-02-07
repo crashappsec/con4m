@@ -5,9 +5,9 @@
 ## If you call the API directly, and didn't do the input checking,
 ## results are undefined :)
 
-import std/[os, unicode, options, tables, os, sequtils, algorithm, terminal]
+import std/[os, unicode, options, tables, sequtils, algorithm, terminal]
 import pkg/nimutils
-import "."/[common, st, eval,typecheck]
+import "."/[common, st, eval, typecheck]
 import strutils except strip
 
 const errNoArg = "Expected a command but didn't find one"

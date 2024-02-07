@@ -7,28 +7,30 @@ export common
 proc toString(x: TypeId): string {.importc, cdecl.}
 
 type
-  ReprFn*     = proc(p: pointer): C4Str {.cdecl.}
-  GetCastFn*  = proc(dt: DataType, t1, t2: TypeId,
-                     err: var string): pointer {.cdecl.}
-  CastFn*     = proc(cur: pointer, tfrom, tto: TypeId, err: var string):
-                    pointer {.cdecl.}
-  BoolRetFn*  = proc(l, r: pointer): bool {.cdecl.}
-  BinOpFn*    = proc(l, r: pointer): pointer {.cdecl.}
-  IndexFn*    = proc(c: pointer, i: int, err: var bool): pointer {.cdecl.}
-  DIndexFn*   = proc(c, i: pointer, err: var bool): pointer {.cdecl.}
-  SliceFn*    = proc(c: pointer, i, j: int): pointer {.cdecl.}
-  AssignIxFn* = proc(c, v: pointer, i: int, err: var bool) {.cdecl.}
-  SetDixFn*   = proc(c, v, i: pointer, err: var bool) {.cdecl.}
-  ASliceFn*   = proc(c, v: pointer, i, j: int, err: var bool) {.cdecl.}
-  NewLitFn*   = proc(s: pointer, st: SyntaxType, litmod: string,
-                     l: var int, err: var string): pointer {.cdecl.}
-  ClitFn*     = proc(st: SyntaxType, litmod: string, t: TypeId,
-                     contents: seq[pointer], err: var string):
+  ReprFn*      = proc(p: pointer): C4Str {.cdecl.}
+  GetCastFn*   = proc(dt: DataType, t1, t2: TypeId,
+                      err: var string): pointer {.cdecl.}
+  CastFn*      = proc(cur: pointer, tfrom, tto: TypeId, err: var string):
                      pointer {.cdecl.}
-  LitLoadFn*  = proc(s: pointer, l: int): pointer {.cdecl.}
-  CopyFn*     = proc(a: pointer, t: TypeId): pointer {.cdecl.}
-  LenFn*      = proc(a: pointer): int {.cdecl.}
-  PlusEqFn*   = proc(l, r: pointer) {.cdecl.}
+  BoolRetFn*   = proc(l, r: pointer): bool {.cdecl.}
+  BinOpFn*     = proc(l, r: pointer): pointer {.cdecl.}
+  IndexFn*     = proc(c: pointer, i: int, err: var bool): pointer {.cdecl.}
+  DIndexFn*    = proc(c, i: pointer, err: var bool): pointer {.cdecl.}
+  SliceFn*     = proc(c: pointer, i, j: int): pointer {.cdecl.}
+  AssignIxFn*  = proc(c, v: pointer, i: int, err: var bool) {.cdecl.}
+  SetDixFn*    = proc(c, v, i: pointer, err: var bool) {.cdecl.}
+  ASliceFn*    = proc(c, v: pointer, i, j: int, err: var bool) {.cdecl.}
+  NewLitFn*    = proc(s: pointer, st: SyntaxType, litmod: string,
+                      l: var int, err: var string): pointer {.cdecl.}
+  ClitFn*      = proc(st: SyntaxType, litmod: string, t: TypeId,
+                      contents: seq[pointer], err: var string):
+                      pointer {.cdecl.}
+  LitLoadFn*   = proc(s: pointer, l: int): pointer {.cdecl.}
+  CopyFn*      = proc(a: pointer, t: TypeId): pointer {.cdecl.}
+  LenFn*       = proc(a: pointer): int {.cdecl.}
+  PlusEqFn*    = proc(l, r: pointer) {.cdecl.}
+  MarshalFn*   = proc(v: pointer, t: TypeId, m: Memos): C4Str {.cdecl.}
+  UnmarshalFn* = proc(s: cstring, t: TypeId, m: Memos): pointer {.cdecl.}
 
   SyntaxInfo* = object
     primary*: DataType

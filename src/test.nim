@@ -1,4 +1,4 @@
-import std/re
+import std/[re, algorithm]
 import "."/compile
 
 template error(msg: Rope) =
@@ -26,6 +26,8 @@ proc runInitialTests(verbose = true) =
     testDir = path.joinPath("tests")
     files   = testDir.getAllFileNames()
     fails   = 0
+
+  files.sort()
 
   putEnv("CON4M_PATH", getCurrentDir().joinPath("tests"))
 

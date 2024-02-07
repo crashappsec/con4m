@@ -1,4 +1,4 @@
-import "."/base
+import "."/[base, marshal]
 
 var tupOps = newVTable()
 
@@ -150,6 +150,63 @@ proc tup_lit(st: SyntaxType, litmod: string, t: TypeId,
                 Con4mTuple {.cdecl, exportc.} =
   result = newTupleFromSeq(t, contents)
 
+proc tup_marshal(tup: Con4mTuple, t: TypeId, memos: Memos):
+                C4Str {.exportc, cdecl.} =
+  let
+    view      = tup.items()
+    num_items = int64(view.len())
+    len_str   = newC4Str(sizeof(int64))
+    obj_len   = cast[ptr int64](lenstr)
+    to        = t.idToTypeRef()
+
+  var
+    l      = sizeof(int64)
+    offset = sizeof(int64)
+    to_add: seq[pointer]
+
+  for i, item in view:
+    let marshaled = item.marshal(to.items[i], memos)
+
+    l += marshaled.len() + sizeof(int64)
+    to_add.add(marshaled)
+
+  result = newC4Str(l)
+  copyMem(cast[pointer](result), cast[pointer](addr num_items), sizeof(int64))
+
+  for item in to_add:
+    obj_len[] = item.len()
+    c4str_write_offset(result, len_str, offset)
+    offset += sizeof(int64)
+    c4str_write_offset(result, item, offset)
+    offset += item.len()
+
+proc tup_unmarshal(s: cstring, t: TypeId, memos: Memos):
+                  Con4mTuple {.cdecl, exportc.} =
+  var
+    objstart: cstring
+    numitems: int64
+    offset:   int64
+    objlen:   int64
+    myitems:  seq[pointer]
+    lenptr:   ptr int64
+    startaddr = cast[int64](cast[pointer](s))
+    to        = t.idToTypeRef()
+
+  objstart = cast[cstring](s)
+  lenptr   = cast[ptr int64](s)
+  numitems = lenptr[]
+  offset   = sizeof(int64)
+
+  for i in 0 ..< numitems:
+    lenptr   = cast[ptr int64](startaddr + offset)
+    objlen   = lenptr[]
+    offset  += sizeof(int64)
+    objstart = cast[cstring](startaddr + offset)
+    myitems.add(unmarshal(objstart, to.items[i], memos))
+    offset += objlen
+
+  result = newTupleFromSeq(t, myitems)
+
 tupOps[FRepr]         = cast[pointer](tup_repr)
 tupOps[FCastFn]       = cast[pointer](get_cast_func_tup)
 tupOps[FContainerLit] = cast[pointer](tup_lit)
@@ -158,6 +215,8 @@ tupOps[FLen]          = cast[pointer](tup_len)
 tupOps[FIndex]        = cast[pointer](tup_index)
 tupOps[FAssignIx]     = cast[pointer](tup_assign_ix)
 tupOps[FCopy]         = cast[pointer](tup_copy)
+tupOps[FMarshal]      = cast[pointer](tup_marshal)
+tupOps[FUnmarshal]    = cast[pointer](tup_unmarshal)
 
 TTuple = addDataType(name = "tuple", concrete = false, ops = tupOps,
                                                 ckind = C4Tuple)

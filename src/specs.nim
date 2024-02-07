@@ -417,7 +417,7 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
 proc using_spec*(ctx: RuntimeState): bool {.exportc, cdecl.} =
   return ctx.obj.spec != nil and ctx.obj.spec.used
 
-proc validate_state*(): FlexArray[pointer] {.cdecl, exportc.} =
+proc validate_state*(startwith = ""): FlexArray[pointer] {.cdecl, exportc.} =
   var
     ctx = get_con4m_runtime()
     errs: seq[Rope]
@@ -429,9 +429,57 @@ proc validate_state*(): FlexArray[pointer] {.cdecl, exportc.} =
   # validation whatsoever, and then walk it. That'll make our life
   # easier.
 
-  let tree = ctx.build_attr_tree()
+  var tree = ctx.build_attr_tree()
 
-  ctx.validate_section(tree, ctx.obj.spec.rootSpec, errs)
+  if startwith  == "":
+    ctx.validate_section(tree, ctx.obj.spec.rootSpec, errs)
+  else:
+    var
+      parts = startwith.split(".")
+      sofar = ""
+      spec  = ctx.obj.spec.rootSpec
+      i     = 0
+
+    while i < parts.len():
+      let specOpt = ctx.obj.spec.secSpecs.lookup(parts[i])
+
+      if specOpt.isNone():
+        errs.add(format_validation_error("NoSpecForSec",
+                                         @[startwith, parts[i]]))
+        break
+      spec  = specOpt.get()
+      sofar = if i == 0: parts[0] else: sofar & "." & parts[i]
+      i    += 1
+
+      for item in tree.kids:
+        if item.path == sofar:
+          tree = item
+          break
+
+      if tree.path != sofar:
+        errs.add(format_validation_error("InvalidStart", @[startwith, sofar]))
+        break
+
+      if spec.maxAllowed == 1:
+        continue
+      if i == parts.len():
+        errs.add(format_validation_error("NoInstance", @[startwith]))
+        break
+
+      sofar &= "." & parts[i]
+      i     += 1
+
+      for item in tree.kids:
+        if item.path == sofar:
+          tree = item
+          break
+
+      if tree.path != sofar:
+        errs.add(format_validation_error("InvalidStart", @[startwith, sofar]))
+        break
+
+    if errs.len() == 0:
+      ctx.validate_section(tree, spec, errs)
 
   result          = newArrayFromSeq[pointer](cast[seq[pointer]](errs))
   result.metadata = cast[pointer](tList(TRich))

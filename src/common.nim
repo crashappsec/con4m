@@ -45,12 +45,14 @@ const
   # This is not meant for the IR, just for the compiler / interpreter.
   FNewLit*       = 30
   FStaticRepr*   = 31 # Only used for by-ref types.
-  FMax*          = 32
+  FMarshal*      = 32
+  FUnmarshal*    = 33
+  FMax*          = 34
 
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
-  OpLogicOr*     = 33
-  OpLogicAnd*    = 34
+  OpLogicOr*     = 35
+  OpLogicAnd*    = 36
 
   # These also do not generate ops directly, they generate a NOT and
   # the corresponding op. They're the same number as their negation,
@@ -69,6 +71,8 @@ const
   TRACE_SCOPE*    = true
   RTAsMixed*      = -2
   RTAsPtr*        = -1
+
+  MemoValueFlag*  = 0x8000000000000000'u64
 
 type
   SyntaxType* = enum
@@ -1001,6 +1005,10 @@ type
   AttrTree* = ref object
     path*:      string
     kids*:      seq[AttrTree]
+
+  Memos* = ref object
+    map*:    Dict[pointer, pointer]
+    nextId*: uint64
 
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,

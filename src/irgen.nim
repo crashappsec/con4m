@@ -1586,7 +1586,10 @@ proc convertListLit(ctx: Module): IrNode =
   for i in 0 ..< ctx.numKids():
     result.contents.items.add(ctx.downNode(i))
 
-  itemType = ctx.unifyOrCast(result.contents.items, errIx)
+  if ctx.numKids() == 0:
+    itemType = tVar()
+  else:
+    itemType = ctx.unifyOrCast(result.contents.items, errIx)
 
   if itemType == TBottom:
     ctx.irError("TyDiffListItem",

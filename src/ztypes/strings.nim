@@ -1,4 +1,4 @@
-import "."/[base, ordinals]
+import "."/[base, ordinals, marshal]
 
 proc tList(item: TypeId): TypeId {.importc, cdecl.}
 
@@ -232,6 +232,426 @@ proc get_cast_from_u32(dt: Datatype, t1, t2: TypeId,
 proc get_cast_from_rich(dt: Datatype, t1, t2: TypeId,
                         err: var string): pointer
 
+proc str_marshal(s: C4Str, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
+  let
+    str_len   = s.len()
+    total_len = str_len + sizeof(int64)
+
+  result = newC4Str(total_len)
+  copyMem(cast[pointer](result), cast[pointer](addr str_len), sizeof(int64))
+  c4str_write_offset(result, s, sizeof(int64))
+
+proc str_unmarshal(s: C4Str, t: TypeId, memos: Memos):
+                  C4Str {.exportc, cdecl.} =
+  let
+    start  = cast[int64](cast[pointer](s))
+    offset = cast[pointer](start + sizeof(int64))
+    lenptr = cast[ptr int64](s)
+    length = lenptr[]
+
+  result = newC4Str(length)
+  copyMem(cast[pointer](result), offset, length)
+
+proc marshal_style(s: FmtStyle): C4Str =
+  var
+    flags:    int64
+    toConcat: seq[C4Str]
+    num:      int64
+
+  if s == nil:
+    return marshal_64_bit_value(addr flags)
+
+  if s.textColor.isSome():
+    flags = flags or 0x00000001
+    toConcat.add(marshal_nim_string(s.textColor.get()))
+  if s.bgColor.isSome():
+    flags = flags or 0x00000002
+    toConcat.add(marshal_nim_string(s.bgColor.get()))
+  if s.overflow.isSome():
+    flags = flags or 0x00000004
+    num   = cast[int64](s.overflow.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.hang.isSome():
+    flags = flags or 0x00000008
+    num   = cast[int64](s.hang.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.lpad.isSome():
+    flags = flags or 0x00000010
+    num   = cast[int64](s.lpad.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.rpad.isSome():
+    flags = flags or 0x00000020
+    num   = cast[int64](s.rpad.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.tpad.isSome():
+    flags = flags or 0x00000040
+    num   = cast[int64](s.tpad.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.bpad.isSome():
+    flags = flags or 0x00000080
+    num   = cast[int64](s.lpad.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.casing.isSome():
+    flags = flags or 0x00000100
+    num   = cast[int64](s.casing.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.bold.isSome():
+    flags = flags or 0x00000200
+    if s.bold.get():
+      flags = flags or 0x00000400
+  if s.inverse.isSome():
+    flags = flags or 0x00000800
+    if s.inverse.get():
+      flags = flags or 0x00001000
+  if s.strikethrough.isSome():
+    flags = flags or 0x00002000
+    if s.strikethrough.get():
+      flags = flags or 0x00004000
+  if s.italic.isSome():
+    flags = flags or 0x00008000
+    if s.italic.get():
+      flags = flags or 0x00010000
+  if s.useTopBorder.isSome():
+    flags = flags or 0x00020000
+    if s.useTopBorder.get():
+      flags = flags or 0x00040000
+  if s.useBottomBorder.isSome():
+    flags = flags or 0x00080000
+    if s.useBottomBorder.get():
+      flags = flags or 0x00100000
+  if s.useLeftBorder.isSome():
+    flags = flags or 0x00200000
+    if s.useLeftBorder.get():
+      flags = flags or 0x00400000
+  if s.useRightBorder.isSome():
+    flags = flags or 0x00800000
+    if s.useRightBorder.get():
+      flags = flags or 0x01000000
+  num = int64(s.bulletChar.get(Rune(0)))
+  toConcat.add(marshal_64_bit_value(addr num))
+  if s.underlineStyle.isSome():
+    flags = flags or 0x02000000
+    num   = cast[int64](s.underlineStyle.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+  if s.boxStyle.isSome():
+    flags = flags or 0x04000000
+    let bs  = s.boxStyle.get()
+    let str = $(bs.horizontal) & $(bs.vertical)  & $(bs.upperLeft)  &
+              $(bs.upperRight) & $(bs.lowerLeft) & $(bs.lowerRight) &
+              $(bs.cross)      & $(bs.topT)      & $(bs.bottomT)    &
+              $(bs.leftT)      & $(bs.rightT)
+    toConcat.add(marshal_nim_string(str))
+
+  if s.alignStyle.isSome():
+    flags = flags or 0x08000000
+    num   = cast[int64](s.alignStyle.get())
+    toConcat.add(marshal_64_bit_value(addr num))
+
+  let flagfield = marshal_64_bit_value(addr flags)
+
+  var
+    total_len = flagfield.len()
+    offset    = total_len
+
+  for item in toConcat:
+    total_len += item.len()
+
+  result = newC4Str(total_len)
+
+  copyMem(cast[pointer](result), cast[pointer](flagfield), sizeof(int64))
+
+  for item in to_concat:
+    c4str_write_offset(result, item, offset)
+    offset += item.len()
+
+proc unmarshal_style(s: var cstring): FmtStyle =
+  let flags = unmarshal_64_bit_value(s)
+
+  if flags == 0:
+    return nil
+
+  result = FmtStyle()
+
+  if (flags and 0x00000001) != 0:
+    result.textColor = some(s.unmarshal_nim_string())
+  if (flags and 0x00000002) != 0:
+    result.bgColor   = some(s.unmarshal_nim_string())
+  if (flags and 0x00000004) != 0:
+    result.overflow  = some(cast[OverflowPreference](s.unmarshal_64_bit_value))
+  if (flags and 0x00000008) != 0:
+    result.hang = some(cast[int](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000010) != 0:
+    result.lpad = some(cast[int](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000020) != 0:
+    result.rpad = some(cast[int](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000040) != 0:
+    result.tpad = some(cast[int](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000080) != 0:
+    result.bpad = some(cast[int](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000100) != 0:
+    result.casing = some(cast[TextCasing](s.unmarshal_64_bit_value()))
+  if (flags and 0x00000200) != 0:
+    result.bold = some(if (flags and 0x00000400) != 0: true else: false)
+  if (flags and 0x00000800) != 0:
+    result.inverse = some(if (flags and 0x00001000) != 0: true else: false)
+  if (flags and 0x00002000) != 0:
+    result.strikethrough = some(if (flags and 0x00004000) != 0: true
+                                else: false)
+  if (flags and 0x00008000) != 0:
+    result.italic = some(if (flags and 0x00010000) != 0: true else: false)
+  if (flags and 0x00020000) != 0:
+    result.useTopBorder = some(if (flags and 0x00040000) != 0: true else: false)
+  if (flags and 0x00080000) != 0:
+    result.useBottomBorder = some(if (flags and 0x00100000) != 0: true
+                                  else: false)
+  if (flags and 0x00200000) != 0:
+    result.useLeftBorder = some(if (flags and 0x00400000) != 0: true
+                                else: false)
+  if (flags and 0x00800000) != 0:
+    result.useRightBorder = some(if (flags and 0x01000000) != 0: true
+                                 else: false)
+  let r = s.unmarshal_64_bit_value()
+  if r != 0:
+    result.bulletChar = some(Rune(r))
+  if (flags and 0x02000000) != 0:
+    result.underlineStyle = some(cast[UnderlineStyle](s.unmarshal_64_bit_value))
+  if (flags and 0x04000000) != 0:
+    let
+      bstr = s.unmarshal_nim_string().toRunes()
+      box  = BoxStyle()
+
+    box.horizontal = bstr[0]
+    box.vertical   = bstr[1]
+    box.upperLeft  = bstr[2]
+    box.upperRight = bstr[3]
+    box.lowerLeft  = bstr[4]
+    box.lowerRight = bstr[5]
+    box.cross      = bstr[6]
+    box.topT       = bstr[7]
+    box.bottomT    = bstr[8]
+    box.leftT      = bstr[9]
+    box.rightT     = bstr[10]
+
+    result.boxStyle = some(box)
+  if (flags and 0x08000000) != 0:
+    result.alignStyle = some(cast[AlignStyle](s.unmarshal_64_bit_value()))
+
+proc rope_marshal(r: Rope, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
+  if r == nil:
+    var val = int64(0)
+    return marshal_64_bit_value(addr val)
+
+  var to_concat: seq[C4Str]
+
+  let
+    as_ptr  = cast[pointer](r)
+    memo_opt = memos.map.lookup(as_ptr)
+
+  if memo_opt.isSome():
+    let memo = memo_opt.get()
+    return marshal_64_bit_value(memo)
+
+  let
+    id     = memos.nextId
+    hdr    = MemoValueFlag or id
+    k64    = int64(r.kind)
+    nsibs  = int64(r.siblings.len())
+
+  memos.map[as_ptr] = cast[pointer](id)
+  memos.next_id    += 1
+
+  to_concat.add(marshal_nim_string(r.id))
+  to_concat.add(marshal_nim_string(r.tag))
+  to_concat.add(marshal_nim_string(r.class))
+  to_concat.add(marshal_style(r.style))
+  to_concat.add(marshal_style(r.tweak))
+  to_concat.add(marshal_64_bit_value(addr nsibs))
+
+  for item in r.siblings:
+    to_concat.add(item.rope_marshal(t, memos))
+
+  to_concat.add(marshal_64_bit_value(addr k64))
+
+  case r.kind
+  of RopeAtom:
+    var l = r.text.len()
+    to_concat.add(marshal_64_bit_value(addr l))
+
+    var i = 0
+
+    while (i + 1) < r.text.len():
+      to_concat.add(marshal_64_bit_value(addr r.text[i]))
+      i += 2
+
+    if i != r.length:
+      # Odd number of items.
+      var n: seq[Rune] = @[r.text[^1], Rune(0)]
+      to_concat.add(marshal_64_bit_value(addr n[0]))
+
+  of RopeBreak:
+    var bt = cast[int64](r.breakType)
+    to_concat.add(marshal_64_bit_value(addr bt))
+    to_concat.add(r.guts.rope_marshal(t, memos))
+
+  of RopeLink:
+    to_concat.add(marshal_nim_string(r.url))
+    to_concat.add(r.toHighlight.rope_marshal(t, memos))
+
+  of RopeList:
+    var ct = cast[int64](r.items.len())
+    to_concat.add(marshal_64_bit_value(addr ct))
+    for item in r.items:
+      to_concat.add(item.rope_marshal(t, memos))
+
+  of RopeTaggedContainer:
+    to_concat.add(r.contained.rope_marshal(t, memos))
+    var w = cast[int64](r.width)
+    to_concat.add(marshal_64_bit_value(addr w))
+
+  of RopeTable:
+    let ncols: int64 = r.colInfo.len()
+    to_concat.add(marshal_64_bit_value(addr ncols))
+    for item in r.colInfo:
+      var n: int64 = item.wValue
+      if item.absVal:
+        n = n or 0x8000000000000000
+      to_concat.add(marshal_64_bit_value(addr n))
+
+    to_concat.add(r.thead.rope_marshal(t, memos))
+    to_concat.add(r.tbody.rope_marshal(t, memos))
+    to_concat.add(r.tfoot.rope_marshal(t, memos))
+    to_concat.add(r.title.rope_marshal(t, memos))
+    to_concat.add(r.caption.rope_marshal(t, memos))
+
+  of RopeTableRow, RopeTableRows:
+    let ncells: int64 = r.cells.len()
+    to_concat.add(marshal_64_bit_value(addr ncells))
+    for item in r.cells:
+      to_concat.add(item.rope_marshal(t, memos))
+
+  of RopeFgColor, RopeBgColor:
+    to_concat.add(marshal_nim_string(r.color))
+    to_concat.add(r.toColor.rope_marshal(t, memos))
+
+  var
+    total_len = 0 # hdr and length fields not in to_concat array and not written
+    offset    = 8
+
+  for item in to_concat:
+    total_len += item.len()
+
+  result = newC4Str(total_len)
+  copyMem(result, addr hdr, sizeof(int64))
+  c4str_write_offset(result, marshal_64_bit_value(addr total_len), offset)
+  offset += sizeof(int64)
+
+  for item in to_concat:
+    c4str_write_offset(result, item, offset)
+    offset += item.len()
+
+proc rope_unmarshal_one_rope(s: var cstring, memos: Memos): Rope
+
+proc rope_unmarshal_guts(p: var cstring, memos: Memos, res: var Rope) {.
+                                                       exportc, cdecl.} =
+
+  # Currently don't use the length, but should be using it to validate.
+  let
+    bytelen = p.unmarshal_64_bit_value()
+
+  res.id    = p.unmarshal_nim_string()
+  res.tag   = p.unmarshal_nim_string()
+  res.class = p.unmarshal_nim_string()
+  res.style = p.unmarshal_style()
+  res.tweak = p.unmarshal_style()
+
+  for i in 0 ..< p.unmarshal_64_bit_value():
+    res.siblings.add(p.rope_unmarshal_one_rope(memos))
+
+  res.kind = cast[RopeKind](p.unmarshal_64_bit_value())
+
+  case res.kind
+  of RopeAtom:
+    res.length = int(p.unmarshal_64_bit_value())
+
+    var l = res.length
+    while l > 1:
+      let twoRunes = p.unmarshal_64_bit_value()
+      res.text.add(Rune(twoRunes shr 32))
+      res.text.add(Rune(twoRunes and 0xffffffff'u64))
+      l -= 2
+
+    if l == 1:
+      let twoRunes = p.unmarshal_64_bit_value()
+      res.text.add(Rune(twoRunes shr 32))
+
+  of RopeBreak:
+    res.breakType = cast[BreakKind](p.unmarshal_64_bit_value())
+    res.guts      = p.rope_unmarshal_one_rope(memos)
+
+  of RopeLink:
+    res.url         = p.unmarshal_nim_string()
+    res.toHighlight = p.rope_unmarshal_one_rope(memos)
+
+  of RopeList:
+    let l = p.unmarshal_64_bit_value()
+    for i in 0 ..< l:
+      res.items.add(p.rope_unmarshal_one_rope(memos))
+
+  of RopeTaggedContainer:
+    res.contained = p.rope_unmarshal_one_rope(memos)
+    res.width     = int(p.unmarshal_64_bit_value())
+
+  of RopeTable:
+    let ncols = p.unmarshal_64_bit_value()
+    for i in 0 ..< ncols:
+      var
+        n      = p.unmarshal_64_bit_value()
+        absval = false
+
+      if (n and 0x8000000000000000'u64) != 0:
+        n      = n and 0x7fffffffffffffff'u64
+        absval = true
+
+      res.colInfo.add(ColInfo(wValue: int(n), absVal: absVal))
+
+    res.thead   = p.rope_unmarshal_one_rope(memos)
+    res.tbody   = p.rope_unmarshal_one_rope(memos)
+    res.tfoot   = p.rope_unmarshal_one_rope(memos)
+    res.title   = p.rope_unmarshal_one_rope(memos)
+    res.caption = p.rope_unmarshal_one_rope(memos)
+
+  of RopeTableRow, RopeTableRows:
+    let ncells = p.unmarshal_64_bit_value()
+    for i in 0 ..< ncells:
+      res.cells.add(p.rope_unmarshal_one_rope(memos))
+
+  of RopeFgColor, RopeBgColor:
+    res.color   = p.unmarshal_nim_string()
+    res.toColor = p.rope_unmarshal_one_rope(memos)
+
+proc rope_unmarshal_one_rope(s: var cstring, memos: Memos): Rope =
+  var
+    p    = s
+    memo = p.unmarshal_64_bit_value()
+
+  if memo == 0:
+    return nil
+
+  if (memo and MemoValueFlag) == 0:
+    return cast[Rope](memos.map[cast[pointer](memo)])
+
+  memo   = memo and not MemoValueFlag
+  result = Rope()
+
+  memos.map[cast[pointer](memo)] = cast[pointer](result)
+
+  p.rope_unmarshal_guts(memos, result)
+
+proc rope_unmarshal*(s: cstring, t: TypeId, memos: Memos): Rope {.exportc,
+                                                                 cdecl.} =
+  var p = s
+  return p.rope_unmarshal_one_rope(memos)
+
 strOps[FRepr]         = cast[pointer](str_repr)
 strOps[FCastFn]       = cast[pointer](get_cast_from_string)
 strOps[FEq]           = cast[pointer](c4str_eq)
@@ -244,6 +664,8 @@ strOps[FNewLit]       = cast[pointer](str_new_lit)
 strOps[FLoadLit]      = cast[pointer](str_load_lit)
 strOps[FCopy]         = cast[pointer](c4str_copy)
 strOps[FLen]          = cast[pointer](c4str_len)
+strOps[FMarshal]      = cast[pointer](str_marshal)
+strOps[FUnmarshal]    = cast[pointer](str_unmarshal)
 bufOps[FRepr]         = cast[pointer](str_repr)
 bufOps[FCastFn]       = cast[pointer](get_cast_from_string)
 bufOps[FEq]           = cast[pointer](c4str_eq)
@@ -255,6 +677,8 @@ bufOps[FSlice]        = cast[pointer](str_slice)
 bufOps[FNewLit]       = cast[pointer](str_new_lit)
 bufOps[FCopy]         = cast[pointer](c4str_copy)
 bufOps[FLen]          = cast[pointer](c4str_len)
+bufOps[FMarshal]      = cast[pointer](str_marshal)
+bufOps[FUnmarshal]    = cast[pointer](str_unmarshal)
 utf32Ops[FRepr]       = cast[pointer](u32_repr)
 utf32Ops[FStaticRepr] = cast[pointer](u32_repr)
 utf32Ops[FCastFn]     = cast[pointer](get_cast_from_u32)
@@ -267,6 +691,8 @@ utf32Ops[FSlice]      = cast[pointer](u32_slice)
 utf32Ops[FNewLit]     = cast[pointer](str_new_lit)
 utf32Ops[FCopy]       = cast[pointer](c4str_copy)
 utf32Ops[FLen]        = cast[pointer](u32_len)
+utf32Ops[FMarshal]    = cast[pointer](str_marshal)
+utf32Ops[FUnmarshal]  = cast[pointer](str_unmarshal)
 richOps[FRepr]        = cast[pointer](rich_repr)
 richOps[FStaticRepr]  = cast[pointer](str_repr)
 richOps[FCastFn]      = cast[pointer](get_cast_from_rich)

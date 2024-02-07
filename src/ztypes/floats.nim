@@ -1,5 +1,5 @@
 import std/math
-import "."/base
+import "."/[base, marshal]
 
 var
   f32Ops = newVTable()
@@ -154,25 +154,29 @@ proc div_float(a: pointer, b: pointer): pointer {.cdecl.} =
   result = cast[pointer](l / r)
 
 
-f32Ops[FRepr]    = cast[pointer](repr_float)
-f32Ops[FEq]      = cast[pointer](value_eq)
-f32Ops[FGt]      = cast[pointer](gt_float)
-f32Ops[FLt]      = cast[pointer](lt_float)
-f32Ops[FNewLit]  = cast[pointer](new_float_lit)
-f32Ops[FAdd]     = cast[pointer](add_float_impl)
-f32Ops[FSub]     = cast[pointer](sub_float)
-f32Ops[FMul]     = cast[pointer](mul_float)
-f32Ops[FFDiv]    = cast[pointer](div_float)
-f32Ops[FCastFn]  = cast[pointer](get_cast_func_float)
+f32Ops[FRepr]      = cast[pointer](repr_float)
+f32Ops[FEq]        = cast[pointer](value_eq)
+f32Ops[FGt]        = cast[pointer](gt_float)
+f32Ops[FLt]        = cast[pointer](lt_float)
+f32Ops[FNewLit]    = cast[pointer](new_float_lit)
+f32Ops[FAdd]       = cast[pointer](add_float_impl)
+f32Ops[FSub]       = cast[pointer](sub_float)
+f32Ops[FMul]       = cast[pointer](mul_float)
+f32Ops[FFDiv]      = cast[pointer](div_float)
+f32Ops[FCastFn]    = cast[pointer](get_cast_func_float)
+f32Ops[FMarshal]   = cast[pointer](marshal_64_bit_value)
+f32Ops[FUnmarshal] = cast[pointer](unmarshal_64_bit_value)
 
-f64Ops[FRepr]    = cast[pointer](repr_float)
-f64Ops[FEq]      = cast[pointer](value_eq)
-f64Ops[FNewLit]  = cast[pointer](new_float_lit)
-f64Ops[FAdd]     = cast[pointer](add_float_impl)
-f64Ops[FSub]     = cast[pointer](sub_float)
-f64Ops[FMul]     = cast[pointer](mul_float)
-f64Ops[FFDiv]    = cast[pointer](div_float)
-f64Ops[FCastFn]  = cast[pointer](get_cast_func_float)
+f64Ops[FRepr]      = cast[pointer](repr_float)
+f64Ops[FEq]        = cast[pointer](value_eq)
+f64Ops[FNewLit]    = cast[pointer](new_float_lit)
+f64Ops[FAdd]       = cast[pointer](add_float_impl)
+f64Ops[FSub]       = cast[pointer](sub_float)
+f64Ops[FMul]       = cast[pointer](mul_float)
+f64Ops[FFDiv]      = cast[pointer](div_float)
+f64Ops[FCastFn]    = cast[pointer](get_cast_func_float)
+f64Ops[FMarshal]   = cast[pointer](marshal_64_bit_value)
+f64Ops[FUnmarshal] = cast[pointer](unmarshal_64_bit_value)
 
 let
   TF32*   = addDataType(name = "f32", byValue = true, concrete = true,

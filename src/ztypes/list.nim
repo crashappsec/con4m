@@ -1,4 +1,4 @@
-import "."/base
+import "."/[base, marshal]
 
 # TODO: this is currently using Nim seq's until we fully wrap hatrack.
 
@@ -182,6 +182,67 @@ proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
 
   GC_ref(result)
 
+proc list_marshal(list: FlexArray[pointer], t: TypeId, memos: Memos):
+                 C4Str {.exportc, cdecl.} =
+  let
+    view      = list.items()
+    num_items = int64(view.len())
+    len_str    = newC4Str(sizeof(int64))
+    obj_len    = cast[ptr int64](lenstr)
+    to        = t.idToTypeRef()
+    item_type = to.items[0]
+
+  var
+    l      = sizeof(int64)
+    offset = sizeof(int64)
+    to_add: seq[pointer]
+
+  for item in view:
+    let marshaled = item.marshal(item_type, memos)
+
+    l += marshaled.len() + sizeof(int64)
+    to_add.add(marshaled)
+
+  result = newC4Str(l)
+  copyMem(cast[pointer](result), cast[pointer](addr num_items), sizeof(int64))
+
+  for item in to_add:
+    obj_len[] = item.len()
+    c4str_write_offset(result, len_str, offset)
+    offset += sizeof(int64)
+    c4str_write_offset(result, item, offset)
+    offset += item.len()
+
+proc list_unmarshal(s: cstring, t: TypeId, memos: Memos):
+                   FlexArray[pointer] {.exportc, cdecl.} =
+  var
+    objstart: cstring
+    numitems: int64
+    offset:   int64
+    objlen:   int64
+    myitems:  seq[pointer]
+    lenptr:   ptr int64
+    startaddr = cast[int64](cast[pointer](s))
+    to        = t.idToTypeRef()
+    itemtype  = to.items[0]
+
+  objstart = cast[cstring](s)
+  lenptr   = cast[ptr int64](s)
+  numitems = lenptr[]
+  offset   = sizeof(int64)
+
+  for i in 0 ..< numitems:
+    lenptr   = cast[ptr int64](startaddr + offset)
+    objlen   = lenptr[]
+    offset  += sizeof(int64)
+    objstart = cast[cstring](startaddr + offset)
+    myitems.add(unmarshal(objstart, itemtype, memos))
+    offset += objlen
+
+  result          = newArrayFromSeq[pointer](myitems)
+  result.metadata = cast[pointer](t)
+  GC_ref(result)
+
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FCastFn]       = cast[pointer](get_cast_func_list)
 listOps[FContainerLit] = cast[pointer](list_lit)
@@ -192,7 +253,8 @@ listOps[FAssignIx]     = cast[pointer](list_assign_ix)
 listOps[FSlice]        = cast[pointer](list_slice)
 listOps[FAssignSlice]  = cast[pointer](list_assign_slice)
 listOps[FCopy]         = cast[pointer](list_copy)
-
+listOps[FMarshal]      = cast[pointer](list_marshal)
+listOps[FUnmarshal]    = cast[pointer](list_unmarshal)
 
 TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)

@@ -1,4 +1,4 @@
-import "."/[base, tup]
+import "."/[base, tup, marshal]
 
 proc tTuple(l: seq[TypeId]): TypeId {.importc, cdecl.}
 proc tList(item: TypeId): TypeId {.importc, cdecl.}
@@ -59,7 +59,7 @@ proc dict_repr(c: pointer): cstring {.exportc, cdecl.} =
 
 proc call_eq(v1, v2: pointer, t: TypeId): bool {.importc, cdecl.}
 
-proc dict_eq(v1, v2: var Con4mDict, t: TypeId): bool {.exportc, cdecl.} =
+proc dict_eq(v1, v2: Con4mDict, t: TypeId): bool {.exportc, cdecl.} =
   # This is a moment-in-time thing. Generally try not to use it if not
   # single threaded.
 
@@ -176,6 +176,89 @@ proc dict_len(d: var Con4mDict): int {.exportc, cdecl.} =
 
   return n.len()
 
+proc dict_marshal(d: Con4mDict, t: TypeId, memos: Memos):
+                 C4Str {.exportc, cdecl.} =
+
+  let
+    view      = d.obj.items(sort = true)
+    to        = t.idToTypeRef()
+    kt        = to.items[0]
+    vt        = to.items[1]
+    paircount = view.len()
+
+  var
+    toAdd: seq[(pointer, pointer)]
+    l:     int64
+
+  l = sizeof(int64)
+
+  for (k, v) in view.items():
+    let
+      mkey = k.marshal(kt, memos)
+      mval = v.marshal(vt, memos)
+
+    # The parent tracks the length of objects in containers.
+    l += mkey.len() + mval.len() + 2 * sizeof(int64)
+
+    toAdd.add((mkey, mval))
+
+  result = newC4Str(l)
+  copyMem(cast[pointer](result), cast[pointer](addr paircount), sizeof(int64))
+
+  var
+    offset = sizeof(int64)
+    lenStr = newC4Str(sizeof(int64))
+    objLen = cast[ptr int64](lenstr)
+
+  for (k, v) in toAdd:
+    objLen[] = k.len()
+    c4str_write_offset(result, lenStr, offset)
+    offset += sizeof(int64)
+    c4str_write_offset(result, k, offset)
+    offset += k.len()
+
+    objLen[] = v.len()
+    c4str_write_offset(result, lenStr, offset)
+    offset += sizeof(int64)
+    c4str_write_offset(result, v, offset)
+    offset += v.len()
+
+proc dict_unmarshal(s: cstring, t: TypeId, memos: Memos):
+                   Con4mDict {.exportc, cdecl.} =
+  var
+    objstart: cstring
+    numpairs: int64
+    offset:   int64
+    objlen:   int64
+    lenptr:   ptr int64
+    startaddr = cast[int64](cast[pointer](s))
+    to        = t.idToTypeRef()
+    kt        = to.items[0]
+    vt        = to.items[1]
+
+  result   = newDict(t)
+  objstart = cast[cstring](s)
+  lenptr   = cast[ptr int64](s)
+  numpairs = lenptr[]
+  offset   = sizeof(int64)
+
+  for i in 0 ..< numpairs:
+    lenptr   = cast[ptr int64](startaddr + offset)
+    objlen   = lenptr[]
+    offset  += sizeof(int64)
+    objstart = cast[cstring](startaddr + offset)
+    let key  = unmarshal(objstart, kt, memos)
+    offset  += objlen
+
+    lenptr   = cast[ptr int64](startaddr + offset)
+    objlen   = lenptr[]
+    offset  += sizeof(int64)
+    objstart = cast[cstring](startaddr + offset)
+    let val  = unmarshal(objstart, kt, memos)
+    offset  += objlen
+
+    result.obj[key] = val
+
 proc dict_lit(st: SyntaxType, litmod: string, t: TypeId, items: seq[pointer],
               err: var string): Con4mDict {.
                 exportc, cdecl.}
@@ -188,6 +271,8 @@ dictOps[FLen]          = cast[pointer](dict_len)
 dictOps[FDictIndex]    = cast[pointer](dict_index)
 dictOps[FAssignDIx]    = cast[pointer](dict_assign_index)
 dictOps[FCopy]         = cast[pointer](dict_copy)
+dictOps[FMarshal]      = cast[pointer](dict_marshal)
+dictOps[FUnmarshal]    = cast[pointer](dict_unmarshal)
 
 TDict = addDataType(name = "dict", concrete = false, ops = dictOps,
                                               ckind = C4Dict)
