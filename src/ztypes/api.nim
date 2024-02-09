@@ -1,5 +1,5 @@
-import "."/typecheck
-export typecheck
+import "."/[typecheck, marshal]
+export typecheck, marshal
 
 
 proc hasFunc*(t: TypeId, fn: int): bool {.exportc, cdecl.} =
@@ -156,10 +156,10 @@ proc get_tid_for_container_lit*(st: SyntaxType, litmod: string,
   else:
     err = true
 
-proc layout_literal*(id: TypeId, s: pointer, st: SyntaxType, litmod: string,
-                     byVal: var bool, l: var int, err: var string): pointer =
+proc instantiate_literal*(id: TypeId, s: pointer, st: SyntaxType,
+                          litmod: string, byVal: var bool,
+                          err: var string): pointer =
   # If not byVal, the result *is* a pointer.
-
   let
     info = id.get_data_type()
     op   = cast[NewLitFn](info.ops[FNewLit])
@@ -168,15 +168,7 @@ proc layout_literal*(id: TypeId, s: pointer, st: SyntaxType, litmod: string,
 
   var asStr = cast[string](s)
 
-  result = op(s, st, litmod, l, err)
-
-proc instantiate_literal*(t: TypeId, s: pointer, l: int):
-                        pointer {.exportc, cdecl.} =
-  let
-    info = t.get_data_type()
-    op   = cast[LitLoadFn](info.ops[FLoadLit])
-
-  result = op(s, l)
+  result = op(s, st, litmod, err)
 
 proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,
                             contents: seq[pointer], err: var string):
@@ -190,16 +182,6 @@ proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,
   let op = cast[CLitFn](info.ops[FContainerLit])
 
   return op(st, litmod, t, contents, err)
-
-proc runtime_instantiate_container*(t: TypeId, contents: seq[pointer],
-                                    err: var string): pointer =
-    let
-      info = t.getDataType()
-
-    let
-      op   = cast[CLitFn](info.ops[FContainerLit])
-
-    return op(StNone, "", t, contents, err)
 
 proc call_copy*(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
   let

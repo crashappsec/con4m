@@ -160,50 +160,47 @@ proc tup_marshal(tup: Con4mTuple, t: TypeId, memos: Memos):
     to        = t.idToTypeRef()
 
   var
-    l      = sizeof(int64)
-    offset = sizeof(int64)
+    l = 0
+    offset: int
     to_add: seq[pointer]
 
   for i, item in view:
     let marshaled = item.marshal(to.items[i], memos)
 
-    l += marshaled.len() + sizeof(int64)
+    l += marshaled.len()
     to_add.add(marshaled)
 
-  result = newC4Str(l)
-  copyMem(cast[pointer](result), cast[pointer](addr num_items), sizeof(int64))
+  result = newC4Str(l + sizeof(uint32))
+
+  let
+    total_len = marshal_32_bit_value(int32(l))
+    ni        = marshal_32_bit_value(int32(num_items))
+
+  c4str_write_offset(result, total_len, 0)
+  c4str_write_offset(result, ni, 4)
+
+  offset = 8
 
   for item in to_add:
-    obj_len[] = item.len()
-    c4str_write_offset(result, len_str, offset)
-    offset += sizeof(int64)
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-proc tup_unmarshal(s: cstring, t: TypeId, memos: Memos):
+  print(hex_dump(cast[pointer](result), uint(l + sizeof(int64))))
+
+proc tup_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                   Con4mTuple {.cdecl, exportc.} =
   var
-    objstart: cstring
-    numitems: int64
-    offset:   int64
-    objlen:   int64
+    numitems: int
     myitems:  seq[pointer]
-    lenptr:   ptr int64
-    startaddr = cast[int64](cast[pointer](s))
+    totallen: int
+    p         = s
     to        = t.idToTypeRef()
 
-  objstart = cast[cstring](s)
-  lenptr   = cast[ptr int64](s)
-  numitems = lenptr[]
-  offset   = sizeof(int64)
+  totallen = p.unmarshal_32_bit_value()
+  numitems = p.unmarshal_32_bit_value()
 
   for i in 0 ..< numitems:
-    lenptr   = cast[ptr int64](startaddr + offset)
-    objlen   = lenptr[]
-    offset  += sizeof(int64)
-    objstart = cast[cstring](startaddr + offset)
-    myitems.add(unmarshal(objstart, to.items[i], memos))
-    offset += objlen
+    myitems.add(unmarshal(p, to.items[i], memos))
 
   result = newTupleFromSeq(t, myitems)
 

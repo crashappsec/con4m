@@ -2,13 +2,22 @@
 #
 # === High priority -- before Chalk integration ===
 #
+# Travel for Gerhard
+# Jay's event
+# Scott
+
+
 # - Apply component logic in runtime.
 # - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
 # - Documentation.
+# - Don't bother to issue a copy when we just instantiated a lit.
+# - Proper marshaling of types and callbacks.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
+# - Fill in missing error messages.
+# - Lit mods need to be available for runtime literal instantiation.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors (anything runtime).
 # - Remainder of needed stdlib stuff
@@ -202,7 +211,8 @@ when isMainModule:
         bullets.add(li(cast[Rope](item)))
       print(ol(bullets), file = stderr)
 
-    print(h1("Attributes"))
+
+    print(h1("Execution finished. Any set attributes are below."))
 
     if debug:
       getcon4mRuntime().print_attributes()

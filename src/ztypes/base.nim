@@ -21,16 +21,15 @@ type
   SetDixFn*    = proc(c, v, i: pointer, err: var bool) {.cdecl.}
   ASliceFn*    = proc(c, v: pointer, i, j: int, err: var bool) {.cdecl.}
   NewLitFn*    = proc(s: pointer, st: SyntaxType, litmod: string,
-                      l: var int, err: var string): pointer {.cdecl.}
+                      err: var string): pointer {.cdecl.}
   ClitFn*      = proc(st: SyntaxType, litmod: string, t: TypeId,
                       contents: seq[pointer], err: var string):
                       pointer {.cdecl.}
-  LitLoadFn*   = proc(s: pointer, l: int): pointer {.cdecl.}
   CopyFn*      = proc(a: pointer, t: TypeId): pointer {.cdecl.}
   LenFn*       = proc(a: pointer): int {.cdecl.}
   PlusEqFn*    = proc(l, r: pointer) {.cdecl.}
   MarshalFn*   = proc(v: pointer, t: TypeId, m: Memos): C4Str {.cdecl.}
-  UnmarshalFn* = proc(s: cstring, t: TypeId, m: Memos): pointer {.cdecl.}
+  UnmarshalFn* = proc(s: var cstring, t: TypeId, m: Memos): pointer {.cdecl.}
 
   SyntaxInfo* = object
     primary*: DataType
@@ -345,21 +344,6 @@ proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
 
   if op == nil:
     return cast[cstring](newC4Str("?"))
-
-  return cast[cstring](op(value))
-
-proc call_static_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
-  let info = getDataType(t)
-
-  if info.ops.len() == 0:
-    return cstring("void")
-
-  var op: ReprFn
-
-  if info.byValue or info.ops[FStaticRepr] == nil:
-    op = cast[ReprFn](info.ops[FRepr])
-  else:
-    op = cast[ReprFn](info.ops[FStaticRepr])
 
   return cast[cstring](op(value))
 

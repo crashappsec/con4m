@@ -642,7 +642,8 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           ctx.sp += 2
           contents = @[ctx.stack[ctx.sp]] & contents
 
-        ctx.stack[ctx.sp] = runtime_instantiate_container(ty, contents, err)
+        # TODO: push the litmod in codegen and use it here.
+        ctx.stack[ctx.sp] = instantiate_container(ty, STNone, "", contents, err)
 
         if err != "":
           ctx.bailHere(err)
@@ -728,15 +729,16 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ctx.stack[ctx.sp] = cb
     of ZSObjNew:
       # TODO: memory management.
-      let
-        address = ctx.storageAddr(instr, instr.immediate)
-        objlen  = instr.arg
-        obj     = instantiate_literal(instr.typeInfo, address, objlen)
+      var
+        memos   = Memos()
+        address = cast[cstring](addr ctx.obj.staticData[instr.immediate])
+
+      memos.map.initDict()
 
       ctx.sp -= 1
       ctx.stack[ctx.sp] = cast[pointer](instr.typeInfo)
       ctx.sp -= 1
-      ctx.stack[ctx.sp] = obj
+      ctx.stack[ctx.sp] = unmarshal(address, instr.typeInfo, memos)
     of ZAssignToLoc:
       let
         address  = cast[ptr pointer](ctx.stack[ctx.sp])

@@ -6,7 +6,7 @@ proc repr_url(m: pointer): string {.cdecl.} =
 proc eq_url(a, b: pointer): bool {.cdecl.} =
   return `$`(extractRef[Uri](a)) == `$`(extractRef[Uri](b))
 
-proc new_url(s: string, st: SyntaxType, lmod: string, l: var int,
+proc new_url(s: string, st: SyntaxType, lmod: string,
              err: var string): pointer {.cdecl.} =
   var uri: Uri
 
@@ -16,7 +16,6 @@ proc new_url(s: string, st: SyntaxType, lmod: string, l: var int,
   try:
     uri    = parseUri(s)
     result = alloc0(s.len() + 1)
-    l      = s.len() + 1
     copyMem(result, addr s[0], s.len())
 
   except:

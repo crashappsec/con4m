@@ -45,14 +45,14 @@ proc ipv6_eq(a, b: pointer): bool {.cdecl.} =
 
   return r == 0
 
-proc new_ipv4_lit(s: string, st: SyntaxType, lmod: string, l: var int,
+proc new_ipv4_lit(s: string, st: SyntaxType, lmod: string,
                   err: var string): pointer {.cdecl.} =
   var
     s = s
     pstr:    string
     address: IPv4
 
-  l = sizeof(Sockaddr_in)
+  let l = sizeof(Sockaddr_in)
 
   if ':' in s:
     let ix = s.find(':')
@@ -79,11 +79,11 @@ proc new_ipv4_lit(s: string, st: SyntaxType, lmod: string, l: var int,
   result = alloc(l)
   copyMem(result, addr address, l)
 
-proc new_ipv6_lit(s: string, st: SyntaxType, lmod: string, l: var int,
+proc new_ipv6_lit(s: string, st: SyntaxType, lmod: string,
                   err: var string): pointer {.cdecl.} =
   var address: IPv6
 
-  l = sizeof(Sockaddr_in6)
+  let l = sizeof(Sockaddr_in6)
 
   var res = inet_pton(AF_INET6, cstring(s), cast[pointer](addr address))
 

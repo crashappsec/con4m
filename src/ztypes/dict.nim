@@ -115,11 +115,11 @@ proc dict_assign_index(p: pointer, k, v: pointer, err: var bool)
 
   d.obj[k] = v
 
-proc dict_copy(d: var Con4mDict, t: TypeId): Con4mDict {.exportc, cdecl.} =
-  result = newDict(d.t)
+proc dict_copy(d: Con4mDict, t: TypeId): Con4mDict {.exportc, cdecl.} =
+  result = newDict(t)
 
   let
-    tobj  = d.t.idToTypeRef()
+    tobj  = t.idToTypeRef()
     kType = tobj.items[0]
     vType = tobj.items[1]
 
@@ -223,7 +223,7 @@ proc dict_marshal(d: Con4mDict, t: TypeId, memos: Memos):
     c4str_write_offset(result, v, offset)
     offset += v.len()
 
-proc dict_unmarshal(s: cstring, t: TypeId, memos: Memos):
+proc dict_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                    Con4mDict {.exportc, cdecl.} =
   var
     objstart: cstring

@@ -172,25 +172,28 @@ proc get_cast_func_list(dt, ot: DataType, tfrom, tto: TypeId,
                         err: var string): pointer {.cdecl, exportc.} =
   return cast[pointer](cast_from_list_t)
 
-
 proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
               contents: seq[pointer], err: var string):
                 FlexArray[pointer] {.exportc, cdecl.} =
+
+  var l: seq[string]
+  for item in contents:
+    l.add($(cast[int](item)))
 
   result          = newArrayFromSeq[pointer](contents)
   result.metadata = cast[pointer](t)
 
   GC_ref(result)
 
-proc list_marshal(list: FlexArray[pointer], t: TypeId, memos: Memos):
+proc list_marshal(fa: FlexArray[pointer], t: TypeId, memos: Memos):
                  C4Str {.exportc, cdecl.} =
   let
-    view      = list.items()
-    num_items = int64(view.len())
-    len_str    = newC4Str(sizeof(int64))
-    obj_len    = cast[ptr int64](lenstr)
-    to        = t.idToTypeRef()
-    item_type = to.items[0]
+    view: seq[pointer] = fa.items()
+    num_items          = int64(view.len())
+    len_str            = newC4Str(sizeof(int64))
+    obj_len            = cast[ptr int64](lenstr)
+    to                 = t.idToTypeRef()
+    item_type          = to.items[0]
 
   var
     l      = sizeof(int64)
@@ -213,7 +216,7 @@ proc list_marshal(list: FlexArray[pointer], t: TypeId, memos: Memos):
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-proc list_unmarshal(s: cstring, t: TypeId, memos: Memos):
+proc list_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                    FlexArray[pointer] {.exportc, cdecl.} =
   var
     objstart: cstring

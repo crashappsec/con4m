@@ -1,10 +1,24 @@
 import "."/base
 
+proc toString(t: TypeId): string {.importc, cdecl.}
+
+proc marshal_64_bit_value*(v: pointer): C4Str =
+  result = newC4Str(sizeof(uint64))
+  var p = cast[ptr uint64](result)
+
+  p[] = cast[uint64](v)
+
+proc marshal_32_bit_value*(v: int32): C4Str =
+  result = newC4Str(sizeof(int32))
+  var p = cast[ptr int32](result)
+
+  p[] = cast[int32](v)
+
 proc marshal*(v: pointer, t: TypeId, m: Memos): C4Str {.exportc, cdecl.} =
    let dt = t.get_data_type()
 
    if dt.ops[FMarshal] == nil:
-     return nil # Cannot marshal; will generally get skipped.
+     return marshal_64_bit_value(v)
    else:
      let fn = cast[MarshalFn](dt.ops[FMarshal])
      return fn(v, t, m)
@@ -13,9 +27,10 @@ proc c4m_marshal*(v: pointer, t: TypeId): C4Str {.exportc, cdecl.} =
   var memos = Memos()
   memos.map.initDict()
 
-  return v.marshal(t, memos)
+  result = v.marshal(t, memos)
 
-proc unmarshal*(s: cstring, t: TypeId, m: Memos): pointer {.exportc, cdecl.} =
+proc unmarshal*(s: var cstring, t: TypeId, m: Memos): pointer
+    {.exportc, cdecl.} =
   let dt = t.get_data_type()
 
   assert dt.ops[FUnmarshal] != nil
@@ -23,45 +38,56 @@ proc unmarshal*(s: cstring, t: TypeId, m: Memos): pointer {.exportc, cdecl.} =
   let fn = cast[UnmarshalFn](dt.ops[FUnmarshal])
   return fn(s, t, m)
 
-proc c4m_unmarshal*(s: C4Str, t: TypeId): pointer {.exportc, cdecl.} =
+proc c4m_unmarshal*(s: var cstring, t: TypeId): pointer =
   var memos = Memos()
   memos.map.initDict()
 
-  return cast[cstring](s).unmarshal(t, memos)
+  return s.unmarshal(t, memos)
 
 proc marshal_nim_string*(s: string): C4Str {.exportc, cdecl.} =
   let
     str_len   = s.len()
-    total_len = str_len + sizeof(int64)
+    total_len = str_len + 4
 
   result = newC4Str(total_len)
-  copyMem(cast[pointer](result), cast[pointer](addr str_len), sizeof(int64))
+  var p = cast[ptr int32](result)
+
+  p[] = int32(str_len)
+
   if str_len != 0:
-    let p = cast[pointer](cast[int](cast[pointer](result)) + sizeof(int64))
+    let p = cast[pointer](cast[int](cast[pointer](result)) + sizeof(int32))
     copyMem(p, addr s[0], str_len)
 
-proc marshal_64_bit_value_main*(v: pointer, t: TypeId, m: Memos):
+proc marshal_64_bit_value_main*(n: uint64, t: TypeId, m: Memos):
                               C4Str {.exportc, cdecl.} =
   result = newC4Str(sizeof(uint64))
-  copyMem(cast[pointer](addr v), cast[pointer](result), sizeof(uint64))
+  var p = cast[ptr uint64](result)
 
-proc marshal_64_bit_value*(v: pointer): C4Str =
-  result = newC4Str(sizeof(uint64))
-  copyMem(cast[pointer](addr v), cast[pointer](result), sizeof(uint64))
+  p[] = n
 
 proc pointer_add*(v: var cstring, n: int) =
-  v = cast[cstring](cast[int64](addr v[0]) + int64(n))
+  var asint = cast[int64](cast[pointer](v))
+  asint = asint + n
+  v = cast[cstring](asint)
 
 proc unmarshal_64_bit_value*(s: var cstring): uint64 {.exportc, cdecl.} =
-  copyMem(cast[pointer](addr result), cast[pointer](addr s[0]), sizeof(uint64))
-  s.pointer_add(sizeof(uint64))
+  var p = cast[ptr uint64](addr s[0])
+  result = p[]
+  s.pointer_add(8)
 
-proc unmarshal_nim_string*(s: var cstring): string =
+proc unmarshal_32_bit_value*(s: var cstring): int32 {.exportc, cdecl.} =
+  var p = cast[ptr int32](addr s[0])
+  result = p[]
+  s.pointer_add(4)
+
+proc unmarshal_nim_string*(s: var cstring): string {.exportc, cdecl.} =
   let
-    p = cast[ptr int64](addr s[0])
-    l = p[]
+    l = s.unmarshal_32_bit_value()
 
-  s.pointer_add(sizeof(uint64))
-  result = newString(l)
-  copyMem(addr result[0], addr s[0], l)
-  s.pointer_add(l)
+  if l == 0:
+    result = ""
+  else:
+    for i in 0 ..< l:
+      result.add(s[i])
+
+    s.pointer_add(l)

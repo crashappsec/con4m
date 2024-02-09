@@ -215,7 +215,7 @@ template reprBasicLiteral(ctx: IrNode): string =
     else:
       ($(v.name) & v.tid.toString())
   else:
-    $(call_static_repr(ctx.value, ctx.tid))
+    $(call_repr(ctx.value, ctx.tid))
 
 proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   var
@@ -1442,18 +1442,18 @@ proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
     err:   string
     val:   pointer
     byVal: bool
-    l:     int
     lmod = ctx.getLitMod()
 
-  result     = ctx.irNode(IrLit)
-  result.tid = getTidForSimpleLit(st, lmod)
+  result                 = ctx.irNode(IrLit)
+  result.tid             = getTidForSimpleLit(st, lmod)
+  result.contents.litmod = lmod
 
   if result.tid != TBottom:
     let
       s   = ctx.getText()
       lit = cast[pointer](s)
 
-    val = layoutLiteral(result.tid, lit, st, lmod, byVal, l, err)
+    val = instantiate_literal(result.tid, lit, st, lmod, byVal, err)
 
   if err != "":
     ctx.irError(err)
@@ -1461,7 +1461,6 @@ proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
     result.value          = val
     result.haveVal        = true
     result.contents.byVal = byVal
-    result.contents.sz    = l
 
 proc convertOtherLit(ctx: Module): IrNode =
   let
@@ -1477,7 +1476,8 @@ proc convertOtherLit(ctx: Module): IrNode =
     l:     int
 
   if modifier notin ["", "auto"]:
-    return ctx.convertSimpleLit(STOther)
+    result                 = ctx.convertSimpleLit(STOther)
+    result.contents.litmod = modifier
 
   case symNode.kind
   of IrLhsLoad:
@@ -1492,14 +1492,15 @@ proc convertOtherLit(ctx: Module): IrNode =
     p    = cast[pointer](text)
 
   if sym != nil and sym.tid.isConcrete():
-    val = layoutLiteral(sym.tid, p, StOther, "", byVal, l, err)
+    val = instantiate_literal(sym.tid, p, StOther, "", byVal, err)
+
+    result.contents.byVal = byVal
 
     if err == "":
       result                = ctx.irNode(IrLit)
       result.tid            = sym.tid
       result.value          = val
       result.haveVal        = true
-      result.contents.byVal = byVal
       result.contents.sz    = l
       return
     else:
@@ -1517,7 +1518,7 @@ proc convertOtherLit(ctx: Module): IrNode =
   for (_, dt) in syntaxInfo[int(STOther)].litmods:
     err = ""
 
-    val = layoutLiteral(dt.dtid, p, STOther, "", byVal, l, err)
+    val = instantiate_literal(dt.dtid, p, STOther, "", byVal, err)
     if err == "":
       result                = ctx.irNode(IrLit)
       result.tid            = dt.dtid
@@ -1537,14 +1538,15 @@ proc convertCharLit(ctx: Module): IrNode =
     l:     int
     lmod = ctx.getLitMod()
 
-  result     = ctx.irNode(IrLit)
-  result.tid = getTidForSimpleLit(STChrQuotes, lmod)
+  result                 = ctx.irNode(IrLit)
+  result.tid             = getTidForSimpleLit(STChrQuotes, lmod)
+  result.contents.litmod = lmod
 
   if result.tid != TBottom:
     let
       codepoint = cast[pointer](ctx.pt.token.codepoint)
-      val       = layoutLiteral(result.tid, codepoint, StChrQuotes, lmod,
-                                byVal, l, err)
+      val       = instantiate_literal(result.tid, codepoint, StChrQuotes, lmod,
+                                      byVal, err)
     if err == "":
         result.value          = val
         result.haveVal        = true
@@ -1575,7 +1577,7 @@ proc convertTypeLit(ctx: Module): IrNode =
 
 proc convertListLit(ctx: Module): IrNode =
   var
-    lmod      = ctx.getLitMod()
+    lmod = ctx.getLitMod()
     err:       bool
     errIx:     int
     itemType:  TypeId
@@ -1599,7 +1601,8 @@ proc convertListLit(ctx: Module): IrNode =
     return
 
 
-  result.tid = getTidForContainerLit(STList, lmod, @[itemType], err)
+  result.tid             = getTidForContainerLit(STList, lmod, @[itemType], err)
+  result.contents.litmod = lmod
 
   if err:
     ctx.irError("BadLitMod", @[lmod, "list"])
@@ -1614,7 +1617,8 @@ proc convertDictLit(ctx: Module): IrNode =
     iNodes:   seq[IrNode]
     lmod  = ctx.getLitMod()
 
-  result = ctx.irNode(IrLit)
+  result                 = ctx.irNode(IrLit)
+  result.contents.litmod = lmod
 
   for i in 0 ..< ctx.numKids():
     kNodes.add(ctx.downNode(i, 0))
@@ -1639,7 +1643,7 @@ proc convertDictLit(ctx: Module): IrNode =
     result.contents.items.add(kNodes[i])
     result.contents.items.add(iNodes[i])
 
-  result.tid = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
+  result.tid    = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
 
   if err:
     ctx.irError("BadLitMod", @[lmod, "dict"])
@@ -1651,7 +1655,8 @@ proc convertTupleLit(ctx: Module): IrNode =
     lmod      = ctx.getLitMod()
     gotBottom = false
 
-  result = ctx.irNode(IrLit)
+  result                 = ctx.irNode(IrLit)
+  result.contents.litmod = lmod
 
   for i in 0 ..< ctx.numKids():
     let oneItem = ctx.downNode(i)

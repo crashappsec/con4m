@@ -401,17 +401,14 @@ proc otherLitToNativeDateTime*(lit: string, res: var DateTime): bool =
 
   return true
 
-proc new_date_time(s: string, st: SyntaxType, lmod: string,
-                   l: var int, err: var string):
+proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
                       pointer {.cdecl.}
 
 
-proc new_date(s: string, st: SyntaxType, lmod: string,
-              l: var int, err: var string):
+proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
                       pointer {.cdecl.}
 
-proc new_time(s: string, st: SyntaxType, lmod: string,
-              l: var int, err: var string):
+proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
                       pointer {.cdecl.}
 
 
@@ -453,10 +450,9 @@ var
   tOps  = newVtable()
 
 
-proc new_date_time(s: string, st: SyntaxType, lmod: string,
-                   l: var int, err: var string):
-                      pointer =
-  l      = sizeof(DateTimeObj)
+proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
+                  pointer =
+  let l  = sizeof(DateTimeObj)
   result = alloc(l)
 
   var dt: DateTime = cast[DateTime](result)
@@ -466,10 +462,9 @@ proc new_date_time(s: string, st: SyntaxType, lmod: string,
     dealloc(result)
     return nil
 
-proc new_date(s: string, st: SyntaxType, lmod: string,
-              l: var int, err: var string):
+proc new_date(s: string, st: SyntaxType, lmod: string, err: var string):
                       pointer =
-  l      = sizeof(DateTimeObj)
+  let l  = sizeof(DateTimeObj)
   result = alloc(l)
 
   var dt: DateTime = cast[DateTime](result)
@@ -479,10 +474,9 @@ proc new_date(s: string, st: SyntaxType, lmod: string,
     dealloc(result)
     return nil
 
-proc new_time(s: string, st: SyntaxType, lmod: string,
-              l: var int, err: var string):
-                      pointer =
-  l      = sizeof(DateTimeObj)
+proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
+             pointer =
+  let l  = sizeof(DateTimeObj)
   result = alloc(l)
 
   var dt: DateTime = cast[DateTime](result)

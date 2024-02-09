@@ -23,7 +23,7 @@ proc eq_duration(a, b: pointer): bool {.cdecl.} =
 
   return r == 0
 
-proc new_duration(s: string, st: SyntaxType, lmod: string, l: var int,
+proc new_duration(s: string, st: SyntaxType, lmod: string,
                   err: var string): pointer {.cdecl.} =
   var
     parts: seq[(string, string)] = @[]
@@ -156,7 +156,6 @@ proc new_duration(s: string, st: SyntaxType, lmod: string, l: var int,
 
   res.tv_usec = int32(duration mod 1000000)
   res.tv_sec  = Time(duration div 1000000)
-  l           = sizeof(TimeVal)
 
 durOps[FRepr]   = cast[pointer](repr_duration)
 durOps[FEq]     = cast[pointer](eq_duration)

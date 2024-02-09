@@ -64,38 +64,31 @@ proc conditionalFold(ctx: Module) =
 proc retFold(ctx: Module) =
   discard
 
-proc listLitFold(ctx: Module) =
+proc containerFold(ctx: Module) =
   var
     values: seq[pointer]
+    err:    string
 
   let n = ctx.current
 
-  for item in n.contents.items:
+  for i, item in n.contents.items:
     ctx.foldDown(item)
     if not item.isConstant():
       return
     values.add(item.value)
 
-  let c = newArrayFromSeq[pointer](values)
-  c.metadata = cast[pointer](n.tid)
-  n.fold(c)
+  let c = instantiate_container(n.tid, StNone, n.contents.litmod, values, err)
 
-proc dictLitFold(ctx: Module) =
-  discard
-  # TODO... this, tuples, ...
-
-proc tupLitFold(ctx: Module) =
-  discard
+  if err != "":
+    ctx.irError(err)
+  else:
+    n.fold(c)
 
 proc litFold(ctx: Module) =
   let t = ctx.current.tid.idToTypeRef()
   case t.kind
-  of C4List:
-    ctx.listLitFold()
-  of C4Dict:
-    ctx.dictLitFold()
-  of C4Tuple:
-    ctx.tupLitFold()
+  of C4List, C4Dict, C4Tuple:
+    ctx.containerFold()
   else:
     discard
 
@@ -473,7 +466,7 @@ proc logicFold(ctx: Module) =
 
 proc assignFold(ctx: Module) =
   ctx.foldDown(ctx.current.contents.assignLhs)
-  ctx.foldDown(ctx.current.contents.assignLhs)
+  ctx.foldDown(ctx.current.contents.assignRhs)
   # For now, we only fold this if the RHS is constant and the LHS is a
   # simple variable, not an array access (even if it's `m[4] = 12`, if
   # `m` is a global).

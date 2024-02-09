@@ -1,5 +1,5 @@
 import std/parseutils
-import "."/base
+import "."/[base, marshal]
 
 type Size* = uint64
 
@@ -10,9 +10,7 @@ proc repr_size(m: pointer): string {.cdecl.} =
   return $(cast[uint64](m)) & " bytes"
 
 proc new_size(s: string, st: SyntaxType, lmod: string,
-              l: var int, err: var string): pointer {.exportc, cdecl.} =
-  l = 8
-
+              err: var string): pointer {.exportc, cdecl.} =
   var
     letterix = 0
     multiple = 1'u64
@@ -63,11 +61,13 @@ proc new_size(s: string, st: SyntaxType, lmod: string,
     err = "BadSize"
     return
 
-szOps[FRepr]   = cast[pointer](repr_size)
-szOps[FEq]     = cast[pointer](value_eq)
-szOps[FLt]     = cast[pointer](value_lt)
-szOps[FGt]     = cast[pointer](value_gt)
-szOps[FNewLit] = cast[pointer](new_size)
+szOps[FRepr]      = cast[pointer](repr_size)
+szOps[FEq]        = cast[pointer](value_eq)
+szOps[FLt]        = cast[pointer](value_lt)
+szOps[FGt]        = cast[pointer](value_gt)
+szOps[FNewLit]    = cast[pointer](new_size)
+szOps[FMarshal]   = cast[pointer](marshal_64_bit_value_main)
+szOps[FUnmarshal] = cast[pointer](unmarshal_64_bit_value)
 
 let TSize* = addDataType(name = "size", concrete = true, byValue = true,
                          ops = szOps)

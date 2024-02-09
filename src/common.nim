@@ -41,18 +41,18 @@ const
   FGetFFIAddr*   = 27 # Of what? Already don't rememebr.
   FInitialize*   = 28 # Stuff we're not using yet.
   FCleanup*      = 29
+  FMarshal*      = 30
+  FUnmarshal*    = 31
 
-  # This is not meant for the IR, just for the compiler / interpreter.
-  FNewLit*       = 30
-  FStaticRepr*   = 31 # Only used for by-ref types.
-  FMarshal*      = 32
-  FUnmarshal*    = 33
-  FMax*          = 34
+  # This is not meant for the IR, just for the compiler / interpreter;
+  # it produces a lit from the raw literal token contents.
+  FNewLit*       = 32
+  FMax*          = 33
 
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
-  OpLogicOr*     = 35
-  OpLogicAnd*    = 36
+  OpLogicOr*     = 34
+  OpLogicAnd*    = 35
 
   # These also do not generate ops directly, they generate a NOT and
   # the corresponding op. They're the same number as their negation,
@@ -303,6 +303,7 @@ type
       items*:  seq[IrNode] # For dicts, [k1, v1, k2, v2]
       byVal*:  bool
       sz*:     int
+      litmod*: string
     of IrMember, IrMemberLhs:
       name*:      string
       subaccess*: IrNode
@@ -1008,7 +1009,7 @@ type
 
   Memos* = ref object
     map*:    Dict[pointer, pointer]
-    nextId*: uint64
+    nextId*: uint64 = 1
 
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,

@@ -34,6 +34,7 @@ type
     curNode:         IrNode
     callBackpatches: seq[(FuncInfo, Module, int)]
     strCache:        Dict[string, int]
+    memos:           Memos
 
 var tcallReverseMap = ["repr()", "cast()", "==", "<", ">", "+", "-",
                        "*", "/", "//", "%", "<<", ">>", "&", "|", "^",
@@ -273,16 +274,20 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     of ZSObjNew:
       arg1 = text($(item.arg))
       arg2 = text("+" & hex(item.immediate))
-      if item.typeInfo == TString:
-        var s = "\"" & ctx.staticData.findStringAt(int(item.immediate)) & "\""
-        if "\n" in s:
-          s = s.split("\n")[0]
-        if s.len() > 10:
-          s = s[0 ..< 8] & "..."
+
+      var
+        p = cast[cstring](addr ctx.staticData[int(item.immediate)])
+        o = c4m_unmarshal(p, item.typeInfo)
+        s = $(call_repr(o, cast[TypeId](item.typeInfo)))
+
+      if "\n" in s:
+        s = s.split("\n")[0]
+      if s.len() > 20:
+        s = s[0 ..< 18] & "..."
 
         lbl = em(s)
       else:
-        lbl = text(" ")
+        lbl = em(s)
     of ZPop, ZAssert, ZSwap:
       ty = text(" ")
     of ZPushFfiPtr, ZPushVmPtr:
@@ -357,7 +362,7 @@ proc genNop(ctx: CodeGenState) =
 proc genSwap(ctx: CodeGenState) =
   ctx.emitInstruction(ZSwap)
 
-proc genCopyStaticObject(ctx: CodeGenState, offset: int,
+proc genUnmarshalStaticObject(ctx: CodeGenState, offset: int,
                          l: int, tid: TypeId) =
   ctx.emitInstruction(ZSObjNew, l, offset, tid, moduleId = -2)
 
@@ -777,28 +782,35 @@ proc genCallbackLoad(ctx: CodegenState, cb: ptr Callback) =
                         moduleId  = minf.objInfo.moduleId)
 
 proc genLitLoad(ctx: CodeGenState, n: IrNode) =
-  let cur = n.contents
+  let
+    cur   = n.contents
+    dt    = n.tid.getDataType()
+    dtid  = dt.dtid
+    byVal = dt.byValue
 
-  if n.tid.isContainerType():
-    for item in cur.items:
-      ctx.oneIrNode(item)
-
-    ctx.genPushImmediate(cur.items.len())
-    ctx.genTCall(FContainerLit, n.tid)
-  elif n.tid.tinfo() == TFunc:
-    # It's a callback...
-    assert n.haveval
+  if dtid == TFunc:
     ctx.genCallbackLoad(cast[ptr Callback](n.value))
-
+  elif dtid == TTSpec:
+    ctx.genPushImmediate(cast[int64](n.value))
   else:
-    if cur.byVal:
-      var toPush: int64
-      if n.haveVal:
+    if n.isConstant() or n.contents.kind == IrFold:
+      if byVal:
+
+        var toPush: int64
         toPush = cast[int64](n.value)
-      ctx.genPushImmediate(toPush)
-    elif n.haveVal:
-      let offset = ctx.addStaticObject(n.value, cur.sz)
-      ctx.genCopyStaticObject(offset, cur.sz, n.tid)
+        ctx.genPushImmediate(toPush)
+      else:
+        let
+          serialized = n.value.marshal(n.tid, ctx.memos)
+          offset     = ctx.addStaticObject(serialized, serialized.len())
+
+        ctx.genUnmarshalStaticObject(offset, serialized.len(), n.tid)
+    else:
+      for item in cur.items:
+        ctx.oneIrNode(item)
+
+      ctx.genPushImmediate(cur.items.len())
+      ctx.genTCall(FContainerLit, n.tid)
 
 proc genLockAttr(ctx: CodeGenState, sym: SymbolInfo) =
   ctx.genPushStaticString(sym.name)
@@ -1065,7 +1077,7 @@ proc genLogic(ctx: CodeGenState, cur: IrContents) =
   ctx.backPatch(backpatchLoc)
 
 proc genLoadValue(ctx: CodeGenState, n: IrNode) =
-  ctx.genPushImmediate(cast[int](n.value), n.tid)
+  ctx.genLitLoad(n)
 
 proc oneIrNode(ctx: CodeGenState, n: IrNode) =
   # Since accessing subcontents is somewhat verbose, if the op doesn't
@@ -1378,11 +1390,13 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
 proc generateCode*(cc: CompileCtx): ZObjectFile =
   var ctx = CodeGenState()
 
-  result   = ZObjectFile()
-  ctx.cc   = cc
-  ctx.zobj = result
+  result    = ZObjectFile()
+  ctx.cc    = cc
+  ctx.zobj  = result
+  ctx.memos = Memos()
 
   ctx.zobj.tinfo.initDict()
+  ctx.memos.map.initDict()
   ctx.minfo.initDict()
   ctx.strCache.initDict()
   ctx.cacheAllTypeInfo()
