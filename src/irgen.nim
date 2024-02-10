@@ -1181,7 +1181,6 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
           f.metadata = cast[pointer](tList(TInt))
 
           var arr = cast[pointer](f)
-          echo cast[int](arr).toHex().toLowerAscii()
           result.validators.add(Validator(fn: rangeValidator, params: arr))
 
     of "exclude", "exclusions":

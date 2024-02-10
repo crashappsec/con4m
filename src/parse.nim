@@ -1811,18 +1811,18 @@ production(fieldProp, NodeFieldProp):
     result.addKid(ctx.identifier())
     ctx.expect(TtColon, consume = true)
     if ctx.curTok().kind in [TtTrue, TtFalse]:
-      result.addKid(ctx.boolLit())
+      result.addKid(ctx.literal())
     else:
       result.addKid(ctx.identifier())
   of "choice", "choices":
     result.addKid(ctx.identifier())
     ctx.expect(TtColon, consume = true)
     ctx.expect(TtLBracket)
-    result.addKid(ctx.listLit())
+    result.addKid(ctx.literal())
   of "range":
     result.addKid(ctx.identifier())
     ctx.expect(TtColon, consume = true)
-    result.addKid(ctx.intLit())
+    result.addKid(ctx.literal())
     if ctx.curKind() == TtComma:
       ctx.advance()
     else:

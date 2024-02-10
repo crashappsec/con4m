@@ -6,7 +6,6 @@
 import "."/[strcursor, style, err]
 export strcursor, style, err
 
-
 proc uEsc(ctx: Module, s: seq[Rune], numchars: int,
           t: Con4mToken): Rune =
   var
@@ -161,7 +160,9 @@ proc addToken(ctx: Module, k: Con4mTokenKind,
                             lineOffset: lineOffset,
                             adjustment: adjustValue))
   ctx.nextId += 1
+
   when eatNewlines:
+
     let wsStart = ctx.s.getPosition()
     while ctx.s.peek() in [Rune(' '), Rune('\t')]:
       ctx.s.advance()
@@ -395,10 +396,12 @@ proc lex_impl(ctx: Module) =
       of Rune('*'):
         ctx.s.advance()
         while true:
-          case ctx.s.read()
+          case ctx.s.peek()
           of Rune('\n'):
+            ctx.s.advance()
             atNewLine()
           of Rune('*'):
+            ctx.s.advance()
             if ctx.s.peek() == Rune('/'):
               tok(TtLongComment, 2)
               ctx.s.advance()
@@ -419,16 +422,7 @@ proc lex_impl(ctx: Module) =
       else:
         tok(TtMod, true)
     of Rune('<'):
-      if ctx.s.peek() == Rune('-'):
-        while true:
-          case ctx.s.read()
-          of Rune('\x00'):
-            tok(ErrorTok)
-            lexError("OtherTerm")
-            return
-          else:
-            continue
-      elif ctx.s.peek() == Rune('='):
+      if ctx.s.peek() == Rune('='):
         ctx.s.advance()
         tok(TtLte, true)
       elif ctx.s.peek() == Rune('<'):
@@ -566,14 +560,16 @@ proc lex_impl(ctx: Module) =
       if c == Rune('0') and ctx.s.peek() == Rune('x'):
         ctx.s.advance()
         while true:
-          case ctx.s.read()
+          case ctx.s.peek()
           of Rune('0') .. Rune('9'),
              Rune('a') .. Rune('f'),
              Rune('A') .. Rune('F'):
+               ctx.s.advance()
                continue
           else:
             break
         tok(TtHexLit)
+        handleLitMod()
       else:
         block numLit:
           var isFloat: bool

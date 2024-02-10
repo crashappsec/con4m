@@ -149,6 +149,7 @@ type
     ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrCodeGen, ErrRuntime
   Con4mSeverity* = enum LlNone, LlInfo, LlWarn, LlErr, LlFatal
   InstantiationInfo* = tuple[filename: string, line: int, column: int]
+
   Con4mError* = object
     phase*:    Con4mErrPhase
     severity*: Con4mSeverity
@@ -976,6 +977,7 @@ type
    isSet*:       bool
    locked*:      bool
    lockOnWrite*: bool
+   override*:    bool
 
   RuntimeState* = ref object
     obj*:            ZObjectFile

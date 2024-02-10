@@ -309,7 +309,6 @@ proc copyType*(t: TypeRef): TypeRef =
 template tCopy*(t: TypeId): TypeId =
   idToTypeRef(t).copyType().typeId
 
-proc baseunify(id1, id2: TypeId): TypeId {.importc, cdecl.}
 proc baseunify(id1, id2: TypeRef): TypeId {.importc, cdecl.}
 
 const oErr = "'oneof' types must have multiple options."

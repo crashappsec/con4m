@@ -112,8 +112,8 @@ proc foreign_z_call(ctx: RuntimeState, funcid: int, module: int):
 proc z_ffi_call*(ctx: RuntimeState, ix: int) {.exportc, cdecl.} =
   var
     ffiObj           = ctx.obj.ffiInfo[ix]
-    p                = addr ctx.obj.staticData[ffiObj.nameOffset]
-    s                = $(cast[cstring](p))
+    # p                = addr ctx.obj.staticData[ffiObj.nameOffset]
+    # s                = $(cast[cstring](p))
     n                = ffiObj.argInfo.len() - 1 # Last is the return value
     sp               = ctx.sp
     m                = MixedObj.create()
@@ -130,10 +130,10 @@ proc z_ffi_call*(ctx: RuntimeState, ix: int) {.exportc, cdecl.} =
   # Mixed object.
 
   for i in 0 ..< n:
-    let t = cast[TypeId](int64(ffiObj.argInfo[i].ourType))
+    let t = cast[TypeId](ctx.stack[sp + 1]) # ffiObj.argInfo[i].ourType is wrong
 
     if ffiObj.argInfo[i].ourType == RTAsMixed:
-      m.t     = cast[TypeId](ctx.stack[sp + 1])
+      m.t     = t
       m.value = ctx.stack[sp]
       args.add(addr m)
     else:
@@ -148,14 +148,21 @@ proc z_ffi_call*(ctx: RuntimeState, ix: int) {.exportc, cdecl.} =
   ctx.rrType = cast[pointer](int64(ffiObj.argInfo[^1].ourType))
 
 
-proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback):
+proc push_call_param*(ctx: RuntimeState, p: pointer,
+                      t: TypeId) {.exportc, cdecl.} =
+  ctx.sp -= 1
+  ctx.stack[ctx.sp] = cast[pointer](t)
+  ctx.sp -= 1
+  ctx.stack[ctx.sp] = p
+
+proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback,
+                   args: openarray[(pointer, TypeId)] = []):
     pointer {.discardable, exportc, cdecl.} =
-  ## This assumes you have already pushed any arguments; it simply
-  ## calls either the FFI call, or an VM call, as appropriate.
+  ## Args must be passed in reverse order.
   ##
-  ## It is agnostic to whether the VM is already running or not; the
-  ## VM will use this to run callback objects, and you can also use it
-  ## externally.
+  ## This call is agnostic to whether the VM is already running or
+  ## not; the VM will use this to run callback objects, and you can
+  ## also use it externally.
   ##
   ## However, it's important to note that the VM is only single
   ## threaded, so do not call this externally if running in parallel
@@ -164,6 +171,9 @@ proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback):
   ## This only returns a value in cases where it's being called
   ## externally, and will be nil if the function called returns
   ## no value.
+
+  for (p, t) in args:
+    ctx.push_call_param(p, t)
 
   if cb.ffi:
     ctx.z_ffi_call(cast[int](cb.impl))
@@ -174,10 +184,3 @@ proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback):
     ctx.z_native_call(cast[int](cb.impl), int(cb.mid), cur_instruction)
   else:
     return ctx.foreign_z_call(cast[int](cb.impl), int(cb.mid))
-
-proc push_call_param*(ctx: RuntimeState, p: pointer,
-                      t: TypeId) {.exportc, cdecl.} =
-  ctx.sp -= 1
-  ctx.stack[ctx.sp] = cast[pointer](t)
-  ctx.sp -= 1
-  ctx.stack[ctx.sp] = p

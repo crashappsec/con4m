@@ -164,10 +164,7 @@ proc instantiate_literal*(id: TypeId, s: pointer, st: SyntaxType,
     info = id.get_data_type()
     op   = cast[NewLitFn](info.ops[FNewLit])
 
-  byVal = info.byValue
-
-  var asStr = cast[string](s)
-
+  byVal  = info.byValue
   result = op(s, st, litmod, err)
 
 proc instantiate_container*(t: TypeId, st: SyntaxType, litmod: string,

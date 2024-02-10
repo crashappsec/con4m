@@ -6,20 +6,23 @@
 # Jay's event
 # Scott
 
-
 # - Apply component logic in runtime.
+# - Make it easy to load a module from memory.
 # - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
 # - Documentation.
-# - Don't bother to issue a copy when we just instantiated a lit.
-# - Proper marshaling of types and callbacks.
+# - Add doc strings in for getopt
 
 # === Semi-high priority -- could ship internally w/ known issues ===
+# - Add help and extra help topics back into getopt.
+# - Rich improvements.
 # - Fill in missing error messages.
+# - Proper marshaling of types and callbacks.
 # - Lit mods need to be available for runtime literal instantiation.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors (anything runtime).
+# - Don't bother to issue a copy when we just instantiated a lit.
 # - Remainder of needed stdlib stuff
 # - Restrict the leading '$' properly.
 # - Doc API.
@@ -114,7 +117,36 @@
 ## :Copyright: 2022 - 2024
 
 import std/os
-import "."/[compile, codegen, vm, specs, pretty, err]
+import "."/[compile, codegen, vm, specs, pretty, err, getopts]
+
+const flag_spec = """
+getopts {
+
+  default_command: "run"
+
+  command compile {
+      args: (1, 1)
+  }
+
+  command run {
+      args: (1, 1)
+  }
+
+  command pretty {
+      args: (0, 0xffffffff)
+  }
+
+  command debug {
+      args: (1, 1)
+  }
+}
+"""
+
+proc parse_command_line() =
+  let
+    ctx  = newCompileContext(nil)
+    spec = ctx.loadInternalModule("c4m_getopt", flag_spec)
+
 
 when isMainModule:
   useCrashTheme()
@@ -126,6 +158,8 @@ when isMainModule:
     format = false
     session = newCompileContext(nil)
     newParams: seq[string]
+
+  parse_command_line()
 
   let altPath = $(getEnv("CON4M_PATH"))
 
@@ -150,26 +184,40 @@ when isMainModule:
 
   discard session.buildFromEntryPoint(params[0])
   if debug:
-    let allmods = session.modules.values(sort = true)
+    # Right now, turning this on manually.
+    # Will eventually tie these things to flags.
+    when false:
+      let allmods = session.modules.values(sort = true)
 
-    for m in allmods:
-      print(h1("Tokens for module '" & m.modname & "'"))
-      m.printTokens()
+      for m in allmods:
+        print(h1("Tokens for module '" & m.modname & "'"))
+        m.printTokens()
 
-    for m in allmods:
-      print(h1("Parse tree for module '" & m.modname & "'"))
-      m.printParseTree()
+      for m in allmods:
+        print(h1("Parse tree for module '" & m.modname & "'"))
+        m.printParseTree()
 
-    for m in allmods:
-      print(h1("IR for module '" & m.modname & "'"))
-      m.printIr()
+      for m in allmods:
+        print(h1("IR for module '" & m.modname & "'"))
+        m.printIr()
 
-    for m in allmods:
-      if m.usedAttrs.table.items().len() != 0:
-        m.printAttrsUsed()
+      for m in allmods:
+        if m.usedAttrs.table.items().len() != 0:
+          m.printAttrsUsed()
 
-    for m in allmods:
-      m.printModuleScope()
+      for m in allmods:
+        m.printModuleScope()
+    else:
+      let entry = session.entrypoint
+      print(h1("Tokens for module '" & entry.modname & "'"))
+      entry.printTokens()
+      print(h1("Parse tree for module '" & entry.modname & "'"))
+      entry.printParseTree()
+      print(h1("IR for module '" & entry.modname & "'"))
+      entry.printIr()
+      if entry.usedAttrs.table.items().len() != 0:
+        entry.printAttrsUsed()
+      entry.printModuleScope()
 
     print(h1("Function scopes + IRs available from entry point"))
     session.printAllFuncScopes(session.entrypoint)

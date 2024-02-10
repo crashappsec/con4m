@@ -2,6 +2,12 @@ confspec {
 
   singleton test {  
     user_def_ok: true
+
+    field max {
+      type: int
+      default: 0xffffffffffffffff
+      lock: true
+    }
     
     field audit_id {
       type:   string

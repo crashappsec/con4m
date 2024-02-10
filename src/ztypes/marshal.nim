@@ -1,7 +1,5 @@
 import "."/base
 
-proc toString(t: TypeId): string {.importc, cdecl.}
-
 proc marshal_64_bit_value*(v: pointer): C4Str =
   result = newC4Str(sizeof(uint64))
   var p = cast[ptr uint64](result)

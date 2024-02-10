@@ -9,8 +9,6 @@ type Con4mDict* = ref object
   obj*: Dict[pointer, pointer]
   t*: TypeId
 
-proc get_cast_fn(tcur, tdst: DataType, tfrom, tto: TypeId, err: var string):
-     pointer {.importc, cdecl.}
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
@@ -254,7 +252,7 @@ proc dict_unmarshal(s: var cstring, t: TypeId, memos: Memos):
     objlen   = lenptr[]
     offset  += sizeof(int64)
     objstart = cast[cstring](startaddr + offset)
-    let val  = unmarshal(objstart, kt, memos)
+    let val  = unmarshal(objstart, vt, memos)
     offset  += objlen
 
     result.obj[key] = val

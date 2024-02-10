@@ -4,8 +4,6 @@ export common
 # These all assume we're using 64 bit storage. This won't work
 # on smaller word sizes.
 
-proc toString(x: TypeId): string {.importc, cdecl.}
-
 type
   ReprFn*      = proc(p: pointer): C4Str {.cdecl.}
   GetCastFn*   = proc(dt: DataType, t1, t2: TypeId,

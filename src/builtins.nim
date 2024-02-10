@@ -57,7 +57,6 @@ proc con4m_print(p: pointer) {.exportc, cdecl.} =
     return
 
   var err = ""
-
   let asRope = cast[Rope](call_cast(n.value, n.t, TRich, err))
 
   if err == "":

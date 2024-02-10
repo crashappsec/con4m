@@ -542,8 +542,7 @@ proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
 
 proc getVerboseInfo(err: Con4mError): Rope =
   var
-    noSource = false
-    noLoc    = false
+    noLoc = false
 
   if err.cursor == nil:
     return nil

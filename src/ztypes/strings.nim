@@ -232,8 +232,6 @@ proc str_unmarshal(s: var cstring, t: TypeId, memos: Memos):
   copyMem(cast[pointer](result), addr s[0], l)
   pointer_add(s, l)
 
-import "."/[base, ordinals, marshal]
-
 proc marshal_style(s: FmtStyle): C4Str =
   var
     flags:    int64

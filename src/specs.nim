@@ -36,7 +36,7 @@ proc print_one_section(spec: SectionSpec, n: string) =
 proc print_spec*(s: ValidationSpec) =
   print_one_section(s.rootSpec, "Top-level section")
 
-  for (name, sec) in s.secSpecs.items():
+  for (name, sec) in s.secSpecs.items(sort=true):
     print_one_section(sec, name)
 
 proc getRootSection*(spec: ValidationSpec): SectionSpec {.exportc, cdecl.} =

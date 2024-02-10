@@ -4,8 +4,6 @@ import "."/[base, marshal]
 
 var listOps = newVtable()
 
-proc get_cast_fn(tcur, tdst: DataType, tfrom, tto: TypeId, err: var string):
-     pointer {.importc, cdecl.}
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 
@@ -53,8 +51,6 @@ proc list_eq(l1, l2: FlexArray[pointer]): bool {.exportc, cdecl.} =
 
 proc list_len(l1: FlexArray[pointer]): int {.exportc, cdecl.} =
   return l1.len()
-
-proc toString(x: TypeId): string {.importc, cdecl.}
 
 proc list_index(arr: FlexArray[pointer], i: int, err: var bool): pointer
     {.exportc, cdecl.} =

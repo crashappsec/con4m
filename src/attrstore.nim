@@ -150,6 +150,9 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
   if curOpt.isSome():
     curInfo = curOpt.get()
 
+    if newInfo.override and not override:
+      return true # Pretend it was successful.
+
     if curInfo.locked:
       if not override:
         if not call_eq(value, curInfo.contents, curInfo.tid):
@@ -160,12 +163,19 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
       if curInfo.lockOnWrite:
         newInfo.locked = true
 
+  if override:
+    newInfo.override = true
+
   ctx.attrs[key] = newInfo
 
   if curInfo != nil:
     GC_unref(curInfo)
 
   return true
+
+proc override*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId)
+                                                        {.cdecl, exportc.} =
+  discard ctx.set(key, value, tid, override = true)
 
 proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
           byAddr = false, expectedType = TBottom): pointer {.cdecl, exportc.} =
@@ -197,14 +207,48 @@ proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
 
   err = false
 
+proc lookup*[T](ctx: RuntimeState, key: string): Option[T] =
+  let curOpt = ctx.attrs.lookup(key)
+  if curOpt.isNone():
+    return none(T)
+
+  let record = curOpt.get()
+  if not record.isSet:
+    return none(T)
+
+  return some(cast[T](record))
+
 proc get_section_contents*(ctx: RuntimeState, key: string, oneLevel = true):
                          seq[string] =
-  var key = if key == "": key else: key & "."
+  ## This only pulls fields, not sections.
+  ## See `get_subsections()`.
+  var key = if key == "" or key.endswith("."):
+              key
+            else:
+              key & "."
 
   for item in ctx.attrs.keys(sort = true):
     if item.startswith(key):
       if not oneLevel or item.find('.', key.len()) == -1:
         result.add(item)
+
+proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true):
+                    seq[string] =
+  var path = path
+
+  if path != "" and not path.endswith("."):
+    path = path & "."
+
+  let l = path.len()
+
+  for item in ctx.allSections.keys(sort = true):
+    if item.startswith(path):
+      let remainder = item[l .. ^1]
+      if oneLevel:
+        if "." notin remainder:
+          result.add(remainder)
+      else:
+        result.add(remainder)
 
 proc get_all_keys*(ctx: RuntimeState): seq[string] =
   result = ctx.attrs.keys()
@@ -238,7 +282,6 @@ proc build_attr_tree*(ctx: RuntimeState): AttrTree =
 
     while i < l:
       let
-        n = parts[i]
         p = parts[0 .. i].join(".")
 
       var found = false

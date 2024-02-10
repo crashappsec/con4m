@@ -6,8 +6,6 @@ type Con4mTuple* = ref object
   obj*: ptr FlexArrayObj
   t*:   TypeId
 
-proc get_cast_fn(tcur, tdst: DataType, tfrom, tto: TypeId, err: var string):
-     pointer {.importc, cdecl.}
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
@@ -98,8 +96,6 @@ proc tup_assign_ix(tup: Con4mTuple, o: pointer, i: int, err: var bool)
                                                         {.exportc, cdecl.} =
   discard flexarray_set(tup.obj, uint64(i),  o)
 
-proc toString(id: TypeId): string {.importc.}
-
 proc tup_copy(tup: Con4mTuple, t: TypeId): Con4mTuple {.exportc, cdecl.} =
   let
     to   = tup.t.idToTypeRef()
@@ -155,8 +151,6 @@ proc tup_marshal(tup: Con4mTuple, t: TypeId, memos: Memos):
   let
     view      = tup.items()
     num_items = int64(view.len())
-    len_str   = newC4Str(sizeof(int64))
-    obj_len   = cast[ptr int64](lenstr)
     to        = t.idToTypeRef()
 
   var

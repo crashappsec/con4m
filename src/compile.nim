@@ -78,6 +78,18 @@ proc loadModuleFromLocation(ctx: CompileCtx, location: string,
 
   return some(module)
 
+proc loadInternalModule*(ctx: CompileCtx, name: string, src: string): Module =
+  let
+    moduleKey = "internal/" & name
+    moduleOpt = ctx.modules.lookup(moduleKey)
+
+  if moduleOpt.isSome():
+    return moduleOpt.get()
+
+  result = ctx.newModuleObj(src, name, "internal", ".c4m",
+                                  "mem://internal/" & name, moduleKey)
+  ctx.loadModule(result)
+
 proc isRelativePath(loc: string): bool =
   if loc.len() == 0:
     return true
@@ -174,15 +186,9 @@ proc handleFolding(ctx: CompileCtx, module: Module) =
 
   module.foldingPass()
 
-proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
-                        bool {.discardable.} =
-  let modOpt        = ctx.findAndLoadFromUrl(entrypointName)
-
-  ctx.entrypoint = modOpt.getOrElse(nil)
-  if modOpt.isNone():
-    ctx.loadError("FileNotFound", entryPointName)
-    return
-
+proc build_program*(ctx: CompileCtx, entrypoint: Module):
+                  bool {.discardable, cdecl, exportc.} =
+  ctx.entrypoint = entrypoint
   ctx.buildIr(ctx.entrypoint)
   ctx.handleFolding(ctx.entrypoint)
   ctx.buildCfg(ctx.entrypoint)
@@ -199,6 +205,16 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
   ctx.wholeProgramChecks()
   ctx.globalScope.calculateOffsets()
   return ctx.errors.canProceed()
+
+proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
+                          bool {.discardable.} =
+  let modOpt        = ctx.findAndLoadFromUrl(entrypointName)
+
+  if modOpt.isNone():
+    ctx.loadError("FileNotFound", entryPointName)
+    return
+
+  return ctx.build_program(modOpt.get())
 
 proc processSystemDirectory(ctx: CompileCtx) =
   if ctx.sysdir == "":

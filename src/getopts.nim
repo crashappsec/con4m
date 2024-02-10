@@ -5,10 +5,8 @@
 ## If you call the API directly, and didn't do the input checking,
 ## results are undefined :)
 
-import std/[os, unicode, options, tables, sequtils, algorithm, terminal]
-import pkg/nimutils
-import "."/[common, st, eval, typecheck]
-import strutils except strip
+import std/[sequtils, algorithm, terminal]
+import "."/[common, attrstore]
 
 const errNoArg = "Expected a command but didn't find one"
 
@@ -20,7 +18,7 @@ type
     clobberOk*:        bool
     recognizedNames*:  seq[string]
     doc*:              string
-    callback*:         Option[CallbackObj]
+    callback*:         Option[ptr ZCallback]
     fieldToSet*:       string
     finalFlagIx*:      int
     noColon*:          bool   # Inherited from the command object.
@@ -29,29 +27,31 @@ type
     case kind*:        ArgFlagKind
     of afPair:
       helpFlag*:       bool
-      boolValue*:      OrderedTable[int, bool]
+      boolValue*:      Dict[int, bool]
       positiveNames*:  seq[string]
       negativeNames*:  seq[string]
       linkedChoice*:   Option[FlagSpec]
     of afChoice, afMultiChoice:
       choices*:        seq[string]
-      selected*:       OrderedTable[int, seq[string]]
+      selected*:       Dict[int, seq[string]]
       linkedYN*:       Option[FlagSpec]
       min*, max*:      int
     of afStrArg:
-      strVal*:         OrderedTable[int, string]
+      strVal*:         Dict[int, string]
     of afMultiArg:
-      strArrVal*:      OrderedTable[int, seq[string]]
+      strArrVal*:      Dict[int, seq[string]]
+
   CommandSpec* = ref object
-    commands*:          OrderedTable[string, CommandSpec]
+    attrtop*:           string
+    commands*:          Dict[string, CommandSpec]
     reportingName*:     string
     allNames*:          seq[string]
-    flags*:             OrderedTable[string, FlagSpec]
-    callback*:          Option[CallbackObj]
+    flags*:             Dict[string, FlagSpec]
+    callback*:          Option[ptr ZCallback]
     doc*:               string
     noColon*:           bool # accept --flag= f but not --flag:f.
     noSpace*:           bool # Docker-style if true *:
-    extraHelpTopics*:   OrderedTable[string, string]
+    extraHelpTopics*:   Dict[string, string]
     argName*:           string
     minArgs*:           int
     maxArgs*:           int
@@ -62,15 +62,16 @@ type
     autoHelp*:          bool
     finishedComputing*: bool
     parent*:            Option[CommandSpec]
-    allPossibleFlags*:  OrderedTable[string, FlagSpec]
+    allPossibleFlags*:  Dict[string, FlagSpec]
 
   ArgResult* = ref object
-    stashedTop*:  AttrScope
+    attrtop*:     string
     command*:     string
-    args*:        OrderedTableRef[string, seq[string]]
-    flags*:       OrderedTable[string, FlagSpec]
+    args*:        Dict[string, seq[string]]
+    flags*:       Dict[string, FlagSpec]
     helpToPrint*: string
     parseCtx*:    ParseCtx
+
   ParseCtx = ref object
     curArgs:    seq[string]
     args:       seq[string]
@@ -80,19 +81,30 @@ type
     parseId*:   int # globally unique parse ID.
     finalCmd*:  CommandSpec
 
-proc getValue*(f: FlagSpec): Box =
+  Array = FlexArray[pointer]
+
+proc getValue*(f: FlagSpec): pointer =
   case f.kind
-  of afPair:        return pack(f.boolValue[f.finalFlagIx])
-  of afChoice:      return pack(f.selected[f.finalFlagIx][0])
-  of afMultiChoice: return pack(f.selected[f.finalFlagIx])
-  of afStrArg:      return pack(f.strVal[f.finalFlagIx])
-  of afMultiArg:    return pack(f.strArrVal[f.finalFlagIx])
+  of afPair:
+    return cast[pointer](f.boolValue[f.finalFlagIx])
+  of afChoice:
+    return cast[pointer](f.selected[f.finalFlagIx][0])
+  of afMultiChoice:
+    return cast[pointer](f.selected[f.finalFlagIx])
+  of afStrArg:
+    return cast[pointer](f.strVal[f.finalFlagIx])
+  of afMultiArg:
+    return cast[pointer](f.strArrVal[f.finalFlagIx])
 
 proc flagSpecEq(f1, f2: FlagSpec): bool =
-  if f1 == f2:           return true   # They're literally the same ref
-  if f1.kind != f2.kind: return false
-  if f1.reportingName == f2.reportingName: return true
-  return false
+  if f1 == f2:
+    return true   # They're literally the same ref
+  elif f1.kind != f2.kind:
+    return false
+  elif f1.reportingName == f2.reportingName:
+    return true
+  else:
+    return false
 
 proc newSpecObj*(reportingName: string       = "",
                  allNames: openarray[string] = [],
@@ -104,41 +116,45 @@ proc newSpecObj*(reportingName: string       = "",
                  noFlags                     = false,
                  doc                         = "",
                  argName                     = "",
-                 callback                    = none(CallbackObj),
+                 callback                    = none(ptr ZCallBack),
                  parent                      = none(CommandSpec),
                  noColon                     = false,
                  noSpace                     = false): CommandSpec =
   if noFlags and unknownFlagsOk:
     raise newException(ValueError, "Can't have noFlags and unknownFlagsOk")
-  return CommandSpec(reportingName:     reportingName,
-                     allNames:          allNames.toSeq(),
-                     minArgs:           minArgs,
-                     maxArgs:           maxArgs,
-                     subOptional:       subOptional,
-                     unknownFlagsOk:    unknownFlagsOk,
-                     dockerSingleArg:   dockerSingleArg,
-                     noFlags:           noFlags,
-                     doc:               doc,
-                     argName:           argName,
-                     callback:          callback,
-                     parent:            parent,
-                     noColon:           noColon,
-                     noSpace:           noSpace,
-                     autoHelp:          false,
-                     finishedComputing: false)
+  result = CommandSpec(reportingName:     reportingName,
+                       allNames:          allNames.toSeq(),
+                       minArgs:           minArgs,
+                       maxArgs:           maxArgs,
+                       subOptional:       subOptional,
+                       unknownFlagsOk:    unknownFlagsOk,
+                       dockerSingleArg:   dockerSingleArg,
+                       noFlags:           noFlags,
+                       doc:               doc,
+                       argName:           argName,
+                       callback:          callback,
+                       parent:            parent,
+                       noColon:           noColon,
+                       noSpace:           noSpace,
+                       autoHelp:          false,
+                       finishedComputing: false)
+  result.commands.initDict()
+  result.flags.initDict()
+  result.extraHelpTopics.initDict()
+  result.allPossibleFlags.initDict()
 
 proc addCommand*(spec:            CommandSpec,
                  name:            string,
-                 aliases:         openarray[string]   = [],
-                 subOptional:     bool                = false,
-                 unknownFlagsOk:  bool                = false,
-                 noFlags:         bool                = false,
-                 dockerSingleArg: bool                = false,
-                 doc:             string              = "",
-                 argName:         string              = "",
-                 callback:        Option[CallbackObj] = none(CallbackObj),
-                 noColon:         bool                = false,
-                 noSpace:         bool                = false):
+                 aliases:         openarray[string]     = [],
+                 subOptional:     bool                  = false,
+                 unknownFlagsOk:  bool                  = false,
+                 noFlags:         bool                  = false,
+                 dockerSingleArg: bool                  = false,
+                 doc:             string                = "",
+                 argName:         string                = "",
+                 callback:        Option[ptr ZCallback] = none(ptr ZCallback),
+                 noColon:         bool                  = false,
+                 noSpace:         bool                  = false):
                    CommandSpec {.discardable.} =
   ## Creates a command under the top-level argument parsing spec,
   ## or a sub-command under some other command.
@@ -180,6 +196,8 @@ proc addCommand*(spec:            CommandSpec,
                       callback        = callback,
                       parent          = some(spec))
 
+  result.attrtop = spec.attrtop
+
   if name notin result.allNames: result.allNames.add(name)
   for oneName in result.allNames:
     if oneName in spec.commands:
@@ -208,7 +226,7 @@ proc newFlag(cmd:             CommandSpec,
              clOk:            bool,
              recognizedNames: openarray[string],
              doc:             string = "",
-             callback:        Option[CallbackObj] = none(CallbackObj),
+             callback:        Option[ptr ZCallback] = none(ptr ZCallback),
              toSet:           string = "",
              optArg:          bool = false,
             ): FlagSpec =
@@ -230,7 +248,7 @@ proc addChoiceFlag*(cmd:             CommandSpec,
                     multi:           bool                = false,
                     clobberOk:       bool                = false,
                     doc:             string              = "",
-                    callback:        Option[CallbackObj] = none(CallbackObj),
+                    callback:      Option[ptr ZCallback] = none(ptr ZCallback),
                     toSet:           string              = ""):
                       FlagSpec {.discardable.} =
   ## This creates a flag for `cmd` that requires a string argument if
@@ -259,6 +277,7 @@ proc addChoiceFlag*(cmd:             CommandSpec,
   var flag            = newFlag(cmd, kind, reportingName, clobberOk,
                                 recognizedNames, doc, callback, toSet)
   flag.choices        = choices.toSeq()
+
   if flagPerChoice:
     for item in choices:
       let itemName = "->" & item # -> for forwards...
@@ -268,15 +287,16 @@ proc addChoiceFlag*(cmd:             CommandSpec,
       oneFlag.linkedChoice  = some(flag)
 
   result = flag
+  result.selected.initDict()
 
 proc addYesNoFlag*(cmd:           CommandSpec,
                    reportingName: string,
                    yesValues:     openarray[string],
-                   noValues:      openarray[string] = [],
-                   clobberOk:     bool = false,
-                   doc:           string = "",
-                   callback:      Option[CallbackObj] = none(CallbackObj),
-                   toSet:         string              = ""):
+                   noValues:      openarray[string]     = [],
+                   clobberOk:     bool                  = false,
+                   doc:           string                = "",
+                   callback:      Option[ptr ZCallback] = none(ptr ZCallback),
+                   toSet:         string                = ""):
                      FlagSpec {.discardable.} =
 
   var both   = yesValues.toSeq()
@@ -286,6 +306,7 @@ proc addYesNoFlag*(cmd:           CommandSpec,
 
   ynFlag.positiveNames = yesValues.toSeq()
   ynFlag.negativeNames = noValues.toSeq()
+  ynFlag.boolValue.initDict()
 
   if reportingName notin yesValues and reportingName notin noValues:
     let c      = cmd.addChoiceFlag("->" & reportingName,
@@ -297,13 +318,13 @@ proc addYesNoFlag*(cmd:           CommandSpec,
 
 proc addFlagWithArg*(cmd:             CommandSpec,
                      reportingName:   string,
-                     recognizedNames: openarray[string]   = [],
-                     multi:           bool                = false,
-                     clobberOk:       bool                = false,
-                     doc:             string              = "",
-                     callback:        Option[CallbackObj] = none(CallbackObj),
-                     toSet:           string              = "",
-                     optArg:          bool                = false):
+                     recognizedNames: openarray[string] = [],
+                     multi:           bool              = false,
+                     clobberOk:       bool              = false,
+                     doc:             string            = "",
+                     callback:    Option[ptr ZCallback] = none(ptr ZCallback),
+                     toSet:           string            = "",
+                     optArg:          bool              = false):
                        FlagSpec {.discardable.} =
   ## This simply adds a flag that takes a required string argument, or,
   ## in the case of multi-args, an array of string arguments.  The arguments
@@ -312,6 +333,7 @@ proc addFlagWithArg*(cmd:             CommandSpec,
   let kind  = if multi: afMultiArg else: afStrArg
   result = newFlag(cmd, kind, reportingName, clobberOk, recognizedNames,
                    doc, callback, toSet, optArg)
+  result.strArrVal.initDict()
 
 template argpError(msg: string) =
   var fullError = msg
@@ -335,7 +357,7 @@ proc validateOneFlag(ctx:     var ParseCtx,
 
   if ctx.i < len(ctx.args) and ctx.args[ctx.i][0] in flagSep:
     if argCrap.isNone() and not spec.noSpace:
-      argCrap = some(ctx.args[ctx.i][1 .. ^1].strip())
+      argCrap = some(unicode.strip(ctx.args[ctx.i][1 .. ^1]))
       ctx.i = ctx.i + 1
       if argCrap.get() == "":
         if ctx.i < len(ctx.args):
@@ -362,7 +384,7 @@ proc validateOneFlag(ctx:     var ParseCtx,
         argpError(name, "requires an argument.")
       if spec.noSpace:
         argpError(name, "requires an argument.")
-      argCrap = some(ctx.args[ctx.i].strip())
+      argCrap = some(unicode.strip(ctx.args[ctx.i]))
       ctx.i  = ctx.i + 1
     else:
       # When arguments are optional and we don't see them (or at least a
@@ -398,20 +420,23 @@ proc validateOneFlag(ctx:     var ParseCtx,
       if ctx.parseId notin spec.selected:
         spec.selected[ctx.parseId] = @[arg]
       elif arg notin spec.selected[ctx.parseId]:
-        spec.selected[ctx.parseId].add(arg)
+        var l = spec.selected[ctx.parseId]
+        spec.selected[ctx.parseId] = l
   of afStrArg:
     spec.strVal[ctx.parseId] = argCrap.get()
   of afMultiArg:
     var parts = argCrap.get()
     if len(parts) != 0 and parts[^1] == ',':
       while ctx.i != len(ctx.args) and ctx.args[ctx.i][0] != '-':
-        parts = parts & ctx.args[ctx.i].strip()
+        parts = parts & unicode.strip(ctx.args[ctx.i])
         ctx.i = ctx.i + 1
     if len(parts) != 0 and parts[^1] == ',': parts = parts[0 ..< ^1]
     if ctx.parseId notin spec.strArrVal:
       spec.strArrVal[ctx.parseId] = parts.split(",")
     else:
-      spec.strArrVal[ctx.parseId] &= parts.split(",")
+      var l = spec.strArrVal[ctx.parseId]
+      l &= parts.split(",")
+      spec.strArrVal[ctx.parseId] = l
 
   ctx.res.flags[spec.reportingName] = spec
 
@@ -443,8 +468,8 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
     if eqIx != -1 and eqIx < theIx:
       theIx = eqIx
   if theIx != -1:
-    let rest    = cur[theIx+1 .. ^1].strip()
-    cur         = cur[0 ..< theIx].strip()
+    let rest    = unicode.strip(cur[theIx+1 .. ^1])
+    cur         = unicode.strip(cur[0 ..< theIx])
 
     if len(rest) != 0:
       definiteArg = some(rest)
@@ -481,9 +506,11 @@ proc parseOneFlag(ctx: var ParseCtx, spec: CommandSpec, validFlags: auto) =
             argpError(cur, "Couldn't process all characters as flags")
 
 
-proc buildValidFlags(inSpec: OrderedTable[string, FlagSpec]):
-                    OrderedTable[string, FlagSpec] =
-  for reportingName, f in inSpec:
+proc buildValidFlags(inSpec: Dict[string, FlagSpec]):
+                    Dict[string, FlagSpec] =
+  result.initDict()
+
+  for (reportingName, f) in inSpec.items():
     for name in f.recognizedNames:
       result[name] = f
 
@@ -506,7 +533,7 @@ proc parseCmd(ctx: var ParseCtx, spec: CommandSpec) =
   # Check that any flags we happened to accept in a parent context
   # (because we were not sure what the exact sub-command would be),
   # are still valid now that we have more info about our subcommand.
-  for k, _ in ctx.res.flags:
+  for (k, _) in ctx.res.flags.items():
     if k notin spec.allPossibleFlags:
       argpError(k, "Not a valid flag for this command.")
 
@@ -561,7 +588,7 @@ proc parseCmd(ctx: var ParseCtx, spec: CommandSpec) =
 
   # If we exited the loop, we need to make sure the parse ended up in
   # a valid final state.
-  if len(spec.commands) != 0 and not spec.subOptional:
+  if len(spec.commands.keys()) != 0 and not spec.subOptional:
     argpError(errNoArg)
   if len(ctx.curArgs) < spec.minArgs:
     argpError("Too few arguments (expected " & $(spec.minArgs) & ")")
@@ -593,8 +620,9 @@ proc computePossibleFlags(spec: CommandSpec) =
     return
   if spec.parent.isSome():
     let parentFlags = spec.parent.get().allPossibleFlags
-    for k, v in parentFlags: spec.allPossibleFlags[k] = v
-  for k, v in spec.flags:
+    for (k, v) in parentFlags.items():
+      spec.allPossibleFlags[k] = v
+  for (k, v) in spec.flags.items():
     if k in spec.allPossibleFlags:
       raise newException(ValueError, "When checking flag '" & k &
         "', In section '" & spec.reportingName &
@@ -605,27 +633,34 @@ proc computePossibleFlags(spec: CommandSpec) =
       )
     spec.allPossibleFlags[k] = v
 
-  var flagsToAdd: OrderedTable[string, FlagSpec]
-  for _, kid in spec.commands:
+  var flagsToAdd: Dict[string, FlagSpec]
+
+  flagsToAdd.initDict()
+
+  for (_, kid) in spec.commands.items():
     kid.computePossibleFlags()
-    for k, v in kid.allPossibleFlags:
-      if k in spec.allPossibleFlags: continue
+    for (k, v) in kid.allPossibleFlags.items():
+      if k in spec.allPossibleFlags:
+        continue
       if k notin flagsToAdd:
         flagsToAdd[k] = v
         continue
       if not flagSpecEq(flagsToAdd[k], v):
         raise newException(ValueError, "Sub-commands with flags of the " &
           "same name must have identical specifications (flag name: " & k & ")")
-  for k, v in flagsToAdd:
+  for (k, v) in flagsToAdd.items():
     spec.allPossibleFlags[k] = v
   spec.finishedComputing = true
 
 var parseId = 0
 proc parseOne(ctx: var ParseCtx, spec: CommandSpec) =
   ctx.i       = 0
-  ctx.res     = ArgResult(parseCtx: ctx, args: OrderedTableRef[string, seq[string]]())
+  ctx.res     = ArgResult(parseCtx: ctx)
   ctx.parseId = parseId
   parseId     = parseId + 1
+
+  ctx.res.flags.initDict()
+
   ctx.parseCmd(spec)
 
 proc ambiguousParse*(spec:          CommandSpec,
@@ -678,7 +713,7 @@ proc ambiguousParse*(spec:          CommandSpec,
     try:    return spec.ambiguousParse(@[default] & args, none(string))
     except: firstError = getCurrentExceptionMsg()
 
-  for cmd, ss in spec.commands:
+  for (cmd, ss) in spec.commands.items():
     if ss.reportingName != cmd: continue
     var ctx = ParseCtx(args: @[cmd] & args)
     try:
@@ -715,41 +750,52 @@ proc parse*(spec:       CommandSpec,
   result = allParses[0]
 
 type LoadInfo = ref object
+  runtime:        RuntimeState
+  base_path:      string
   defaultCmd:     Option[string]
   defaultYesPref: seq[string]
   defaultNoPref:  seq[string]
   showDocOnErr:   bool
-  errCmd:         string
   addHelpCmds:    bool
-
-proc getSec(aOrE: AttrOrErr): Option[AttrScope] =
-  if aOrE.isA(AttrErr) : return none(AttrScope)
-  let aOrS = aOrE.get(AttrOrSub)
-  if aOrS.isA(Attribute): return none(AttrScope)
-  return some(aOrS.get(AttrScope))
 
 template u2d(s: string): string = s.replace("_", "-")
 
-proc loadYn(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
-  for k, v in all.contents:
+proc strlist(input: Array): seq[string] =
+  let ptrArr = input.items()
+
+  for item in ptrArr:
+    result.add(cast[C4Str](item).toNimStr())
+
+proc loadYn(cmdObj: CommandSpec, info: LoadInfo) =
+  let
+    rt = info.runtime
+
+  for flagname in rt.get_subsections(info.base_path):
     let
-      realName   = u2d(k)
-      one        = v.get(AttrScope)
-      yesAliases = unpack[seq[string]](one.attrLookup("yes_aliases").get())
-      noAliases  = unpack[seq[string]](one.attrLookup("no_aliases").get())
-      yesPrefOpt = one.attrLookup("yes_prefixes")
-      noPrefOpt  = one.attrLookup("no_prefixes")
-      doc        = unpack[string](one.attrLookup("doc").get())
-      cbOpt      = one.attrLookup("callback")
-      yesPref    = if yesPrefOpt.isSome(): unpack[seq[string]](yesPrefOpt.get())
-                   else: info.defaultYesPref
-      noPref     = if noPrefOpt.isSome(): unpack[seq[string]](noPrefOpt.get())
-                   else: info.defaultNoPref
-      cb         = if   cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                   else:                none(CallbackObj)
-      ftsOpt     = one.attrLookup("field_to_set")
-      fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
-                   else:               ""
+      p          = info.base_path & flagname & "."
+      realName   = u2d(flagname)
+      yesAliases = lookup[Array](rt, p & "yes_aliases").get().strlist()
+      noAliases  = lookup[Array](rt, p & "no_aliases").get().strlist()
+      yesPrefOpt = lookup[Array](rt, p & "yes_prefixes")
+      noPrefOpt  = lookup[Array](rt, p & "no_prefixes")
+      cb         = lookup[ptr ZCallback](rt, p & "callback")
+      fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
+      #doc        = unpack[string](one.attrLookup("doc").get())
+
+    var
+      yesPref: seq[string]
+      noPref:  seq[string]
+
+    if yesPrefOpt.isSome():
+      yesPref = yesPrefOpt.get().strlist()
+    else:
+      yesPref = info.defaultYesPref
+
+    if noPrefOpt.isSome():
+      noPref = noPrefOpt.get().strlist()
+    else:
+      noPref = info.defaultNoPref
+
     var
       yesNames = yesAliases
       noNames  = noAliases
@@ -764,191 +810,163 @@ proc loadYn(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
       if prefix.endswith("-"): noNames.add(prefix & realName)
       else:                    noNames.add(prefix & "-" & realName)
 
-    cmdObj.addYesNoFlag(realName, yesNames, noNames, false, doc, cb, fieldToSet)
+    cmdObj.addYesNoFlag(realName, yesNames, noNames, false, "", cb, fieldToSet)
 
-proc loadHelps(cmdObj: CommandSpec, one: AttrScope, info: LoadInfo) =
+proc loadHelps(cmdObj: CommandSpec, info: LoadInfo) =
   let
-    names = unpack[seq[string]](one.attrLookup("names").get())
-    doc   = unpack[string](one.attrLookup("doc").get())
+    rt    = info.runtime
+    names = lookup[Array](rt, info.base_path & "names").get().strlist()
 
-  cmdObj.addYesNoFlag("help", names, [], false, doc)
+    #doc   = unpack[string](one.attrLookup("doc").get())
 
-proc loadChoices(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
-  for k, v in all.contents:
+  cmdObj.addYesNoFlag("help", names, [], false, "") # "" = doc
+
+proc loadChoices(cmdObj: CommandSpec, info: LoadInfo) =
+  var
+    rt = info.runtime
+
+  for flagname in rt.get_subsections(info.base_path):
     let
-      realName   = u2d(k)
-      one        = v.get(AttrScope)
-      aliases    = unpack[seq[string]](one.attrLookup("aliases").get())
-      choices    = unpack[seq[string]](one.attrLookup("choices").get())
-      addFlags   = unpack[bool](one.attrLookup("add_choice_flags").get())
-      doc        = unpack[string](one.attrLookup("doc").get())
-      cbOpt      = one.attrLookup("callback")
-      cb         = if cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                   else:              none(CallbackObj)
-      ftsOpt     = one.attrLookup("field_to_set")
-      fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
-                   else:               ""
+      p          = info.base_path & flagname & "."
+      realName   = u2d(flagname)
+      aliases    = lookup[Array](rt, p & "aliases").get().strlist()
+      choices    = lookup[Array](rt, p & "aliases").get().strlist()
+      addFlags   = lookup[bool](rt, p & "add_choice_flags").get()
+      #doc        = unpack[string](one.attrLookup("doc").get())
+      cb         = lookup[ptr ZCallback](rt, p & "callback")
+      fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
 
     var allNames = aliases & @[realName]
 
     cmdObj.addChoiceFlag(realName, allNames, choices, addFlags, false,
-                         false, doc, cb, fieldToSet)
+                         false, "", cb, fieldToSet)
 
-proc loadMChoices(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
-  for k, v in all.contents:
+proc loadMChoices(cmdObj: CommandSpec, info: LoadInfo) =
+  var
+    rt = info.runtime
+
+  for flagname in rt.get_subsections(info.base_path):
     let
-      realName   = u2d(k)
-      one        = v.get(AttrScope)
-      aliases    = unpack[seq[string]](one.attrLookup("aliases").get())
-      choices    = unpack[seq[string]](one.attrLookup("choices").get())
-      addFlags   = unpack[bool](one.attrLookup("add_choice_flags").get())
-      doc        = unpack[string](one.attrLookup("doc").get())
-      cbOpt      = one.attrLookup("callback")
-      cb         = if cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                   else:              none(CallbackObj)
-      min        = unpack[int](one.attrLookup("min").get())
-      max        = unpack[int](one.attrLookup("min").get())
-      ftsOpt     = one.attrLookup("field_to_set")
-      fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
-                   else:               ""
+      p          = info.base_path & flagname & "."
+      realName   = u2d(flagname)
+      aliases    = lookup[Array](rt, p & "aliases").get().strlist()
+      choices    = lookup[Array](rt, p & "choices").get().strlist()
+      addFlags   = lookup[bool](rt, p & "add_choice_flags").get()
+      #doc        = unpack[string](one.attrLookup("doc").get())
+      cb         = lookup[ptr ZCallback](rt, p & "callback")
+      fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
+      min        = lookup[int](rt, p & "min").get()
+      max        = lookup[int](rt, p & "max").get()
+
     var
       allNames = aliases & @[realName]
       f        = cmdObj.addChoiceFlag(realName, allNames, choices, addFlags,
-                                      true, false, doc, cb, fieldToSet)
+                                      true, false, "", cb, fieldToSet)
     f.min = min
     f.max = max
 
-proc loadFlagArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
-  for k, v in all.contents:
+proc loadFlagArgs(cmdObj: CommandSpec, info: LoadInfo, multi = false) =
+  var
+    rt = info.runtime
+
+  for flagname in rt.get_subsections(info.base_path):
     let
-      realName   = u2d(k)
-      one        = v.get(AttrScope)
-      aliases    = unpack[seq[string]](one.attrLookup("aliases").get())
-      doc        = unpack[string](one.attrLookup("doc").get())
-      cbOpt      = one.attrLookup("callback")
-      cb         = if cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                   else:              none(CallbackObj)
-      ftsOpt     = one.attrLookup("field_to_set")
-      fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
-                   else:               ""
-      optArg     = unpack[bool](one.attrLookup("optional_arg").get())
+      p          = info.base_path & flagname & "."
+      realName   = u2d(flagname)
+      aliases    = lookup[Array](rt, p & "aliases").get().strlist()
+      #doc        = unpack[string](one.attrLookup("doc").get())
+      cb         = lookup[ptr ZCallback](rt, p & "callback")
+      fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
+      optArg     = lookup[bool](rt, p & "optional_arg").get()
 
     var allNames = aliases & @[realName]
 
-    cmdObj.addFlagWithArg(realName, allNames, false, false, doc,
-                          cb, fieldToSet, optArg)
+    discard cmdObj.addFlagWithArg(realName, allNames, multi, false, "",
+                                         cb, fieldToSet, optArg)
 
-proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
-  for k, v in all.contents:
-    let
-      realName   = u2d(k)
-      one        = v.get(AttrScope)
-      aliases    = unpack[seq[string]](one.attrLookup("aliases").get())
-      doc        = unpack[string](one.attrLookup("doc").get())
-      cbOpt      = one.attrLookup("callback")
-      cb         = if cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                   else:              none(CallbackObj)
-      ftsOpt     = one.attrLookup("field_to_set")
-      fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
-                   else:               ""
-      optArg     = unpack[bool](one.attrLookup("optional_arg").get())
+template subsection(subsect: string, code: untyped) =
+  info.base_path &= subsect & "."
+  code
+  info.base_path = sec
 
-    var allNames = aliases & @[realName]
-
-    cmdObj.addFlagWithArg(realName, allNames, true, false, doc,
-                          cb, fieldToSet, optArg)
-
-proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
-  for k, v in all.contents:
-    cmdObj.extraHelpTopics[k] = unpack[string](v.get(Attribute).value.get())
-
-proc loadSection(cmdObj: CommandSpec, sec: AttrScope, info: LoadInfo) =
+proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
   # The command object was created by the caller.  We need to:
   # 1) Add any flags spec'd.
   # 2) Create any subcommands spec'd.
   let
-    commandOpt   = sec.attrLookup(["command"], 0, vlExists).getSec()
-    flagYns      = sec.attrLookup(["flag_yn"], 0, vlExists).getSec()
-    flagHelps    = sec.attrLookup(["flag_help"], 0, vlExists).getSec()
-    flagChoices  = sec.attrLookup(["flag_choice"], 0, vlExists).getSec()
-    flagMChoices = sec.attrLookup(["flag_multi_choice"], 0, vlExists).getSec()
-    flagArgs     = sec.attrLookup(["flag_arg"], 0, vlExists).getSec()
-    flagMArgs    = sec.attrLookup(["flag_multi_arg"], 0, vlExists).getSec()
-    extraHelpSec = sec.attrLookup(["topics"], 0, vlExists).getSec()
+    sec      = info.base_path
+    rt       = info.runtime
+    contents = rt.get_subsections(sec)
 
-  if flagYns.isSome():
-    cmdObj.loadYn(flagYns.get(), info)
-  if flagHelps.isSome():
-    cmdObj.loadHelps(flagHelps.get(), info)
-  if flagChoices.isSome():
-    cmdObj.loadChoices(flagChoices.get(), info)
-  if flagMChoices.isSome():
-    cmdObj.loadMChoices(flagMChoices.get(), info)
-  if flagArgs.isSome():
-    cmdObj.loadFlagArgs(flagArgs.get(), info)
-  if flagMArgs.isSome():
-    cmdObj.loadFlagMArgs(flagMArgs.get(), info)
-  if extraHelpSec.isSome():
-    cmdObj.loadExtraTopics(extraHelpSec.get())
-  if info.addHelpCmds and (commandOpt.isNone() or
-                           "help" notin commandOpt.get().contents):
-    if commandOpt.isNone():
+  if "flag_yn" in contents:
+    subsection("flag_yn", cmdObj.loadYn(info))
+  if "flag_help" in contents:
+    subsection("flag_help", cmdObj.loadHelps(info))
+  if "flag_choice" in contents:
+    subsection("flag_choice", cmdObj.loadChoices(info))
+  if "flag_multi_choice" in contents:
+    subsection("flag_multi_choice", cmdObj.loadMChoices(info))
+  if "flag_arg" in contents:
+    subsection("flag_arg", cmdObj.loadFlagArgs(info))
+  if "flag_multi_arg" in contents:
+    subsection("flag_multi_arg", cmdObj.loadFlagArgs(info, multi = true))
+
+  let have_cmd = "command" in contents
+
+  let cmdsec = sec & "command"
+
+  if info.addHelpCmds and (not have_cmd or
+                           "help" notin rt.get_section_contents(cmdsec)):
+    if not have_cmd:
       cmdObj.subOptional = true
     let help = cmdObj.addCommand("help", unknownFlagsOk = true)
     help.addArgs()
     help.autoHelp = true
 
-  if commandOpt.isNone(): return
+  if not have_cmd:
+    return
 
-  let commands = commandOpt.get()
-
-  for k, v in commands.contents:
+  for command in rt.get_subsections(cmdsec):
+    let base  = cmdsec & "." & command & "."
+    # Todo: add command doc back in here.
     let
-      one      = v.get(AttrScope)
-      aliases  = unpack[seq[string]](one.attrLookup("aliases").get())
-      argBox   = unpack[seq[Box]](one.attrLookup("args").get())
-      minArg   = unpack[int](argBox[0])
-      maxArg   = unpack[int](argBox[1])
-      doc      = unpack[string](one.attrLookup("doc").get())
-      argName  = unpack[string](one.attrLookup("arg_name").get())
-      cbOpt    = one.attrLookup("callback")
-      cb       = if cbOpt.isSome(): some(unpack[CallbackObj](cbOpt.get()))
-                 else:              none(CallbackObj)
-      asubmut  = unpack[bool](one.attrLookup("arg_sub_mutex").get())
-      ignoreF  = unpack[bool](one.attrLookup("ignore_all_flags").get())
-      igBOpt   = one.attrLookup("ignore_bad_flags")
-      ignoreB  = if igBOpt.isSome():
-                   unpack[bool](igBOpt.get())
-                 else:
-                   cmdObj.unknownFlagsOk
-      dashFArg = unpack[bool](one.attrLookup("dash_arg_space_optional").get())
-      colOkOpt = one.attrLookup("colon_ok")
-      noCol    = if colOkOpt.isSome():
-                   not unpack[bool](colOkOpt.get())
-                 else:
-                   cmdObj.noColon
-      spOkOpt  = one.attrLookup("space_ok")
-      noSpc    = if spOkOpt.isSome():
-                   not unpack[bool](spOkOpt.get())
-                 else:
-                   cmdObj.noSpace
-      sub      = cmdObj.addCommand(k, aliases, not asubmut, ignoreB, ignoreF,
-                                   dashFArg, doc, argName, cb, noCol, noSpc)
-    sub.addArgs(minArg, maxArg).loadSection(one, info)
+      args     = lookup[Array](rt, base & "args").get().strlist()
+      minarg   = cast[int](args[0])
+      maxarg   = cast[int](args[1])
+      aliases  = lookup[Array](rt, base & "aliases").get().strlist()
+      cbOpt    = lookup[ptr ZCallback](rt, base & "callback")
+      asubmut  = lookup[bool](rt, base & "arg_sub_mutex").get()
+      ignoreF  = lookup[bool](rt, base & "ignore_all_flags").get()
+      argname  = lookup[C4Str](rt, base & "arg_name").get().toNimStr()
+      ibdef    = cmdObj.unknownFlagsOk
+      ignoreB  = lookup[bool](rt, base & "ignore_bad_flags").get(ibdef)
+      dashFArg = lookup[bool](rt, base & "dash_arg_space_optional").get()
+      colOk    = lookup[bool](rt, base & "colon_ok").get(not cmdObj.noColon)
+      spcOk    = lookup[bool](rt, base & "space_ok").get(not cmdObj.noSpace)
+      sub      = cmdObj.addCommand(command, aliases, not asubmut,
+                                   ignoreB, ignoreF, dashFArg, "",
+                                   argname, cbOpt, not colOk, not spcOk)
 
-proc stringizeFlags(inflags: OrderedTable[string, FlagSpec], id: int):
-                     OrderedTableRef[string, string] =
-  result = OrderedTableRef[string, string]()
-  for f, spec in inflags:
+    subsection(command, sub.addArgs(minarg, maxarg).loadSection(info))
+
+proc stringizeFlags(inflags: Dict[string, FlagSpec], id: int): Con4mDict =
+  result = newDict(tDict(TString, TString))
+
+  for (f, spec) in inflags.items():
+    let k = cast[pointer](newC4Str(f))
     case spec.kind
-    of afPair:        result[f] = $(spec.boolValue[id])
-    of afChoice:      result[f] = $(spec.selected[id][0])
-    of afMultiChoice: result[f] = spec.selected[id].join(",")
-    of afStrArg:      result[f] = spec.strVal[id]
-    of afMultiArg:    result[f] = spec.strArrVal[id].join(",")
+    of afPair:
+      result.obj[k] = cast[pointer](newC4Str($(spec.boolValue[id])))
+    of afChoice:
+      result.obj[k] = cast[pointer](newC4Str($(spec.selected[id][0])))
+    of afMultiChoice:
+      result.obj[k] = cast[pointer](newC4Str(spec.selected[id].join(",")))
+    of afStrArg:
+      result.obj[k] = cast[pointer](newC4Str(spec.strVal[id]))
+    of afMultiArg:
+      result.obj[k] = cast[pointer](newC4Str(spec.strArrVal[id].join(",")))
 
-proc stringizeFlags*(winner: ArgResult): OrderedTableRef[string, string] =
-
+proc stringizeFlags*(winner: ArgResult): Con4mDict =
   return winner.flags.stringizeFlags(winner.parseCtx.parseId)
 
 proc addDash(s: string): string =
@@ -975,9 +993,10 @@ proc getUsage(cmd: CommandSpec): Rope =
       else:
         argName &= "(0, " & $(cmd.maxArgs - cmd.minArgs) & ") "
 
-  if len(cmd.flags) != 0: flags = "[FLAGS]"
+  if len(cmd.flags.keys()) != 0:
+    flags = "[FLAGS]"
 
-  if len(cmd.commands) != 0:
+  if len(cmd.commands.keys()) != 0:
     if cmd.subOptional: subs = "[COMMANDS]"
     else:               subs = "COMMAND"
 
@@ -989,7 +1008,7 @@ proc getCommandList(cmd: CommandSpec): Rope =
     title = "Available commands"
     cmds: seq[string]
 
-  for k, sub in cmd.commands:
+  for (k, sub) in cmd.commands.items():
     if sub.reportingName notin cmds and sub.reportingName != "":
       cmds.add(sub.reportingName)
 
@@ -998,8 +1017,10 @@ proc getCommandList(cmd: CommandSpec): Rope =
 proc getAdditionalTopics(cmd: CommandSpec): Rope =
   var topics: seq[string]
 
-  if cmd.extraHelpTopics.len() == 0: return
-  for k, _ in cmd.extraHelpTopics:
+  if cmd.extraHelpTopics.keys().len() == 0:
+    return
+
+  for (k, _) in cmd.extraHelpTopics.items():
     topics.add(k)
 
   topics.sort()
@@ -1010,12 +1031,11 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
   var
     flagList: seq[string]
     rows:     seq[seq[string]] = @[@["Flag", "Description"]]
-    row:      seq[string]      = @[]
     aliases:  seq[string]
     numFlags: int
     fstr:     string
 
-  for k, spec in cmd.flags:
+  for (k, spec) in cmd.flags.items():
     if not k.startswith("->"):
       flagList.add(k)
 
@@ -1088,16 +1108,16 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
 proc getOneCmdHelp(cmd: CommandSpec): Rope =
   result = getUsage(cmd) + pre(markdown(cmd.doc))
 
-  if len(cmd.commands) != 0:
+  if cmd.commands.items().len() != 0:
      result += cmd.getCommandList()
 
   var f = cmd.getFlagHelp()
   result += f
 
-  if len(cmd.extraHelpTopics) != 0:
+  if cmd.extraHelpTopics.items().len() != 0:
     result += cmd.getAdditionalTopics()
 
-type Corpus = OrderedFileTable
+type Corpus = Dict
 
 proc getHelp(corpus: Corpus, inargs: seq[string]): string =
   var
@@ -1114,9 +1134,9 @@ proc getHelp(corpus: Corpus, inargs: seq[string]): string =
         continue
 
       var topics: seq[string] = @[]
-      var widest              = 0
 
-      for key, _ in corpus: topics.add(key)
+      for (key, _) in corpus.items():
+        topics.add(key)
 
       r += h1("Available Help Topics")
 
@@ -1146,7 +1166,7 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
         legitCmds.add((true, item, item))
       else:
         var found = false
-        for sub, spec in cmd.commands:
+        for (sub, spec) in cmd.commands.items():
           if item in spec.allNames:
             legitCmds.add((true, item, spec.reportingName))
             found = true
@@ -1174,85 +1194,141 @@ proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
 
   print rope
 
-proc managedCommit(winner: ArgResult, runtime: ConfigState): string =
+proc convertMulti(inlist: seq[string]): pointer =
+  var ptrlist: seq[pointer]
+
+  for item in inlist:
+    ptrlist.add(cast[pointer](newC4Str(item)))
+
+  let fa = newArrayFromSeq[pointer](ptrlist)
+  GC_ref(fa)
+
+  return cast[pointer](fa)
+
+proc managedCommit(winner: ArgResult, runtime: RuntimeState): string =
   result = ""
 
   let
     parseId = winner.parseCtx.parseId
     endCmd  = winner.parseCtx.finalCmd
 
-  for flag, spec in winner.flags:
+  for (flag, spec) in winner.flags.items():
     spec.finalFlagIx = parseId
 
-    let
-      val = case spec.kind
-            of afPair:        pack(spec.boolValue[parseId])
-            of afChoice:      pack(spec.selected[parseId][0])
-            of afMultiChoice: pack(spec.selected[parseId])
-            of afStrArg:      pack(spec.strVal[parseId])
-            of afMultiArg:    pack(spec.strArrVal[parseId])
+    var
+      val:       pointer
+      fieldType: TypeId
+
+    case spec.kind
+    of afPair:
+      val       = cast[pointer](spec.boolValue[parseId])
+      fieldType = TBool
+
+    of afChoice:
+      val        = cast[pointer](newC4Str(spec.selected[parseId][0]))
+      fieldType  = TString
+
+    of afStrArg:
+      val        = cast[pointer](newC4Str(spec.strVal[parseId]))
+      fieldType  = TString
+
+    of afMultiArg:
+      val        = convertMulti(spec.strArrVal[parseId])
+      fieldType  = tList(TString)
+
+    of afMultiChoice:
+      val        = convertMulti(spec.selected[parseId])
+      fieldType  = tList(TString)
+
     if spec.callback.isSome():
         let
-          retBox = runtime.sCall(spec.callback.get(), @[val]).get()
-          ret    = unpack[string](retbox)
+          cb     = spec.callback.get()
+          retBox = runtime.run_callback(cb, [(val, fieldType)])
+          ret    = cast[C4Str](retbox).toNimStr()
+
         if ret != "":
           raise newException(ValueError, ret)
 
     if spec.fieldToSet != "":
-      let
-        fieldType = case spec.kind
-                    of afPair:             boolType
-                    of afChoice, afStrArg: stringType
-                    else:                  newListType(stringType)
-      if not runtime.setOverride(spec.fieldToSet, some(val), fieldType):
-        raise newException(ValueError, "Couldn't apply override to field " &
-                           spec.fieldToSet)
+      runtime.override(spec.fieldToSet, val, fieldType)
+
   var
     cmdObj  = endCmd
     cmdName = winner.command
+
   while true:
     if cmdObj.callback.isSome():
-      let args = @[pack(winner.args[cmdName])]
-      discard runtime.sCall(cmdObj.callback.get(), args)
+      var ptr_args: seq[pointer]
+      for item in winner.args[cmdName]:
+        ptr_args.add(cast[pointer](item.newC4Str()))
+      let c4arr = ptr_args.newArrayFromSeq()
+      c4arr.metadata = cast[pointer](tList(TString))
+      let arg = [(cast[pointer](c4arr), tList(TString))]
+
+      discard runtime.run_callback(cmdObj.callback.get(), arg)
+
     if cmdObj.autoHelp:
       result = getCmdHelp(cmdObj.parent.get(), winner.args[cmdName])
+
     let parts = cmdName.split(".")
     cmdName = parts[0 ..< ^1].join(".")
     if cmdObj.parent.isNone(): break
     cmdObj = cmdObj.parent.get()
 
   let
-    specTop     = winner.stashedTop
-    cmdAttrBox  = specTop.attrLookup("command_attribute")
-    flagAttrBox = specTop.attrLookup("flag_attribute")
-    argAttrBox  = specTop.attrLookup("arg_attribute")
+    cmd_field   = cmdObj.attrtop & "command_attribute"
+    flag_field  = cmdObj.attrtop & "flag_attribute"
+    arg_field   = cmdObj.attrtop & "arg_attribute"
+    cmdAttrBox  = lookup[C4Str](runtime, cmd_field)
+    flagAttrBox = lookup[C4Str](runtime, flag_field)
+    argAttrBox  = lookup[C4Str](runtime, arg_field)
 
   if cmdAttrBox.isSome():
-    discard runtime.attrSet(unpack[string](cmdAttrBox.get()),
-                            pack(winner.command))
-  if argAttrBox.isSome():
-    discard runtime.attrSet(unpack[string](argAttrBox.get()),
-                            pack(winner.args[winner.command]))
-  if flagAttrBox.isSome():
-    let flags = winner.flags.stringizeFlags(parseId)
-    discard runtime.attrSet(unpack[string](flagAttrBox.get()), pack(flags))
+    let attrVal = cast[pointer](newC4Str(winner.command))
+    runtime.override(cmdAttrBox.get().toNimStr(), attrVal, TString)
 
-proc finalizeManagedGetopt*(runtime: ConfigState,
+  if flagAttrBox.isSome():
+    let
+      flags = cast[pointer](winner.flags.stringizeFlags(parseId))
+      ty    = tDict(TString, TString)
+
+    runtime.override(flagAttrBox.get().toNimStr(), flags, ty)
+
+  if argAttrBox.isSome():
+    var ptrseq: seq[pointer]
+
+    for item in winner.args[winner.command]:
+      ptrseq.add(cast[pointer](newC4Str(item)))
+
+    let asArr = newArrayFromSeq(ptrseq)
+    GC_ref(asArr)
+
+    runtime.override(argAttrBox.get().toNimStr(),
+                     cast[pointer](asArr), tList(TString))
+
+proc finalizeManagedGetopt*(runtime: RuntimeState,
                             options: seq[ArgResult],
-                            outputHelp = true):
-                          ArgResult =
+                            getopts_path = "",
+                            outputHelp   = true): ArgResult =
+  var base: string
+
+  if getopts_path != "":
+    base &= ".getopts."
+  else:
+    base = "getopts."
+
   var matchingCmds: seq[string] = @[]
   let
-    spectop    = options[0].stashedTop
-    cmdAttrBox = spectop.attrLookup("command_attribute")
+    cmd_field  = base & "command_attribute"
+    cmdAttrBox = lookup[C4Str](runtime, cmd_field)
 
   if cmdAttrBox.isSome():
     let
-      cmdLoc = unpack[string](cmdAttrBox.get())
-      cmdBox = runtime.attrLookup(cmdLoc)
+      cmdLoc = cmdAttrBox.get().toNimStr()
+      cmdBox = lookup[C4Str](runtime, cmdLoc)
 
     if cmdBox.isSome():
-      let cmd = unpack[string](cmdBox.get())
+      let cmd = cmdBox.get().toNimStr()
 
       for item in options:
         let thisCmd = item.command.split(".")[0]
@@ -1284,77 +1360,76 @@ proc finalizeManagedGetopt*(runtime: ConfigState,
                      "No command found in input, and no default command " &
                        "was provided by configuration.")
 
-proc runManagedGetopt*(runtime:      ConfigState,
+proc runManagedGetopt*(runtime:      RuntimeState,
                        args:         seq[string],
-                       getoptsPath = "getopts",
-                       outputHelp  = true): seq[ArgResult] =
+                       getopts_path = "",
+                       output_help  = true): seq[ArgResult] =
   # By this point, the spec should be validated, making the
   # checks for getopts() correctness unneeded.
-  let aOrE = runtime.attrs.attrLookup(getoptsPath.split("."), 0, vlExists)
-  if aOrE.isA(AttrErr):
-    raise newException(ValueError, "Specified getopts section not found: " &
-                       getOptsPath)
-  let aOrS = aOrE.get(AttrOrSub)
-  if aOrS.isA(Attribute):
-    raise newException(ValueError, "The getopts path is a field not a section")
+  var base: string
+
+  if getopts_path != "":
+    base &= ".getopts."
+  else:
+    base = "getopts."
+
   let
-    sec     = aOrS.get(AttrScope)
-    argsOpt = sec.attrLookup("args")
-    cmdSec  = sec.attrLookup(["command"], 0, vlExists)
+    args_opt     = lookup[Array](runtime, base & "args")
+    cmd_sec      = base & "command"
+    cmd_contents = runtime.get_section_contents(cmd_sec)
 
   var
-    minArg = 0
-    maxArg = 0
-    commandScope: AttrScope = nil
-    li     = LoadInfo()
+    min_arg = 0
+    max_arg = 0
+    li      = LoadInfo(runtime: runtime, base_path: base)
 
-  if cmdSec.isA(AttrOrSub):
-    let aOrS = cmdSec.get(AttrOrSub)
-    commandScope = aOrS.get(AttrScope)
-    if len(commandScope.contents) == 0:
-      maxArg = high(int) # No commands provided, so default is to allow any args
 
-  if argsOpt.isSome():
-    let boxSeq = unpack[seq[Box]](argsOpt.get())
-    minArg = unpack[int](boxSeq[0])
-    maxArg = unpack[int](boxSeq[1])
+  if len(cmd_contents) == 0:
+      max_arg = high(int) # No commands provided, so default is to allow any #
+
+  if args_opt.isSome():
+    let arr = args_opt.get().strlist()
+
+    minArg = cast[int](arr[0])
+    maxArg = cast[int](arr[1])
 
   let
-    defaultOpt = sec.attrLookup("default_command")
-    yesBox     = sec.attrLookup("default_yes_prefixes").get()
-    noBox      = sec.attrLookup("default_no_prefixes").get()
-    docOnErr   = unpack[bool](sec.attrLookup("show_doc_on_err").get())
-    errorCmd   = unpack[string](sec.attrLookup("error_command").get())
-    colonOk    = unpack[bool](sec.attrLookup("colon_ok").get())
-    spaceOk    = unpack[bool](sec.attrLookup("space_ok").get())
-    ignoreBad  = unpack[bool](sec.attrLookup("ignore_bad_flags").get())
-    addHelp    = unpack[bool](sec.attrLookup("add_help_commands").get())
-    doc        = unpack[string](sec.attrLookup("doc").get())
-    argName    = unpack[string](sec.attrLookup("arg_name").get())
-    dashFArg   = unpack[bool](sec.attrLookup("dash_arg_space_optional").get())
+    def_opt   = lookup[C4Str](runtime, base & "default_command").get(nil)
+    yesBox    = lookup[Array](runtime, base & "default_yes_prefixes")
+    noBox     = lookup[Array](runtime, base & "default_no_prefixes")
+    docOnErr  = lookup[bool](runtime, base & "show_doc_on_err").get(true)
+    colonOk   = lookup[bool](runtime, base & "colon_ok").get(true)
+    spaceOk   = lookup[bool](runtime, base & "space_ok").get(true)
+    ignoreBad = lookup[bool](runtime, base & "ignore_bad_flags").get(false)
+    addHelp   = lookup[bool](runtime, base & "add_help_commands").get(true)
+    # TODO: add this back in; it's not in a property, it's in the parse tree.
+    #doc        = lookup[C4Str](runtime, base & "doc")
+    # commented out below as well.
+    argName   = lookup[C4Str](runtime, base & "arg_name").get(newC4Str("ARG"))
+    dashFArg  = lookup[bool](runtime,
+                             base & "dash_arg_space_optional").get(true)
 
 
-  if defaultOpt.isNone(): li.defaultCmd = some("")
-  else:                   li.defaultCmd = some(unpack[string](defaultOpt.get()))
+  li.defaultCmd = some(def_opt.toNimStr())
 
-  li.defaultYesPref = unpack[seq[string]](yesBox)
-  li.defaultNoPref  = unpack[seq[string]](noBox)
-  li.showDocOnErr   = docOnErr
-  li.errCmd         = errorCmd
-  li.addHelpCmds    = addHelp
+  if yesBox.isSome():
+    li.defaultYesPref = yesBox.get().strlist()
 
-  let topLevelCmd = newSpecObj(minArgs = minArg, maxArgs = maxArg, doc = doc,
-                              argName = argName, unknownFlagsOk = ignoreBad,
-                              dockerSingleArg = dashFArg, noColon = not colonOk,
-                              noSpace = not spaceOk)
-  topLevelCmd.loadSection(sec, li)
+  if noBox.isSome():
+    li.defaultNoPref = noBox.get().strlist()
+
+  li.showDocOnErr = docOnErr
+  li.addHelpCmds  = addHelp
+
+  let topLevelCmd = newSpecObj("", minArgs = minArg, maxArgs = maxArg,
+                              subOptional = false, unknownFlagsOk = ignoreBad,
+                              dockerSingleArg = dashFArg, noFlags = false,
+                              doc = "", argname = argname.toNimStr(),
+                              noColon = not colonOk, noSpace = not spaceOk)
+
+  topLevelCmd.loadSection(li)
 
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)
-
-  for item in result:
-    # We need to look up some items in this scope in managedCommit;
-    # it's the top-level getopts() scope in the specification context.
-    item.stashedTop = sec
 
   if len(result) == 1:
     let helpToPrint = result[0].managedCommit(runtime)
