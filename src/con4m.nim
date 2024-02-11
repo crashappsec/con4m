@@ -120,154 +120,260 @@ import std/os
 import "."/[compile, codegen, vm, specs, pretty, err, getopts]
 
 const flag_spec = """
+use getopt from "modules"
+
 getopts {
 
-  default_command: "run"
+  default_command:   "run"
+  command_attribute: "command"
+  arg_attribute:     "args"
+
+  flag_yn debug {
+      "Debug"
+      "Turn debugging on, which will show intermediate phase output."
+      field_to_set: "debug"
+  }
+
+  flag_yn pretty {
+      "Pretty print file"
+      "Output a pretty-printed version to stdout before executing"
+      field_to_set: "pretty"
+  }
+
+  command lex {
+      "Perform lexical analysis"
+      "Pass any files given at the command line through the lexer (only)."
+      args: (1, 0xffffffff)
+  }
+
+  command parse {
+      "Parse files"
+      "Print parse trees for files given at the command line, outputing trees."
+      args: (1, 0xffffffff)
+  }
+
+  command check {
+      "Parse and validate"
+      "Print checked IR tree"
+      args: (1, 0xffffffff)
+  }
 
   command compile {
+      "Compile a single program entry point, without running it."
       args: (1, 1)
   }
 
   command run {
-      args: (1, 1)
-  }
-
-  command pretty {
-      args: (0, 0xffffffff)
-  }
-
-  command debug {
+      "Compile and run."
       args: (1, 1)
   }
 }
 """
 
-proc parse_command_line() =
+proc parse_command_line(): RuntimeState =
   let
     ctx  = newCompileContext(nil)
     spec = ctx.loadInternalModule("c4m_getopt", flag_spec)
 
+  ctx.buildProgram(spec)
+
+  var
+    rt     = ctx.generateCode()
+    exit   = rt.executeObject()
+    params = commandLineParams()
+
+  try:
+    let pre = rt.runManagedGetopt(params)
+    discard rt.finalizeManagedGetopt(pre)
+
+    return rt
+
+  except:
+    print(fgColor("error: ", "red") + italic(getCurrentException().msg))
+    if "--debug" in params:
+      echo getStackTrace()
+    quit()
+
+proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.importc,
+                                                                       cdecl.}
+proc cmd_not_full_program(ctx: CompileCtx, cmd: string, args: seq[string],
+                          fmt: bool, debug: bool) =
+  var
+    modules: seq[Module]
+    gotErrors = false
+
+  for item in args:
+    let modOpt = ctx.findAndLoadFromUrl(item)
+    if modOpt.isNone():
+      ctx.loadError("FileNotFound", item)
+
+    let module = modOpt.get()
+    if cmd == "check":
+      ctx.buildIr(module)
+    modules.add(module)
+
+  for module in modules:
+    print h1("Module: " & module.key & module.ext)
+
+    if fmt:
+      print pretty(module.root)
+
+    if cmd == "lex" or debug:
+      module.printTokens()
+      if cmd == "lex":
+        continue
+
+    if cmd == "parse" or debug:
+      module.printParseTree()
+      if cmd == "parse":
+        continue
+
+    module.printIr()
+    if debug:
+      if module.usedAttrs != nil and
+         module.usedAttrs.table.items().len() != 0:
+        module.printAttrsUsed()
+      if module.funcScope != nil and
+         module.funcScope.table.items().len() != 0:
+        ctx.printAllFuncScopes(module)
+      if module.moduleScope != nil and
+         module.moduleScope.table.items().len() != 0:
+        module.printModuleScope()
+
+  if ctx.errors.len() != 0:
+    gotErrors = true
+  else:
+    for (_, m) in ctx.modules.items():
+      if m.errors.len() != 0:
+        gotErrors = true
+        break
+
+  if gotErrors:
+    print(h1("All Errors"))
+    discard ctx.printErrors(file = stdout)
+  quit()
+
+proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug: bool) =
+  let
+    can_proceed = ctx.buildFromEntryPoint(entryname)
+    entry       = ctx.entrypoint
+
+
+  if not can_proceed:
+    print(h4("Compilation failed."))
+
+  if fmt and entry.root != nil:
+    print(h2("Entrypoint source code"))
+    print pretty(entry.root)
+
+    if debug:
+      print(h2("Raw source"))
+      echo $(entry.s.runes)
+
+  if debug:
+    if entry.tokens.len() == 0:
+      quit(1)
+    print(h1("Tokens for module '" & entry.modname & "'"))
+    entry.printTokens()
+
+    if entry.root == nil:
+      quit(1)
+
+    print(h1("Parse tree for module '" & entry.modname & "'"))
+    entry.printParseTree()
+
+    if entry.ir == nil:
+      quit(1)
+
+    print(h1("IR for module '" & entry.modname & "'"))
+    entry.printIr()
+
+    if entry.usedAttrs.table.items().len() != 0:
+      entry.printAttrsUsed()
+      entry.printModuleScope()
+
+    if entry.usedAttrs != nil and
+       entry.usedAttrs.table.items().len() != 0:
+      print(h1("Attributes used"))
+      entry.printAttrsUsed()
+
+    if entry.funcScope != nil and
+       entry.funcScope.table.items().len() != 0:
+      print(h1("Function scopes + IRs available from entry point"))
+      ctx.printAllFuncScopes(entry)
+
+    if entry.moduleScope != nil and
+       entry.moduleScope.table.items().len() != 0:
+      print(h1("Module scope"))
+      entry.printModuleScope()
+
+    if ctx.globalScope != nil and ctx.globalScope.table.items().len() != 0:
+      print(h1("Global Scope"))
+      ctx.printGlobalScope()
+
+    if entry.cfg != nil:
+      print(h1("Global CFG"))
+      ctx.printProgramCfg()
+
+
+  if not ctx.printErrors():
+    quit(1)
+
+  var rt = ctx.generateCode()
+
+  if debug:
+    print h1("Type info stored in object file: ")
+    rt.obj.printTypeCatalog()
+    print h1("Disassembly")
+    print rt.obj.disassembly()
+    print h1("Executing...")
+
+  let exitCode = rt.executeObject()
+
+  if debug:
+    print h1("Execution completed.")
+
+  let validation_errors = validate_state()
+  if len(validation_errors) != 0:
+    print(h4("Post-execution validation failed!"))
+    var bullets: seq[Rope]
+    for item in validation_errors.items():
+      bullets.add(cast[Rope](item))
+    print(ul(bullets), file = stderr)
+
+  if debug:
+    print(h1("Any set attributes are below."))
+    rt.print_attributes()
+
+  if debug and rt.obj.spec.used:
+    print(h4("Specification used for validation: "))
+    rt.obj.spec.print_spec()
+
+
+  quit(exitCode)
 
 when isMainModule:
   useCrashTheme()
   setupSignalHandlers()
 
+  let
+    argParse = parse_command_line()
+    cmd      = lookup[C4Str](argParse, "command").get().toNimStr()
+    args     = lookup[Array](argParse, "args").get().strlist()
+    debug    = lookup[bool](argParse, "debug").get(false)
+    format   = lookup[bool](argParse, "pretty").get(false)
+    altPath  = $(getEnv("CON4M_PATH"))
+
+  if cmd == "help":
+    quit(1)
+
   var
-    params = commandLineParams()
-    debug  = false
-    format = false
     session = newCompileContext(nil)
-    newParams: seq[string]
-
-  parse_command_line()
-
-  let altPath = $(getEnv("CON4M_PATH"))
 
   if altPath != "":
     session.modulePath = altPath.split(Rune(':'))
 
-  for item in params:
-    case item
-    of "--pretty":
-      format = true
-    of "--debug":
-      debug = true
-    else:
-      newParams.add(item)
-
-  params = newParams
-
-  if params.len() != 1:
-    print h2("Cannot con4m")
-    print fgColor("error: ", "red") + text("For now, provide only one arg.")
-    quit()
-
-  discard session.buildFromEntryPoint(params[0])
-  if debug:
-    # Right now, turning this on manually.
-    # Will eventually tie these things to flags.
-    when false:
-      let allmods = session.modules.values(sort = true)
-
-      for m in allmods:
-        print(h1("Tokens for module '" & m.modname & "'"))
-        m.printTokens()
-
-      for m in allmods:
-        print(h1("Parse tree for module '" & m.modname & "'"))
-        m.printParseTree()
-
-      for m in allmods:
-        print(h1("IR for module '" & m.modname & "'"))
-        m.printIr()
-
-      for m in allmods:
-        if m.usedAttrs.table.items().len() != 0:
-          m.printAttrsUsed()
-
-      for m in allmods:
-        m.printModuleScope()
-    else:
-      let entry = session.entrypoint
-      print(h1("Tokens for module '" & entry.modname & "'"))
-      entry.printTokens()
-      print(h1("Parse tree for module '" & entry.modname & "'"))
-      entry.printParseTree()
-      print(h1("IR for module '" & entry.modname & "'"))
-      entry.printIr()
-      if entry.usedAttrs.table.items().len() != 0:
-        entry.printAttrsUsed()
-      entry.printModuleScope()
-
-    print(h1("Function scopes + IRs available from entry point"))
-    session.printAllFuncScopes(session.entrypoint)
-
-    print(h1("Global Scope"))
-    session.printGlobalScope()
-
-    print(h1("Global CFG"))
-    session.printProgramCfg()
-
-  if format:
-    print pretty(session.entrypoint.root)
-
-    if debug:
-      print(h2("Raw source"))
-      echo $(session.entrypoint.s.runes)
-
-  if session.printErrors() and not format:
-    var generatedCode = session.generateCode()
-    if debug:
-      print h1("Type info stored in object file: ")
-      generatedCode.printTypeCatalog()
-      print h1("Disassembly")
-      print generatedCode.disassembly()
-      print h1("Entrypoint Source")
-      print pretty(session.entrypoint.root)
-      print h1("Executing...")
-
-    let exitCode = generatedCode.executeObject()
-
-    if debug:
-      print h1("Execution completed.")
-
-    let validation_errors = validate_state()
-    if len(validation_errors) != 0:
-      print(h4("Post-execution validation failed!"))
-      var bullets: seq[Rope]
-      for item in validation_errors.items():
-        bullets.add(li(cast[Rope](item)))
-      print(ol(bullets), file = stderr)
-
-
-    print(h1("Execution finished. Any set attributes are below."))
-
-    if debug:
-      getcon4mRuntime().print_attributes()
-      print(h4("Spec"))
-      generatedCode.spec.print_spec()
-
-    quit(exitCode)
+  if cmd in ["lex", "parse", "check"]:
+    session.cmd_not_full_program(cmd, args, format, debug)
   else:
-    print h2("Program loading failed.")
-    quit(1)
+    session.cmd_compile(cmd, args[0], format, debug)

@@ -1387,13 +1387,14 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
     typeCache.add($(cast[int](k)))
     typeCache.add($(cast[cstring](addr ctx.zobj.staticdata[v])))
 
-proc generateCode*(cc: CompileCtx): ZObjectFile =
+proc generateCode*(cc: CompileCtx): RuntimeState =
   var ctx = CodeGenState()
 
-  result    = ZObjectFile()
-  ctx.cc    = cc
-  ctx.zobj  = result
-  ctx.memos = Memos()
+  result     = RuntimeState()
+  result.obj = ZObjectFile()
+  ctx.cc     = cc
+  ctx.zobj   = result.obj
+  ctx.memos  = Memos()
 
   ctx.zobj.tinfo.initDict()
   ctx.memos.map.initDict()
@@ -1403,9 +1404,9 @@ proc generateCode*(cc: CompileCtx): ZObjectFile =
   ctx.setupModules()
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()
-  result.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
-  result.nextEntrypoint = int32(cc.entrypoint.objInfo.moduleId)
-  result.spec           = ctx.cc.attrSpec
+  result.obj.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
+  result.obj.nextEntrypoint = int32(cc.entrypoint.objInfo.moduleId)
+  result.obj.spec           = ctx.cc.attrSpec
 
 # TODO -- pushTypeOf needs to handle attributes.
 # TODO -- varargs for func entry.

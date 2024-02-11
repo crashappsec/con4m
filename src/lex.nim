@@ -151,18 +151,20 @@ proc addToken(ctx: Module, k: Con4mTokenKind,
               startPos, endPos, tokenLine, lineOffset: int,
               adjustValue = 0,
               eatNewLines: static[bool] = false) =
-  ctx.tokens.add(Con4mToken(startPos:   startPos,
-                            id:         ctx.nextId,
-                            endPos:     endPos,
-                            kind:       k,
-                            cursor:     ctx.s,
-                            lineNo:     tokenLine,
-                            lineOffset: lineOffset,
-                            adjustment: adjustValue))
+  let t = Con4mToken(startPos:   startPos,
+                     id:         ctx.nextId,
+                     endPos:     endPos,
+                     kind:       k,
+                     cursor:     ctx.s,
+                     lineNo:     tokenLine,
+                     lineOffset: lineOffset,
+                     adjustment: adjustValue)
+
+
+  ctx.tokens.add(t)
   ctx.nextId += 1
 
   when eatNewlines:
-
     let wsStart = ctx.s.getPosition()
     while ctx.s.peek() in [Rune(' '), Rune('\t')]:
       ctx.s.advance()
@@ -411,7 +413,7 @@ proc lex_impl(ctx: Module) =
             lexError("CommentTerm")
             return
           else:
-            discard
+            ctx.s.advance()
       else:
         tok(TtDiv, true)
     of Rune('%'):
@@ -721,8 +723,7 @@ proc lex_impl(ctx: Module) =
       ctx.processStrings()
       return
     else:
-      var
-        r: Rune
+      var r: Rune
 
       if uint(c) < 128:
         r = c

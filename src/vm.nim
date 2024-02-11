@@ -820,14 +820,12 @@ proc run_0c00l_vm*(ctx: RuntimeState): int {.exportc, cdecl.} =
   ctx.running = false
   ctx.popFrame()
 
-proc execute_object*(obj: ZObjectFile): int {.exportc, cdecl.} =
+proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   ## This call is intended for first execution, not for save /
   ## resumption.
-  var ctx = RuntimeState()
 
   currentRuntime = ctx
-  ctx.obj        = obj
-  ctx.curModule  = obj.moduleContents[obj.nextEntrypoint - 1]
+  ctx.curModule  = ctx.obj.moduleContents[ctx.obj.nextEntrypoint - 1]
   ctx.numFrames  = 1
   ctx.sp         = STACK_SIZE
   ctx.fp         = ctx.sp
@@ -839,9 +837,9 @@ proc execute_object*(obj: ZObjectFile): int {.exportc, cdecl.} =
 
   # Add moduleIds.
   ctx.setupFfi()
-  ctx.setupArena(obj.symTypes, obj.globalScopeSz)
+  ctx.setupArena(ctx.obj.symTypes, ctx.obj.globalScopeSz)
 
-  for item in obj.moduleContents:
+  for item in ctx.obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
 
   return ctx.run_0c00l_vm()

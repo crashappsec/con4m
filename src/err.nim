@@ -414,7 +414,7 @@ proc lexBaseError*(ctx: Module, basemsg: string, t: Con4mToken = nil,
   if t == nil:
     t = ctx.tokens[^1]
 
-  ctx.errors.baseError(basemsg, t.cursor, ctx.modname, t.lineNo,
+  ctx.errors.baseError(basemsg, t.cursor, ctx.modname & ctx.ext, t.lineNo,
                        t.lineOffset, ErrLex, LlFatal, subs)
 
 proc lexFatal*(ctx: Module, basemsg: string, t: Con4mToken = nil) =
@@ -443,56 +443,65 @@ proc baseError*(list: var seq[Con4mError], code: string, node: ParseNode,
 template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
                   w = ParseNode(nil), detail = Rope(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra,
-                       detail)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlFatal,
+                                                 extra, detail)
 
 template irError*(ctx: Module, msg: string, w: IrNode,
                   extra: seq[string] = @[], detail: Rope = nil) =
   var where = if w == nil: ctx.pt else: w.parseNode
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlFatal, extra,
-                       detail)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlFatal,
+                                                 extra, detail)
 
 template irNonFatal*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = ParseNode(nil)) =
   # Things we consider errors, but we may end up allowing. Currently, this
   # is just for use-before-def errors.
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlErr,
+                                                 extra)
 
 template irNonFatal*(ctx: Module, msg: string, w: IrNode,
                      extra: seq[string] = @[]) =
   # Things we consider errors, but we may end up allowing. Currently, this
   # is just for use-before-def errors.
   var where = if w == nil: ctx.pt else: w.parseNode
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlErr, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlErr,
+                                                 extra)
 
 template irWarn*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = ParseNode(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlWarn,
+                                                 extra)
 
 template irWarn*(ctx: Module, msg: string, w: IrNode,
                  extra: seq[string] = @[]) =
   var where = if w == nil: ctx.pt else: w.parseNode
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlWarn, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlWarn,
+                                                 extra)
 
 template irInfo*(ctx: Module, msg: string, extra: seq[string] = @[],
                 w = ParseNode(nil)) =
   var where = if w == nil: ctx.pt else: w
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlInfo,
+                                                 extra)
 
 template irInfo*(ctx: Module, msg: string, w: IrNode,
                  extra: seq[string] = @[]) =
   var where = if w == nil: ctx.pt else: w.parseNode
-  ctx.errors.baseError(msg, where, ctx.modname, ErrIrGen, LlInfo, extra)
+  ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlInfo,
+                                                 extra)
 
 template loadError*(ctx: CompileCtx, msg: string, modname: string,
                     extra: seq[string] = @[]) =
-  ctx.errors.baseError(msg, ParseNode(nil), modname, ErrLoad, LlFatal, extra)
+  # TODO: don't hardcode the extension.
+  ctx.errors.baseError(msg, ParseNode(nil), modname & ".c4m", ErrLoad,
+                                                      LlFatal, extra)
 
 template loadWarn*(ctx: CompileCtx, msg: string, modname: string,
                     extra: seq[string] = @[]) =
-  ctx.errors.baseError(msg, ParseNode(nil), modname, ErrLoad, LlWarn, extra)
+  ctx.errors.baseError(msg, ParseNode(nil), modname & ".c4m", ErrLoad, LlWarn,
+                                                      extra)
 
 proc canProceed*(errs: seq[Con4mError]): bool =
   for err in errs:
@@ -606,7 +615,7 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
   if not verbose:
     let table = quickTable[Rope](errList, noHeaders = true,
                                  borders = BorderNone)
-
+    var one: Rope
     result = table.colWidths([(7, true), (mw, true), (lw, true), (0, false)])
     result = result.lpad(0, true).rpad(0, true)
     result = result.bpad(0, true).tpad(0, true)
@@ -615,8 +624,8 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       var table = quickTable(@[item], noHeaders = true, borders = BorderNone)
       table = table.colWidths([(7, true), (mw, true), (lw, true), (0, false)])
       table = table.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
-      result += table
-      result += container(errs[i].getVerboseInfo())
+      var one = table + container(errs[i].getVerboseInfo())
+      result += one
 
 proc formatLateError*(err: string, severity: Con4mSeverity,
                       args: seq[string], verbose = true): seq[Rope] =
@@ -637,10 +646,12 @@ proc formatLateError*(err: string, severity: Con4mSeverity,
   result.add(markdown(msg))
 
 proc formatValidationError*(err: string, args: seq[string]): Rope =
-  var msg = err.lookupMsg() & "<i> (" & err & ")</i>"
+  var msg = err.lookupMsg()
   performSubs(args, msg)
 
-  return htmlStringToRope(msg, add_div = false)
+  result = li(htmlStringToRope(msg, markdown = false, add_div = false) +
+                            italic(" (" & err & ")"))
+  GC_ref(result)
 
 proc customValidationError*(msg: Rope): Rope =
   return msg + italic(" (CustomValidator)")
@@ -655,7 +666,7 @@ proc runtimeWarn*(err: string, args: seq[string] = @[]) =
 template printItAndQuitIt(cells: seq[seq[Rope]]) =
   let toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
 
-  toPrint.colWidths([(7, true), (0, false)])
+  toPrint.colWidths([(10, true), (0, false)])
   toPrint.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
   print(toPrint, file = stderr)
   quit(-2)

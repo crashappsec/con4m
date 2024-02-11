@@ -61,7 +61,7 @@ type
     noFlags*:           bool
     autoHelp*:          bool
     finishedComputing*: bool
-    parent*:            Option[CommandSpec]
+    parent*:            CommandSpec
     allPossibleFlags*:  Dict[string, FlagSpec]
 
   ArgResult* = ref object
@@ -81,7 +81,7 @@ type
     parseId*:   int # globally unique parse ID.
     finalCmd*:  CommandSpec
 
-  Array = FlexArray[pointer]
+  Array* = FlexArray[pointer]
 
 proc getValue*(f: FlagSpec): pointer =
   case f.kind
@@ -117,7 +117,7 @@ proc newSpecObj*(reportingName: string       = "",
                  doc                         = "",
                  argName                     = "",
                  callback                    = none(ptr ZCallBack),
-                 parent                      = none(CommandSpec),
+                 parent                      = CommandSpec(nil),
                  noColon                     = false,
                  noSpace                     = false): CommandSpec =
   if noFlags and unknownFlagsOk:
@@ -194,7 +194,7 @@ proc addCommand*(spec:            CommandSpec,
                       doc             = doc,
                       argName         = argName,
                       callback        = callback,
-                      parent          = some(spec))
+                      parent          = spec)
 
   result.attrtop = spec.attrtop
 
@@ -618,8 +618,8 @@ proc computePossibleFlags(spec: CommandSpec) =
   # so far every time we enter a new subcommand.
   if spec.finishedComputing:
     return
-  if spec.parent.isSome():
-    let parentFlags = spec.parent.get().allPossibleFlags
+  if spec.parent != nil:
+    let parentFlags = spec.parent.allPossibleFlags
     for (k, v) in parentFlags.items():
       spec.allPossibleFlags[k] = v
   for (k, v) in spec.flags.items():
@@ -660,6 +660,7 @@ proc parseOne(ctx: var ParseCtx, spec: CommandSpec) =
   parseId     = parseId + 1
 
   ctx.res.flags.initDict()
+  ctx.res.args.initDict()
 
   ctx.parseCmd(spec)
 
@@ -760,7 +761,7 @@ type LoadInfo = ref object
 
 template u2d(s: string): string = s.replace("_", "-")
 
-proc strlist(input: Array): seq[string] =
+proc strlist*(input: Array): seq[string] =
   let ptrArr = input.items()
 
   for item in ptrArr:
@@ -898,6 +899,7 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
     rt       = info.runtime
     contents = rt.get_subsections(sec)
 
+
   if "flag_yn" in contents:
     subsection("flag_yn", cmdObj.loadYn(info))
   if "flag_help" in contents:
@@ -917,8 +919,8 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
 
   if info.addHelpCmds and (not have_cmd or
                            "help" notin rt.get_section_contents(cmdsec)):
-    if not have_cmd:
-      cmdObj.subOptional = true
+    #if not have_cmd:
+    #  cmdObj.subOptional = true
     let help = cmdObj.addCommand("help", unknownFlagsOk = true)
     help.addArgs()
     help.autoHelp = true
@@ -930,12 +932,13 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
     let base  = cmdsec & "." & command & "."
     # Todo: add command doc back in here.
     let
-      args     = lookup[Array](rt, base & "args").get().strlist()
+      args     = lookup[Array](rt, base & "args").get()
       minarg   = cast[int](args[0])
       maxarg   = cast[int](args[1])
       aliases  = lookup[Array](rt, base & "aliases").get().strlist()
       cbOpt    = lookup[ptr ZCallback](rt, base & "callback")
-      asubmut  = lookup[bool](rt, base & "arg_sub_mutex").get()
+      #asubmut  = lookup[bool](rt, base & "arg_sub_mutex").get()
+      subsOk   = lookup[bool](rt, base & "optional_subcommands").get()
       ignoreF  = lookup[bool](rt, base & "ignore_all_flags").get()
       argname  = lookup[C4Str](rt, base & "arg_name").get().toNimStr()
       ibdef    = cmdObj.unknownFlagsOk
@@ -943,7 +946,7 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
       dashFArg = lookup[bool](rt, base & "dash_arg_space_optional").get()
       colOk    = lookup[bool](rt, base & "colon_ok").get(not cmdObj.noColon)
       spcOk    = lookup[bool](rt, base & "space_ok").get(not cmdObj.noSpace)
-      sub      = cmdObj.addCommand(command, aliases, not asubmut,
+      sub      = cmdObj.addCommand(command, aliases, subsOk,
                                    ignoreB, ignoreF, dashFArg, "",
                                    argname, cbOpt, not colOk, not spcOk)
 
@@ -1205,7 +1208,8 @@ proc convertMulti(inlist: seq[string]): pointer =
 
   return cast[pointer](fa)
 
-proc managedCommit(winner: ArgResult, runtime: RuntimeState): string =
+proc managedCommit(winner: ArgResult, attrtop: string,
+                   runtime: RuntimeState): string =
   result = ""
 
   let
@@ -1267,18 +1271,19 @@ proc managedCommit(winner: ArgResult, runtime: RuntimeState): string =
 
       discard runtime.run_callback(cmdObj.callback.get(), arg)
 
-    if cmdObj.autoHelp:
-      result = getCmdHelp(cmdObj.parent.get(), winner.args[cmdName])
+    if cmdObj.autoHelp and cmdObj.parent != nil:
+      result = getCmdHelp(cmdObj.parent, winner.args[cmdName])
 
     let parts = cmdName.split(".")
     cmdName = parts[0 ..< ^1].join(".")
-    if cmdObj.parent.isNone(): break
-    cmdObj = cmdObj.parent.get()
+    if cmdObj.parent == nil:
+      break
+    cmdObj = cmdObj.parent
 
   let
-    cmd_field   = cmdObj.attrtop & "command_attribute"
-    flag_field  = cmdObj.attrtop & "flag_attribute"
-    arg_field   = cmdObj.attrtop & "arg_attribute"
+    cmd_field   = attrtop & "command_attribute"
+    flag_field  = attrtop & "flag_attribute"
+    arg_field   = attrtop & "arg_attribute"
     cmdAttrBox  = lookup[C4Str](runtime, cmd_field)
     flagAttrBox = lookup[C4Str](runtime, flag_field)
     argAttrBox  = lookup[C4Str](runtime, arg_field)
@@ -1317,6 +1322,9 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
   else:
     base = "getopts."
 
+  if options.len() == 1:
+    return options[0]
+
   var matchingCmds: seq[string] = @[]
   let
     cmd_field  = base & "command_attribute"
@@ -1333,7 +1341,7 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
       for item in options:
         let thisCmd = item.command.split(".")[0]
         if cmd == thisCmd:
-          item.helpToPrint = item.managedCommit(runtime)
+          item.helpToPrint = item.managedCommit(base, runtime)
           if outputHelp and item.helpToPrint != "":
             stderr.writeLine(item.helpToPrint)
           return item
@@ -1356,6 +1364,9 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
         "the result doesn't properly parse (add the explicit command " &
         " to see the error)")
   else:
+    if options.len() == 1:
+        raise newException(ValueError, "Couldn't guess the command because " &
+          "multiple commands match: " & matchingCmds.join(", "))
     raise newException(ValueError,
                      "No command found in input, and no default command " &
                        "was provided by configuration.")
@@ -1409,8 +1420,8 @@ proc runManagedGetopt*(runtime:      RuntimeState,
     dashFArg  = lookup[bool](runtime,
                              base & "dash_arg_space_optional").get(true)
 
-
   li.defaultCmd = some(def_opt.toNimStr())
+
 
   if yesBox.isSome():
     li.defaultYesPref = yesBox.get().strlist()
@@ -1432,7 +1443,7 @@ proc runManagedGetopt*(runtime:      RuntimeState,
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)
 
   if len(result) == 1:
-    let helpToPrint = result[0].managedCommit(runtime)
+    let helpToPrint = result[0].managedCommit(base, runtime)
     if outputHelp:
       if helpToPrint != "":
         stderr.writeLine(helpToPrint)

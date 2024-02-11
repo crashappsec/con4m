@@ -25,6 +25,7 @@ proc runInitialTests(verbose = true) =
     path    = getCurrentDir()
     testDir = path.joinPath("tests")
     files   = testDir.getAllFileNames()
+    total   = 0
     fails   = 0
 
   files.sort()
@@ -38,10 +39,12 @@ proc runInitialTests(verbose = true) =
     if ext != ".c4m":
       continue
 
+    total += 1
+
     printIfVerbose(h2("Test: " & name))
 
     let
-      output = runCmdGetEverything("./con4m", @["--debug", item])
+      output = runCmdGetEverything("./con4m", @["run", item])
       kat    = unicode.strip(tryToLoadFile(dir.joinPath(name & ".kat")))
       errout = unicode.strip(output.getStderr())
       excode = output.getExit()
@@ -90,7 +93,7 @@ proc runInitialTests(verbose = true) =
   if fails == 0:
     print h4("All tests passed.")
   else:
-    print h4("Failed " & $(fails) & " tests.")
+    print h4("Failed " & $(fails) & " tests (out of " & $(total) & ")")
   quit(fails)
 
 when isMainModule:

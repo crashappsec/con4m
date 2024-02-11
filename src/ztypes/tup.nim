@@ -179,8 +179,6 @@ proc tup_marshal(tup: Con4mTuple, t: TypeId, memos: Memos):
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-  print(hex_dump(cast[pointer](result), uint(l + sizeof(int64))))
-
 proc tup_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                   Con4mTuple {.cdecl, exportc.} =
   var

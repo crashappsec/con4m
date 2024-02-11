@@ -169,12 +169,11 @@ proc loadModule(ctx: CompileCtx, module: Module) =
   module.fatalErrors = err
 
 
-proc buildIr(ctx: CompileCtx, module: Module) =
+proc buildIr*(ctx: CompileCtx, module: Module) =
   if module == nil or module.ir != nil:
     # Already been done.
     return
   module.toIr()
-
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
   if module == nil or module.didFoldingPass:
@@ -283,7 +282,7 @@ proc printFuncScope*(fn: FuncInfo) =
   if fn.implementation != nil:
     print fn.implementation.toRope()
 
-proc printAllFuncScopes*(ctx: CompileCtx, m: Module) =
+proc printAllFuncScopes*(ctx: CompileCtx, m: Module) {.exportc, cdecl.} =
   if m.moduleScope == nil:
     print h4("No functions found due to parse failure.")
     return
@@ -307,31 +306,31 @@ proc printTypeCatalog*(obj: ZObjectFile) =
 
   print cells.quickTable().colWidths([(40, false), (18, true)]).tpad(0).bpad(0)
 
-proc printErrors*(ctx: Module, verbose = true, ll = LlNone) =
+proc printErrors*(ctx: Module, verbose = true, ll = LlNone, file = stdout) =
   var errsToPrint: seq[Con4mError]
 
   for item in ctx.errors:
     if cast[int](item.severity) >= cast[int](ll):
       errsToPrint.add(item)
 
-  print errsToPrint.formatErrors(verbose)
+  print(errsToPrint.formatErrors(verbose), file = file)
 
 proc printProgramCfg*(ctx: CompileCtx) =
   print ctx.entrypoint.cfg.toRope(true)
 
-proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone):
+proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone, file = stderr):
   bool =
   var errsToPrint: seq[Con4mError]
 
   for (_, m) in ctx.modules.items():
-    for item in m.errors:
+    for i, item in m.errors:
       if cast[int](item.severity) >= cast[int](ll):
         errsToPrint.add(item)
 
-  for item in ctx.errors:
+  for i, item in ctx.errors:
     if cast[int](item.severity) >= cast[int](ll):
       errsToPrint.add(item)
 
-  print(errsToPrint.formatErrors(verbose), file = stderr)
+  print(errsToPrint.formatErrors(verbose), file = file)
 
   result = errsToPrint.canProceed()
