@@ -317,7 +317,7 @@ proc containerLiteral(n:              ParseNode,
                       initialPad = 2) =
   let
     kidValues    = n.collectKids(state)
-    lFmt         = prettyColor(text(" " & lDelim), otherDelimColor)
+    lFmt         = prettyColor(text(lDelim), otherDelimColor)
     rFmt         = prettyColor(text(rDelim), otherDelimColor)
     oldPad       = state.pad
     spaceToBrace = state.style.prefWidth - state.pad.len()
@@ -475,17 +475,18 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     state.r += n.keyword(state)
     prettyDown()
   of NodeAssign:
-    n.children[0].pretty(state)
-    if state.style.forcedAttrChar.len() != 0:
-      let op = text(" " & state.style.forcedAttrChar & " ")
-      state.r += prettyColor(op, operatorColor)
-    else:
-      let attrChr = n.getText()
-      if attrChr == ":":
-        state.r += prettyColor(text(": "), operatorColor)
+    if not n.children[1].getText().endswith("="):
+      n.children[0].pretty(state)
+      if state.style.forcedAttrChar.len() != 0:
+        let op = text(" " & state.style.forcedAttrChar & " ")
+        state.r += prettyColor(op, operatorColor)
       else:
-        state.r += prettyColor(text(" = "), operatorColor)
-      n.children[1].pretty(state)
+        let attrChr = n.getText()
+        if attrChr == ":":
+          state.r += prettyColor(text(": "), operatorColor)
+        else:
+          state.r += prettyColor(text(" = "), operatorColor)
+    n.children[1].pretty(state)
   of NodeMember:
     let operands = n.collectKids(state)
 
@@ -726,17 +727,17 @@ proc pretty(n: ParseNode, state: var PrettyState) =
     state.r += prettyColor(text(" -> "), operatorColor)
     n.children[2].pretty(state)
   of NodeExternHolds, NodeExternAllocs:
-    state.r += n.keyword(state)
+    state.r += n.keyword(state, space = "")
+    state.r += text(": ")
     let parts = n.collectKids(state)
-    state.r += parts[0] + text(": ")
-    state.r += join(parts[1 .. ^1], text(", "))
+    state.r += join(parts, text(", "))
   of NodeExternReturn:
     state.r += n.keyword(state)
   of NodeLabelStmt:
     prettyDown()
-    state.r +=  prettyColor(text(":\n"), otherDelimColor)
+    state.r += prettyColor(text(":"), otherDelimColor)
   of NodeCaseCondition:
-    state.r +=   prettyColor(text("case "), keywordColor)
+    state.r += prettyColor(text("case "), keywordColor)
     let numConditions = n.children.len() - 1
 
     for i in  0 ..< numConditions:

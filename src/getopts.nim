@@ -1015,7 +1015,7 @@ proc getCommandList(cmd: CommandSpec): Rope =
     if sub.reportingName notin cmds and sub.reportingName != "":
       cmds.add(sub.reportingName)
 
-  result = paragraph(center(cmds.instantTable(width = 40, title = title)))
+  result = paragraph(cmds.instantTable(width = 70, title = title)).lpad(0)
 
 proc getAdditionalTopics(cmd: CommandSpec): Rope =
   var topics: seq[string]

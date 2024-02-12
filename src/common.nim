@@ -959,10 +959,6 @@ type
     instructions*:   seq[ZInstruction]
     initSize*:       int # size of init code before functions begin.
 
-  ZList* = ref object
-    l*:   seq[pointer]
-    tid*: TypeId
-
   # Used in vm.nim
   StackFrame*   = object
     callModule*:   ZModuleInfo

@@ -6,6 +6,9 @@ proc marshal_64_bit_value*(v: pointer): C4Str =
 
   p[] = cast[uint64](v)
 
+template marshal_64_bit_value(v: uint64 | int64): C4Str =
+  marshal_64_bit_value(cast[pointer](v))
+
 proc marshal_32_bit_value*(v: int32): C4Str =
   result = newC4Str(sizeof(int32))
   var p = cast[ptr int32](result)

@@ -3,16 +3,13 @@
 # === High priority -- before Chalk integration ===
 #
 # Travel for Gerhard
-# Jay's event
 # Scott
 
 # - Apply component logic in runtime.
-# - Make it easy to load a module from memory.
-# - Hook up getopts again.
 # - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
 # - Documentation.
-# - Add doc strings in for getopt
+# - Add doc strings in for getopt, etc.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Add help and extra help topics back into getopt.
