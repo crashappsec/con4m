@@ -5,6 +5,7 @@ proc marshal_64_bit_value*(v: pointer): C4Str =
   var p = cast[ptr uint64](result)
 
   p[] = cast[uint64](v)
+  assert result != nil
 
 proc marshal_32_bit_value*(v: int32): C4Str =
   result = newC4Str(sizeof(int32))

@@ -147,9 +147,21 @@ next_var_id() {
   return atomic_fetch_add(&next_vid, 1);
 }
 
+void
+set_var_id(uint64_t id) {
+  atomic_store(&next_vid, id);
+}
+
+uint64_t
+get_var_id() {
+  return atomic_load(&next_vid);
+}
+
 """ .}
 
 proc nextVarId(): TypeId {. importc: "next_var_id", cdecl, nodecl .}
+proc setVarId*(v: uint64) {. importc: "set_var_id", cdecl .}
+proc getVarId*(): uint64 {. importc: "get_var_id", cdecl .}
 
 proc newTypeVar*(): TypeRef =
   let newId = nextVarId()

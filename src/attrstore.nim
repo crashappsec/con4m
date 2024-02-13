@@ -3,7 +3,7 @@ import ztypes/api
 export api
 
 proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
-          lock = false, override = false, internal = false):
+          lock = false, override = false, internal = false, wlock = false):
             bool {.cdecl, exportc.}
 
 proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
@@ -81,6 +81,9 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
     else:
       attr &= "." & cur
 
+    #if ctx.obj.spec.secSpecs == nil:
+    #  return
+
     let secOpt = ctx.obj.spec.secSpecs.lookup(cur)
     if secOpt.isNone():
       return
@@ -102,6 +105,9 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
 
   while i < l:
     # assert sec.maxAllowed != 0
+    #if sec == nil:
+    #  return
+
     if sec.maxAllowed <= 1:
       ctx.applyOneSectionSpecDefaults(attr, sec)
     else:
@@ -131,7 +137,7 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
     i = i + 1
 
 proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
-          lock = false, override = false, internal = false):
+          lock = false, override = false, internal = false, wlock = false):
             bool {.cdecl, exportc.} =
   # We will create a new entry on every write, just to avoid any race
   # conditions with multiple threads updating via reference.
@@ -144,6 +150,8 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
     newInfo = AttrContents(contents: value, tid: tid, isSet: true, locked: lock)
     curOpt  = ctx.attrs.lookup(key)
     curInfo: AttrContents = nil
+
+  GC_ref(newInfo)
 
   if curOpt.isSome():
     curInfo = curOpt.get()
@@ -158,11 +166,18 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
         else:
           # Set to same value.
           return true
-      if curInfo.lockOnWrite:
+      if curInfo.lockOnWrite and not internal:
         newInfo.locked = true
 
   if override:
     newInfo.override = true
+
+  # Don't trigger write lock if we're setting a default (i.e., internal is set).
+  if lock or (wlock and not internal):
+    newInfo.locked = true
+  elif wlock:
+    newInfo.locked      = true
+    newInfo.lockOnWrite = true
 
   ctx.attrs[key] = newInfo
 

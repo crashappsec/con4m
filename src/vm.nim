@@ -76,7 +76,7 @@ when USE_TRACE:
 
     for (offset, name) in ctx.curModule.datasyms.items(sort=true):
       let
-        raw = ctx.moduleIds[ctx.curModule.moduleId][offset * 2]
+        raw = ctx.moduleAllocations[ctx.curModule.moduleId][offset * 2]
         val = toHex(cast[int](raw)).toLowerAscii()
       rows.add(@[text(name), text(val), text($(offset))])
 
@@ -164,7 +164,7 @@ proc storageAddr(ctx: RuntimeState, x: ZInstruction,
     # Static data, no type info assumed.
     result = cast[ptr pointer](addr ctx.obj.staticData[p])
   else:
-    result = addr ctx.moduleIds[x.moduleId][p * 2]
+    result = addr ctx.moduleAllocations[x.moduleId][p * 2]
 
 template storageAddr(ctx: RuntimeState, x: ZInstruction): ptr pointer =
   ctx.storageAddr(x, int64(x.arg))
@@ -760,12 +760,12 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
 proc setupArena(ctx: RuntimeState, typeInfo: seq[(int, TypeId)], moduleIdSz: int) =
   # 128 bits per item.
-  var moduleId = newSeq[pointer](moduleIdSz * 2)
+  var moduleAllocation = newSeq[pointer](moduleIdSz * 2)
 
   for (offset, tid) in typeInfo:
-    moduleId[offset*2 + 1] = cast[pointer](tid)
+    moduleAllocation[offset*2 + 1] = cast[pointer](tid)
 
-  ctx.moduleIds.add(moduleId)
+  ctx.moduleAllocations.add(moduleAllocation)
 
 proc setupFfi(ctx: var RuntimeState) =
   var
@@ -825,7 +825,7 @@ proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   ## resumption.
 
   currentRuntime = ctx
-  ctx.curModule  = ctx.obj.moduleContents[ctx.obj.nextEntrypoint - 1]
+  ctx.curModule  = ctx.obj.moduleContents[ctx.obj.entrypoint - 1]
   ctx.numFrames  = 1
   ctx.sp         = STACK_SIZE
   ctx.fp         = ctx.sp
@@ -835,11 +835,34 @@ proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   if ctx.using_spec():
     ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
 
-  # Add moduleIds.
+  # Add module allocations.
   ctx.setupFfi()
   ctx.setupArena(ctx.obj.symTypes, ctx.obj.globalScopeSz)
 
   for item in ctx.obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
+
+  return ctx.run_0c00l_vm()
+
+proc resume_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
+  ## First unmarshal an object with unmarshal_runtime().
+  currentRuntime = ctx
+
+  var reentrypt  = ctx.obj.next_entrypoint
+
+  if reentrypt - 1 >= ctx.obj.moduleContents.len() or reentrypt <= 0:
+    print fgcolor("warning: ", "yellow") +
+          text("No resumption module was specified; ") +
+          text("Re-executing from the original entry point, ") +
+          text("with ") + em("saved") + text(" state intact.")
+
+    reentrypt = ctx.obj.entrypoint - 1
+
+  ctx.curModule = ctx.obj.moduleContents[reentrypt]
+  ctx.numFrames = 1
+  ctx.sp        = STACK_SIZE
+  ctx.fp        = ctx.sp
+
+  ctx.setupFfi()
 
   return ctx.run_0c00l_vm()

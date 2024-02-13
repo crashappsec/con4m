@@ -1,4 +1,4 @@
-import "."/[parse, style]
+import "."/[style, compile]
 
 type PrettyState = object
   r:                Rope
@@ -822,23 +822,12 @@ proc pretty*(n: ParseNode, style = getCurrentCodeStyle()): Rope =
 
   result = state.r
 
-when isMainModule:
-  useCrashTheme()
-  let f = readFile("ptest.c4m")
-  var (status, tokenBox) = lex(f)
+proc pretty*(s: string, style = getCurrentCodeStyle()): Rope =
+  let
+    ctx    = newCompileContext(nil)
+    module = ctx.loadInternal_module("pretty_internal", s)
 
-
-  var errs: seq[Con4mError]
-
-  let tree = parseModule(tokenBox, errs)
-
-  for item in errs:
-    echo fgColor("error:", "red") + fgColor($(item.token.lineNo), "jazzberry") +
-         atom(":") + fgColor($(item.token.lineOffset), "jazzberry") +
-         atom(": ") + item.msg
-  let prettyText = tree.pretty()
-
-  print tree.toRope()
-  echo prettyText.toUtf8()
-  print tokenBox.toRope()
-  print prettyText
+  if module.root == nil:
+    return h4("Error: text did not parse.")
+  else:
+    return module.root.pretty(style)

@@ -168,7 +168,6 @@ proc loadModule(ctx: CompileCtx, module: Module) =
 
   module.fatalErrors = err
 
-
 proc buildIr*(ctx: CompileCtx, module: Module) =
   if module == nil or module.ir != nil:
     # Already been done.
@@ -227,7 +226,8 @@ proc processSystemDirectory(ctx: CompileCtx) =
     let opt = ctx.loadModuleFromLocation(dir, fname, ext)
 
     if opt.isSome():
-      let module = opt.get()
+      let module    = opt.get()
+      module.system = true
       ctx.buildIr(module)
 
 proc newCompileContext*(spec: ValidationSpec = nil,

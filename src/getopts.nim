@@ -915,7 +915,7 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
 
   let have_cmd = "command" in contents
 
-  let cmdsec = sec & "command"
+  let cmdsec = sec & "command" & "."
 
   if info.addHelpCmds and (not have_cmd or
                            "help" notin rt.get_section_contents(cmdsec)):
@@ -929,7 +929,9 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
     return
 
   for command in rt.get_subsections(cmdsec):
-    let base  = cmdsec & "." & command & "."
+    let base       = cmdsec & command & "."
+    info.base_path = base
+
     # Todo: add command doc back in here.
     let
       args     = lookup[Array](rt, base & "args").get()
@@ -950,7 +952,8 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
                                    ignoreB, ignoreF, dashFArg, "",
                                    argname, cbOpt, not colOk, not spcOk)
 
-    subsection(command, sub.addArgs(minarg, maxarg).loadSection(info))
+    sub.addArgs(minarg, maxarg).loadSection(info)
+    info.base_path = cmdsec
 
 proc stringizeFlags(inflags: Dict[string, FlagSpec], id: int): Con4mDict =
   result = newDict(tDict(TString, TString))
@@ -1360,16 +1363,17 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
       #    So let's just give a pretty lame but clear message.
 
       raise newException(ValueError, "Bad command line: no explicit command " &
-        "provided, and if we add the default command ('" & cmd & "') then " &
-        "the result doesn't properly parse (add the explicit command " &
-        " to see the error)")
+          "provided, and if we add the default command ('" & cmd & "') then " &
+          "the result doesn't properly parse (add the explicit command " &
+          " to see the error)")
   else:
     if options.len() == 1:
         raise newException(ValueError, "Couldn't guess the command because " &
           "multiple commands match: " & matchingCmds.join(", "))
-    raise newException(ValueError,
+
+  raise newException(ValueError,
                      "No command found in input, and no default command " &
-                       "was provided by configuration.")
+                     "was provided by configuration.")
 
 proc runManagedGetopt*(runtime:      RuntimeState,
                        args:         seq[string],

@@ -257,6 +257,8 @@ type
     contents*:  IrContents
     scope*:     Scope
     lock*:      bool
+    shortdoc*:  Rope
+    longdoc*:   Rope
 
   IrContents* = ref object
     case kind*: IrNodeType
@@ -550,6 +552,7 @@ type
     # into what is essentially our byte code, we copy over only
     # what we need to keep around into the Module object.
     loaded*:      bool
+    system*:      bool
     url*:         string
     where*:       string
     modname*:     string
@@ -975,27 +978,30 @@ type
    lockOnWrite*: bool
    override*:    bool
    contents*:    pointer
+   # TODO-- you are here. Hook these UP!
+   shortdoc*:    Rope
+   longdoc*:     Rope
 
   RuntimeState* = ref object
-    obj*:            ZObjectFile
-    frameInfo*:      array[MAX_CALL_DEPTH, StackFrame]
-    numFrames*:      int
-    stack*:          array[STACK_SIZE, pointer]
-    curModule*:      ZModuleInfo
-    foreignModule*:  ZModuleInfo
-    sp*:             int
-    fp*:             int
-    ip*:             int      # Index into instruction array, not bytes.
-    returnRegister*: pointer
-    rrType*:         pointer
-    moduleIds*:      seq[seq[pointer]]
-    attrs*:          Dict[string, AttrContents]
-    allSections*:    Dict[string, bool] # Todo: change to a set.
-    externCalls*:    seq[CallerInfo]
-    externArgs*:     seq[seq[FfiType]]
-    externFps*:      seq[pointer]
-    running*:        bool
-    memos*:          Memos
+    obj*:               ZObjectFile
+    frameInfo*:         array[MAX_CALL_DEPTH, StackFrame]
+    numFrames*:         int
+    stack*:             array[STACK_SIZE, pointer]
+    curModule*:         ZModuleInfo
+    foreignModule*:     ZModuleInfo
+    sp*:                int
+    fp*:                int
+    ip*:                int      # Index into instruction array, not bytes.
+    returnRegister*:    pointer
+    rrType*:            pointer
+    moduleAllocations*: seq[seq[pointer]]
+    attrs*:             Dict[string, AttrContents]
+    allSections*:       Dict[string, bool] # Todo: change to a set.
+    externCalls*:       seq[CallerInfo]
+    externArgs*:        seq[seq[FfiType]]
+    externFps*:         seq[pointer]
+    running*:           bool
+    memos*:             Memos
 
   MixedObj* = object
     t*:     TypeId

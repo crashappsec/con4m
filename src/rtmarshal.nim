@@ -1,4 +1,4 @@
-import "."/common
+import "."/[common, attrstore]
 import "ztypes"/[api, marshal]
 
 proc marshal_int_list[T](l: seq[T]): C4Str =
@@ -7,7 +7,8 @@ proc marshal_int_list[T](l: seq[T]): C4Str =
 
 proc unmarshal_int_list(p: var cstring): seq[int] =
   list_unmarshal_helper(p):
-    result.add(int(p.unmarshal_64_bit_value()))
+    let i = cast[int](p.unmarshal_64_bit_value())
+    result.add(i)
 
 proc marshal_ffi_arg_info(args: seq[ZFFiArgInfo]): C4Str =
   list_marshal_helper(args):
@@ -122,6 +123,7 @@ proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
     toAdd.add(m.symTypes.marshal_sym_types())
     toAdd.add(m.codesyms.marshal_sym_names())
     toAdd.add(m.datasyms.marshal_sym_names())
+
     toAdd.add(m.source.marshal_nim_string())
     toAdd.add(cast[pointer](m.moduleId).marshal_64_bit_value())
     toAdd.add(cast[pointer](m.moduleVarSize).marshal_64_bit_value())
@@ -153,17 +155,17 @@ proc unmarshal_validators(rt: RuntimeState, p: var cstring): seq[Validator] =
 proc marshal_field_spec(rt: RuntimeState, fs: FieldSpec): C4Str =
   basic_marshal_helper:
     toAdd.add(fs.name.marshal_nim_string())
-    toAdd.add(cast[pointer](fs.tid).marshal_64_bit_value())
+    toAdd.add(marshal_64_bit_value(cast[pointer](fs.tid)))
     toAdd.add(fs.lockOnWrite.marshal_bool())
     toAdd.add(fs.haveDefault.marshal_bool())
     if fs.haveDefault:
       toAdd.add(marshal(fs.defaultVal, fs.tid, rt.memos))
-    toAdd.add(rt.marshal_validators(fs.validators))
+    #toAdd.add(rt.marshal_validators(fs.validators))
     toAdd.add(fs.hidden.marshal_bool())
     toAdd.add(fs.required.marshal_bool())
     toAdd.add(fs.doc.rope_marshal(TRich, rt.memos))
     toAdd.add(fs.shortdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(cast[pointer](fs.errIx).marshal_64_bit_value())
+    toAdd.add(marshal_64_bit_value(cast[pointer](fs.errIx)))
     toAdd.add(fs.exclusions.marshal_nimstr_list())
     toAdd.add(fs.deferredType.marshal_nim_string())
 
@@ -178,7 +180,7 @@ proc unmarshal_field_spec(rt: RuntimeState, p: var cstring): FieldSpec =
   if result.haveDefault:
     result.defaultVal = p.unmarshal(result.tid, rt.memos)
 
-  result.validators   = rt.unmarshal_validators(p)
+  #result.validators   = rt.unmarshal_validators(p)
   result.hidden       = p.unmarshal_bool()
   result.required     = p.unmarshal_bool()
   result.doc          = p.rope_unmarshal(TRich, rt.memos)
@@ -188,6 +190,9 @@ proc unmarshal_field_spec(rt: RuntimeState, p: var cstring): FieldSpec =
   result.deferredType = p.unmarshal_nim_string()
 
 proc marshal_fields(rt: RuntimeState, f: Dict[string, FieldSpec]): C4Str =
+  if f == nil:
+    return marshal_64_bit_value(nil)
+
   dictionary_marshal_helper(f):
     toAdd.add(k.marshal_nim_string())
     toAdd.add(rt.marshal_field_spec(v))
@@ -209,7 +214,7 @@ proc marshal_one_section(rt: RuntimeState, sec: SectionSpec): C4Str =
     toAdd.add(cast[pointer](sec.maxAllowed).marshal_64_bit_value())
     toAdd.add(rt.marshal_fields(sec.fields))
     toAdd.add(sec.userDefOk.marshal_bool())
-    toAdd.add(rt.marshal_validators(sec.validators))
+    #toAdd.add(rt.marshal_validators(sec.validators))
     toAdd.add(sec.hidden.marshal_bool())
     toAdd.add(sec.doc.rope_marshal(TRich, rt.memos))
     toAdd.add(sec.shortdoc.rope_marshal(TRich, rt.memos))
@@ -223,7 +228,7 @@ proc unmarshal_one_section(rt: RuntimeState, p: var cstring): SectionSpec =
   result.maxAllowed       = int(p.unmarshal_64_bit_value())
   result.fields           = rt.unmarshal_fields(p)
   result.userDefOk        = p.unmarshal_bool()
-  result.validators       = rt.unmarshal_validators(p)
+  #result.validators       = rt.unmarshal_validators(p)
   result.hidden           = p.unmarshal_bool()
   result.doc              = p.rope_unmarshal(TRich, rt.memos)
   result.shortdoc         = p.rope_unmarshal(TRich, rt.memos)
@@ -367,8 +372,7 @@ proc unmarshal_attrs(rt: RuntimeState, p: var cstring) =
       o    = p.unmarshal_bool()
       c    = p.unmarshal(t, rt.memos)
 
-    rt.attrs[k] = AttrContents(tid: t, isSet: s, locked: l, lockOnWrite: wrlk,
-                               override: o, contents: c)
+      discard rt.set(k, c, t, l, o, internal = true, wrlk)
 
 proc marshal_section_list(rt: RuntimeState): C4Str =
   let secs = rt.allSections.keys(sort=true)
@@ -379,6 +383,124 @@ proc unmarshal_section_list(rt: RuntimeState, p: var cstring) =
   rt.allSections.initDict()
   list_unmarshal_helper(p):
     rt.allSections[p.unmarshal_nim_string()] = true
+
+proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
+  let arenaBytes: uint64 = uint64(sz * (2 * sizeof(pointer)))
+
+  basic_marshal_helper:
+    var contents = newC4Str(int64(arenaBytes))
+    if arenaBytes != 0:
+      copyMem(contents, addr rt.moduleAllocations[ix][0], arenaBytes)
+
+    toAdd.add(marshal_64_bit_value(cast[pointer](arenaBytes)))
+
+    if arenaBytes != 0:
+      toAdd.add(contents)
+
+proc unmarshal_one_arena(p: var cstring): seq[pointer] =
+  let l = p.unmarshal_32_bit_value() div (sizeof(pointer))
+
+  if l == 0:
+    return
+
+  result = newSeq[pointer](l)
+
+  for i in 0 ..< l:
+    result.add(cast[pointer](p.unmarshal_64_bit_value()))
+
+proc marshal_module_allocations(rt: RuntimeState): C4Str =
+  basic_marshal_helper:
+    toAdd.add(marshal_32_bit_value(int32(rt.obj.moduleContents.len() + 1)))
+    toAdd.add(rt.marshal_one_arena(0, rt.obj.globalScopeSz))
+    for i, item in rt.obj.moduleContents:
+      toAdd.add(rt.marshal_one_arena(i + 1, item.moduleVarSize))
+
+proc unmarshal_module_allocations(rt: RuntimeState, p: var cstring) =
+  list_unmarshal_helper(p):
+    rt.moduleAllocations.add(p.unmarshal_one_arena())
+
+proc marshal_object_props(d: Dict[string, TypeId]): C4Str =
+  dictionary_marshal_helper(d):
+    toAdd.add(k.marshal_nim_string())
+    toAdd.add(marshal_64_bit_value(cast[pointer](v.followForwards())))
+
+proc unmarshal_object_props(p: var cstring): Dict[string, TypeId] =
+  result.initDict()
+
+  list_unmarshal_helper(p):
+    let
+      k = p.unmarshal_nim_string()
+      v = cast[TypeId](p.unmarshal_64_bit_value())
+
+    result[k] = v
+
+proc marshal_type_store(): C4Str =
+  let view  = typeStore.items()
+  var count = 0'i32
+
+  basic_marshal_helper:
+    for (k, v) in view:
+      if v.typeId != k:
+        # This entry is forwarded.
+        continue
+      count += 1
+      toAdd.add(marshal_64_bit_value(cast[pointer](k)))
+      toAdd.add(marshal_bool(v.isLocked))
+
+      var titems: seq[TypeId]
+      for item in v.items:
+        titems.add(item.followForwards())
+      toAdd.add(marshal_int_list(titems))
+      toAdd.add(marshal_32_bit_value(cast[int32](v.kind)))
+      case v.kind
+      of C4TVar:
+        toAdd.add(marshal_64_bit_value(cast[pointer](v.tvarId)))
+        let haveLocalName = v.localName.isSome()
+        toAdd.add(haveLocalName.marshal_bool())
+        if haveLocalName:
+          toAdd.add(v.localName.get().marshal_nim_string())
+
+      of C4Func:
+        toAdd.add(v.va.marshal_bool())
+
+      of C4Struct:
+        toAdd.add(v.name.marshal_nim_string())
+        toAdd.add(v.props.marshal_object_props())
+
+      else:
+        discard
+
+    toAdd = @[marshal_32_bit_value(count)] & toAdd
+
+proc unmarshal_type_store(p: var cstring) =
+  typeStore = nil
+  typeStore.initDict()
+
+  list_unmarshal_helper(p):
+    var
+      k      = cast[TypeId](p.unmarshal_64_bit_value())
+      lock   = p.unmarshal_bool()
+      titems = cast[seq[TypeId]](p.unmarshal_int_list())
+      kind   = cast[C4TypeKind](p.unmarshal_32_bit_value())
+      to     = TypeRef(typeid: k, isLocked: lock, items: titems, kind: kind)
+
+    case kind
+    of C4TVar:
+      to.tvarId = cast[TypeId](p.unmarshal_64_bit_value())
+      if p.unmarshal_bool():
+        to.localName = some(p.unmarshal_nim_string())
+
+    of C4Func:
+      to.va = p.unmarshal_bool()
+
+    of C4Struct:
+      to.name  = p.unmarshal_nim_string()
+      to.props = p.unmarshal_object_props()
+
+    else:
+      discard
+
+    typeStore[k] = to
 
 proc marshal_runtime*(rt: RuntimeState, next_entry: int32): C4Str =
   ## The object must not be running when we save, and we assume the stack
@@ -397,10 +519,11 @@ proc marshal_runtime*(rt: RuntimeState, next_entry: int32): C4Str =
 
   basic_marshal_helper:
       toAdd.add(rt.marshal_object(next_entry))
-      toAdd.add(rt.marshal_attrs())
+      toAdd.add(marshal_64_bit_value(cast[pointer](getVarId())))
+      toAdd.add(marshal_type_store())
       toAdd.add(rt.marshal_section_list())
-
-import strutils
+      toAdd.add(rt.marshal_attrs())
+      toAdd.add(rt.marshal_module_allocations())
 
 proc unmarshal_runtime*(s: C4Str): RuntimeState =
   var
@@ -419,5 +542,8 @@ proc unmarshal_runtime*(s: C4Str): RuntimeState =
   result.memos.map.initDict()
 
   result.unmarshal_object(p)
-  result.unmarshal_attrs(p)
+  setVarId(uint64(p.unmarshal_64_bit_value()))
+  p.unmarshal_type_store()
   result.unmarshal_section_list(p)
+  result.unmarshal_attrs(p)
+  result.unmarshal_module_allocations(p)

@@ -9,15 +9,14 @@
 # a) Handle defaults, setting them on component entry if needed.
 # b) Auto-lock attrs that *can* be set in a component, when the component
 #   exits.
-# - Checkpointing (and restoring) runtime state.
-# - Fix up and test 'Other' data types
+# - Hook up validators for the checkpointing.
+# - Allow selecting the module to fire up on restore.
+# - Test 'Other' data types
+# - Finish adding doc strings in for getopt, etc.
 # - Documentation.
-# - Add doc strings in for getopt, etc.
-# - Adding defaults should NOT trigger a write lock.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Add help and extra help topics back into getopt.
-# - Rich improvements.
 # - Fill in missing error messages.
 # - Proper marshaling of types and callbacks.
 # - Lit mods need to be available for runtime literal instantiation.
@@ -36,18 +35,16 @@
 # - More Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
 # - Remove any remaining newRefVal / extractRef calls
-# - Folding for lists should be generalized, instead of the one-off for
-#   `choice` fields we have now.
 # - Get control flow stuff working properly.
+# - More flexibility on storing src in object
 
 # == Medium -- before public release ==
-# - attr.x for disambiguation of top-level attr vs var.
 # - Comments in pretty(), and better spacing control based on original src.
 # - Test for tuple unpacking; I think I probably haven't done it, and it may not
 #   work at all.
 # - Redo code gen for assignment to get rid of the extra ref/deref for index
 #   ops
-# - Redo the rich data type again; add a "container" type
+# - Redo the rich data type again; replace w/ a "container" type
 # - Check attr to lock and attrs to access against spec statically.
 # - Buffers should be mutable (like strings, they currently are not).
 # - explicit casts -- to(obj, type) OR type(obj) (decide which)
@@ -55,7 +52,6 @@
 # - Possibly allow generating a C API based on the spec.
 #   and which parameters are right / wrong.
 # - finish hasExitToOuterBlock in CFG.
-# - Have `const` items move to module-specific static storage.
 # - Allow assignment inside var / global / const statements.
 # - Use No-side-effect prop for funcs to allow calling functions at compile
 #   time (and mark native f() no-side-effect if they do not use external
@@ -124,7 +120,9 @@
 import std/os
 import "."/[compile, codegen, vm, specs, pretty, err, getopts, rtmarshal]
 
-const flag_spec = """
+const
+  obj_file_extension = ".0c00l"
+  flag_spec          = """
 use getopt from "modules"
 
 getopts {
@@ -144,11 +142,6 @@ getopts {
       "Output a pretty-printed version to stdout before executing"
       field_to_set: "pretty"
   }
-
-      flag_yn save {
-          "Save object state at end of execution"
-          field_to_set: "save_object"
-      }
 
 
   command lex {
@@ -177,7 +170,22 @@ getopts {
   command run {
       "Compile and run."
       args: (1, 1)
+      flag_yn save {
 
+          "Save object state at end of execution"
+          field_to_set: "save_object"
+      }
+  }
+
+  command resume {
+      "Resume saved execution state."
+      "If provided, the second argument should be the module name to start at."
+      args: (1, 2)
+
+      flag_yn save {
+          "Save object state at end of execution"
+          field_to_set: "save_object"
+      }
   }
 }
 """
@@ -195,16 +203,24 @@ proc parse_command_line(): RuntimeState =
     params = commandLineParams()
 
   try:
-    let pre = rt.runManagedGetopt(params)
-    discard rt.finalizeManagedGetopt(pre)
+    let
+      pre   = rt.runManagedGetopt(params)
+      parse = rt.finalizeManagedGetopt(pre)
 
-    return rt
+    if parse != nil:
+      return rt
+    else:
+      print fgColor("error: ", "red") + text("command not understood.")
+      assert parse != nil
+      echo parse.helpToPrint
+      quit(-1)
 
   except:
     print(fgColor("error: ", "red") + italic(getCurrentException().msg))
     if "--debug" in params:
+      rt.print_attributes()
       echo getStackTrace()
-    quit()
+    quit(-1)
 
 proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.importc,
                                                                        cdecl.}
@@ -265,17 +281,111 @@ proc cmd_not_full_program(ctx: CompileCtx, cmd: string, args: seq[string],
     discard ctx.printErrors(file = stdout)
   quit()
 
-proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug, saveObj: bool) =
+proc run_object(rt: var RuntimeState, debug, save: bool, modfile: string,
+                resumed = false) =
+  if debug:
+    print h1("Type info stored in object file: ")
+    rt.obj.printTypeCatalog()
+    print h1("Disassembly")
+    print rt.obj.disassembly()
+    print h1("Executing...")
+
+  let exitCode = if resumed: rt.resume_object() else: rt.executeObject()
+
+  if debug:
+    print h1("Execution completed.")
+  if save:
+    var
+      objfile = rt.marshal_runtime(-3)
+      out_fname = modfile
+    if not out_fname.endswith(obj_file_extension):
+      out_fname &= obj_file_extension
+
+
+    if debug:
+      print hex_dump(objfile, uint(objfile.len()), 0)
+
+    try:
+      var
+        f       = open(outfname, fmWrite)
+        l       = objfile.len()
+        cur     = 0
+        toWrite = l
+
+      if f == nil:
+        print fgColor("error: ", "red") + text("Could not write to ") +
+        em(outfname)
+      else:
+        while toWrite > 0:
+          let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
+                                                  toOpenArray(0, l - 1),
+                               cur,
+                               toWrite)
+          cur     += n
+          toWrite -= n
+
+    except:
+      print fgColor("error: ", "red") + text("Could not write to ") +
+            em(outfname) + text(": ") + italic(getCurrentException().msg)
+
+  let validation_errors = validate_state()
+  if len(validation_errors) != 0:
+    print(h4("Post-execution validation failed!"))
+    var bullets: seq[Rope]
+    for item in validation_errors.items():
+      bullets.add(cast[Rope](item))
+    print(ul(bullets), file = stderr)
+
+  if debug:
+    print(h1("Any set attributes are below."))
+    rt.print_attributes()
+
+  if debug and rt.obj.spec.used:
+    print(h4("Specification used for validation: "))
+    rt.obj.spec.print_spec()
+
+
+  quit(exitCode)
+
+proc cmd_resume(args: seq[string], fmt, debug, save: bool) =
+  var
+    rawobj: C4Str
+    fname  = args[0]
+    module = ""
+
+  if args.len() == 2:
+    module = args[1]
+
+  try:
+    rawobj = fname.newC4StrFromFile()
+  except:
+    print fgColor("error: ", "red") + text("Could not open ") + em(fname) +
+          text(": ") + italic(getCurrentException().msg)
+    quit()
+
+  var rt = rawobj.unmarshal_runtime()
+
+  if fmt:
+    print(h2("Original entry point source code"))
+    let m = rt.obj.moduleContents[rt.obj.entryPoint - 1]
+    print(pretty(m.source))
+
+  rt.run_object(debug, save, fname, resumed = true)
+
+
+proc cmd_compile(ctx:                 CompileCtx,
+                 cmd, entryname:      string,
+                 fmt, debug, saveObj: bool) =
   let
     can_proceed = ctx.buildFromEntryPoint(entryname)
     entry       = ctx.entrypoint
-
 
   if not can_proceed:
     print(h4("Compilation failed."))
 
   if fmt and entry.root != nil:
     print(h2("Entrypoint source code"))
+
     print pretty(entry.root)
 
     if debug:
@@ -332,69 +442,8 @@ proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug, saveObj: b
     quit(1)
 
   var rt = ctx.generateCode()
+  rt.run_object(debug, saveObj, entry.modname)
 
-  if debug:
-    print h1("Type info stored in object file: ")
-    rt.obj.printTypeCatalog()
-    print h1("Disassembly")
-    print rt.obj.disassembly()
-    print h1("Executing...")
-
-  let exitCode = rt.executeObject()
-
-  if debug:
-    print h1("Execution completed.")
-  if saveobj:
-    let
-      objfile = rt.marshal_runtime(-3)
-      out_fname = entry.modname & ".0c00l"
-
-    let r2 = objfile.unmarshal_runtime()
-
-    if debug:
-      print hex_dump(objfile, uint(objfile.len()), 0)
-
-    try:
-      var
-        f       = open(outfname, fmWrite)
-        l       = objfile.len()
-        cur     = 0
-        toWrite = l
-
-      if f == nil:
-        print fgColor("error: ", "red") + text("Could not write to ") +
-        em(outfname)
-      else:
-        while toWrite > 0:
-          let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
-                                                  toOpenArray(0, l - 1),
-                               cur,
-                               toWrite)
-          cur     += n
-          toWrite -= n
-
-    except:
-      print fgColor("error: ", "red") + text("Could not write to ") +
-            em(outfname) + text(": ") + italic(getCurrentException().msg)
-
-  let validation_errors = validate_state()
-  if len(validation_errors) != 0:
-    print(h4("Post-execution validation failed!"))
-    var bullets: seq[Rope]
-    for item in validation_errors.items():
-      bullets.add(cast[Rope](item))
-    print(ul(bullets), file = stderr)
-
-  if debug:
-    print(h1("Any set attributes are below."))
-    rt.print_attributes()
-
-  if debug and rt.obj.spec.used:
-    print(h4("Specification used for validation: "))
-    rt.obj.spec.print_spec()
-
-
-  quit(exitCode)
 
 when isMainModule:
   useCrashTheme()
@@ -420,5 +469,7 @@ when isMainModule:
 
   if cmd in ["lex", "parse", "check"]:
     session.cmd_not_full_program(cmd, args, format, debug)
+  elif cmd == "resume":
+    cmd_resume(args, format, debug, saveObj)
   else:
     session.cmd_compile(cmd, args[0], format, debug, saveObj)

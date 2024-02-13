@@ -5,8 +5,8 @@ import ztypes/api
 proc print_one_section(spec: SectionSpec, n: string) =
   var cells: seq[seq[Rope]]
 
-  cells.add(@[text("Name"), text(n)])
-  cells.add(@[text("Instantiable?"), if spec.maxAllowed != 1:
+  cells.add(@[text("Name"), em(n)])
+  cells.add(@[text("Instantiable?"), if spec.maxAllowed > 1:
                                        fgColor("✓", "atomiclime")
                                      else:
                                        fgColor("✗", "red")])
@@ -14,14 +14,26 @@ proc print_one_section(spec: SectionSpec, n: string) =
                                               fgColor("✓", "atomiclime")
                                             else:
                                               fgColor("✗", "red")])
+  cells.add(@[text("Allowed sections"),
+              if spec.allowedSections.len() == 0:
+                em("None")
+              else:
+                text((spec.allowedSections & spec.requiredSections).join(", "))])
+
+  if spec.requiredSections.len() != 0:
+    cells.add(@[text("Required sections"), text(spec.requiredSections.join(", "))])
+
   print quickTable(cells,
                    verticalHeaders = true).colWidths([(40, true),
                            (20, true)]).tpad(0).bpad(0)
 
-  cells = @[@[text("Field"), text("Type"), text("Required"), text("Lock")]]
+  let view = spec.fields.items()
 
-  for (k, fs) in spec.fields.items():
-    cells.add(@[text(k), em(fs.tid.toString()),
+  if view.len() != 0:
+    cells = @[@[text("Field"), text("Type"), text("Required"), text("Lock")]]
+
+    for (k, fs) in view:
+      cells.add(@[text(k), em(fs.tid.toString()),
                 if fs.required:
                   fgColor("✓", "atomiclime")
                 else:
@@ -31,7 +43,9 @@ proc print_one_section(spec: SectionSpec, n: string) =
                 else:
                   fgColor("✗", "red")])
 
-  print quickTable(cells)
+    print quickTable(cells)
+  else:
+    print(h5("Section has no defined fields."))
 
 proc print_spec*(s: ValidationSpec) =
   print_one_section(s.rootSpec, "Top-level section")

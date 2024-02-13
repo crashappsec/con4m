@@ -181,13 +181,13 @@ proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
   n1     = nodes[0]
   n2     = nodes[1]
 
-proc extractLongDoc(n: ParseNode): Rope =
+proc extractShortDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil:
     return nil
   else:
     return text(n.docNodes.children[0].getText())
 
-proc extractShortDoc(n: ParseNode): Rope =
+proc extractLongDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
     return nil
   else:
@@ -1212,7 +1212,7 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
     else:
       unreachable
 
-proc convertOneSection(ctx: Module, sec: ParseNode) =
+proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
   var
     rootSection = false
     maxAllowed  = 1
@@ -1331,7 +1331,7 @@ proc convertConfSpec(ctx: Module) =
   var pt = ctx.pt
   ctx.pt = nil
   for item in pt.children:
-    ctx.convertOneSection(item)
+    ctx.convertOneSectionSpec(item)
 
   ctx.pt = pt
 
@@ -2136,6 +2136,7 @@ proc convertLogicOp(ctx: Module): IrNode =
   result.contents.bRhs  = bRhs
 
 proc convertSection(ctx: Module): IrNode =
+  # Section declarations not specs.
   var
     haveSpec     = ctx.attrSpec != nil and ctx.attrSpec.used
     savedSecSpec = ctx.curSecSpec
@@ -2179,6 +2180,12 @@ proc convertSection(ctx: Module): IrNode =
   ctx.curSecSpec    = savedSecSpec
   ctx.secDefContext = savedInSection
 
+  if ctx.pt.children[1].docnodes != nil:
+    result.shortdoc = ctx.pt.children[1].extractShortDoc()
+    result.longdoc  = ctx.pt.children[1].extractLongDoc()
+  elif ctx.pt.children.len() > 2 and ctx.pt.children[2].docnodes != nil:
+    result.shortdoc = ctx.pt.children[2].extractShortDoc()
+    result.longdoc  = ctx.pt.children[2].extractLongDoc()
 
 proc convertIndex(ctx: Module): IrNode =
   # The logic for when to generate address loads instead of value

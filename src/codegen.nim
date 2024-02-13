@@ -306,6 +306,11 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
 
 proc disassembly*(ctx: ZObjectFile): Rope =
     for item in ctx.moduleContents:
+      if item.instructions.len() == 3:
+        if item.instructions[0].op == ZNop and
+           item.instructions[1].op == ZModuleRet and
+           item.instructions[2].op == ZNop:
+          continue
       result = result + rawReprInstructions(item, ctx)
 
 proc getSymbolArena(ctx: CodeGenState, sym: SymbolInfo): int =
@@ -1353,7 +1358,10 @@ proc setupModules(ctx: CodeGenState) =
     ctx.zobj.moduleContents.add(mi)
     mi.codesyms.initDict()
     mi.datasyms.initDict()
-    mi.source = $(module.s.runes)
+
+    if not module.system:
+      mi.source = $(module.s.runes)
+
     module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
     mi.codesyms[0] = module.modname & ".__mod_run__()"
 
@@ -1387,7 +1395,7 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
     typeCache.add($(cast[int](k)))
     typeCache.add($(cast[cstring](addr ctx.zobj.staticdata[v])))
 
-proc generateCode*(cc: CompileCtx): RuntimeState =
+proc generateCode*(cc: CompileCtx, nextId = -1): RuntimeState =
   var ctx = CodeGenState()
 
   result     = RuntimeState()
@@ -1405,7 +1413,7 @@ proc generateCode*(cc: CompileCtx): RuntimeState =
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()
   result.obj.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
-  result.obj.nextEntrypoint = int32(cc.entrypoint.objInfo.moduleId)
+  result.obj.nextEntrypoint = int32(nextId)
   result.obj.spec           = ctx.cc.attrSpec
 
 # TODO -- pushTypeOf needs to handle attributes.

@@ -47,7 +47,6 @@ var
 
 dtNameMap.initDict()
 
-
 proc idFromTypeName*(n: string): TypeId =
   return TypeId(dtNameMap[n].dtid)
 
