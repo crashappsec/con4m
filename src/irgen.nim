@@ -1145,7 +1145,10 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
       GC_ref(raw)
 
       if s.len() != 0:
-        result.validators.add(Validator(fn: choiceValidator, params: arr))
+        let v = Validator(fn:        choiceValidator,
+                          params:    arr,
+                          paramType: tList(choiceType))
+        result.validators.add(v)
     of "range":
       if gotRange:
         ctx.irError("DupeProp", @["range"])
@@ -1178,10 +1181,15 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
           f[0] = startNode.value
           f[1] = endNode.value
 
-          f.metadata = cast[pointer](tList(TInt))
+          var
+            arr = cast[pointer](f)
+            pt  = tList(TInt)
+            v   = Validator(fn:        rangeValidator,
+                            params:    arr,
+                            paramType: pt)
 
-          var arr = cast[pointer](f)
-          result.validators.add(Validator(fn: rangeValidator, params: arr))
+          f.metadata = cast[pointer](pt)
+          result.validators.add(v)
 
     of "exclude", "exclusions":
       for kid in n.children[1 .. ^1]:
@@ -1193,10 +1201,14 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
     of "validator":
       if n.children[1].kind != NodeCallbackLit:
         ctx.irError("ParamType", @["validator", "callback"], n.children[1])
-      let irNode = ctx.downNode(n.children[1])
-      ctx.typeCheck(irNode.tid, tfunc(@[TString, tVar(), TRich]))
+      let
+        irNode = ctx.downNode(n.children[1])
+        paramt = tfunc(@[TString, tVar(), TString])
+      ctx.typeCheck(irNode.tid, paramt)
 
-      let v = Validator(fn: userFieldValidator, node: irNode)
+      let v = Validator(fn:        userFieldValidator,
+                        node:      irNode,
+                        paramType: paramt)
     else:
       unreachable
 
@@ -1247,13 +1259,17 @@ proc convertOneSection(ctx: Module, sec: ParseNode) =
         if gotHidden:
           ctx.irWarn("DupHidden")
       of "validator":
-        # The fn paramer is moot; we only ever assign one value for
-        # sections for the moment. But we set it anyway, just in case
-        # we want more built-in constraints later.
-        ctx.current = nil
-        ctx.pt      = n.children[1]
-        validator   = Validator(fn:   userSectionValidator,
-                                node: ctx.parseTreeToIr())
+        if n.children[1].kind != NodeCallbackLit:
+          ctx.irError("ParamType", @["validator", "callback"], n.children[1])
+        let
+          irNode = ctx.downNode(n.children[1])
+          paramt = tFunc(@[TString, tList(TString), TString])
+
+        ctx.typeCheck(irNode.tid, paramt)
+
+        let v = Validator(fn:        userSectionValidator,
+                          node:      ctx.parseTreeToIr(),
+                          paramType: paramt)
       of "allow", "allowed":
         for i in 1 ..< n.children.len():
           let secName = n.children[i].getText()

@@ -5,11 +5,15 @@
 # Travel for Gerhard
 # Scott
 
-# - Apply component logic in runtime.
+# - Apply component logic in runtime:
+# a) Handle defaults, setting them on component entry if needed.
+# b) Auto-lock attrs that *can* be set in a component, when the component
+#   exits.
 # - Checkpointing (and restoring) runtime state.
 # - Fix up and test 'Other' data types
 # - Documentation.
 # - Add doc strings in for getopt, etc.
+# - Adding defaults should NOT trigger a write lock.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Add help and extra help topics back into getopt.
@@ -22,7 +26,7 @@
 # - Don't bother to issue a copy when we just instantiated a lit.
 # - Remainder of needed stdlib stuff
 # - Restrict the leading '$' properly.
-# - Doc API.
+# - Redo doc API / autogeneration
 # - Typecheck c vs con4m api for ffi
 # - Enums should be global by default.  Add a 'private' for enums,
 #   funcs and, when they show up,
@@ -38,9 +42,12 @@
 
 # == Medium -- before public release ==
 # - attr.x for disambiguation of top-level attr vs var.
-# - Comments in pretty()
-# - Test for tuple unpacking; I think I probably haven't done it.
-# - Redo code gen for assignment to get rid of the extra ref/deref for index ops
+# - Comments in pretty(), and better spacing control based on original src.
+# - Test for tuple unpacking; I think I probably haven't done it, and it may not
+#   work at all.
+# - Redo code gen for assignment to get rid of the extra ref/deref for index
+#   ops
+# - Redo the rich data type again; add a "container" type
 # - Check attr to lock and attrs to access against spec statically.
 # - Buffers should be mutable (like strings, they currently are not).
 # - explicit casts -- to(obj, type) OR type(obj) (decide which)
@@ -51,13 +58,14 @@
 # - Have `const` items move to module-specific static storage.
 # - Allow assignment inside var / global / const statements.
 # - Use No-side-effect prop for funcs to allow calling functions at compile
-#   time (and mark native f() no-side-effect if they do not use external state).
+#   time (and mark native f() no-side-effect if they do not use external
+#   state).
 #   Lots more folding work should be done.
 # - Fold container literals wherever possible.
 # - Access controls around extern and extensibility features.
-# - ~ operator should be renamed to 'lock' and not require an assignment,
-#   but if there's no assignment it should error / warn if one might be
-#   locking something that isn't assigned.
+# - ~ operator possibly should be renamed to 'lock' and not require an
+#   assignment, but if there's no assignment it should error / warn if
+#   one might be locking something that isn't assigned.
 # - Be able to lock an entire section.
 # - Warning when your declared type is more generic than the inferred type.
 # - Warning when (in non-REPL-land) module vars / global vars are generic.
@@ -75,8 +83,8 @@
 # - Add 'error' to functions.
 # - string enums
 # - some sort of module scope operator; perhaps root::, module::,
-#   local:: I think?
-# - Keyword arguments
+#   local:: I think? Or, rethink the whole import system :)
+# - Keyword arguments for functions.
 # - Some sort of debugger?
 # - Add maybe / null checking
 # - Should add variable aliases for $i and $label
@@ -114,7 +122,7 @@
 ## :Copyright: 2022 - 2024
 
 import std/os
-import "."/[compile, codegen, vm, specs, pretty, err, getopts]
+import "."/[compile, codegen, vm, specs, pretty, err, getopts, rtmarshal]
 
 const flag_spec = """
 use getopt from "modules"
@@ -136,6 +144,12 @@ getopts {
       "Output a pretty-printed version to stdout before executing"
       field_to_set: "pretty"
   }
+
+      flag_yn save {
+          "Save object state at end of execution"
+          field_to_set: "save_object"
+      }
+
 
   command lex {
       "Perform lexical analysis"
@@ -163,6 +177,7 @@ getopts {
   command run {
       "Compile and run."
       args: (1, 1)
+
   }
 }
 """
@@ -250,7 +265,7 @@ proc cmd_not_full_program(ctx: CompileCtx, cmd: string, args: seq[string],
     discard ctx.printErrors(file = stdout)
   quit()
 
-proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug: bool) =
+proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug, saveObj: bool) =
   let
     can_proceed = ctx.buildFromEntryPoint(entryname)
     entry       = ctx.entrypoint
@@ -329,6 +344,38 @@ proc cmd_compile(ctx: CompileCtx, cmd, entryname: string, fmt, debug: bool) =
 
   if debug:
     print h1("Execution completed.")
+  if saveobj:
+    let
+      objfile = rt.marshal_runtime(-3)
+      out_fname = entry.modname & ".0c00l"
+
+    let r2 = objfile.unmarshal_runtime()
+
+    if debug:
+      print hex_dump(objfile, uint(objfile.len()), 0)
+
+    try:
+      var
+        f       = open(outfname, fmWrite)
+        l       = objfile.len()
+        cur     = 0
+        toWrite = l
+
+      if f == nil:
+        print fgColor("error: ", "red") + text("Could not write to ") +
+        em(outfname)
+      else:
+        while toWrite > 0:
+          let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
+                                                  toOpenArray(0, l - 1),
+                               cur,
+                               toWrite)
+          cur     += n
+          toWrite -= n
+
+    except:
+      print fgColor("error: ", "red") + text("Could not write to ") +
+            em(outfname) + text(": ") + italic(getCurrentException().msg)
 
   let validation_errors = validate_state()
   if len(validation_errors) != 0:
@@ -359,6 +406,7 @@ when isMainModule:
     args     = lookup[Array](argParse, "args").get().strlist()
     debug    = lookup[bool](argParse, "debug").get(false)
     format   = lookup[bool](argParse, "pretty").get(false)
+    saveObj  = lookup[bool](argParse, "save_object").get(false)
     altPath  = $(getEnv("CON4M_PATH"))
 
   if cmd == "help":
@@ -373,4 +421,4 @@ when isMainModule:
   if cmd in ["lex", "parse", "check"]:
     session.cmd_not_full_program(cmd, args, format, debug)
   else:
-    session.cmd_compile(cmd, args[0], format, debug)
+    session.cmd_compile(cmd, args[0], format, debug, saveObj)

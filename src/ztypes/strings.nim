@@ -344,7 +344,7 @@ proc marshal_style(s: FmtStyle): C4Str =
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-proc rope_marshal(r: Rope, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
+proc rope_marshal*(r: Rope, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
   if r == nil:
     var val = int64(0)
     return marshal_64_bit_value(cast[pointer](val))

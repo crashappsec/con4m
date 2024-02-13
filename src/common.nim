@@ -480,6 +480,7 @@ type
     fn*:          pointer
     params*:      pointer
     node*:        IrNode # For user-defined validators; fn will be blank in IR.
+    paramType*:   TypeId
 
 
   FsKind* = enum
@@ -932,11 +933,11 @@ type
   # resumption point (i.e., a replacement entry point), and a chalk
   # mark.
   ZObjectFile* = ref object
-    zeroMagic*:      int = 0x0c001dea0c001dea
-    zcObjectVers*:   int = 0x01
+    zeroMagic*:      uint64 = 0x0c001dea0c001dea'u64
+    zcObjectVers*:   int16 = 0x01
     staticData*:     string
-    globals*:        Dict[int, string]
     tInfo*:          Dict[TypeId, int]   # Index into static Data for repr
+    globals*:        Dict[int, string]
     symTypes*:       seq[(int, TypeId)]  # address : TypeId
     globalScopeSz*:  int
     moduleContents*: seq[ZModuleInfo]
@@ -956,8 +957,8 @@ type
     source*:         string
     moduleId*:       int
     moduleVarSize*:  int
-    instructions*:   seq[ZInstruction]
     initSize*:       int # size of init code before functions begin.
+    instructions*:   seq[ZInstruction]
 
   # Used in vm.nim
   StackFrame*   = object
@@ -968,12 +969,12 @@ type
     targetmodule*: ZModuleInfo # If not targetFunc
 
   AttrContents* = ref object
-   contents*:    pointer
    tid*:         TypeId
    isSet*:       bool
    locked*:      bool
    lockOnWrite*: bool
    override*:    bool
+   contents*:    pointer
 
   RuntimeState* = ref object
     obj*:            ZObjectFile
@@ -994,6 +995,7 @@ type
     externArgs*:     seq[seq[FfiType]]
     externFps*:      seq[pointer]
     running*:        bool
+    memos*:          Memos
 
   MixedObj* = object
     t*:     TypeId
