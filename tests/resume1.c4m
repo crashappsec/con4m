@@ -1,0 +1,17 @@
+confspec {
+  singleton example {
+    field intval {
+      type:    int
+      default: 0
+    
+    }
+  }
+  
+  root {
+    allow: example
+  }
+}
+
+print(example.intval)
+example.intval += 1
+print(example.intval)
