@@ -1,0 +1,204 @@
+use getopt from "modules"
+
+confspec {
+     root {
+         user_def_ok: true
+         allow: getopts
+     }
+}
+
+getopts {
+  "#### CON4M to our programming language"
+  """
+## See `help [command]` for more details on individual commands.
+
+## The below flags can be given with any command. Individual commands
+   may have additional flags.
+"""
+
+  default_command:   "run"
+  command_attribute: "command"
+  arg_attribute:     "args"
+  add_help_commands: false
+
+  flag_yn debug {
+      "Debugging output on"
+      "## Turn debugging on, which will show all intermediate phase output."
+      field_to_set: "debug"
+  }
+
+  flag_yn pretty {
+      "Pretty print file"
+      "## Output a pretty-printed version to stdout before executing"
+      field_to_set: "pretty"
+  }
+
+  command run {
+      " Run a con4m program, compiling if nessary."
+ """
+ ## Compile and run a program.
+ 
+The required argument, if pointing to a source file, will be the main
+entry point for the first execution. Dependent files are automatically
+pulled in.
+"""
+
+      args: (1, 1)
+      flag_yn save {
+          "Save object state at end of execution"
+          field_to_set: "save_object"
+      }
+
+      flag_arg entry {
+          "Module to use as the default starting module."
+"""
+Note that if the program is being built as part of an invocation of
+<em>run</em>,
+the initial execution's entry point will still be the file provided, but
+subsequent invocations of the object file will use this value.
+
+Otherwise, this will change the current entry point, and if using
+<em>--save</em>, will also change it for subsequent runs.
+"""
+          field_to_set: "entry_point"
+      }
+  }
+
+  command resume {
+      " Run a saved object file, resuming execution if appropriate."
+"""
+## Resume saved execution state
+The input file must be a `.0c00l` file, which can be generated multiple ways:
+
+- `con4m run --save`
+- `con4m compile`
+- `A previous `con4m resume` with the `--save` flag turned on.
+"""
+
+      args: (1, 1)
+
+      flag_yn save {
+          "Save the object state at end of execution."
+          field_to_set: "save_object"
+      }
+
+      flag_arg entry {
+"""
+Module name to use as the default starting module in this run.  It
+will become the default in subsequent runs if also applying the
+<em>--save</em> flag.
+"""
+
+          field_to_set: "entry_point"
+      }
+  }
+
+  command compile {
+      " Compile to a runnable object file (only)."
+"""
+## Compile a con4m program without running it, generating an object file.
+
+The object's entrypoint for its first execution will be the module named
+in the argument.
+
+Future runs can save a new entry point via the `--entry` flag.
+"""
+      args: (1, 1)
+  }
+
+  command check {
+      "Parse and validate <em>con4m</em> code"
+      
+"""
+## Validate, but do not generate an object.
+
+Fully parse and validate as many con4m files as you like, and output
+the checked IR tree at the end of the process, where successful. Does
+**not** select an entry point, or generate an object file.
+"""
+      args: (1, 0xffffffff)
+  }
+
+  command parse {
+      "Parse <em>con4m</em> code without checking it."
+"""## Show parse trees
+
+Attempts to parse any con4m files passed at the command line,
+outputing parse trees whenever the parse is successful.
+"""
+      args: (1, 0xffffffff)
+  }
+
+  command lex {
+      " Perform lexical analysis only on source code."
+"""
+## Mostly useless.
+Passes any files given at the command line through the lexer (only).
+"""
+      args: (1, 0xffffffff)
+  }
+
+  command objdump {
+      "Output detailed information about a <em>con4m</em> object file."
+"""
+## The `0c00l` object file format is not cool.
+
+Right now, when compiling, con4m produces files in this format, which
+can be subsequently executed.
+
+`0cool` files run on a really dumb machine without registers that we
+put together, because it was quick.  It's still not bad, but hopefully
+we'll replace it with something better.
+
+This command formats all relevent data in the object file in a way
+that mostly maps to the raw bytes, but certainly makes the contents
+more human readable.
+
+If you only wany to see the disassembled code, use the `disassemble`
+command.
+"""
+      args: (1, 1)
+  }
+
+  command disassemble {
+      "Disassemble a <em>con4m</em> object file."
+"""
+## Dis dis-assembles
+
+This shows the disassemble code inside a con4m object file. Modules
+containing only foreign function exports are not shown unless `--debug` is on.
+
+Note that there is no specific assembler, so it's really just a
+pretty-printing of instruction contents.
+"""
+      args: (1, 1)
+  }
+
+  command pretty {
+      "Pretty-print <em>con4m</em> code on the terminal."
+"""
+## Pretty-prints all arguments, tho pretty unintelligently...
+
+This will only work with code that properly parses, and currently
+isn't very sophisticated; it even eats comments.
+
+Note that you can alternatively use the `--pretty` flag with any other
+command.
+"""
+      args: (1, 0xffffffff)
+  }
+
+  command help {
+     " This help message."
+"""
+## Provides help for the `con4m` command line.
+Argument(s) should be valid `con4m` command names.
+
+Details on those commands, along with any flags specific to those
+commands are shown.
+"""
+
+     args: (0, 0xffffffff)
+  }
+
+}
