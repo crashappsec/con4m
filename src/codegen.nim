@@ -108,7 +108,7 @@ proc emitInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                          typeInfo: tid.getTid())
   ctx.mcur.objInfo.instructions.add(ins)
 
-proc findStringAt(mem: string, offset: int): string =
+proc findStringAt*(mem: string, offset: int): string =
   let endIx = mem.find('\0', offset)
 
   return mem[offset ..< endIx]
@@ -122,7 +122,7 @@ proc hex(x: int, minlen = 2): string =
 
   return "0x" & `$`(x.toHex(outlen).toLowerAscii())
 
-proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
+proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
   # This is really just for use during development.
   # Will do a more proper disassembler at some point.
   var
@@ -141,7 +141,7 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       ty   = text(cast[TypeId](item.typeInfo).toString())
       lno  = item.lineNo
       mid  = text($(item.moduleId))
-      lbl: Rope = text(" ")
+      lbl: Rope = nil
 
     if item.typeInfo == TBottom:
       ty = text("none")
@@ -296,6 +296,8 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     else:
       discard
 
+    if lbl == nil or lbl.runeLength() == 0:
+      lbl = text(" ")
     row = @[address, em($(item.op)), arg1, arg2, ty, mid, lbl]
 
     cells.add(row)
@@ -304,9 +306,9 @@ proc rawReprInstructions(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
   result.colWidths([(12, true), (16, true), (14, true), (16, true),
                     (0, false), (0, false), (0, false)])
 
-proc disassembly*(ctx: ZObjectFile): Rope =
+proc disassembly*(ctx: ZObjectFile, skip_nops = true): Rope =
     for item in ctx.moduleContents:
-      if item.instructions.len() == 3:
+      if item.instructions.len() == 3 and skip_nops:
         if item.instructions[0].op == ZNop and
            item.instructions[1].op == ZModuleRet and
            item.instructions[2].op == ZNop:
@@ -986,7 +988,7 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
   ctx.oneIrNode(cur.assignRhs)
   if cur.assignRhs.contents.kind != IrLit and
     not cur.assignRhs.tid.getDataType().byValue:
-    ctx.genTCall(FCopy, cur.assignRhs.tid)
+    ctx.genTCall(FCopy, n.tid)
   ctx.oneIrNode(cur.assignLhs)
 
   if cur.assignLhs.contents.kind == IrIndexLhs:
@@ -1007,11 +1009,11 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
       discard
     if ixNode.indexEnd == nil:
       if ixNode.toIx.tid.isDictType():
-        ctx.genTCall(FAssignDIx, cur.assignRhs.tid)
+        ctx.genTCall(FAssignDIx, n.tid)
       else:
-        ctx.genTCall(FAssignIx, cur.assignRhs.tid)
+        ctx.genTCall(FAssignIx, n.tid)
     else:
-      ctx.genTCall(FAssignSlice, cur.assignRhs.tid)
+      ctx.genTCall(FAssignSlice, n.tid)
   else:
     var
       isAttr: bool
@@ -1023,9 +1025,9 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
       isAttr = true
 
     if isAttr:
-      ctx.genSetAttr(cur.assignRhs.tid, n.lock)
+      ctx.genSetAttr(n.tid, n.lock)
     else:
-      ctx.genAssign(cur.assignRhs.tid)
+      ctx.genAssign(n.tid)
 
 proc genLoadStorageAddress(ctx: CodeGenState, sym: SymbolInfo) =
   if sym.isAttr:
@@ -1333,7 +1335,24 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
       ctx.zobj.ffiInfo.add(zinfo)
 
-proc setupModules(ctx: CodeGenState) =
+proc extractSectionDocs(ctx: CodeGenState, m: Module, d: Dict[string, AttrDocs]) =
+  # TODO: warn about multiple adds.
+  for node in m.secDocNodes:
+    var sec = node.contents.prefix
+    if sec == "":
+      sec = node.contents.sectName
+    else:
+      sec &= "." & node.contents.sectName
+
+    sec &= "." & node.contents.instance
+
+    if sec != "" and sec[^1] == '.':
+      sec = sec[0 ..< ^1]
+
+    let docObj = AttrDocs(shortdoc: node.shortdoc, longdoc: node.longdoc)
+    d[sec] = docObj
+
+proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
   var
     curArena = 1
     curFnId  = 1
@@ -1347,6 +1366,8 @@ proc setupModules(ctx: CodeGenState) =
 
   for (_, module) in ctx.cc.modules.items(sort=true):
     ctx.addFfiInfo(module)
+    ctx.extractSectionDocs(module, d)
+
 
   for (_, module) in ctx.cc.modules.items(sort=true):
     var mi = ZModuleInfo(moduleId: curArena, modname: module.modname,
@@ -1404,14 +1425,17 @@ proc generateCode*(cc: CompileCtx, nextId = -1): RuntimeState =
   ctx.zobj   = result.obj
   ctx.memos  = Memos()
 
+  result.sectionDocs.initDict()
+
   ctx.zobj.tinfo.initDict()
   ctx.memos.map.initDict()
   ctx.minfo.initDict()
   ctx.strCache.initDict()
   ctx.cacheAllTypeInfo()
-  ctx.setupModules()
+  ctx.setupModules(result.sectionDocs)
   ctx.genModule(cc.entrypoint)
   ctx.fillCallBackpatches()
+
   result.obj.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
   result.obj.nextEntrypoint = int32(nextId)
   result.obj.spec           = ctx.cc.attrSpec

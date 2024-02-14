@@ -520,7 +520,6 @@ proc lookupMsg(code: string): string =
 
   return "<em>Unknown error code:</em> " & code
 
-
 proc performSubs(extra: seq[string], s: var string) =
   for i, item in extra:
     s = s.replace("$" & `$`(i + 1), item)
@@ -700,12 +699,18 @@ proc regularTerminationSignal(signal: cint) {.noconv.} =
 
   let rt = getCon4mRuntime()
 
-  if rt != nil:
+  if rt != nil and rt.running:
     print(getCon4mRuntime().getStackTrace(), file = stderr)
+  else:
+    print(h2(text("Program was ") + em("NOT") +
+              text(" executing when we crashed.")))
 
-  print(h4("Nim stack trace:"))
-  echo getStackTrace()
-
+  when defined(debug):
+    print(h4("Nim stack trace:"))
+    echo getStackTrace()
+  else:
+    print(h4(text("Nim stack trace is unavailable " &
+             "(must compile w/ ") + strong("-d:debug") + text(" for traces)")))
   var sigset:  SigSet
 
   discard sigemptyset(sigset)

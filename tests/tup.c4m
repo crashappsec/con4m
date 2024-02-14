@@ -11,3 +11,8 @@ assert y[0] == 1
 assert y[1] == "foo"
 assert y[2] == 3
 
+#(a, b, c) = x
+
+#print(a)
+#print(b)
+#print(c)

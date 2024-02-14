@@ -46,10 +46,10 @@ proc runInitialTests(verbose = true) =
     let
       output = runCmdGetEverything("./con4m", @["run", item])
       kat    = unicode.strip(tryToLoadFile(dir.joinPath(name & ".kat")))
-      errout = unicode.strip(output.getStderr())
+      errout = unicode.strip(output.getStderr().replace("\e[0m", ""))
       excode = output.getExit()
     if kat == "":
-      if errout != "" and errout != "\e[0m":
+      if errout != "":
         error("Unexpected errors: ")
         echo errout
         continue

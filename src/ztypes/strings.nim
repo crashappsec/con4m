@@ -80,8 +80,8 @@ proc u32_repr(pre: pointer): string {.cdecl.} =
 proc str_repr(n: C4Str): cstring {.cdecl.} =
   return cast[cstring](n)
 
-proc rich_repr(s: Rope): string {.cdecl.} =
-  return s.toUtf8()
+proc rich_repr(s: Rope): cstring {.cdecl.} =
+  return cstring(s.toUtf8())
 
 proc rich_pluseq(a: pointer, b: Rope): void {.cdecl.} =
   # I *think* I can declare `a` a `var Rope` here, but just in case.
@@ -368,7 +368,6 @@ proc rope_marshal*(r: Rope, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
   memos.map[as_ptr] = cast[pointer](id)
   memos.next_id    += 1
 
-
   to_concat.add(marshal_nim_string(r.id))
   to_concat.add(marshal_nim_string(r.tag))
   to_concat.add(marshal_nim_string(r.class))
@@ -533,21 +532,12 @@ proc rope_unmarshal*(p: var cstring, t: TypeId, memos: Memos): Rope
   var
     memo = p.unmarshal_64_bit_value()
 
-  # The unmarshaling as originally ordered would normally ensure the
-  # first time we hit a pointer we will be creating it. Still, we
-  # assume that we might have to instantiate the object and let
-  # someone else fill it in later...
-  #
-  # So we will *create* the object if it doesn't exist, but will
-  # return the empty object if there is no data.
   var
-    key    = memo and not MemoValueFlag
-    resOpt = memos.map.lookup(cast[pointer](key))
-
-  if resOpt.isSome():
-    return cast[Rope](resOpt.get())
+    key = memo and not MemoValueFlag
 
   if key == memo:
+    result = cast[Rope](memos.map[cast[pointer](key)])
+    GC_ref(result)
     return
 
   let
@@ -569,7 +559,6 @@ proc rope_unmarshal*(p: var cstring, t: TypeId, memos: Memos): Rope
   result = Rope(id: id, tag: tag, class: class, siblings: siblings,
                 style: style, tweak: tweak, kind: kind)
 
-  GC_ref(result)
   memos.map[cast[pointer](key)] = cast[pointer](result)
 
   case result.kind
@@ -616,6 +605,7 @@ proc rope_unmarshal*(p: var cstring, t: TypeId, memos: Memos): Rope
     result.title   = p.rope_unmarshal(t, memos)
     result.caption = p.rope_unmarshal(t, memos)
 
+
   of RopeTableRow, RopeTableRows:
     let ncells = p.unmarshal_32_bit_value()
     for i in 0 ..< ncells:
@@ -624,6 +614,8 @@ proc rope_unmarshal*(p: var cstring, t: TypeId, memos: Memos): Rope
   of RopeFgColor, RopeBgColor:
     result.color   = p.unmarshal_nim_string()
     result.toColor = p.rope_unmarshal(t, memos)
+
+  GC_ref(result)
 
 strOps[FRepr]         = cast[pointer](str_repr)
 strOps[FCastFn]       = cast[pointer](get_cast_from_string)

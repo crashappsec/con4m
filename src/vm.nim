@@ -69,7 +69,7 @@ when USE_TRACE:
 
       return rows.quickTable(title = "Fn Scope")
 
-  proc moduleScopeRepr(ctx: RuntimeState): Rope =
+  proc moduleScopeRepr(ctx: RuntimeState, title = "Module scope"): Rope =
     var rows: seq[seq[Rope]] = @[]
 
     rows.add(@[text("Variable"), text("Value"), text("Offset")])
@@ -80,7 +80,7 @@ when USE_TRACE:
         val = toHex(cast[int](raw)).toLowerAscii()
       rows.add(@[text(name), text(val), text($(offset))])
 
-    return rows.quickTable(title = "Module scope")
+    return rows.quickTable(title = title)
 
   proc traceExecution(ctx: RuntimeState, instr: ZInstruction) =
     if trace_on:
@@ -744,11 +744,11 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         address  = cast[ptr pointer](ctx.stack[ctx.sp])
         typeaddr = cast[ptr pointer](cast[uint](address) +
                                      uint(sizeof(pointer)))
-      ctx.sp += 2
-      address[] = ctx.stack[ctx.sp]
       ctx.sp += 1
       typeaddr[] = ctx.stack[ctx.sp]
       ctx.sp += 1
+      address[] = ctx.stack[ctx.sp]
+      ctx.sp += 2
     of ZAssert:
       if ctx.stack[ctx.sp] != nil:
         ctx.sp += 2
@@ -832,6 +832,7 @@ proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
 
   ctx.attrs.initDict()
   ctx.allSections.initDict()
+
   if ctx.using_spec():
     ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
 

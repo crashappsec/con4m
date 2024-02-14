@@ -188,7 +188,7 @@ proc list_marshal(fa: FlexArray[pointer], t: TypeId, memos: Memos):
     num_items          = int64(view.len())
     len_str            = newC4Str(sizeof(int64))
     obj_len            = cast[ptr int64](lenstr)
-    to                 = t.idToTypeRef()
+    to                 = cast[TypeId](t).idToTypeRef()
     item_type          = to.items[0]
 
   var
@@ -196,7 +196,7 @@ proc list_marshal(fa: FlexArray[pointer], t: TypeId, memos: Memos):
     offset = sizeof(int64)
     to_add: seq[pointer]
 
-  for item in view:
+  for i, item in view:
     let marshaled = item.marshal(item_type, memos)
 
     l += marshaled.len() + sizeof(int64)
@@ -211,6 +211,7 @@ proc list_marshal(fa: FlexArray[pointer], t: TypeId, memos: Memos):
     offset += sizeof(int64)
     c4str_write_offset(result, item, offset)
     offset += item.len()
+
 
 proc list_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                    FlexArray[pointer] {.exportc, cdecl.} =

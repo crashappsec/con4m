@@ -12,14 +12,21 @@
 # - Hook up validators for the checkpointing.
 # - Allow selecting the module to fire up on restore.
 # - Test 'Other' data types
-# - Finish adding doc strings in for getopt, etc.
 # - Documentation.
+# - Add code gen for tuple unpacking.
+# - Array rcs
+# - Space before doc string
+# - Marshal secsion docs
 
 # === Semi-high priority -- could ship internally w/ known issues ===
-# - Add help and extra help topics back into getopt.
+# - Embed f() docs as an option.
+# - ZFuncInfo should have the module number, instead of relying on the
+#   instruction to know.
+# - container type bug noted in list
+# - Save info about when last execution was, and how many executions.
 # - Fill in missing error messages.
-# - Proper marshaling of types and callbacks.
-# - Lit mods need to be available for runtime literal instantiation.
+# - Proper marshaling of callbacks.
+# - Lit mods should be available for runtime literal instantiation.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors (anything runtime).
 # - Don't bother to issue a copy when we just instantiated a lit.
@@ -37,11 +44,13 @@
 # - Remove any remaining newRefVal / extractRef calls
 # - Get control flow stuff working properly.
 # - More flexibility on storing src in object
+# - Automatic console err fd
 
 # == Medium -- before public release ==
+# - Integrate test command into con4m command.
+# - Expect functionality in test command.
+# - Flag what objdump dumps.
 # - Comments in pretty(), and better spacing control based on original src.
-# - Test for tuple unpacking; I think I probably haven't done it, and it may not
-#   work at all.
 # - Redo code gen for assignment to get rid of the extra ref/deref for index
 #   ops
 # - Redo the rich data type again; replace w/ a "container" type
@@ -118,358 +127,65 @@
 ## :Copyright: 2022 - 2024
 
 import std/os
-import "."/[compile, codegen, vm, specs, pretty, err, getopts, rtmarshal]
+import "."/getopts
+import "commands"/[run, objdump, cmd_base]
 
 const
-  obj_file_extension = ".0c00l"
-  flag_spec          = """
-use getopt from "modules"
+  spec_file = joinPath(splitPath(currentSourcePath()).head,
+                       "commands/spec.c4m")
+  flag_spec = static_read(spec_file)
 
-getopts {
 
-  default_command:   "run"
-  command_attribute: "command"
-  arg_attribute:     "args"
-
-  flag_yn debug {
-      "Debug"
-      "Turn debugging on, which will show intermediate phase output."
-      field_to_set: "debug"
-  }
-
-  flag_yn pretty {
-      "Pretty print file"
-      "Output a pretty-printed version to stdout before executing"
-      field_to_set: "pretty"
-  }
-
-
-  command lex {
-      "Perform lexical analysis"
-      "Pass any files given at the command line through the lexer (only)."
-      args: (1, 0xffffffff)
-  }
-
-  command parse {
-      "Parse files"
-      "Print parse trees for files given at the command line, outputing trees."
-      args: (1, 0xffffffff)
-  }
-
-  command check {
-      "Parse and validate"
-      "Print checked IR tree"
-      args: (1, 0xffffffff)
-  }
-
-  command compile {
-      "Compile a single program entry point, without running it."
-      args: (1, 1)
-  }
-
-  command run {
-      "Compile and run."
-      args: (1, 1)
-      flag_yn save {
-
-          "Save object state at end of execution"
-          field_to_set: "save_object"
-      }
-  }
-
-  command resume {
-      "Resume saved execution state."
-      "If provided, the second argument should be the module name to start at."
-      args: (1, 2)
-
-      flag_yn save {
-          "Save object state at end of execution"
-          field_to_set: "save_object"
-      }
-  }
-}
-"""
-
-proc parse_command_line(): RuntimeState =
-  let
-    ctx  = newCompileContext(nil)
-    spec = ctx.loadInternalModule("c4m_getopt", flag_spec)
-
-  ctx.buildProgram(spec)
-
-  var
-    rt     = ctx.generateCode()
-    exit   = rt.executeObject()
-    params = commandLineParams()
-
-  try:
-    let
-      pre   = rt.runManagedGetopt(params)
-      parse = rt.finalizeManagedGetopt(pre)
-
-    if parse != nil:
-      return rt
-    else:
-      print fgColor("error: ", "red") + text("command not understood.")
-      assert parse != nil
-      echo parse.helpToPrint
-      quit(-1)
-
-  except:
-    print(fgColor("error: ", "red") + italic(getCurrentException().msg))
-    if "--debug" in params:
-      rt.print_attributes()
-      echo getStackTrace()
-    quit(-1)
-
-proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.importc,
-                                                                       cdecl.}
-proc cmd_not_full_program(ctx: CompileCtx, cmd: string, args: seq[string],
-                          fmt: bool, debug: bool) =
-  var
-    modules: seq[Module]
-    gotErrors = false
-
-  for item in args:
-    let modOpt = ctx.findAndLoadFromUrl(item)
-    if modOpt.isNone():
-      ctx.loadError("FileNotFound", item)
-
-    let module = modOpt.get()
-    if cmd == "check":
-      ctx.buildIr(module)
-    modules.add(module)
-
-  for module in modules:
-    print h1("Module: " & module.key & module.ext)
-
-    if fmt:
-      print pretty(module.root)
-
-    if cmd == "lex" or debug:
-      module.printTokens()
-      if cmd == "lex":
-        continue
-
-    if cmd == "parse" or debug:
-      module.printParseTree()
-      if cmd == "parse":
-        continue
-
-    module.printIr()
-    if debug:
-      if module.usedAttrs != nil and
-         module.usedAttrs.table.items().len() != 0:
-        module.printAttrsUsed()
-      if module.funcScope != nil and
-         module.funcScope.table.items().len() != 0:
-        ctx.printAllFuncScopes(module)
-      if module.moduleScope != nil and
-         module.moduleScope.table.items().len() != 0:
-        module.printModuleScope()
-
-  if ctx.errors.len() != 0:
-    gotErrors = true
-  else:
-    for (_, m) in ctx.modules.items():
-      if m.errors.len() != 0:
-        gotErrors = true
-        break
-
-  if gotErrors:
-    print(h1("All Errors"))
-    discard ctx.printErrors(file = stdout)
-  quit()
-
-proc run_object(rt: var RuntimeState, debug, save: bool, modfile: string,
-                resumed = false) =
-  if debug:
-    print h1("Type info stored in object file: ")
-    rt.obj.printTypeCatalog()
-    print h1("Disassembly")
-    print rt.obj.disassembly()
-    print h1("Executing...")
-
-  let exitCode = if resumed: rt.resume_object() else: rt.executeObject()
-
-  if debug:
-    print h1("Execution completed.")
-  if save:
-    var
-      objfile = rt.marshal_runtime(-3)
-      out_fname = modfile
-    if not out_fname.endswith(obj_file_extension):
-      out_fname &= obj_file_extension
-
-
-    if debug:
-      print hex_dump(objfile, uint(objfile.len()), 0)
-
-    try:
-      var
-        f       = open(outfname, fmWrite)
-        l       = objfile.len()
-        cur     = 0
-        toWrite = l
-
-      if f == nil:
-        print fgColor("error: ", "red") + text("Could not write to ") +
-        em(outfname)
-      else:
-        while toWrite > 0:
-          let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
-                                                  toOpenArray(0, l - 1),
-                               cur,
-                               toWrite)
-          cur     += n
-          toWrite -= n
-
-    except:
-      print fgColor("error: ", "red") + text("Could not write to ") +
-            em(outfname) + text(": ") + italic(getCurrentException().msg)
-
-  let validation_errors = validate_state()
-  if len(validation_errors) != 0:
-    print(h4("Post-execution validation failed!"))
-    var bullets: seq[Rope]
-    for item in validation_errors.items():
-      bullets.add(cast[Rope](item))
-    print(ul(bullets), file = stderr)
-
-  if debug:
-    print(h1("Any set attributes are below."))
-    rt.print_attributes()
-
-  if debug and rt.obj.spec.used:
-    print(h4("Specification used for validation: "))
-    rt.obj.spec.print_spec()
-
-
-  quit(exitCode)
-
-proc cmd_resume(args: seq[string], fmt, debug, save: bool) =
-  var
-    rawobj: C4Str
-    fname  = args[0]
-    module = ""
-
-  if args.len() == 2:
-    module = args[1]
-
-  try:
-    rawobj = fname.newC4StrFromFile()
-  except:
-    print fgColor("error: ", "red") + text("Could not open ") + em(fname) +
-          text(": ") + italic(getCurrentException().msg)
-    quit()
-
-  var rt = rawobj.unmarshal_runtime()
-
-  if fmt:
-    print(h2("Original entry point source code"))
-    let m = rt.obj.moduleContents[rt.obj.entryPoint - 1]
-    print(pretty(m.source))
-
-  rt.run_object(debug, save, fname, resumed = true)
-
-
-proc cmd_compile(ctx:                 CompileCtx,
-                 cmd, entryname:      string,
-                 fmt, debug, saveObj: bool) =
-  let
-    can_proceed = ctx.buildFromEntryPoint(entryname)
-    entry       = ctx.entrypoint
-
-  if not can_proceed:
-    print(h4("Compilation failed."))
-
-  if fmt and entry.root != nil:
-    print(h2("Entrypoint source code"))
-
-    print pretty(entry.root)
-
-    if debug:
-      print(h2("Raw source"))
-      echo $(entry.s.runes)
-
-  if debug:
-    if entry.tokens.len() == 0:
-      quit(1)
-    print(h1("Tokens for module '" & entry.modname & "'"))
-    entry.printTokens()
-
-    if entry.root == nil:
-      quit(1)
-
-    print(h1("Parse tree for module '" & entry.modname & "'"))
-    entry.printParseTree()
-
-    if entry.ir == nil:
-      quit(1)
-
-    print(h1("IR for module '" & entry.modname & "'"))
-    entry.printIr()
-
-    if entry.usedAttrs.table.items().len() != 0:
-      entry.printAttrsUsed()
-      entry.printModuleScope()
-
-    if entry.usedAttrs != nil and
-       entry.usedAttrs.table.items().len() != 0:
-      print(h1("Attributes used"))
-      entry.printAttrsUsed()
-
-    if entry.funcScope != nil and
-       entry.funcScope.table.items().len() != 0:
-      print(h1("Function scopes + IRs available from entry point"))
-      ctx.printAllFuncScopes(entry)
-
-    if entry.moduleScope != nil and
-       entry.moduleScope.table.items().len() != 0:
-      print(h1("Module scope"))
-      entry.printModuleScope()
-
-    if ctx.globalScope != nil and ctx.globalScope.table.items().len() != 0:
-      print(h1("Global Scope"))
-      ctx.printGlobalScope()
-
-    if entry.cfg != nil:
-      print(h1("Global CFG"))
-      ctx.printProgramCfg()
-
-
-  if not ctx.printErrors():
-    quit(1)
-
-  var rt = ctx.generateCode()
-  rt.run_object(debug, saveObj, entry.modname)
-
+proc cmd_help(helprt: RuntimeState) =
+  print helprt.searchCmdHelp(helprt.cmdline_info, config_args)
 
 when isMainModule:
   useCrashTheme()
   setupSignalHandlers()
 
   let
-    argParse = parse_command_line()
-    cmd      = lookup[C4Str](argParse, "command").get().toNimStr()
-    args     = lookup[Array](argParse, "args").get().strlist()
-    debug    = lookup[bool](argParse, "debug").get(false)
-    format   = lookup[bool](argParse, "pretty").get(false)
-    saveObj  = lookup[bool](argParse, "save_object").get(false)
-    altPath  = $(getEnv("CON4M_PATH"))
+    rt    = parse_command_line(flag_spec)
+    ep    = lookup[C4Str](rt, "entry_point").get(nil)
 
-  if cmd == "help":
-    quit(1)
+  config_cmd           = lookup[C4Str](rt, "command").get().toNimStr()
+  config_args          = lookup[Array](rt, "args").get().strlist()
+  config_debug         = lookup[bool](rt, "debug").get(false)
+  config_format        = lookup[bool](rt, "pretty").get(false)
+  config_save_object   = lookup[bool](rt, "save_object").get(false)
+  config_reentry_point = if ep == nil: "" else: ep.toNimStr()
 
   var
+    altPath = $(getEnv("CON4M_PATH"))
     session = newCompileContext(nil)
 
   if altPath != "":
     session.modulePath = altPath.split(Rune(':'))
+  if config_cmd in ["lex", "parse", "check"]:
+    session.cmd_stop_early()
+  elif config_cmd == "pretty":
+    session.cmd_pretty()
+  elif config_cmd == "resume":
+    cmd_resume()
+  elif config_cmd == "help":
+    rt.cmd_help()
+  elif config_cmd == "compile":
+    if config_args[0].endswith(obj_file_extension):
+        print(fgcolor("error: ", "red") +
+              text("Cannot compile object file ") + em(config_args[0]) +
+              text(". Please specify a module entry point."))
+        quit(-4)
 
-  if cmd in ["lex", "parse", "check"]:
-    session.cmd_not_full_program(cmd, args, format, debug)
-  elif cmd == "resume":
-    cmd_resume(args, format, debug, saveObj)
+    config_save_object = true
+
+    session.cmd_compile()
+  elif config_cmd == "run":
+    if config_args[0].endswith(obj_file_extension):
+      cmd_resume()
+    else:
+      session.cmd_compile()
+  elif config_cmd == "objdump":
+    cmd_objdump()
+  elif config_cmd == "disassemble":
+    cmd_disassemble()
   else:
-    session.cmd_compile(cmd, args[0], format, debug, saveObj)
+    unreachable

@@ -322,6 +322,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
        fieldInfo.fieldKind in [FsErrorFieldNotAllowed]:
       ctx.irError("TryVarAssign", loc)
       return ctx.addVarDef(name, loc, tid)
+
   case fieldInfo.fieldKind
   of FsUserDefField, FsErrorNoSpec:
     sym = SymbolInfo(name: name, tid: tVar(), isAttr: true)

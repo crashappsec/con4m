@@ -53,7 +53,7 @@ proc marshal_sym_types(l: var seq[(int, TypeId)]): C4Str =
 proc unmarshal_sym_types(p: var cstring): seq[(int, TypeId)] =
   list_unmarshal_helper(p):
     let
-      k = int(p.unmarshal_64_bit_value())
+      k = cast[int](p.unmarshal_64_bit_value())
       v = cast[TypeId](p.unmarshal_64_bit_value())
 
     result.add((k, v))
@@ -77,7 +77,6 @@ proc marshal_one_func(f: ZFnInfo): C4Str =
   basic_marshal_helper:
     toAdd.add(f.funcName.marshal_nim_string())
     toAdd.add(f.syms.marshal_sym_names())
-    toAdd.add(f.paramTypes.marshal_int_list())
     toAdd.add(f.symTypes.marshal_sym_types())
     toAdd.add(cast[pointer](f.offset).marshal_64_bit_value())
     toAdd.add(cast[pointer](f.size).marshal_64_bit_value())
@@ -87,7 +86,6 @@ proc unmarshal_one_func(p: var cstring): ZFnInfo =
 
   result.funcName   = p.unmarshal_nim_string()
   result.syms       = p.unmarshal_sym_names()
-  result.paramTypes = cast[seq[TypeId]](p.unmarshal_int_list())
   result.symTypes   = p.unmarshal_sym_types()
   result.offset     = int(p.unmarshal_64_bit_value())
   result.size       = int(p.unmarshal_64_bit_value())
@@ -326,7 +324,7 @@ proc marshal_object(rt: RuntimeState, nextmid: int32): C4Str =
 
 proc unmarshal_object(rt: RuntimeState, p: var cstring) =
   if p.unmarshal_64_bit_value() != rt.obj.zeroMagic:
-    raise newException(ValueError, "Invalid magic (expect 0x0c001dea x2)")
+    raise newException(ValueError, "Invalid magic (expected two '0x0c001dea's)")
 
   if p.unmarshal_16_bit_value() != rt.obj.zcObjectVers:
     raise newException(ValueError, "Invalid object version.")
@@ -385,28 +383,38 @@ proc unmarshal_section_list(rt: RuntimeState, p: var cstring) =
     rt.allSections[p.unmarshal_nim_string()] = true
 
 proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
-  let arenaBytes: uint64 = uint64(sz * (2 * sizeof(pointer)))
+  let itemcount = rt.moduleallocations[ix].len() div 2
 
   basic_marshal_helper:
-    var contents = newC4Str(int64(arenaBytes))
-    if arenaBytes != 0:
-      copyMem(contents, addr rt.moduleAllocations[ix][0], arenaBytes)
+    toAdd.add(marshal_32_bit_value(int32(itemcount)))
+    for i in 0 ..< itemcount:
+      let
+        # This type is wrong for lists somehow???
+        rawt = rt.moduleAllocations[ix][i * 2 + 1]
+        t    = cast[TypeId](rawt)
 
-    toAdd.add(marshal_64_bit_value(cast[pointer](arenaBytes)))
+      toAdd.add(rawt.marshal_64_bit_value())
+      if rawt == nil:
+        toAdd.add(marshal_64_bit_value(nil))
+      else:
+        toAdd.add(marshal(rt.moduleAllocations[ix][i * 2], t, rt.memos))
 
-    if arenaBytes != 0:
-      toAdd.add(contents)
+proc unmarshal_one_arena(rt: RuntimeState, p: var cstring): seq[pointer] =
+  let itemcount = p.unmarshal_32_bit_value()
 
-proc unmarshal_one_arena(p: var cstring): seq[pointer] =
-  let l = p.unmarshal_32_bit_value() div (sizeof(pointer))
-
-  if l == 0:
+  if itemcount == 0:
     return
 
-  result = newSeq[pointer](l)
+  for i in 0 ..< itemcount:
+    let t = cast[TypeId](p.unmarshal_64_bit_value())
 
-  for i in 0 ..< l:
-    result.add(cast[pointer](p.unmarshal_64_bit_value()))
+    if t == TBottom:
+      result.add(cast[pointer](p.unmarshal_64_bit_value()))
+    else:
+      let val = cast[pointer](p.unmarshal(t, rt.memos))
+      result.add(val)
+
+    result.add(cast[pointer](t))
 
 proc marshal_module_allocations(rt: RuntimeState): C4Str =
   basic_marshal_helper:
@@ -416,8 +424,9 @@ proc marshal_module_allocations(rt: RuntimeState): C4Str =
       toAdd.add(rt.marshal_one_arena(i + 1, item.moduleVarSize))
 
 proc unmarshal_module_allocations(rt: RuntimeState, p: var cstring) =
+  rt.moduleAllocations = @[]
   list_unmarshal_helper(p):
-    rt.moduleAllocations.add(p.unmarshal_one_arena())
+    rt.moduleAllocations.add(rt.unmarshal_one_arena(p))
 
 proc marshal_object_props(d: Dict[string, TypeId]): C4Str =
   dictionary_marshal_helper(d):

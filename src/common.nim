@@ -11,68 +11,70 @@ export unicode, options, nimutils, ffi, os, strutils
 # These consts are for calls in our internal Type API. It's meant to be
 # used both during compilation and interpretation.
 const
-  FRepr*         = 0
-  FCastFn*       = 1
-  FEq*           = 2
-  FLt*           = 3
-  FGt*           = 4
-  FAdd*          = 5
-  FSub*          = 6
-  FMul*          = 7
-  FFDiv*         = 8
-  FIDiv*         = 9
-  FMod*          = 10
-  FShl*          = 11
-  FShr*          = 12
-  FBand*         = 13
-  FBor*          = 14
-  FBxor*         = 15
-  FIndex*        = 16
-  FDictIndex*    = 17
-  FSlice*        = 18
-  FAssignIx*     = 19
-  FAssignDIx*    = 20
-  FassignSlice*  = 21
-  FLoadLit*      = 22
-  FContainerLit* = 23
-  FCopy*         = 24
-  FLen*          = 25
-  FPlusEqRef*    = 26
-  FGetFFIAddr*   = 27 # Of what? Already don't rememebr.
-  FInitialize*   = 28 # Stuff we're not using yet.
-  FCleanup*      = 29
-  FMarshal*      = 30
-  FUnmarshal*    = 31
+  FRepr*             = 0
+  FCastFn*           = 1
+  FEq*               = 2
+  FLt*               = 3
+  FGt*               = 4
+  FAdd*              = 5
+  FSub*              = 6
+  FMul*              = 7
+  FFDiv*             = 8
+  FIDiv*             = 9
+  FMod*              = 10
+  FShl*              = 11
+  FShr*              = 12
+  FBand*             = 13
+  FBor*              = 14
+  FBxor*             = 15
+  FIndex*            = 16
+  FDictIndex*        = 17
+  FSlice*            = 18
+  FAssignIx*         = 19
+  FAssignDIx*        = 20
+  FassignSlice*      = 21
+  FLoadLit*          = 22
+  FContainerLit*     = 23
+  FCopy*             = 24
+  FLen*              = 25
+  FPlusEqRef*        = 26
+  FGetFFIAddr*       = 27 # Of what? Already don't rememebr.
+  FInitialize*       = 28 # Stuff we're not using yet.
+  FCleanup*          = 29
+  FMarshal*          = 30
+  FUnmarshal*        = 31
 
   # This is not meant for the IR, just for the compiler / interpreter;
   # it produces a lit from the raw literal token contents.
-  FNewLit*       = 32
-  FMax*          = 33
+  FNewLit*           = 32
+  FMax*              = 33
 
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
-  OpLogicOr*     = 34
-  OpLogicAnd*    = 35
+  OpLogicOr*         = 34
+  OpLogicAnd*        = 35
 
   # These also do not generate ops directly, they generate a NOT and
   # the corresponding op. They're the same number as their negation,
   #  except with 128 added. Since gte means "not less than" we
   # get OpGte by adding to the value associated w/ 'less-than'.
 
-  OpNeq*         = 130
-  OpGte*         = 131
-  OpLte*         = 132
+  OpNeq*             = 130
+  OpGte*             = 131
+  OpLte*             = 132
 
-  MAX_CALL_DEPTH* = 200
-  STACK_SIZE*     = 1 shl 20
-  USE_TRACE*      = false # Also requires one of the below to be true
-  TRACE_INSTR*    = true
-  TRACE_STACK*    = true
-  TRACE_SCOPE*    = true
-  RTAsMixed*      = -2
-  RTAsPtr*        = -1
+  MAX_CALL_DEPTH*     = 200
+  STACK_SIZE*         = 1 shl 20
+  USE_TRACE*          = false # Also requires one of the below to be true
+  TRACE_INSTR*        = true
+  TRACE_STACK*        = true
+  TRACE_SCOPE*        = true
+  RTAsMixed*          = -2
+  RTAsPtr*            = -1
 
-  MemoValueFlag*  = 0x8000000000000000'u64
+  MemoValueFlag*      = 0x8000000000000000'u64
+  obj_file_extension* = ".0c00l"
+
 
 type
   SyntaxType* = enum
@@ -649,6 +651,8 @@ type
     loopLocs*:      seq[(IrNode, int)]
     backpatchLocs*: seq[(IrNode, int)]
     objInfo*:       ZmoduleInfo
+    secDocNodes*:   seq[IRNode]
+
 
   CompileCtx* = ref object
     modules*:     Dict[string, Module]
@@ -908,15 +912,18 @@ type
     # This field maps offsets to the name of the field. Frame
     # temporaries do not get name information here.
     funcname*:   string
+
+    # Maps the offset to the symbol name.
     syms*:       Dict[int, string]
-    # Type IDs at compile time. Particularly for debugging info, but
-    # will be useful if we ever want to, from the object file, create
-    # optimized instances of functions based on the calling type, etc.
-    # Parameters are held seprately from stack symbols, and like w/
-    # syms, we only capture variables scoped to the entire function.
-    # We'll probably address that later.
-    paramTypes*: seq[TypeId]
-    # symTypes has offsets mapped to the compile-time type.
+
+    # symTypes maps offset to type IDs at compile time. Particularly
+    # for debugging info, but will be useful if we ever want to, from
+    # the object file, create optimized instances of functions based
+    # on the calling type, etc.  Parameters are held seprately from
+    # stack symbols, and like w/ syms, we only capture variables
+    # scoped to the entire function.  We'll probably address that
+    # later.
+    #
     # At run-time, the type will always need to be concrete.
     symTypes*:   seq[(int, TypeId)]
     # Offset in bytes into the module's generated code where this
@@ -937,7 +944,7 @@ type
   # mark.
   ZObjectFile* = ref object
     zeroMagic*:      uint64 = 0x0c001dea0c001dea'u64
-    zcObjectVers*:   int16 = 0x01
+    zcObjectVers*:   int16  = 0x01
     staticData*:     string
     tInfo*:          Dict[TypeId, int]   # Index into static Data for repr
     globals*:        Dict[int, string]
@@ -978,11 +985,16 @@ type
    lockOnWrite*: bool
    override*:    bool
    contents*:    pointer
-   # TODO-- you are here. Hook these UP!
-   shortdoc*:    Rope
-   longdoc*:     Rope
+
+  AttrDocs* = ref object
+    shortdoc*: Rope
+    longdoc*:  Rope
 
   RuntimeState* = ref object
+    # Some of this stuff should move around a bit, as we should separate out
+    # the bits that aren't ststic, but get saved in the object file.
+    # Currently, that's the attribute related stuff.
+
     obj*:               ZObjectFile
     frameInfo*:         array[MAX_CALL_DEPTH, StackFrame]
     numFrames*:         int
@@ -996,12 +1008,14 @@ type
     rrType*:            pointer
     moduleAllocations*: seq[seq[pointer]]
     attrs*:             Dict[string, AttrContents]
-    allSections*:       Dict[string, bool] # Todo: change to a set.
+    allSections*:       Dict[string, bool] # Todo: change to a set, or merge w/ below
+    sectionDocs*:       Dict[string, AttrDocs]
     externCalls*:       seq[CallerInfo]
     externArgs*:        seq[seq[FfiType]]
     externFps*:         seq[pointer]
     running*:           bool
     memos*:             Memos
+    cmdline_info*:      ArgResult
 
   MixedObj* = object
     t*:     TypeId
@@ -1012,10 +1026,87 @@ type
   AttrTree* = ref object
     path*:      string
     kids*:      seq[AttrTree]
+    cache*:     Dict[string, AttrContents]
 
   Memos* = ref object
     map*:    Dict[pointer, pointer]
     nextId*: uint64 = 1
+
+  ## This section is for argument parsing / getopts capabilities.
+
+  ArgFlagKind*    = enum
+    afPair, afChoice, afStrArg, afMultiChoice, afMultiArg
+  FlagSpec* = ref object
+    reportingName*:    string
+    clobberOk*:        bool
+    recognizedNames*:  seq[string]
+    sdoc*:             Rope
+    ldoc*:             Rope
+    callback*:         Option[ptr ZCallback]
+    fieldToSet*:       string
+    finalFlagIx*:      int
+    noColon*:          bool   # Inherited from the command object.
+    noSpace*:          bool   # Also inherited from the command object.
+    argIsOptional*:    bool   # When true, --foo bar is essentially --foo="" bar
+    case kind*:        ArgFlagKind
+    of afPair:
+      helpFlag*:       bool
+      boolValue*:      Dict[int, bool]
+      positiveNames*:  seq[string]
+      negativeNames*:  seq[string]
+      linkedChoice*:   Option[FlagSpec]
+    of afChoice, afMultiChoice:
+      choices*:        seq[string]
+      selected*:       Dict[int, seq[string]]
+      linkedYN*:       Option[FlagSpec]
+      min*, max*:      int
+    of afStrArg:
+      strVal*:         Dict[int, string]
+    of afMultiArg:
+      strArrVal*:      Dict[int, seq[string]]
+
+  CommandSpec* = ref object
+    attrtop*:           string
+    commands*:          Dict[string, CommandSpec]
+    reportingName*:     string
+    allNames*:          seq[string]
+    flags*:             Dict[string, FlagSpec]
+    callback*:          Option[ptr ZCallback]
+    sdoc*:              Rope
+    ldoc*:              Rope
+    noColon*:           bool # accept --flag= f but not --flag:f.
+    noSpace*:           bool # Docker-style if true *:
+    argName*:           string
+    minArgs*:           int
+    maxArgs*:           int
+    subOptional*:       bool
+    unknownFlagsOk*:    bool
+    dockerSingleArg*:   bool
+    noFlags*:           bool
+    autoHelp*:          bool
+    finishedComputing*: bool
+    parent*:            CommandSpec
+    allPossibleFlags*:  Dict[string, FlagSpec]
+
+  ArgResult* = ref object
+    attrtop*:     string
+    command*:     string
+    args*:        Dict[string, seq[string]]
+    flags*:       Dict[string, FlagSpec]
+    helpToPrint*: Rope
+    parseCtx*:    ParseCtx
+    topSpec*:     CommandSpec
+
+  ParseCtx* = ref object
+    curArgs*:   seq[string]
+    args*:      seq[string]
+    res*:       ArgResult
+    i*:         int
+    foundCmd*:  bool
+    parseId*:   int # globally unique parse ID.
+    finalCmd*:  CommandSpec
+
+  Array* = FlexArray[pointer]
 
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
@@ -1049,10 +1140,18 @@ template debug*(s: string, s2: string, moreargs: varargs[string]) =
 
   debug(cells.quickTable(verticalHeaders = true))
 
+
+
 # The current runtime, so that builtin functions can access the state.
 # Was having a weird link error so moved this here.
-
-var currentRuntime*: RuntimeState
+var
+  currentRuntime*:       RuntimeState
+  config_cmd*:           string
+  config_args*:          seq[string]
+  config_debug*:         bool
+  config_format*:        bool
+  config_save_object*:   bool
+  config_reentry_point*: string
 
 proc get_con4m_runtime*(): RuntimeState =
   return currentRuntime

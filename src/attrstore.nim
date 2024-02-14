@@ -136,6 +136,8 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
 
     i = i + 1
 
+proc print_attributes*(ctx: RuntimeState)
+
 proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
           lock = false, override = false, internal = false, wlock = false):
             bool {.cdecl, exportc.} =
@@ -143,11 +145,12 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
   # conditions with multiple threads updating via reference.
 
   # Here, make sure we have section info captured.
+
   if not internal:
     ctx.populateDefaults(key)
 
   var
-    newInfo = AttrContents(contents: value, tid: tid, isSet: true, locked: lock)
+    newInfo = AttrContents(contents: value, tid: tid, isSet: true)
     curOpt  = ctx.attrs.lookup(key)
     curInfo: AttrContents = nil
 
@@ -166,17 +169,16 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
         else:
           # Set to same value.
           return true
-      if curInfo.lockOnWrite and not internal:
-        newInfo.locked = true
+    if curInfo.lockOnWrite:
+      newInfo.locked = true
 
   if override:
     newInfo.override = true
 
   # Don't trigger write lock if we're setting a default (i.e., internal is set).
-  if lock or (wlock and not internal):
+  if (lock or wlock) and not internal:
     newInfo.locked = true
   elif wlock:
-    newInfo.locked      = true
     newInfo.lockOnWrite = true
 
   ctx.attrs[key] = newInfo
@@ -272,26 +274,46 @@ proc get_all_keys*(ctx: RuntimeState): seq[string] =
   result = ctx.attrs.keys()
 
 proc attr_walker(attr: AttrTree): (Rope, seq[AttrTree]) =
+
   let last = text(attr.path.split(".")[^1])
   if attr.kids.len() != 0:
     result = (last, attr.kids)
+
   else:
-    var
-      tid: TypeId
-      err: bool
-      val = get_con4m_runtime().get(attr.path, err, addr tid)
+    let opt = attr.cache.lookup(attr.path)
+    if opt.isNone():
+      return (text(attr.path) + text(" ") + em("Not Found"), @[])
 
-    var rep = $(call_repr(val, tid))
+    let match = opt.get()
+    var rep   = $(call_repr(match.contents, match.tid))
+    var extra: seq[string]
 
-    result = (text(attr.path) + text(" ") + em(rep), @[])
+    if not match.isSet:
+      extra.add("set: f")
+
+    if match.locked:
+      extra.add("locked: y")
+    elif match.lockOnWrite:
+      extra.add("locked: on write")
+    else:
+      extra.add("locked: n")
+
+    if match.override:
+      extra.add("override: y")
+
+    result = (text(attr.path) + text(" ") + em(rep) + text(" ") +
+              strong(match.tid.toString()) + text(" (") +
+              text(extra.join(", ")) + text(")"), @[])
 
 proc print_attributes*(tree: AttrTree) =
   print tree.quickTree(attr_walker)
 
-proc build_attr_tree*(ctx: RuntimeState): AttrTree =
+proc build_attr_tree*(ctx: RuntimeState, view = false): AttrTree =
   result = AttrTree()
+  if view:
+    result.cache = ctx.attrs
 
-  for item in ctx.get_all_keys():
+  for item in ctx.attrs.keys():
     var
       cur   = result
       parts = item.split(".")
@@ -312,6 +334,8 @@ proc build_attr_tree*(ctx: RuntimeState): AttrTree =
 
       if not found:
         let node = AttrTree(path: p)
+        if view:
+          node.cache = ctx.attrs
         cur.kids.add(node)
         cur = node
 
@@ -320,4 +344,45 @@ proc build_attr_tree*(ctx: RuntimeState): AttrTree =
     cur.kids.sort()
 
 proc print_attributes*(ctx: RuntimeState) =
-  ctx.build_attr_tree.print_attributes()
+  var tree = ctx.build_attr_tree(true)
+  tree.print_attributes()
+  GC_unref(tree.cache)
+
+
+proc get_section_docs*(ctx: RuntimeState, path: string): Option[AttrDocs]
+    {.exportc, cdecl.} =
+
+  var path = path
+  if path != "" and path[^1] == '.':
+    path = path[0 ..< ^1]
+
+  result = ctx.sectionDocs.lookup(path)
+
+
+proc get_short_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
+  let docOpt = ctx.get_section_docs(path)
+
+  if docOpt.isNone():
+    return nil
+
+  let docs = docOpt.get()
+  return docs.shortdoc
+
+proc get_long_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
+  let docOpt = ctx.get_section_docs(path)
+
+  if docOpt.isNone():
+    return nil
+
+  let docs = docOpt.get()
+  return docs.longdoc
+
+proc print_section_docs*(ctx: RuntimeState) =
+  for (k, v) in ctx.sectionDocs.items():
+    print(h2("Section docs for: " & k))
+    var cells = @[@[text("Short"), v.shortdoc]]
+
+    if v.longdoc != nil:
+      cells.add(@[text("Long"), v.longdoc])
+
+    print(cells.quickTable(verticalHeaders = true))

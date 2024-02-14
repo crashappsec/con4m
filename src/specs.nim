@@ -48,6 +48,10 @@ proc print_one_section(spec: SectionSpec, n: string) =
     print(h5("Section has no defined fields."))
 
 proc print_spec*(s: ValidationSpec) =
+  if not s.used:
+    print(h5("No attribute validation specification."))
+    return
+
   print_one_section(s.rootSpec, "Top-level section")
 
   for (name, sec) in s.secSpecs.items(sort=true):
@@ -265,16 +269,10 @@ proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
       globalRootSec.shortdoc = localRootSec.shortdoc
 
     for item in localRootSec.requiredSections:
-      if item notin allSectionNames:
-        m.irError("MissingSec", @[item, "require"])
-
       if item notin globalRootSec.requiredSections:
         globalRootSec.requiredSections.add(item)
 
     for item in localRootSec.allowedSections:
-      if item notin allSectionNames:
-        m.irError("MissingSec", @[item, "allow"])
-
       if item notin globalRootSec.allowedSections:
         globalRootSec.allowedSections.add(item)
 

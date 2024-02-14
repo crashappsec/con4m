@@ -5,83 +5,10 @@
 ## If you call the API directly, and didn't do the input checking,
 ## results are undefined :)
 
-import std/[sequtils, algorithm, terminal]
-import "."/[common, attrstore]
+import std/[os, sequtils]
+import "."/[common, attrstore, compile, codegen, vm]
 
 const errNoArg = "Expected a command but didn't find one"
-
-type
-  ArgFlagKind*    = enum
-    afPair, afChoice, afStrArg, afMultiChoice, afMultiArg
-  FlagSpec* = ref object
-    reportingName*:    string
-    clobberOk*:        bool
-    recognizedNames*:  seq[string]
-    doc*:              string
-    callback*:         Option[ptr ZCallback]
-    fieldToSet*:       string
-    finalFlagIx*:      int
-    noColon*:          bool   # Inherited from the command object.
-    noSpace*:          bool   # Also inherited from the command object.
-    argIsOptional*:    bool   # When true, --foo bar is essentially --foo="" bar
-    case kind*:        ArgFlagKind
-    of afPair:
-      helpFlag*:       bool
-      boolValue*:      Dict[int, bool]
-      positiveNames*:  seq[string]
-      negativeNames*:  seq[string]
-      linkedChoice*:   Option[FlagSpec]
-    of afChoice, afMultiChoice:
-      choices*:        seq[string]
-      selected*:       Dict[int, seq[string]]
-      linkedYN*:       Option[FlagSpec]
-      min*, max*:      int
-    of afStrArg:
-      strVal*:         Dict[int, string]
-    of afMultiArg:
-      strArrVal*:      Dict[int, seq[string]]
-
-  CommandSpec* = ref object
-    attrtop*:           string
-    commands*:          Dict[string, CommandSpec]
-    reportingName*:     string
-    allNames*:          seq[string]
-    flags*:             Dict[string, FlagSpec]
-    callback*:          Option[ptr ZCallback]
-    doc*:               string
-    noColon*:           bool # accept --flag= f but not --flag:f.
-    noSpace*:           bool # Docker-style if true *:
-    extraHelpTopics*:   Dict[string, string]
-    argName*:           string
-    minArgs*:           int
-    maxArgs*:           int
-    subOptional*:       bool
-    unknownFlagsOk*:    bool
-    dockerSingleArg*:   bool
-    noFlags*:           bool
-    autoHelp*:          bool
-    finishedComputing*: bool
-    parent*:            CommandSpec
-    allPossibleFlags*:  Dict[string, FlagSpec]
-
-  ArgResult* = ref object
-    attrtop*:     string
-    command*:     string
-    args*:        Dict[string, seq[string]]
-    flags*:       Dict[string, FlagSpec]
-    helpToPrint*: string
-    parseCtx*:    ParseCtx
-
-  ParseCtx = ref object
-    curArgs:    seq[string]
-    args:       seq[string]
-    res:        ArgResult
-    i:          int
-    foundCmd*:  bool
-    parseId*:   int # globally unique parse ID.
-    finalCmd*:  CommandSpec
-
-  Array* = FlexArray[pointer]
 
 proc getValue*(f: FlagSpec): pointer =
   case f.kind
@@ -114,7 +41,8 @@ proc newSpecObj*(reportingName: string       = "",
                  unknownFlagsOk              = false,
                  dockerSingleArg             = true,
                  noFlags                     = false,
-                 doc                         = "",
+                 sdoc                        = Rope(nil),
+                 ldoc                        = Rope(nil),
                  argName                     = "",
                  callback                    = none(ptr ZCallBack),
                  parent                      = CommandSpec(nil),
@@ -130,7 +58,8 @@ proc newSpecObj*(reportingName: string       = "",
                        unknownFlagsOk:    unknownFlagsOk,
                        dockerSingleArg:   dockerSingleArg,
                        noFlags:           noFlags,
-                       doc:               doc,
+                       sdoc:              sdoc,
+                       ldoc:              ldoc,
                        argName:           argName,
                        callback:          callback,
                        parent:            parent,
@@ -140,7 +69,6 @@ proc newSpecObj*(reportingName: string       = "",
                        finishedComputing: false)
   result.commands.initDict()
   result.flags.initDict()
-  result.extraHelpTopics.initDict()
   result.allPossibleFlags.initDict()
 
 proc addCommand*(spec:            CommandSpec,
@@ -150,7 +78,8 @@ proc addCommand*(spec:            CommandSpec,
                  unknownFlagsOk:  bool                  = false,
                  noFlags:         bool                  = false,
                  dockerSingleArg: bool                  = false,
-                 doc:             string                = "",
+                 sdoc:            Rope                  = nil,
+                 ldoc:            Rope                  = nil,
                  argName:         string                = "",
                  callback:        Option[ptr ZCallback] = none(ptr ZCallback),
                  noColon:         bool                  = false,
@@ -191,7 +120,8 @@ proc addCommand*(spec:            CommandSpec,
                       noFlags         = noFlags,
                       noColon         = noColon,
                       noSpace         = noSpace,
-                      doc             = doc,
+                      sdoc            = sdoc,
+                      ldoc            = ldoc,
                       argName         = argName,
                       callback        = callback,
                       parent          = spec)
@@ -225,7 +155,8 @@ proc newFlag(cmd:             CommandSpec,
              reportingName:   string,
              clOk:            bool,
              recognizedNames: openarray[string],
-             doc:             string = "",
+             sdoc:            Rope = nil,
+             ldoc:            Rope = nil,
              callback:        Option[ptr ZCallback] = none(ptr ZCallback),
              toSet:           string = "",
              optArg:          bool = false,
@@ -235,9 +166,10 @@ proc newFlag(cmd:             CommandSpec,
                        "Cannot add a flag for a spec where noFlags is true")
 
   result = FlagSpec(reportingName: reportingName, kind: kind, clobberOk: clOk,
-                    recognizedNames: recognizedNames.toSeq(), doc: doc,
-                    callback: callback, fieldToSet: toSet, noColon: cmd.noColon,
-                    noSpace: cmd.noSpace, argIsOptional: optArg)
+                    recognizedNames: recognizedNames.toSeq(), sdoc: sdoc,
+                    ldoc: ldoc, callback: callback, fieldToSet: toSet,
+                    noColon: cmd.noColon, noSpace: cmd.noSpace,
+                    argIsOptional: optArg)
   cmd.flags[reportingName] = result
 
 proc addChoiceFlag*(cmd:             CommandSpec,
@@ -247,7 +179,8 @@ proc addChoiceFlag*(cmd:             CommandSpec,
                     flagPerChoice:   bool                = false,
                     multi:           bool                = false,
                     clobberOk:       bool                = false,
-                    doc:             string              = "",
+                    sdoc:            Rope                = nil,
+                    ldoc:            Rope                = nil,
                     callback:      Option[ptr ZCallback] = none(ptr ZCallback),
                     toSet:           string              = ""):
                       FlagSpec {.discardable.} =
@@ -275,14 +208,14 @@ proc addChoiceFlag*(cmd:             CommandSpec,
 
   let kind            = if multi: afMultiChoice else: afChoice
   var flag            = newFlag(cmd, kind, reportingName, clobberOk,
-                                recognizedNames, doc, callback, toSet)
+                                recognizedNames, sdoc, ldoc, callback, toSet)
   flag.choices        = choices.toSeq()
 
   if flagPerChoice:
     for item in choices:
       let itemName = "->" & item # -> for forwards...
       var oneFlag = newFlag(cmd, afPair, itemName, clobberOk, @[item],
-                            doc, callback)
+                            sdoc, ldoc, callback)
       oneFlag.positiveNames = @[item]
       oneFlag.linkedChoice  = some(flag)
 
@@ -294,7 +227,8 @@ proc addYesNoFlag*(cmd:           CommandSpec,
                    yesValues:     openarray[string],
                    noValues:      openarray[string]     = [],
                    clobberOk:     bool                  = false,
-                   doc:           string                = "",
+                   sdoc:          Rope                  = nil,
+                   ldoc:          Rope                  = nil,
                    callback:      Option[ptr ZCallback] = none(ptr ZCallback),
                    toSet:         string                = ""):
                      FlagSpec {.discardable.} =
@@ -302,7 +236,7 @@ proc addYesNoFlag*(cmd:           CommandSpec,
   var both   = yesValues.toSeq()
   both       = both & noValues.toSeq()
   var ynFlag = newFlag(cmd, afPair, reportingName, clobberOk, both,
-                       doc, callback, toSet)
+                       sdoc, ldoc, callback, toSet)
 
   ynFlag.positiveNames = yesValues.toSeq()
   ynFlag.negativeNames = noValues.toSeq()
@@ -321,7 +255,8 @@ proc addFlagWithArg*(cmd:             CommandSpec,
                      recognizedNames: openarray[string] = [],
                      multi:           bool              = false,
                      clobberOk:       bool              = false,
-                     doc:             string            = "",
+                     sdoc:            Rope              = nil,
+                     ldoc:            Rope              = nil,
                      callback:    Option[ptr ZCallback] = none(ptr ZCallback),
                      toSet:           string            = "",
                      optArg:          bool              = false):
@@ -332,8 +267,11 @@ proc addFlagWithArg*(cmd:             CommandSpec,
 
   let kind  = if multi: afMultiArg else: afStrArg
   result = newFlag(cmd, kind, reportingName, clobberOk, recognizedNames,
-                   doc, callback, toSet, optArg)
-  result.strArrVal.initDict()
+                   sdoc, ldoc, callback, toSet, optArg)
+  if kind == afMultiArg:
+    result.strArrVal.initDict()
+  else:
+    result.strVal.initDict()
 
 template argpError(msg: string) =
   var fullError = msg
@@ -510,7 +448,7 @@ proc buildValidFlags(inSpec: Dict[string, FlagSpec]):
                     Dict[string, FlagSpec] =
   result.initDict()
 
-  for (reportingName, f) in inSpec.items():
+  for (reportingName, f) in inSpec.items(sort = true):
     for name in f.recognizedNames:
       result[name] = f
 
@@ -533,7 +471,7 @@ proc parseCmd(ctx: var ParseCtx, spec: CommandSpec) =
   # Check that any flags we happened to accept in a parent context
   # (because we were not sure what the exact sub-command would be),
   # are still valid now that we have more info about our subcommand.
-  for (k, _) in ctx.res.flags.items():
+  for (k, _) in ctx.res.flags.items(sort = true):
     if k notin spec.allPossibleFlags:
       argpError(k, "Not a valid flag for this command.")
 
@@ -620,9 +558,9 @@ proc computePossibleFlags(spec: CommandSpec) =
     return
   if spec.parent != nil:
     let parentFlags = spec.parent.allPossibleFlags
-    for (k, v) in parentFlags.items():
+    for (k, v) in parentFlags.items(sort = true):
       spec.allPossibleFlags[k] = v
-  for (k, v) in spec.flags.items():
+  for (k, v) in spec.flags.items(sort = true):
     if k in spec.allPossibleFlags:
       raise newException(ValueError, "When checking flag '" & k &
         "', In section '" & spec.reportingName &
@@ -637,9 +575,9 @@ proc computePossibleFlags(spec: CommandSpec) =
 
   flagsToAdd.initDict()
 
-  for (_, kid) in spec.commands.items():
+  for (_, kid) in spec.commands.items(sort = true):
     kid.computePossibleFlags()
-    for (k, v) in kid.allPossibleFlags.items():
+    for (k, v) in kid.allPossibleFlags.items(sort = true):
       if k in spec.allPossibleFlags:
         continue
       if k notin flagsToAdd:
@@ -648,7 +586,7 @@ proc computePossibleFlags(spec: CommandSpec) =
       if not flagSpecEq(flagsToAdd[k], v):
         raise newException(ValueError, "Sub-commands with flags of the " &
           "same name must have identical specifications (flag name: " & k & ")")
-  for (k, v) in flagsToAdd.items():
+  for (k, v) in flagsToAdd.items(sort = true):
     spec.allPossibleFlags[k] = v
   spec.finishedComputing = true
 
@@ -714,7 +652,7 @@ proc ambiguousParse*(spec:          CommandSpec,
     try:    return spec.ambiguousParse(@[default] & args, none(string))
     except: firstError = getCurrentExceptionMsg()
 
-  for (cmd, ss) in spec.commands.items():
+  for (cmd, ss) in spec.commands.items(sort = true):
     if ss.reportingName != cmd: continue
     var ctx = ParseCtx(args: @[cmd] & args)
     try:
@@ -781,7 +719,9 @@ proc loadYn(cmdObj: CommandSpec, info: LoadInfo) =
       noPrefOpt  = lookup[Array](rt, p & "no_prefixes")
       cb         = lookup[ptr ZCallback](rt, p & "callback")
       fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
-      #doc        = unpack[string](one.attrLookup("doc").get())
+      sdoc       = rt.get_short_doc(p)
+      ldoc       = rt.get_long_doc(p)
+
 
     var
       yesPref: seq[string]
@@ -811,16 +751,17 @@ proc loadYn(cmdObj: CommandSpec, info: LoadInfo) =
       if prefix.endswith("-"): noNames.add(prefix & realName)
       else:                    noNames.add(prefix & "-" & realName)
 
-    cmdObj.addYesNoFlag(realName, yesNames, noNames, false, "", cb, fieldToSet)
+    cmdObj.addYesNoFlag(realName, yesNames, noNames, false, sdoc,
+                        ldoc, cb, fieldToSet)
 
 proc loadHelps(cmdObj: CommandSpec, info: LoadInfo) =
   let
     rt    = info.runtime
     names = lookup[Array](rt, info.base_path & "names").get().strlist()
+    sdoc  = rt.get_short_doc(info.base_path)
+    ldoc  = rt.get_long_doc(info.base_path)
 
-    #doc   = unpack[string](one.attrLookup("doc").get())
-
-  cmdObj.addYesNoFlag("help", names, [], false, "") # "" = doc
+  cmdObj.addYesNoFlag("help", names, [], false, sdoc, ldoc)
 
 proc loadChoices(cmdObj: CommandSpec, info: LoadInfo) =
   var
@@ -833,14 +774,15 @@ proc loadChoices(cmdObj: CommandSpec, info: LoadInfo) =
       aliases    = lookup[Array](rt, p & "aliases").get().strlist()
       choices    = lookup[Array](rt, p & "aliases").get().strlist()
       addFlags   = lookup[bool](rt, p & "add_choice_flags").get()
-      #doc        = unpack[string](one.attrLookup("doc").get())
+      sdoc       = rt.get_short_doc(p)
+      ldoc       = rt.get_long_doc(p)
       cb         = lookup[ptr ZCallback](rt, p & "callback")
       fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
 
     var allNames = aliases & @[realName]
 
     cmdObj.addChoiceFlag(realName, allNames, choices, addFlags, false,
-                         false, "", cb, fieldToSet)
+                         false, sdoc, ldoc, cb, fieldToSet)
 
 proc loadMChoices(cmdObj: CommandSpec, info: LoadInfo) =
   var
@@ -853,7 +795,8 @@ proc loadMChoices(cmdObj: CommandSpec, info: LoadInfo) =
       aliases    = lookup[Array](rt, p & "aliases").get().strlist()
       choices    = lookup[Array](rt, p & "choices").get().strlist()
       addFlags   = lookup[bool](rt, p & "add_choice_flags").get()
-      #doc        = unpack[string](one.attrLookup("doc").get())
+      sdoc       = rt.get_short_doc(p)
+      ldoc       = rt.get_long_doc(p)
       cb         = lookup[ptr ZCallback](rt, p & "callback")
       fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
       min        = lookup[int](rt, p & "min").get()
@@ -862,7 +805,7 @@ proc loadMChoices(cmdObj: CommandSpec, info: LoadInfo) =
     var
       allNames = aliases & @[realName]
       f        = cmdObj.addChoiceFlag(realName, allNames, choices, addFlags,
-                                      true, false, "", cb, fieldToSet)
+                                      true, false, sdoc, ldoc, cb, fieldToSet)
     f.min = min
     f.max = max
 
@@ -875,15 +818,16 @@ proc loadFlagArgs(cmdObj: CommandSpec, info: LoadInfo, multi = false) =
       p          = info.base_path & flagname & "."
       realName   = u2d(flagname)
       aliases    = lookup[Array](rt, p & "aliases").get().strlist()
-      #doc        = unpack[string](one.attrLookup("doc").get())
       cb         = lookup[ptr ZCallback](rt, p & "callback")
       fieldToSet = lookup[C4Str](rt, p & "field_to_set").get(nil).toNimStr()
       optArg     = lookup[bool](rt, p & "optional_arg").get()
+      sdoc       = rt.get_short_doc(p)
+      ldoc       = rt.get_long_doc(p)
 
     var allNames = aliases & @[realName]
 
-    discard cmdObj.addFlagWithArg(realName, allNames, multi, false, "",
-                                         cb, fieldToSet, optArg)
+    discard cmdObj.addFlagWithArg(realName, allNames, multi, false, sdoc,
+                                         ldoc, cb, fieldToSet, optArg)
 
 template subsection(subsect: string, code: untyped) =
   info.base_path &= subsect & "."
@@ -932,7 +876,6 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
     let base       = cmdsec & command & "."
     info.base_path = base
 
-    # Todo: add command doc back in here.
     let
       args     = lookup[Array](rt, base & "args").get()
       minarg   = cast[int](args[0])
@@ -948,8 +891,10 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
       dashFArg = lookup[bool](rt, base & "dash_arg_space_optional").get()
       colOk    = lookup[bool](rt, base & "colon_ok").get(not cmdObj.noColon)
       spcOk    = lookup[bool](rt, base & "space_ok").get(not cmdObj.noSpace)
+      sdoc     = rt.get_short_doc(base)
+      ldoc     = rt.get_long_doc(base)
       sub      = cmdObj.addCommand(command, aliases, subsOk,
-                                   ignoreB, ignoreF, dashFArg, "",
+                                   ignoreB, ignoreF, dashFArg, sdoc, ldoc,
                                    argname, cbOpt, not colOk, not spcOk)
 
     sub.addArgs(minarg, maxarg).loadSection(info)
@@ -958,7 +903,7 @@ proc loadSection(cmdObj: CommandSpec, info: LoadInfo) =
 proc stringizeFlags(inflags: Dict[string, FlagSpec], id: int): Con4mDict =
   result = newDict(tDict(TString, TString))
 
-  for (f, spec) in inflags.items():
+  for (f, spec) in inflags.items(sort = true):
     let k = cast[pointer](newC4Str(f))
     case spec.kind
     of afPair:
@@ -982,10 +927,12 @@ proc addDash(s: string): string =
 proc getUsage(cmd: CommandSpec): Rope =
   var cmdName, flags, argName, subs: string
 
+  let fname = getAppFilename().splitPath().tail
+
   if cmd.reportingName == "":
-    cmdName = getAppFilename().splitPath().tail
+    cmdName = fname
   else:
-    cmdname = cmd.reportingName.replace(".", " ")
+    cmdname = fname & " " & cmd.reportingName.replace(".", " ")
 
   if cmd.maxArgs == 0:
     argName = ""
@@ -1012,31 +959,24 @@ proc getUsage(cmd: CommandSpec): Rope =
 proc getCommandList(cmd: CommandSpec): Rope =
   var
     title = "Available commands"
-    cmds: seq[string]
+    cmds: seq[seq[Rope]] = @[@[text("Command"), text("Description")]]
+    found: seq[string]
 
-  for (k, sub) in cmd.commands.items():
-    if sub.reportingName notin cmds and sub.reportingName != "":
-      cmds.add(sub.reportingName)
+  for (k, sub) in cmd.commands.items(sort = true):
+    if sub.reportingName notin found and sub.reportingName != "":
+      found.add(sub.reportingName)
 
-  result = paragraph(cmds.instantTable(width = 70, title = title)).lpad(0)
+      var doc = sub.sdoc
+      if doc == nil:
+        doc = text(" ")
+      cmds.add(@[text(sub.reportingName), doc] )
 
-proc getAdditionalTopics(cmd: CommandSpec): Rope =
-  var topics: seq[string]
-
-  if cmd.extraHelpTopics.keys().len() == 0:
-    return
-
-  for (k, _) in cmd.extraHelpTopics.items():
-    topics.add(k)
-
-  topics.sort()
-  if topics.len() != 0:
-    result = topics.instantTable("Available topics")
+  result = cmds.quickTable(title = title).lpad(0).rpad(0).tpad(0).bpad(0)
 
 proc getFlagHelp(cmd: CommandSpec): Rope =
   var
     flagList: seq[string]
-    rows:     seq[seq[string]] = @[@["Flag", "Description"]]
+    rows:     seq[seq[Rope]] = @[@[text("Flag"), text("Description")]]
     aliases:  seq[string]
     numFlags: int
     fstr:     string
@@ -1048,7 +988,7 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
   if len(flaglist) == 0: return
 
   for k in flagList:
-    let spec = cmd.flags[k]
+    let spec = cmd.allpossibleflags[k]
     numFlags = len(spec.recognizedNames)
     if spec.reportingName in spec.recognizedNames:
       fstr = spec.reportingName.addDash()
@@ -1063,6 +1003,7 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
       for item in spec.recognizedNames[1 .. ^1]:
         aliases.add(item.addDash())
 
+
     case spec.kind
     of afPair:
       if spec.reportingName notin spec.positiveNames:
@@ -1076,7 +1017,7 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
             aliases.add(item.addDash())
         if len(aliases) != 0:
           fstr &= "\nor: " & aliases.join(", ")
-        rows.add(@[fstr, spec.doc])
+        rows.add(@[text(fstr), spec.sdoc])
         if len(spec.negativeNames) != 0:
           aliases = @[]
           fstr = spec.negativeNames[^1].addDash()
@@ -1084,121 +1025,122 @@ proc getFlagHelp(cmd: CommandSpec): Rope =
             aliases.add(item.addDash())
           if len(aliases) != 0:
             fstr &= "\nor: " & aliases.join(", ")
-          rows.add(@[fstr, "Does the opposite of the row above."])
+          rows.add(@[text(fstr), text("Does the opposite of the row above.")])
     of afChoice:
       fstr &= "= " & spec.choices.join(" | ")
       if len(aliases) != 0:
         fstr &= "\nor: " & aliases.join(", ")
-      rows.add(@[fstr, spec.doc])
+      rows.add(@[text(fstr), spec.sdoc])
     of afMultiChoice:
       fstr &= "= " & spec.choices.join(",")
       if spec.min == spec.max:
         fstr &= "(select " & $(spec.min) & ") "
       if len(aliases) != 0:
         fstr &= "\nor: " & aliases.join(", ")
-      rows.add(@[fstr, spec.doc])
+      rows.add(@[text(fstr), spec.sdoc])
     of afStrArg:
       fstr &= "= ARG"
       if len(aliases) != 0:
         fstr &= "\nor: " & aliases.join(", ")
-      rows.add(@[fstr, spec.doc])
+      rows.add(@[text(fstr), spec.sdoc])
     of afMultiArg:
       fstr &= "= ARG,ARG,..."
       if len(aliases) != 0:
         fstr &= "\nor: " & aliases.join(", ")
-      rows.add(@[fstr, spec.doc])
+      rows.add(@[text(fstr), spec.sdoc])
+
+    if rows[^1][1] == nil:
+      rows[^1][1] = text(" ")
 
   if len(rows) != 0:
     result = quickTable(rows, "Command Flags")
 
-proc getOneCmdHelp(cmd: CommandSpec): Rope =
-  result = getUsage(cmd) + pre(markdown(cmd.doc))
+proc getCmdAndFlagHelp*(cmd: CommandSpec): Rope =
+  result = getUsage(cmd)
 
   if cmd.commands.items().len() != 0:
      result += cmd.getCommandList()
+  result += cmd.ldoc
+  result += cmd.getFlagHelp()
 
-  var f = cmd.getFlagHelp()
-  result += f
+proc find_sub_commands(c: CommandSpec, d: var Dict[string, CommandSpec]) =
+  for (_, sub) in c.commands.items(sort = true):
+    sub.find_sub_commands(d)
 
-  if cmd.extraHelpTopics.items().len() != 0:
-    result += cmd.getAdditionalTopics()
+  for item in c.allNames:
+    d[item] = c
 
-type Corpus = Dict
+proc get_all_sub_commands(c: CommandSpec): Dict[string, CommandSpec] =
+  result.initDict()
+  c.find_sub_commands(result)
 
-proc getHelp(corpus: Corpus, inargs: seq[string]): string =
-  var
-    args  = inargs
-    r: Rope
-
-  if len(args) == 0:
-    args = @["main"]
-
-  for arg in args:
-    if arg notin corpus:
-      if arg != "topics":
-        r += h2(textRope("No such topic: ") + em(arg))
-        continue
-
-      var topics: seq[string] = @[]
-
-      for (key, _) in corpus.items():
-        topics.add(key)
-
-      r += h1("Available Help Topics")
-
-      r += (topics.instantTable())
-
-    else:
-      var processed = arg.replace('_', ' ')
-      processed = $(Rune(processed[0]).toUpper()) & processed[1 .. ^1]
-
-      r += markdown(unicode.strip(corpus[arg]))
-
-  result = $(r)
-
-  print(result)
-
-proc getCmdHelp*(cmd: CommandSpec, args: seq[string]): string =
-
+proc getCmdHelp*(rt: RuntimeState, cmd: CommandSpec, args: seq[string]): Rope =
+  ## This version allows you to pass in a command spec object, and
+  ## the arguments if provided are expected to be commands under it.
+  ## Compare w/ `searchCmdHelp()`
   var rope: Rope
 
   if len(args) == 0:
-    rope = getOneCmdHelp(cmd)
+    rope = getCmdAndFlagHelp(cmd)
+
   else:
-    var legitCmds: seq[(bool, string, string)] = @[]
+    var legitCmds: seq[(bool, string, Rope)] = @[]
 
     for item in args:
       if item in cmd.commands and cmd.commands[item].reportingName == item:
-        legitCmds.add((true, item, item))
+        legitCmds.add((true, item, text(item)))
       else:
         var found = false
-        for (sub, spec) in cmd.commands.items():
+        for (sub, spec) in cmd.commands.items(sort = true):
           if item in spec.allNames:
-            legitCmds.add((true, item, spec.reportingName))
+            legitCmds.add((true, item, text(spec.reportingName)))
             found = true
             break
-        if not found:
-          let eht = cmd.extraHelpTopics
-          if item in eht:
-            legitCmds.add((false, item, getHelp(Corpus(eht), @[item])))
-          elif not item.startswith("-"):
+        if not found and not item.startswith("-"):
             stderr.writeLine("No such command: " & item)
 
     if len(legitCmds) == 0:
-      rope += getOneCmdHelp(cmd)
+      rope += getCmdAndFlagHelp(cmd)
     else:
       for (c, given, reporting) in legitCmds:
         if not c:
-          print(h1("Help for " & given), file = stderr)
-          stderr.writeLine(reporting.indentWrap(hangingIndent = 0))
+          rope += h1("Help for " & given)
+          rope += reporting
           continue
-        if given != reporting:
-          print(h1("Note: '" & given & "' is an alias for '" &
-            reporting & "'"), stderr)
+        if given != reporting.toUtf8():
+          rope += h1(text("Note: '" & given & "' is an alias for '") +
+            reporting + text("'"))
 
-        rope += getOneCmdHelp(cmd.commands[reporting])
+        rope += getCmdAndFlagHelp(cmd.commands[reporting.toUtf8()])
 
-  print rope
+  return rope
+
+proc searchCmdHelp*(rt: RuntimeState, res: ArgResult, args: seq[string]): Rope =
+  ## Gets command help, assuming that the args are valid command names, but
+  ## might be subcommands.
+
+  if args.len() == 0:
+    result = rt.getCmdHelp(res.topSpec, @[])
+    return
+
+  let exename = getAppFileName().splitPath().tail
+  if args.len() == 1 and args[0] == exename:
+    return res.topSpec.getCmdAndFlagHelp()
+
+  let
+    sc_info = res.topSpec.get_all_sub_commands()
+    cmdkeys = sc_info.keys()
+
+  var
+    last:  CommandSpec = res.topSpec
+
+  for item in args:
+    if item in cmdkeys:
+      last = sc_info[item]
+      result += last.getCmdAndFlagHelp()
+      continue
+    else:
+      result += text("No help found for: ") + em(item)
 
 proc convertMulti(inlist: seq[string]): pointer =
   var ptrlist: seq[pointer]
@@ -1212,14 +1154,12 @@ proc convertMulti(inlist: seq[string]): pointer =
   return cast[pointer](fa)
 
 proc managedCommit(winner: ArgResult, attrtop: string,
-                   runtime: RuntimeState): string =
-  result = ""
-
+                   runtime: RuntimeState): Rope =
   let
     parseId = winner.parseCtx.parseId
     endCmd  = winner.parseCtx.finalCmd
 
-  for (flag, spec) in winner.flags.items():
+  for (flag, spec) in winner.flags.items(sort = true):
     spec.finalFlagIx = parseId
 
     var
@@ -1275,7 +1215,7 @@ proc managedCommit(winner: ArgResult, attrtop: string,
       discard runtime.run_callback(cmdObj.callback.get(), arg)
 
     if cmdObj.autoHelp and cmdObj.parent != nil:
-      result = getCmdHelp(cmdObj.parent, winner.args[cmdName])
+      result = runtime.getCmdHelp(cmdObj.parent, winner.args[cmdName])
 
     let parts = cmdName.split(".")
     cmdName = parts[0 ..< ^1].join(".")
@@ -1325,6 +1265,13 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
   else:
     base = "getopts."
 
+  var top = options[0].parseCtx.finalCmd
+  while top.parent != nil:
+    top = top.parent
+
+  for item in options:
+    item.topSpec = top
+
   if options.len() == 1:
     return options[0]
 
@@ -1345,8 +1292,8 @@ proc finalizeManagedGetopt*(runtime: RuntimeState,
         let thisCmd = item.command.split(".")[0]
         if cmd == thisCmd:
           item.helpToPrint = item.managedCommit(base, runtime)
-          if outputHelp and item.helpToPrint != "":
-            stderr.writeLine(item.helpToPrint)
+          if outputHelp and item.helpToPrint != nil:
+            print item.helpToPrint
           return item
         elif cmd == "":
           matchingCmds.add(thisCmd)
@@ -1417,15 +1364,13 @@ proc runManagedGetopt*(runtime:      RuntimeState,
     spaceOk   = lookup[bool](runtime, base & "space_ok").get(true)
     ignoreBad = lookup[bool](runtime, base & "ignore_bad_flags").get(false)
     addHelp   = lookup[bool](runtime, base & "add_help_commands").get(true)
-    # TODO: add this back in; it's not in a property, it's in the parse tree.
-    #doc        = lookup[C4Str](runtime, base & "doc")
-    # commented out below as well.
+    sdoc      = runtime.get_short_doc(base)
+    ldoc      = runtime.get_long_doc(base)
     argName   = lookup[C4Str](runtime, base & "arg_name").get(newC4Str("ARG"))
     dashFArg  = lookup[bool](runtime,
                              base & "dash_arg_space_optional").get(true)
 
   li.defaultCmd = some(def_opt.toNimStr())
-
 
   if yesBox.isSome():
     li.defaultYesPref = yesBox.get().strlist()
@@ -1439,17 +1384,61 @@ proc runManagedGetopt*(runtime:      RuntimeState,
   let topLevelCmd = newSpecObj("", minArgs = minArg, maxArgs = maxArg,
                               subOptional = false, unknownFlagsOk = ignoreBad,
                               dockerSingleArg = dashFArg, noFlags = false,
-                              doc = "", argname = argname.toNimStr(),
+                              sdoc = sdoc, ldoc = ldoc,
+                              argname = argname.toNimStr(),
                               noColon = not colonOk, noSpace = not spaceOk)
 
+  topLevelCmd.attrTop = base
   topLevelCmd.loadSection(li)
 
   result = topLevelCmd.ambiguousParse(args, defaultCmd = li.defaultCmd)
+  for item in result:
+    item.attrtop = base
 
   if len(result) == 1:
     let helpToPrint = result[0].managedCommit(base, runtime)
     if outputHelp:
-      if helpToPrint != "":
-        stderr.writeLine(helpToPrint)
+      if helpToPrint != nil:
+        print(helpToPrint)
     else:
       result[0].helpToPrint = helpToPrint
+
+proc parse_command_line*(code: string, refname = "c4m_getopt"): RuntimeState =
+  ## Parse a command line spe, and returns the con4m runtime state
+  ## for the config file execution.
+
+  let
+    ctx  = newCompileContext(nil)
+    spec = ctx.loadInternalModule(refname, code)
+
+  ctx.buildProgram(spec)
+  if not ctx.printErrors(file = stderr):
+    quit(-4)
+
+  var
+    rt     = ctx.generateCode()
+    exit   = rt.executeObject()
+    params = commandLineParams()
+
+  try:
+    let
+      pre   = rt.runManagedGetopt(params)
+
+    rt.cmdline_info = rt.finalizeManagedGetopt(pre)
+
+    if rt.cmdline_info != nil:
+      return rt
+    else:
+      print fgColor("error: ", "red") + text("command not understood.")
+      quit(-1)
+
+  except:
+    print(fgColor("error: ", "red") + italic(getCurrentException().msg))
+    if "--debug" in params:
+      rt.print_attributes()
+      echo getCurrentException().getStackTrace()
+    quit(-1)
+
+
+proc con4m_getopt*(code: cstring, refname: cstring): RuntimeState {.exportc, cdecl.} =
+  return parse_command_line($(code), $(refname))

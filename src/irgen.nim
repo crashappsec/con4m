@@ -181,17 +181,29 @@ proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
   n1     = nodes[0]
   n2     = nodes[1]
 
+template doc_extract(t: string): Rope =
+  let s = unicode.strip(t)
+  if s != "":
+    if s[0] == '#':
+      markdown(t)
+    elif "</" in s:
+      html(t)
+    else:
+      text(t)
+  else:
+     nil
+
 proc extractShortDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil:
     return nil
   else:
-    return text(n.docNodes.children[0].getText())
+    return doc_extract(n.docNodes.children[0].getText())
 
 proc extractLongDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
     return nil
   else:
-    return text(n.docNodes.children[1].getText())
+    return doc_extract(n.docNodes.children[1].getText())
 
 proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
   result = atom(s).fgColor("atomiclime")
@@ -2183,9 +2195,11 @@ proc convertSection(ctx: Module): IrNode =
   if ctx.pt.children[1].docnodes != nil:
     result.shortdoc = ctx.pt.children[1].extractShortDoc()
     result.longdoc  = ctx.pt.children[1].extractLongDoc()
+    ctx.secDocNodes.add(result)
   elif ctx.pt.children.len() > 2 and ctx.pt.children[2].docnodes != nil:
     result.shortdoc = ctx.pt.children[2].extractShortDoc()
     result.longdoc  = ctx.pt.children[2].extractLongDoc()
+    ctx.secDocNodes.add(result)
 
 proc convertIndex(ctx: Module): IrNode =
   # The logic for when to generate address loads instead of value
