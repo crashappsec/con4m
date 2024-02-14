@@ -8,7 +8,9 @@ confspec {
 }
 
 getopts {
+
   "#### CON4M to our programming language"
+  
   """
 ## See `help [command]` for more details on individual commands.
 
@@ -34,7 +36,9 @@ getopts {
   }
 
   command run {
+  
       " Run a con4m program, compiling if nessary."
+      
  """
  ## Compile and run a program.
  

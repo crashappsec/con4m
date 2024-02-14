@@ -1272,6 +1272,7 @@ production(typeofStmt, NodeTypeOfStmt):
   result.addKid(ctx.memberExpr())
   ctx.skipNextNewLine()
   ctx.expect(TtLBrace, consume = true)
+  ctx.skipNextNewline()
   ctx.expect(TtCase)
 
   while true:
@@ -1297,6 +1298,7 @@ production(valueofStmt, NodeValueOfStmt):
   result.addKid(ctx.expression())
   ctx.skipNextNewLine()
   ctx.expect(TtLBrace, consume = true)
+  ctx.skipNextNewline()
   ctx.expect(TtCase)
 
   while true:
@@ -1762,7 +1764,7 @@ production(externBlock, NodeExternBlock):
   result.addKid(ctx.identifier())
   result.addKid(ctx.externSignature())
   ctx.expect(TtLBrace, consume = true)
-
+  ctx.skipNextNewline()
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
 
@@ -1852,6 +1854,7 @@ production(fieldSpec, NodeFieldSpec):
   result.addKid(ctx.identifier())
   ctx.skipNextNewLine()
   ctx.expect(TtLBrace, consume = true)
+  ctx.skipNextNewline()
 
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
@@ -1920,6 +1923,7 @@ production(objectSpec, NodeSecSpec):
     result.addKid(ctx.identifier())
   ctx.skipNextNewLine()
   ctx.expect(TTLBrace, consume = true)
+  ctx.skipNextNewline()
 
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
@@ -1955,6 +1959,7 @@ production(confSpecBlock, NodeConfSpec):
   ctx.skipNextNewLine()
 
   ctx.expect(TTLBrace, consume = true)
+  ctx.skipNextNewline()
 
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()
@@ -2029,6 +2034,7 @@ production(continueStmt, NodeContinueStmt):
 production(body, NodeBody):
   ctx.skipNextNewline()
   ctx.expect(TtLBrace, consume = true)
+  ctx.skipNextNewline()
 
   if ctx.curKind() == TtStringLit:
     result.docNodes = ctx.docString()

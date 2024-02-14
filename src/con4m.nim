@@ -10,12 +10,10 @@
 # b) Auto-lock attrs that *can* be set in a component, when the component
 #   exits.
 # - Hook up validators for the checkpointing.
-# - Allow selecting the module to fire up on restore.
 # - Test 'Other' data types
 # - Documentation.
 # - Add code gen for tuple unpacking.
 # - Array rcs
-# - Space before doc string
 # - Marshal secsion docs
 
 # === Semi-high priority -- could ship internally w/ known issues ===
