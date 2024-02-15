@@ -1219,11 +1219,8 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
   ## they hardcode to 5 seconds.
 
   var
-    uri:      Uri = parseURI(url)
     tups:     seq[(string, string)]
-    client:   HttpClient
     hdrObj:   HttpHeaders
-    context:  SslContext
     response: Response
 
   if headers != nil:
@@ -1233,14 +1230,14 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
   hdrObj = newHttpHeaders(tups)
 
   if post:
-    response = safeRequest(url = uri,
+    response = safeRequest(url = url,
                            httpMethod = HttpPost,
                            body = body,
                            headers = hdrObj,
                            timeout = timeout,
                            pinnedCert = pinnedCert)
   else:
-    response = safeRequest(url = uri,
+    response = safeRequest(url = url,
                            httpMethod = HttpGet,
                            headers = hdrObj,
                            timeout = timeout,
@@ -1257,8 +1254,6 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
       result = response.bodyStream.readAll()
     except:
       result = "ERR 000 Read of response output stream failed."
-
-  client.close()
 
 proc c4mUrlGet*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   let
