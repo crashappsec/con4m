@@ -429,9 +429,9 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
 proc using_spec*(ctx: RuntimeState): bool {.exportc, cdecl.} =
   return ctx.obj.spec != nil and ctx.obj.spec.used
 
-proc validate_state*(startwith = ""): FlexArray[pointer] {.cdecl, exportc.} =
+proc run_validator*(ctx: RuntimeState, startwith = ""):
+                    FlexArray[pointer] {.cdecl, exportc.} =
   var
-    ctx = get_con4m_runtime()
     errs: seq[Rope]
 
   if not ctx.usingSpec():
@@ -495,3 +495,8 @@ proc validate_state*(startwith = ""): FlexArray[pointer] {.cdecl, exportc.} =
 
   result          = newArrayFromSeq[pointer](cast[seq[pointer]](errs))
   result.metadata = cast[pointer](tList(TRich))
+  GC_ref(result)
+
+
+proc validate_state*(startswith = ""): FlexArray[pointer] {.cdecl, exportc.} =
+  return get_con4m_runtime().run_validator(startswith)

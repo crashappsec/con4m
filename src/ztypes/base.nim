@@ -12,11 +12,13 @@ type
                      pointer {.cdecl.}
   BoolRetFn*   = proc(l, r: pointer): bool {.cdecl.}
   BinOpFn*     = proc(l, r: pointer): pointer {.cdecl.}
-  IndexFn*     = proc(c: pointer, i: int, err: var bool): pointer {.cdecl.}
-  DIndexFn*    = proc(c, i: pointer, err: var bool): pointer {.cdecl.}
+  IndexFn*     = proc(c: pointer, i: int, t: TypeId,
+                      err: var bool): pointer {.cdecl.}
+  DIndexFn*    = proc(c, i: pointer, t: TypeId,
+                      err: var bool): pointer {.cdecl.}
   SliceFn*     = proc(c: pointer, i, j: int): pointer {.cdecl.}
-  AssignIxFn*  = proc(c, v: pointer, i: int, err: var bool) {.cdecl.}
-  SetDixFn*    = proc(c, v, i: pointer, err: var bool) {.cdecl.}
+  AssignIxFn*  = proc(c, v: pointer, i: int, t: TypeId, err: var bool) {.cdecl.}
+  SetDixFn*    = proc(c, v, i: pointer, t: TypeId, err: var bool) {.cdecl.}
   ASliceFn*    = proc(c, v: pointer, i, j: int, err: var bool) {.cdecl.}
   NewLitFn*    = proc(s: pointer, st: SyntaxType, litmod: string,
                       err: var string): pointer {.cdecl.}

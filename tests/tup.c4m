@@ -1,18 +1,25 @@
 x = (1, "foo", 3)
-assert x[0] == 1
-assert x[1] == "foo"
-assert x[2] == 3
+#assert x[0] == 1
+#assert x[1] == "foo"
+#assert x[2] == 3
+
 y = x
+y[1] = "blah"
+
 assert x[0] == 1
 assert x[1] == "foo"
 assert x[2] == 3
+
+x[0] = 4
 
 assert y[0] == 1
-assert y[1] == "foo"
+assert y[1] == "blah"
 assert y[2] == 3
 
-#(a, b, c) = x
+x[1] = y[1]
 
-#print(a)
-#print(b)
-#print(c)
+(a, b, c) = x
+
+assert a == 4
+assert b == "blah"
+assert c == 3

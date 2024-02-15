@@ -2,10 +2,6 @@ import "."/[base, marshal]
 
 var tupOps = newVTable()
 
-type Con4mTuple* = ref object
-  obj*: ptr FlexArrayObj
-  t*:   TypeId
-
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 proc call_copy(p: pointer, t: TypeId): pointer {.importc, cdecl.}
@@ -41,6 +37,9 @@ proc newTupleFromSeq(t: TypeId, s: openarray[pointer]): Con4mTuple =
     discard flexarray_set(result.obj, uint64(i), item)
 
 proc tup_repr(c: Con4mTuple): cstring {.exportc, cdecl.} =
+
+  if c == nil:
+    return cstring("(null)")
   var
     parts: seq[string] = @[]
     tobj = c.t.idToTypeRef()
@@ -86,14 +85,14 @@ proc tup_eq(v1, v2: Con4mTuple, t: TypeId): bool {.exportc, cdecl.} =
 
   return true
 
-proc tup_index(tup: Con4mTuple, i: int, err: var bool): pointer
-                                                {.exportc, cdecl.} =
+proc tup_index*(tup: Con4mTuple, i: int, t: TypeId, err: var bool): pointer
+    {.exportc, cdecl.} =
   var code: cint
 
   result = flexarray_get(tup.obj, uint64(i), addr code)
 
-proc tup_assign_ix(tup: Con4mTuple, o: pointer, i: int, err: var bool)
-                                                        {.exportc, cdecl.} =
+proc tup_assign_ix(tup: Con4mTuple, o: pointer, i: int,
+                   t: TypeId, err: var bool) {.exportc, cdecl.} =
   discard flexarray_set(tup.obj, uint64(i),  o)
 
 proc tup_copy(tup: Con4mTuple, t: TypeId): Con4mTuple {.exportc, cdecl.} =
@@ -148,36 +147,13 @@ proc tup_lit(st: SyntaxType, litmod: string, t: TypeId,
 
 proc tup_marshal(tup: Con4mTuple, t: TypeId, memos: Memos):
                 C4Str {.exportc, cdecl.} =
-  let
-    view      = tup.items()
-    num_items = int64(view.len())
-    to        = t.idToTypeRef()
+  if tup == nil:
+    return marshal_32_bit_value(-1)
 
-  var
-    l = 0
-    offset: int
-    to_add: seq[pointer]
+  let to = t.idToTypeRef()
 
-  for i, item in view:
-    let marshaled = item.marshal(to.items[i], memos)
-
-    l += marshaled.len()
-    to_add.add(marshaled)
-
-  result = newC4Str(l + sizeof(uint32))
-
-  let
-    total_len = marshal_32_bit_value(int32(l))
-    ni        = marshal_32_bit_value(int32(num_items))
-
-  c4str_write_offset(result, total_len, 0)
-  c4str_write_offset(result, ni, 4)
-
-  offset = 8
-
-  for item in to_add:
-    c4str_write_offset(result, item, offset)
-    offset += item.len()
+  list_marshal_helper(tup.items()):
+      toAdd.add(item.marshal(to.items[loop_index], memos))
 
 proc tup_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                   Con4mTuple {.cdecl, exportc.} =
@@ -185,14 +161,15 @@ proc tup_unmarshal(s: var cstring, t: TypeId, memos: Memos):
     numitems: int
     myitems:  seq[pointer]
     totallen: int
-    p         = s
     to        = t.idToTypeRef()
 
-  totallen = p.unmarshal_32_bit_value()
-  numitems = p.unmarshal_32_bit_value()
+  totallen = s.unmarshal_32_bit_value()
 
-  for i in 0 ..< numitems:
-    myitems.add(unmarshal(p, to.items[i], memos))
+  if totallen == -1:
+    return nil
+
+  for i in 0 ..< totallen:
+    myitems.add(unmarshal(s, to.items[i], memos))
 
   result = newTupleFromSeq(t, myitems)
 

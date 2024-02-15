@@ -68,13 +68,11 @@ const
   USE_TRACE*          = false # Also requires one of the below to be true
   TRACE_INSTR*        = true
   TRACE_STACK*        = true
-  TRACE_SCOPE*        = true
+  TRACE_SCOPE*        = false
   RTAsMixed*          = -2
   RTAsPtr*            = -1
 
-  MemoValueFlag*      = 0x8000000000000000'u64
   obj_file_extension* = ".0c00l"
-
 
 type
   SyntaxType* = enum
@@ -146,6 +144,10 @@ type
     name*:    string
     tid*:     TypeId
     impl*:    FuncInfo
+
+  Con4mTuple* = ref object
+    obj*: ptr FlexArrayObj
+    t*:   TypeId
 
   Con4mErrPhase* = enum
     ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrCodeGen, ErrRuntime
@@ -739,8 +741,6 @@ type
      # Swap the top two stack items.
      ZSwap          = 0x1a,
 
-
-
      # Pop a value from the stack, discarding it.
      ZPop           = 0x20,
 
@@ -752,6 +752,17 @@ type
      # memory address, ignoring the stack.
      ZStoreImm      = 0x22,
 
+     # Saves off the tuple at the top of the stack (popping the
+     # stack), so that it's not hard to find when LHS arguments are
+     # pushed on.
+
+     ZTupleStash    = 0x23,
+
+     # Top of the stack is an integer `n`; a tuple follow the n items
+     # underneath are storage locations. The tuple must already have
+     # been stashed with ZTupleStash.
+
+     ZUnpack        = 0x24,
      # Tests the top of the stack... if it's a zero value, it jumps to
      # the indicated instruction. The jump argument is a relative
      # offset, and is measured in BYTES, which obviously will
@@ -991,11 +1002,16 @@ type
     longdoc*:  Rope
 
   RuntimeState* = ref object
-    # Some of this stuff should move around a bit, as we should separate out
-    # the bits that aren't ststic, but get saved in the object file.
-    # Currently, that's the attribute related stuff.
-
     obj*:               ZObjectFile
+    # The following fields represent saved execution state on top of
+    # the base object file.
+    moduleAllocations*: seq[seq[pointer]]
+    attrs*:             Dict[string, AttrContents]
+    allSections*:       Dict[string, bool]
+    sectionDocs*:       Dict[string, AttrDocs] # Not marshalling yet.
+    usingAttrs*:        bool
+
+    # The rest of this gets re-initialized every run.
     frameInfo*:         array[MAX_CALL_DEPTH, StackFrame]
     numFrames*:         int
     stack*:             array[STACK_SIZE, pointer]
@@ -1006,16 +1022,15 @@ type
     ip*:                int      # Index into instruction array, not bytes.
     returnRegister*:    pointer
     rrType*:            pointer
-    moduleAllocations*: seq[seq[pointer]]
-    attrs*:             Dict[string, AttrContents]
-    allSections*:       Dict[string, bool] # Todo: change to a set, or merge w/ below
-    sectionDocs*:       Dict[string, AttrDocs]
+    tupleStash*:        Con4mTuple
+    stashType*:         pointer
     externCalls*:       seq[CallerInfo]
     externArgs*:        seq[seq[FfiType]]
     externFps*:         seq[pointer]
     running*:           bool
     memos*:             Memos
     cmdline_info*:      ArgResult
+
 
   MixedObj* = object
     t*:     TypeId
@@ -1107,7 +1122,6 @@ type
     finalCmd*:  CommandSpec
 
   Array* = FlexArray[pointer]
-
 
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",

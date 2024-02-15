@@ -22,7 +22,8 @@ getopts {
   command_attribute: "command"
   arg_attribute:     "args"
   add_help_commands: false
-
+  args: (0, 0)
+  
   flag_yn debug {
       "Debugging output on"
       "## Turn debugging on, which will show all intermediate phase output."

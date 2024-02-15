@@ -9,25 +9,21 @@
 # a) Handle defaults, setting them on component entry if needed.
 # b) Auto-lock attrs that *can* be set in a component, when the component
 #   exits.
-# - Hook up validators for the checkpointing.
+# - Hook up user validators
 # - Test 'Other' data types
 # - Documentation.
-# - Add code gen for tuple unpacking.
 # - Array rcs
-# - Marshal secsion docs
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Embed f() docs as an option.
 # - ZFuncInfo should have the module number, instead of relying on the
 #   instruction to know.
-# - container type bug noted in list
-# - Save info about when last execution was, and how many executions.
+# - Unpack into globals from other modules probably doesn't work. Need
+#   to get the module id in the push'd arguments.
 # - Fill in missing error messages.
-# - Proper marshaling of callbacks.
-# - Lit mods should be available for runtime literal instantiation.
+# - Ensure proper marshaling of callbacks.
 # - Capture location info for runtime attr def locations, and show
 #   all def locations for things like spec errors (anything runtime).
-# - Don't bother to issue a copy when we just instantiated a lit.
 # - Remainder of needed stdlib stuff
 # - Restrict the leading '$' properly.
 # - Redo doc API / autogeneration
@@ -40,18 +36,21 @@
 # - More Documentation.
 # - When doing second pass for calls, add cast nodes where we could auto-cast.
 # - Remove any remaining newRefVal / extractRef calls
-# - Get control flow stuff working properly.
 # - More flexibility on storing src in object
 # - Automatic console err fd
+# - Make sure incremental linking will work (probably needs some work)
+# - Redo the rich data type again; replace w/ a "container" type.
 
 # == Medium -- before public release ==
+# - Don't bother to issue a copy when we just instantiated a lit.
+# - Lit mods should be available for runtime literal instantiation.
 # - Integrate test command into con4m command.
-# - Expect functionality in test command.
-# - Flag what objdump dumps.
+# - Save info about when last execution was, and how many executions?
+# - `Expect` functionality in test command.
+# - Flags to control what objdump dumps.
 # - Comments in pretty(), and better spacing control based on original src.
 # - Redo code gen for assignment to get rid of the extra ref/deref for index
 #   ops
-# - Redo the rich data type again; replace w/ a "container" type
 # - Check attr to lock and attrs to access against spec statically.
 # - Buffers should be mutable (like strings, they currently are not).
 # - explicit casts -- to(obj, type) OR type(obj) (decide which)
@@ -64,7 +63,6 @@
 #   time (and mark native f() no-side-effect if they do not use external
 #   state).
 #   Lots more folding work should be done.
-# - Fold container literals wherever possible.
 # - Access controls around extern and extensibility features.
 # - ~ operator possibly should be renamed to 'lock' and not require an
 #   assignment, but if there's no assignment it should error / warn if
@@ -83,12 +81,8 @@
 #   concrete type (after REPL is done)
 # - Give names to enums / turn them into int subtypes.
 # - Fold for list indexes when the length is fixed size and the list is static.
-# - Add 'error' to functions.
-# - string enums
-# - some sort of module scope operator; perhaps root::, module::,
-#   local:: I think? Or, rethink the whole import system :)
 # - Keyword arguments for functions.
-# - Some sort of debugger?
+# - A basic debugger
 # - Add maybe / null checking
 # - Should add variable aliases for $i and $label
 # - Implement FFI Varargs.
@@ -99,9 +93,16 @@
 # - Code playground
 # - LSP server
 # - Only generate loop variables if they're used.
+# - Proper scoping for loop vars
 # - Ideally, target LLVM
+# - Clean up generating calls for operators, etc.
 
 # == Lower priority ==
+
+# - Add 'error' to functions.
+# - string enums
+# - some sort of module scope operator; perhaps root::, module::,
+#   local:: I think? Or, rethink the whole import system :)
 # - For errors, make it easy to see "previous instance", and remove
 #   table for 2nd line
 # - Error msg squelching and colating
@@ -180,7 +181,7 @@ when isMainModule:
     if config_args[0].endswith(obj_file_extension):
       cmd_resume()
     else:
-      session.cmd_compile()
+      session.cmd_run()
   elif config_cmd == "objdump":
     cmd_objdump()
   elif config_cmd == "disassemble":

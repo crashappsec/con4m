@@ -989,7 +989,11 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
   if cur.assignRhs.contents.kind != IrLit and
     not cur.assignRhs.tid.getDataType().byValue:
     ctx.genTCall(FCopy, n.tid)
-  ctx.oneIrNode(cur.assignLhs)
+
+  # We don't want to generate tuple unpack code yet, because
+  # we need to ignore the literal, and do the reverse order.
+  if cur.assignLhs.contents.kind != IrLit:
+    ctx.oneIrNode(cur.assignLhs)
 
   if cur.assignLhs.contents.kind == IrIndexLhs:
     let
@@ -1014,6 +1018,25 @@ proc genAssign(ctx: CodeGenState, n: IrNode) =
         ctx.genTCall(FAssignIx, n.tid)
     else:
       ctx.genTCall(FAssignSlice, n.tid)
+  elif cur.assignLhs.contents.kind == IrLit:
+    # Tuple unpacking. First we 'stash' the tuple, which basically
+    # entails sticking it in a register (since we don't support
+    # nested unpacking).
+    ctx.emitInstruction(ZTupleStash, tid = n.tid)
+
+    # Now, we push the arguments on backward, so that we can more
+    # easily unpack off the stack.
+    var
+      tuplhs = cur.assignLhs.contents
+      l      = tuplhs.items.len()
+      i      = l
+
+    while i > 0:
+      i -= 1
+      ctx.oneIrNode(tuplhs.items[i])
+
+    ctx.emitInstruction(ZUnpack, arg = l, tid = n.tid)
+
   else:
     var
       isAttr: bool
@@ -1335,7 +1358,9 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
       ctx.zobj.ffiInfo.add(zinfo)
 
-proc extractSectionDocs(ctx: CodeGenState, m: Module, d: Dict[string, AttrDocs]) =
+proc extractSectionDocs(ctx: CodeGenState,
+                        m:   Module,
+                        d:   Dict[string, AttrDocs]) =
   # TODO: warn about multiple adds.
   for node in m.secDocNodes:
     var sec = node.contents.prefix

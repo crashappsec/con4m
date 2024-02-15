@@ -8,6 +8,9 @@ proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 
 proc list_repr(c: FlexArray[pointer]): cstring {.exportc, cdecl.} =
+  if c == nil:
+    return cstring("(null)")
+
   var parts: seq[string]
 
   let
@@ -52,7 +55,8 @@ proc list_eq(l1, l2: FlexArray[pointer]): bool {.exportc, cdecl.} =
 proc list_len(l1: FlexArray[pointer]): int {.exportc, cdecl.} =
   return l1.len()
 
-proc list_index(arr: FlexArray[pointer], i: int, err: var bool): pointer
+proc list_index(arr: FlexArray[pointer], i: int, t: TypeId,
+                err: var bool): pointer
     {.exportc, cdecl.} =
 
   let opt = arr.get(i)
@@ -64,7 +68,8 @@ proc list_index(arr: FlexArray[pointer], i: int, err: var bool): pointer
 
   # let to = cast[TypeId](arr.metadata.idToTypeRef())
 
-proc list_assign_ix(p: FlexArray[pointer], o: pointer, i: int, err: var bool)
+proc list_assign_ix(p: FlexArray[pointer], o: pointer, i: int,
+                    t: TypeId, err: var bool)
     {.exportc, cdecl.} =
   err = not p.put(i, o)
 
@@ -183,65 +188,36 @@ proc list_lit(st: SyntaxType, litmod: string, t: TypeId,
 
 proc list_marshal(fa: FlexArray[pointer], t: TypeId, memos: Memos):
                  C4Str {.exportc, cdecl.} =
+
+  if fa == nil:
+    return marshal_32_bit_value(-1)
+
   let
-    view: seq[pointer] = fa.items()
-    num_items          = int64(view.len())
-    len_str            = newC4Str(sizeof(int64))
-    obj_len            = cast[ptr int64](lenstr)
-    to                 = cast[TypeId](t).idToTypeRef()
-    item_type          = to.items[0]
+    to        = cast[TypeId](t).idToTypeRef()
+    item_type = to.items[0]
 
-  var
-    l      = sizeof(int64)
-    offset = sizeof(int64)
-    to_add: seq[pointer]
-
-  for i, item in view:
-    let marshaled = item.marshal(item_type, memos)
-
-    l += marshaled.len() + sizeof(int64)
-    to_add.add(marshaled)
-
-  result = newC4Str(l)
-  copyMem(cast[pointer](result), cast[pointer](addr num_items), sizeof(int64))
-
-  for item in to_add:
-    obj_len[] = item.len()
-    c4str_write_offset(result, len_str, offset)
-    offset += sizeof(int64)
-    c4str_write_offset(result, item, offset)
-    offset += item.len()
-
+  list_marshal_helper(fa.items()):
+      toAdd.add(item.marshal(item_type, memos))
 
 proc list_unmarshal(s: var cstring, t: TypeId, memos: Memos):
                    FlexArray[pointer] {.exportc, cdecl.} =
   var
-    objstart: cstring
-    numitems: int64
-    offset:   int64
-    objlen:   int64
-    myitems:  seq[pointer]
-    lenptr:   ptr int64
-    startaddr = cast[int64](cast[pointer](s))
-    to        = t.idToTypeRef()
-    itemtype  = to.items[0]
+    numitems = s.unmarshal_32_bit_value()
+    myitems: seq[pointer]
 
-  objstart = cast[cstring](s)
-  lenptr   = cast[ptr int64](s)
-  numitems = lenptr[]
-  offset   = sizeof(int64)
+  if numitems == -1:
+    return nil
 
-  for i in 0 ..< numitems:
-    lenptr   = cast[ptr int64](startaddr + offset)
-    objlen   = lenptr[]
-    offset  += sizeof(int64)
-    objstart = cast[cstring](startaddr + offset)
-    myitems.add(unmarshal(objstart, itemtype, memos))
-    offset += objlen
+  let
+    to   = t.idToTypeRef()
+    valt = to.items[0]
 
-  result          = newArrayFromSeq[pointer](myitems)
+  result          = newArray[pointer](numitems)
   result.metadata = cast[pointer](t)
   GC_ref(result)
+
+  for i in 0 ..< numitems:
+    result[i] = s.unmarshal(valt, memos)
 
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FCastFn]       = cast[pointer](get_cast_func_list)

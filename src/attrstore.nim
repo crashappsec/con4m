@@ -146,6 +146,8 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
 
   # Here, make sure we have section info captured.
 
+  ctx.usingAttrs = true
+
   if not internal:
     ctx.populateDefaults(key)
 

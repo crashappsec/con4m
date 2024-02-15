@@ -1,5 +1,42 @@
 import ".."/common
-import "."/cmd_base
+import "."/[cmd_base, objdump]
+
+# Modfile is a param instead of checking the config variable, so that library
+# invokations of this don't need to use our config runtime.
+proc save_object_to_disk*(rt: var RuntimeState, modfile: string) {.exportc, cdecl.} =
+  var
+    objfile = rt.marshal_runtime(-3)
+    out_fname = modfile
+  if not out_fname.endswith(obj_file_extension):
+    out_fname &= obj_file_extension
+
+  if config_debug:
+    print hex_dump(objfile, uint(objfile.len()), 0)
+
+  try:
+    var
+      f       = open(outfname, fmWrite)
+      l       = objfile.len()
+      cur     = 0
+      toWrite = l
+
+    if f == nil:
+      print fgColor("error: ", "red") + text("Could not write to ") +
+      em(outfname)
+    else:
+      while toWrite > 0:
+        let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
+                                                toOpenArray(0, l - 1),
+                             cur,
+                             toWrite)
+        cur     += n
+        toWrite -= n
+
+  except:
+    print fgColor("error: ", "red") + text("Could not write to ") +
+          em(outfname) + text(": ") + italic(getCurrentException().msg)
+    if config_debug:
+      echo getCurrentException().getStackTrace()
 
 proc run_object*(rt: var RuntimeState, modfile: string, resumed = false) =
   var module_ix = -1 # -1 for default.
@@ -42,40 +79,7 @@ proc run_object*(rt: var RuntimeState, modfile: string, resumed = false) =
   if config_debug or config_format:
     print h1("Execution completed.")
   if config_save_object:
-    var
-      objfile = rt.marshal_runtime(-3)
-      out_fname = modfile
-    if not out_fname.endswith(obj_file_extension):
-      out_fname &= obj_file_extension
-
-    if config_debug:
-      print hex_dump(objfile, uint(objfile.len()), 0)
-
-    try:
-      var
-        f       = open(outfname, fmWrite)
-        l       = objfile.len()
-        cur     = 0
-        toWrite = l
-
-      if f == nil:
-        print fgColor("error: ", "red") + text("Could not write to ") +
-        em(outfname)
-      else:
-        while toWrite > 0:
-          let n = f.writeBytes(cast[ptr UncheckedArray[uint8]](objfile).
-                                                  toOpenArray(0, l - 1),
-                               cur,
-                               toWrite)
-          cur     += n
-          toWrite -= n
-
-    except:
-      print fgColor("error: ", "red") + text("Could not write to ") +
-            em(outfname) + text(": ") + italic(getCurrentException().msg)
-      if config_debug:
-        echo getCurrentException().getStackTrace()
-
+    rt.save_object_to_disk(modfile)
 
   let validation_errors = validate_state()
   if len(validation_errors) != 0:
@@ -106,7 +110,7 @@ proc cmd_resume*() =
 
   rt.run_object(fname, resumed = true)
 
-proc cmd_compile*(ctx: CompileCtx) =
+proc base_compile*(ctx: CompileCtx): RuntimeState =
   let
     entryname   = config_args[0]
     can_proceed = ctx.buildFromEntryPoint(entryname)
@@ -126,18 +130,19 @@ proc cmd_compile*(ctx: CompileCtx) =
 
   if config_debug:
     if entry.tokens.len() == 0:
-      quit(1)
+      return nil
+
     print(h1("Tokens for module '" & entry.modname & "'"))
     entry.printTokens()
 
     if entry.root == nil:
-      quit(1)
+      return nil
 
     print(h1("Parse tree for module '" & entry.modname & "'"))
     entry.printParseTree()
 
     if entry.ir == nil:
-      quit(1)
+      return nil
 
     print(h1("IR for module '" & entry.modname & "'"))
     entry.printIr()
@@ -169,9 +174,67 @@ proc cmd_compile*(ctx: CompileCtx) =
       print(h1("Global CFG"))
       ctx.printProgramCfg()
 
-
   if not ctx.printErrors():
-    quit(1)
+    return nil
 
-  var rt = ctx.generateCode()
-  rt.run_object(entry.modname)
+  return ctx.generateCode()
+
+proc cmd_compile*(ctx: CompileCtx) =
+  var rt = ctx.base_compile()
+
+  if rt == nil or rt.obj == nil:
+    quit(-1)
+
+  if config_reentry_point == "":
+    config_reentry_point = ctx.entrypoint.modname
+
+  rt.setup_first_execution()
+  rt.save_object_to_disk(config_reentry_point)
+
+  if config_debug:
+    print rt.obj.disassembly()
+
+proc cmd_run*(ctx: CompileCtx) =
+  var
+    rt = ctx.base_compile()
+
+  if rt == nil or rt.obj == nil:
+    quit(-1)
+
+  var
+    entryname = rt.obj.moduleContents[rt.obj.entrypoint - 1].modname
+
+  if config_reentry_point == "":
+    config_reentry_point = entryname
+
+  let exitcode = rt.execute_object()
+
+  if rt.obj.spec.used:
+    let errors = rt.run_validator().items()
+    var items: seq[Rope]
+
+    if errors.len() != 0:
+      for item in errors:
+        items.add(li((cast[Rope](item))))
+
+      print(h1("Execution validation failed:") + ol(items), file = stderr)
+      quit(-1)
+
+  if config_save_object:
+    rt.save_object_to_disk(config_reentry_point)
+
+  if config_debug:
+    print em("Execution complete.")
+    print rt.obj.disassembly()
+
+    rt.obj.spec.print_spec()
+    print h1("Ending attributes")
+    rt.print_attributes()
+
+    print rt.get_entry_heap_info()
+
+    if config_reentry_point != entryname:
+      print rt.get_next_entry_heap_info()
+
+
+  quit(exitcode)

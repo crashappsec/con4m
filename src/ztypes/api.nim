@@ -90,7 +90,7 @@ proc call_index*(c: pointer, i: int, t: TypeId, err: var bool): pointer
     info = t.get_data_type()
     op   = cast[IndexFn](info.ops[FIndex])
 
-  return op(c, i, err)
+  return op(c, i, t, err)
 
 proc call_dict_index*(c: pointer, i: pointer, t: TypeId,
                       err: var bool): pointer {.exportc, cdecl.} =
@@ -98,7 +98,7 @@ proc call_dict_index*(c: pointer, i: pointer, t: TypeId,
     info = t.get_data_type()
     op   = cast[DIndexFn](info.ops[FDictIndex])
 
-  return op(c, i, err)
+  return op(c, i, t, err)
 
 proc call_slice*(c: pointer, i, j: int, t: TypeId, err: var bool):
                pointer {.exportc, cdecl.} =
@@ -114,7 +114,7 @@ proc call_assign_ix*(c, v: pointer, i: int, t: TypeId, err: var bool)
     info = t.get_data_type()
     op   = cast[AssignIxFn](info.ops[FAssignIx])
 
-  op(c, v, i, err)
+  op(c, v, i, t, err)
 
 proc call_assign_dict_ix*(c, v, i: pointer, t: TypeId, err: var bool)
                           {.exportc, cdecl.} =
@@ -122,7 +122,7 @@ proc call_assign_dict_ix*(c, v, i: pointer, t: TypeId, err: var bool)
     info = t.get_data_type()
     op   = cast[SetDixFn](info.ops[FAssignDIx])
 
-  op(c, i, v, err)
+  op(c, i, v, t, err)
 
 proc call_assign_slice*(c, v: pointer, i, j: int, t: TypeId,
                      err: var bool) {.exportc, cdecl.} =
@@ -186,9 +186,9 @@ proc call_copy*(p: pointer, t: TypeId): pointer {.exportc, cdecl.} =
     op   = cast[CopyFn](info.ops[FCopy])
 
   if info.byValue or op == nil:
-    return p
+    result = p
   else:
-    return op(p, t)
+    result = op(p, t)
 
 proc call_len*(p: pointer, t: TypeId): int {.exportc, cdecl.} =
   let

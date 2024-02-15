@@ -574,8 +574,8 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           ix = cast[int](ctx.stack[ctx.sp])
           cp = cast[ptr pointer](ctx.stack[ctx.sp + 2])
           c  = cp[]
-          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
           ob = ctx.stack[ctx.sp + 4]                 # Data to assign
+          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
 
         # Do I have to take the address of the container on assign, if
         # it's an attr? I think so; I think that's what's wrong.
@@ -651,9 +651,9 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         let
           arg   = ctx.stack[ctx.sp]
           argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-
+          res   = call_copy(arg, argTy)
         # TODO: need to track this pointer.
-        ctx.stack[ctx.sp] = call_copy(arg, argTy)
+        ctx.stack[ctx.sp] = res
       of FLen:
         let
           arg   = ctx.stack[ctx.sp]
@@ -755,10 +755,38 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       else:
         ctx.showAssertionFailure(instr)
         return -1
+    of ZTupleStash:
+      ctx.tupleStash = cast[Con4mTuple](ctx.stack[ctx.sp])
+      ctx.stashType  = ctx.stack[ctx.sp + 1]
+      ctx.sp += 2
+    of ZUnpack:
+      let
+        n  = instr.arg
+        to = instr.typeInfo.idToTypeRef()
+
+      var
+        err: bool
+        tup      = ctx.tupleStash
+
+      for i in 0 ..< n:
+        var
+          address  = cast[ptr pointer](ctx.stack[ctx.sp])
+          typeaddr = cast[ptr pointer](cast[uint](address) +
+                                       uint(sizeof(pointer)))
+          itemType = to.items[i]
+
+        ctx.sp += 2
+        let
+          valaddr = cast[ptr pointer](tup.tup_index(i, instr.typeInfo, err))
+
+        address[]  = valaddr
+        typeaddr[] = cast[pointer](itemType)
 
     ctx.ip += 1
 
-proc setupArena(ctx: RuntimeState, typeInfo: seq[(int, TypeId)], moduleIdSz: int) =
+proc setupArena(ctx:        RuntimeState,
+                typeInfo:   seq[(int, TypeId)],
+                moduleIdSz: int) =
   # 128 bits per item.
   var moduleAllocation = newSeq[pointer](moduleIdSz * 2)
 
@@ -820,10 +848,7 @@ proc run_0c00l_vm*(ctx: RuntimeState): int {.exportc, cdecl.} =
   ctx.running = false
   ctx.popFrame()
 
-proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
-  ## This call is intended for first execution, not for save /
-  ## resumption.
-
+proc setup_first_execution*(ctx: var RuntimeState) {.exportc, cdecl.} =
   currentRuntime = ctx
   ctx.curModule  = ctx.obj.moduleContents[ctx.obj.entrypoint - 1]
   ctx.numFrames  = 1
@@ -839,10 +864,13 @@ proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   # Add module allocations.
   ctx.setupFfi()
   ctx.setupArena(ctx.obj.symTypes, ctx.obj.globalScopeSz)
-
-  for item in ctx.obj.moduleContents:
+  for i, item in ctx.obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
 
+proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
+  ## This call is intended for first execution, not for save /
+  ## resumption.
+  ctx.setup_first_execution()
   return ctx.run_0c00l_vm()
 
 proc resume_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =

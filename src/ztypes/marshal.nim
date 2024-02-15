@@ -103,7 +103,8 @@ proc unmarshal_16_bit_value*(s: var cstring): int16 {.exportc, cdecl.} =
 
 
 proc unmarshal_bool*(s: var cstring): bool {.exportc, cdecl.} =
-  return s.unmarshal_8_bit_value() == ord('y')
+  let b = s.unmarshal_8_bit_value()
+  return b == ord('y')
 
 proc unmarshal_nim_string*(s: var cstring): string {.exportc, cdecl.} =
   let
@@ -141,18 +142,18 @@ template basic_marshal_helper*(base_code: untyped) {.dirty.} =
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-template list_marshal_helper*(view, code: untyped) {.dirty.} =
+template list_marshal_helper*(view: seq, code: untyped) {.dirty.} =
 
   basic_marshal_helper:
     toAdd.add(view.len().int32().marshal_32_bit_value())
-    for item in view:
+    for loop_index, item in view:
       code
 
 template list_unmarshal_helper*(s: var cstring, code: untyped) {.dirty.} =
   let count = s.unmarshal_32_bit_value()
-
-  for ix in 0 ..< count:
-    code
+  if count > 0:
+    for ix in 0 ..< count:
+      code
 
 template view_marshal_helper*(view, code: untyped) {.dirty.} =
   basic_marshal_helper:

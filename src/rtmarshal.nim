@@ -341,46 +341,105 @@ proc unmarshal_object(rt: RuntimeState, p: var cstring) =
   rt.obj.spec           = rt.unmarshal_spec(p)
 
 proc marshal_attrs(rt: RuntimeState): C4Str =
-  dictionary_marshal_helper(rt.attrs):
-    toAdd.add(k.marshal_nim_string())
-    toAdd.add(cast[pointer](v.tid).marshal_64_bit_value())
-    toAdd.add(v.isSet.marshal_bool())
-    if v.isSet:
-      toAdd.add(v.locked.marshal_bool())
-      toAdd.add(v.lockOnWrite.marshal_bool())
-      toAdd.add(v.override.marshal_bool())
-      toAdd.add(v.contents.marshal(v.tid, rt.memos))
+  basic_marshal_helper:
+    let
+      view = rt.attrs.items()
+      l    = int32(view.len())
+
+    toAdd.add(l.marshal_32_bit_value())
+
+    if l != 0:
+      for (k, v) in view:
+        let isSet = v.isSet
+        toAdd.add(isSet.marshal_bool())
+        toAdd.add(k.marshal_nim_string())
+        toAdd.add(cast[pointer](v.tid).marshal_64_bit_value())
+
+        if isSet:
+          toAdd.add(v.locked.marshal_bool())
+          toAdd.add(v.lockOnWrite.marshal_bool())
+          toAdd.add(v.override.marshal_bool())
+          toAdd.add(v.contents.marshal(v.tid, rt.memos))
 
 proc unmarshal_attrs(rt: RuntimeState, p: var cstring) =
   rt.attrs.initDict()
 
-  list_unmarshal_helper(p):
-    var
-      k    = p.unmarshal_nim_string()
-      t    = cast[TypeId](p.unmarshal_64_bit_value())
-      s    = p.unmarshal_bool()
-      l    = false
-      wrlk = false
-      o    = false
-      c    = pointer(nil)
+  let n = p.unmarshal_32_bit_value()
 
-    if s:
-      l    = p.unmarshal_bool()
-      wrlk = p.unmarshal_bool()
-      o    = p.unmarshal_bool()
-      c    = p.unmarshal(t, rt.memos)
+  if n != 0:
+    rt.usingAttrs = true
 
-      discard rt.set(k, c, t, l, o, internal = true, wrlk)
+    for i in 0 ..< n:
+      var
+        k: string
+        t: TypeId
+        s:    bool
+        l:    bool    = false
+        wrlk: bool    = false
+        o:    bool    = false
+        c:    pointer = nil
+
+      s = p.unmarshal_bool()
+      k = p.unmarshal_nim_string()
+      t = cast[TypeId](p.unmarshal_64_bit_value())
+
+      if s:
+        l    = p.unmarshal_bool()
+        wrlk = p.unmarshal_bool()
+        o    = p.unmarshal_bool()
+        c    = p.unmarshal(t, rt.memos)
+
+
+      let item = AttrContents(tid: t, isSet: s, locked: l,
+                                 lockOnWrite: wrlk, override: o,
+                                 contents: c)
+      GC_ref(item)
+      rt.attrs[k] = item
 
 proc marshal_section_list(rt: RuntimeState): C4Str =
-  let secs = rt.allSections.keys(sort=true)
-  list_marshal_helper(secs):
-    toAdd.add(item.marshal_nim_string())
+  if rt.usingAttrs:
+    let secs = rt.allSections.keys(sort=true)
+    list_marshal_helper(secs):
+      toAdd.add(item.marshal_nim_string())
+  else:
+    return marshal_32_bit_value(0'i32)
+
+proc marshal_section_docs(rt: RuntimeState): C4Str =
+  if rt.usingAttrs:
+    dictionary_marshal_helper(rt.sectionDocs):
+      echo "key 1 = ", k
+      toAdd.add(k.marshal_nim_string())
+      toAdd.add(v.shortdoc.rope_marshal(TRich, rt.memos))
+      toAdd.add(v.longdoc.rope_marshal(TRich, rt.memos))
+
+proc unmarshal_section_docs(rt: RuntimeState, p: var cstring) =
+  rt.sectionDocs.initDict()
+
+  if rt.usingAttrs:
+    var num = p.unmarshal_32_bit_value()
+
+    while num > 0:
+      num = num - 1
+
+      let
+        key       = p.unmarshal_nim_string()
+        shortdoc  = p.rope_unmarshal(TRich, rt.memos)
+        longdoc   = p.rope_unmarshal(TRich, rt.memos)
+        docs      = AttrDocs(shortdoc: shortdoc, longdoc: longdoc)
+
+      rt.sectionDocs[key] = docs
+      echo key
 
 proc unmarshal_section_list(rt: RuntimeState, p: var cstring) =
   rt.allSections.initDict()
-  list_unmarshal_helper(p):
-    rt.allSections[p.unmarshal_nim_string()] = true
+
+  var n = p.unmarshal_32_bit_value()
+
+  if n != 0:
+    rt.usingAttrs = true
+    while n != 0:
+      rt.allSections[p.unmarshal_nim_string()] = true
+      n -= 1
 
 proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
   let itemcount = rt.moduleallocations[ix].len() div 2
@@ -389,7 +448,6 @@ proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
     toAdd.add(marshal_32_bit_value(int32(itemcount)))
     for i in 0 ..< itemcount:
       let
-        # This type is wrong for lists somehow???
         rawt = rt.moduleAllocations[ix][i * 2 + 1]
         t    = cast[TypeId](rawt)
 
@@ -397,7 +455,8 @@ proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
       if rawt == nil:
         toAdd.add(marshal_64_bit_value(nil))
       else:
-        toAdd.add(marshal(rt.moduleAllocations[ix][i * 2], t, rt.memos))
+        let value = rt.moduleAllocations[ix][i * 2]
+        toAdd.add(marshal(value, t, rt.memos))
 
 proc unmarshal_one_arena(rt: RuntimeState, p: var cstring): seq[pointer] =
   let itemcount = p.unmarshal_32_bit_value()
@@ -533,6 +592,7 @@ proc marshal_runtime*(rt: RuntimeState, next_entry: int32): C4Str =
       toAdd.add(rt.marshal_section_list())
       toAdd.add(rt.marshal_attrs())
       toAdd.add(rt.marshal_module_allocations())
+      toAdd.add(rt.marshal_section_docs())
 
 proc unmarshal_runtime*(s: C4Str): RuntimeState =
   var
@@ -556,3 +616,4 @@ proc unmarshal_runtime*(s: C4Str): RuntimeState =
   result.unmarshal_section_list(p)
   result.unmarshal_attrs(p)
   result.unmarshal_module_allocations(p)
+  result.unmarshal_section_docs(p)
