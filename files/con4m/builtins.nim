@@ -8,10 +8,7 @@
 import os, tables, osproc, strformat, strutils, options, streams, base64,
        macros, types, typecheck, st, parse, nimutils, errmsg,
        otherlits, treecheck, dollars, unicode, json, httpclient, net, uri,
-       openssl, sugar, nimutils/managedtmp
-
-proc SSL_CTX_load_verify_file(ctx: SslCtx, CAfile: cstring):
-                       cint {.cdecl, dynlib: DLLSSLName, importc.}
+       sugar, nimutils/managedtmp
 
 var externalActionCallback: Option[(string, string) -> void]
 
@@ -1235,24 +1232,20 @@ proc c4mUrlBase*(url: string, post: bool, body: string,
 
   hdrObj = newHttpHeaders(tups)
 
-  if uri.scheme == "https":
-    context = newContext(verifyMode = CVerifyPeer)
-    if pinnedCert != "":
-      discard context.context.SSL_CTX_load_verify_file(pinnedCert)
-    client = newHttpClient(sslContext = context, timeout = timeout)
-  else:
-    client = newHttpClient(timeout = timeout)
-
-  if client == nil:
-    return "ERR 000 Invalid HTTP configuration"
-
   if post:
-    response = client.safeRequest(url = uri, httpMethod = HttpPost,
-                                  body = body, headers = hdrObj)
+    response = safeRequest(url = uri,
+                           httpMethod = HttpPost,
+                           body = body,
+                           headers = hdrObj,
+                           timeout = timeout,
+                           pinnedCert = pinnedCert)
   else:
-    response = client.safeRequest(url = uri, httpMethod = HttpGet,
-                                  headers = hdrObj)
-  if response.status[0] != '2':
+    response = safeRequest(url = uri,
+                           httpMethod = HttpGet,
+                           headers = hdrObj,
+                           timeout = timeout,
+                           pinnedCert = pinnedCert)
+  if not response.code.is2xx():
     result = "ERR " & response.status
 
   elif response.bodyStream == nil:

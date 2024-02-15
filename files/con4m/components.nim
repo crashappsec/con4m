@@ -42,16 +42,12 @@ proc getComponentReference*(s: ConfigState, name, loc: string): ComponentInfo =
   return s.getComponentReference(fullComponentSpec(name, loc))
 
 proc fetchAttempt(url: string): string =
-  var
-    uri      = parseUri(url)
-    context  = newContext(verifyMode = CVerifyPeer)
-    client   = newHttpClient(sslContext = context, timeout = 1000)
-    response = client.safeRequest(url = uri, httpMethod = HttpGet)
+  let response = safeRequest(url = url, httpMethod = HttpGet, timeout = 1000)
 
-  if response.status[0] != '2':
+  if not response.code.is2xx():
     return ""
 
-  return response.bodyStream.readAll()
+  return response.body()
 
 proc cacheComponent*(component: ComponentInfo, str: string, force = false) =
   if component.entrypoint != nil and not force:
