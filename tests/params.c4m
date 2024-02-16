@@ -1,0 +1,39 @@
+# This will obviously infer `int`, but I eventually want to warn on
+# this situation, which is why I've written it this way.
+#
+# Also, currently, we don't accept the type removal here; we *could*
+# infer list | dict | tuple, but that complicates the code generation
+# a bit.
+#
+# But I'm not sure that's particularly necessary. Once there is enough
+# API, being able to leverage info about the calls made will generally
+# be able to help us make correct inferences.
+
+func l_test(n: list[`t]) {
+  n[2] = 100
+}
+
+func d_test(d: dict[`t, `v]) {
+  d[1] = 4
+}
+
+func t_test(t: tuple[`x, `y]) {
+  t[0] = 1
+}
+
+
+# Testing to make sure that containers have reference semantics.
+
+x = [1, 2, 3, 4, 5, 6, 7]
+
+l_test(x)
+
+assert x[2] == 100
+
+z = (2, 3)
+t_test(z)
+assert z[0] == 1
+
+y = { 1: 2, 3 : 4 }
+d_test(y)
+assert y[1] == 4
