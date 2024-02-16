@@ -1,4 +1,4 @@
-import "."/[base, tup, marshal]
+import "."/[base, tup, marshal, strings]
 
 proc tTuple(l: seq[TypeId]): TypeId {.importc, cdecl.}
 proc tList(item: TypeId): TypeId {.importc, cdecl.}
@@ -132,21 +132,37 @@ proc dict_copy(d: Con4mDict, t: TypeId): Con4mDict {.exportc, cdecl.} =
 
     `[]=`(result.obj, k2, v2)
 
-proc cast_from_dict_t(d: var Con4mDict, tfrom, tto: TypeId, err: var string):
-                     Con4mDict {.cdecl, exportc.} =
+proc cast_from_dict_t(d: Con4mDict, tfrom, tto: TypeId, err: var string):
+                     pointer {.cdecl, exportc.} =
+
+  if tto.isTvar():
+    return cast[pointer](d)
+
+  if tto == TRich:
+    var r = text($(dict_repr(cast[pointer](d))))
+    GC_ref(r)
+
+    return cast[pointer](r)
+
+  elif tto == TString:
+    return cast[pointer](dict_repr(cast[pointer](d)))
+
+
   var
     to1 = d.t.idToTypeRef()
     to2 = tto.idToTypeRef()
-    kt1 = to1.items[0].followForwards()
-    vt1 = to1.items[1].followForwards()
-    kt2 = to2.items[0].followForwards()
-    vt2 = to2.items[1].followForwards()
 
   if to2.kind != C4Dict:
     err = "CannotCast"
     return nil
 
-  result = newDict(d.t)
+  var
+    kt1 = to1.items[0].followForwards()
+    vt1 = to1.items[1].followForwards()
+    kt2 = to2.items[0].followForwards()
+    vt2 = to2.items[1].followForwards()
+
+  var r = newDict(d.t)
 
   for (k, v) in d.obj.items():
     var k2, v2: pointer
@@ -166,7 +182,9 @@ proc cast_from_dict_t(d: var Con4mDict, tfrom, tto: TypeId, err: var string):
     else:
       v2 = call_copy(v, vt1)
 
-    `[]=`(result.obj, k2, v2)
+    `[]=`(r.obj, k2, v2)
+
+  result = cast[pointer](r)
 
 proc get_cast_func_dict(dt, ot: DataType, tfrom, tto: TypeId, err: var string):
     pointer {.cdecl, exportc.} =

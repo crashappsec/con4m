@@ -189,10 +189,11 @@ proc cmd_compile*(ctx: CompileCtx) =
     config_reentry_point = ctx.entrypoint.modname
 
   rt.setup_first_execution()
-  rt.save_object_to_disk(config_reentry_point)
 
   if config_debug:
     print rt.obj.disassembly()
+
+  rt.save_object_to_disk(config_reentry_point)
 
 proc cmd_run*(ctx: CompileCtx) =
   var
@@ -206,6 +207,10 @@ proc cmd_run*(ctx: CompileCtx) =
 
   if config_reentry_point == "":
     config_reentry_point = entryname
+
+  if config_debug:
+    print rt.obj.disassembly()
+
 
   let exitcode = rt.execute_object()
 
@@ -225,10 +230,8 @@ proc cmd_run*(ctx: CompileCtx) =
 
   if config_debug:
     print em("Execution complete.")
-    print rt.obj.disassembly()
-
     rt.obj.spec.print_spec()
-    print h1("Ending attributes")
+    print h1("Ending attributes:")
     rt.print_attributes()
 
     print rt.get_entry_heap_info()

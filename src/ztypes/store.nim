@@ -12,24 +12,6 @@ export base, ordinals, chars, floats, strings, list, dict, tup, typespec,
 
 registerSyntax(TString, STOther, @[])
 
-proc isConcrete*(id: TypeId): bool =
-  return id.followForwards() < TypeId(0x8000000000000000'u64)
-
-proc isConcrete*(ids: seq[TypeId]): bool =
-  var combined: TypeId
-  for item in ids:
-    combined = combined or item.followForwards()
-  return combined.isConcrete()
-
-proc isTVar*(id: TypeId): bool =
-  return typeStore[id.followForwards()].kind == C4TVar
-
-proc isConcrete*(tRef: TypeRef): bool =
-  return tRef.typeId.followForwards().isConcrete()
-
-template isGeneric*(x: untyped): bool =
-  not x.isConcrete()
-
 proc isC4StrType*(id: TypeId): bool {.exportc, cdecl.} =
   if id.followForwards() in [TString, TUtf32, TBuffer]:
     return true

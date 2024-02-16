@@ -190,9 +190,9 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
 
   return true
 
-proc override*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId)
-                                                        {.cdecl, exportc.} =
-  discard ctx.set(key, value, tid, override = true)
+proc override*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId):
+    bool {.discardable, cdecl, exportc.} =
+  return ctx.set(key, value, tid, override = true)
 
 proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
           byAddr = false, expectedType = TBottom): pointer {.cdecl, exportc.} =

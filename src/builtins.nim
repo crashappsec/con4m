@@ -58,6 +58,7 @@ proc con4m_print(p: pointer) {.exportc, cdecl.} =
 
   var err = ""
   let asRope = cast[Rope](call_cast(n.value, n.t, TRich, err))
+  # If you're crashing here, you need to implement a cast to TRich.
 
   if err == "":
     print(asRope)

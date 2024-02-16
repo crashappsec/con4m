@@ -501,8 +501,8 @@ let
   TDate*     = addDataType(name = "date", concrete = true, ops = dOps)
   TTime*     = addDataType(name = "time", concrete = true, ops = tOps)
 
-registerSyntax(TDateTime, STOther, @[])
-registerSyntax(TDateTime, STStrQuotes, @[])
+registerSyntax(TDateTime, STOther, @["dt"])
+registerSyntax(TDateTime, STStrQuotes, @["dt"])
 registerSyntax(TDate, STOther, @[])
 registerSyntax(TDate, STStrQuotes, @[])
 registerSyntax(TTime, STOther, @[])

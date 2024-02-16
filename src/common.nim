@@ -1031,7 +1031,6 @@ type
     memos*:             Memos
     cmdline_info*:      ArgResult
 
-
   MixedObj* = object
     t*:     TypeId
     value*: pointer

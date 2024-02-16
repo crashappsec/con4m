@@ -23,7 +23,7 @@ whileStmt    ::= labelStmt? "while" expression body
 labelStmt    ::= ID ':'
 
 typeofStmt   ::= "typeof" memberExpr '{' (oneTypeCase)+ caseElseBlock? '}'
-valueOfStmt  ::= "valueof" expression '{' (oneValueCase)+ caseElseBlock? '}'
+valueOfStmt  ::= "switch"" expression '{' (oneValueCase)+ caseElseBlock? '}'
 
 continueStmt ::= "continue" ID?
 breakStmt    ::= "break" ID?

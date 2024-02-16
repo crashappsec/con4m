@@ -108,5 +108,5 @@ let
 
 registerSyntax(TIPv4, STOther, @["ip"])
 registerSyntax(TIPv4, STStrQuotes, @["ip"])
-registerSyntax(TIPv6, STOther, @[])
-registerSyntax(TIPv6, STStrQuotes, @[])
+registerSyntax(TIPv6, STOther, @["ip6"])
+registerSyntax(TIPv6, STStrQuotes, @["ip6"])
