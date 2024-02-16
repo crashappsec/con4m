@@ -567,7 +567,8 @@ proc buildAllUnbuiltCfgs*(ctx: CompileCtx, module: Module) =
   # value for any type.
 
   for function in module.allFunctions():
-    if function.cfg != nil:
+
+    if function.cfg != nil or function.externInfo != nil:
       continue
 
     var startDefs = ctx.globalScope.allVars()

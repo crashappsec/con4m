@@ -50,6 +50,9 @@ proc defWoUseCheck(ctx: CompileCtx) =
     for (name, sym) in scope.table.items():
       if sym.isFunc:
         continue
+      if sym.formal:
+        if sym.uses.len() != 0 or sym.defs.len() > 0:
+          continue
       if sym.uses.len() != 0:
         if sym.declNode != nil:
           continue
