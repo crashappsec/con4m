@@ -139,8 +139,8 @@ proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   let loc = ctx.getSourceLoc()
   if loc != "":
     result = cells.quicktable(title =  "Stack trace",
-                              caption = "Source location: " & c
-                              tx.getSourceLoc())
+                              caption = "Source location: " &
+                              ctx.getSourceLoc())
   else:
     result = cells.quicktable(title =  "Stack trace")
 
@@ -680,7 +680,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         ctx.bailHere("RT_badTOp", @[$(instr.arg)])
 
     of Z0Call:
-      ctx.z_native_call(instr.arg, instr.moduleId, instr)
+      ctx.z_native_call(instr.arg, addr instr)
       continue
     of ZCallModule:
       let
@@ -704,7 +704,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       let cbObj = cast[ptr ZCallback](ctx.stack[ctx.sp])
 
       ctx.sp += 2
-      ctx.run_callback(cbObj)
+      ctx.run_callback_internal(cbObj)
     of ZRet:
       leaveFrame()
     of ZModuleRet:

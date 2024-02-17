@@ -183,11 +183,11 @@ proc userFieldValidator*(ctx: RuntimeState, path: C4Str, t: TypeId,
                                                          {.exportc, cdecl.} =
   # 1. Push the value.
   # 2. Push the path.
-  # 3. call run_callback()
+  # 3. call run_callback_internal()
   ctx.push_call_param(val, t)
   ctx.push_call_param(cast[pointer](path), TString)
 
-  let cb_result = cast[C4Str](ctx.run_callback(cb))
+  let cb_result = cast[C4Str](ctx.run_callback_internal(cb))
   if cb_result != nil and cb_result.len() != 0:
     result = ctx.custom_validation_error(path, cb_result, cb)
 
@@ -196,11 +196,11 @@ proc userSectionValidator*(ctx: RuntimeState, path: C4Str, f: pointer,
                              {.exportc, cdecl.} =
   # 1. Push the list of fields.
   # 2. Push the path.
-  # 3. call run_callback()
+  # 3. call run_callback_internal()
   ctx.push_call_param(f, tList(TString))
   ctx.push_call_param(cast[pointer](path), TString)
 
-  let cb_result = cast[C4Str](ctx.run_callback(cb))
+  let cb_result = cast[C4Str](ctx.run_callback_internal(cb))
   if cb_result != nil and cb_result.len() != 0:
     result = ctx.custom_validation_error(path, cb_result, cb)
 

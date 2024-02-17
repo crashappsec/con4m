@@ -773,7 +773,7 @@ proc runtimeError*(ctx: RuntimeState, err: string, file: ZModuleInfo, line: int,
 
 proc codeGenError*(err: string, args: seq[string] = @[]) =
   # TODO: the module / function info needs to show up here.
-  print err.formatLateError(LlErr, "When generating code: ", args)
+  print(err.formatLateError(LlErr, "When generating code", args), file = stderr)
   quit(-1)
 
 let sigNameMap = { 1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL",

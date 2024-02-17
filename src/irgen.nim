@@ -1896,6 +1896,7 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
         try:
           branchType = tOneOf(opts)
         except:
+          raise
           ctx.irError("TCaseOverlap", w = ctx.parseKid(i, 0, 0))
       else:
         branchType = ctx.parseKid(i, 0, 0).buildType()

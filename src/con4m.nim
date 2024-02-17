@@ -13,13 +13,10 @@
 # - Test 'Other' data types
 # - Documentation.
 # - Array rcs
-# - run_callback(rt, str)
 # - Finish toCon4m() for tuples and dicts.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Embed f() docs as an option.
-# - ZFuncInfo should have the module number, instead of relying on the
-#   instruction to know.
 # - Unpack into globals from other modules probably doesn't work. Need
 #   to get the module id in the push'd arguments.
 # - Fill in missing error messages.

@@ -1190,7 +1190,7 @@ proc managedCommit(winner: ArgResult, attrtop: string,
     if spec.callback.isSome():
         let
           cb     = spec.callback.get()
-          retBox = runtime.run_callback(cb, [(val, fieldType)])
+          retBox = runtime.run_callback_internal(cb, [(val, fieldType)])
           ret    = cast[C4Str](retbox).toNimStr()
 
         if ret != "":
@@ -1212,7 +1212,7 @@ proc managedCommit(winner: ArgResult, attrtop: string,
       c4arr.metadata = cast[pointer](tList(TString))
       let arg = [(cast[pointer](c4arr), tList(TString))]
 
-      discard runtime.run_callback(cmdObj.callback.get(), arg)
+      discard runtime.run_callback_internal(cmdObj.callback.get(), arg)
 
     if cmdObj.autoHelp and cmdObj.parent != nil:
       result = runtime.getCmdHelp(cmdObj.parent, winner.args[cmdName])

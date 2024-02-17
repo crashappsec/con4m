@@ -1,9 +1,9 @@
 import options, store
 export store
 
-proc baseunify*(id1, id2: TypeId): TypeId
+proc baseunify*(id1, id2: TypeId): TypeId {.cdecl, exportc.}
 
-proc baseunify*(ref1, ref2: TypeRef): TypeId {.cdecl, exportc.} =
+proc baseunify_tobjs(ref1, ref2: TypeRef): TypeId {.cdecl, exportc.} =
   ## This generally shouldn't be called directly.
   ##
   ## Performs unification on two objects, returning the type
@@ -226,7 +226,7 @@ proc baseunify*(id1, id2: TypeId): TypeId =
     id1 = typeStore[id1].followForwards()
     id2 = typeStore[id2].followForwards()
 
-  return baseunify(id1, id2)
+  return baseunify_tobjs(id1, id2)
 
 proc unify*(origtype1, origtype2: TypeRef): TypeId =
   var
@@ -249,7 +249,7 @@ proc unify*(origtype1, origtype2: TypeRef): TypeId =
     type2 = type2.copyType()
     copy2 = true
 
-  let id = type1.baseunify(type2)
+  let id = type1.baseunify_tobjs(type2)
 
   if id == TBottom:
     return TBottom
@@ -266,7 +266,7 @@ proc unify*(origtype1, origtype2: TypeRef): TypeId =
   if copy2 and not lock2:
     type2 = origtype2
 
-  result = type1.baseunify(type2)
+  result = type1.baseunify_tobjs(type2)
 
 template unify*(t1, t2: TypeId): TypeId =
   let

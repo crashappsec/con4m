@@ -654,9 +654,8 @@ type
     processed*:     bool
     loopLocs*:      seq[(IrNode, int)]
     backpatchLocs*: seq[(IrNode, int)]
-    objInfo*:       ZmoduleInfo
+    objInfo*:       ZModuleInfo
     secDocNodes*:   seq[IRNode]
-
 
   CompileCtx* = ref object
     modules*:     Dict[string, Module]
@@ -925,7 +924,6 @@ type
     # This field maps offsets to the name of the field. Frame
     # temporaries do not get name information here.
     funcname*:   string
-
     # Maps the offset to the symbol name.
     syms*:       Dict[int, string]
 
@@ -939,10 +937,10 @@ type
     #
     # At run-time, the type will always need to be concrete.
     symTypes*:   seq[(int, TypeId)]
-    # Offset in bytes into the module's generated code where this
-    # function begins.
-    offset*:     int
-    size*:       int
+    tid*:        TypeId
+    mid*:        int32
+    offset*:     int32
+    size*:       int32
 
   # This is all the data that will be in an "object" file; we'll
   # focus on being able to marshal and load these only.

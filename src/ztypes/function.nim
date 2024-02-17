@@ -47,8 +47,8 @@ fnOps[FCopy] = cast[pointer](fn_copy)
 
 TFunc = addDataType(name = "func", concrete = true, ops = fnOps, ckind = C4Func)
 
-template z_native_call*(ctx: RuntimeState, funcid: int, module: int,
-                        instr: untyped) =
+template z_native_call*(ctx: RuntimeState, funcid: int,
+                        instr: ptr ZInstruction = nil) =
   ## This is the raw 0c00l call implementation for 0c00l byte code.
   ## It assumes the virtual machine state is set up, so should only
   ## be called internally.
@@ -56,11 +56,13 @@ template z_native_call*(ctx: RuntimeState, funcid: int, module: int,
   ## If your application used con4m to load a config, then you're calling
   ## con4m callbacks when execution finished, push arguments on and
   ## instead call `run_callback()`.
+
   # `toSave` will get pushed onto the stack, and it's the current
   # instruction pointer plus the module ID in one word.
   let
     toSave     = ctx.ip shl 32 or ctx.curModule.moduleId
     fobj       = ctx.obj.funcInfo[funcid - 1]
+    module     = fobj.mid
     oldModule  = ctx.curModule
 
   # push toSave.
@@ -77,9 +79,8 @@ template z_native_call*(ctx: RuntimeState, funcid: int, module: int,
 
   ctx.curModule       = ctx.obj.moduleContents[module - 1]
   let nextInstruction = addr ctx.curModule.instructions[ctx.ip]
-
-  ctx.pushFrame(oldmodule, instr.lineno, nextInstruction.lineno,
-                fobj, ctx.curModule)
+  let ln = if instr != nil: instr.lineno else: -1
+  ctx.pushFrame(oldmodule, ln, nextInstruction.lineno, fobj, ctx.curModule)
 
 template initForeignModule(): ZModuleInfo =
   ZModuleInfo(modname: "external call", moduleId: -2, initSize: 2,
@@ -88,7 +89,7 @@ template initForeignModule(): ZModuleInfo =
                 ZInstruction(op: ZHalt)
                 ])
 
-proc foreign_z_call(ctx: RuntimeState, funcid: int, module: int):
+proc foreign_z_call(ctx: RuntimeState, funcid: int):
                pointer {.exportc, cdecl.} =
   # We use a dummy module with two instructions, a call and a halt,
   # then we re-start the VM using that as an entry point.
@@ -97,9 +98,7 @@ proc foreign_z_call(ctx: RuntimeState, funcid: int, module: int):
   if ctx.foreignModule == nil:
     ctx.foreignModule = initForeignModule()
 
-  ctx.foreignModule.instructions[0].arg      = int32(funcid)
-  ctx.foreignModule.instructions[0].moduleId = int16(module)
-
+  ctx.foreignModule.instructions[0].arg = int32(funcid)
 
   ctx.curModule = ctx.foreignModule
   ctx.ip        = 0
@@ -159,10 +158,11 @@ proc push_call_param*(ctx: RuntimeState, p: pointer,
   ctx.sp -= 1
   ctx.stack[ctx.sp] = p
 
-proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback,
-                   args: openarray[(pointer, TypeId)] = []):
+proc run_callback_internal*(ctx: RuntimeState, cb: ptr ZCallback,
+                            args: openarray[(pointer, TypeId)] = []):
     pointer {.discardable, exportc, cdecl.} =
-  ## Args must be passed in reverse order.
+  ## Note that you pass args in the 'correct' order, and this will
+  ## push them on backwards, because that's the convention.
   ##
   ## This call is agnostic to whether the VM is already running or
   ## not; the VM will use this to run callback objects, and you can
@@ -176,7 +176,11 @@ proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback,
   ## externally, and will be nil if the function called returns
   ## no value.
 
-  for (p, t) in args:
+  var i = args.len()
+
+  while i != 0:
+    i -= 1
+    let (p, t) = args[i]
     ctx.push_call_param(p, t)
 
   if cb.ffi:
@@ -184,7 +188,40 @@ proc run_callback*(ctx: RuntimeState, cb: ptr ZCallback,
   elif ctx.running:
     # The generated code will, in this branch, push the result
     # if merited.
-    let cur_instruction = ctx.curModule.instructions[ctx.ip]
-    ctx.z_native_call(cast[int](cb.impl), int(cb.mid), cur_instruction)
+    let cur_ip = addr ctx.curModule.instructions[ctx.ip]
+
+    ctx.z_native_call(cast[int](cb.impl), cur_ip)
   else:
-    return ctx.foreign_z_call(cast[int](cb.impl), int(cb.mid))
+    return ctx.foreign_z_call(cast[int](cb.impl))
+
+proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
+
+proc baseunify(id1, id2: TypeId): TypeId {.importc, cdecl.}
+
+proc run_callback*(ctx:  RuntimeState,
+                       name: string,
+                       t:    TypeId,
+                       args: openarray[(pointer, TypeId)] = [],
+                       ffi = false): pointer {.discardable, exportc, cdecl.} =
+  ## This version of run_callback finds the function to call, and
+  ## creates the callback pointer for you, based on the name and
+  ## signature.
+  ##
+  ## By default, it only searches native functions, but the optional
+  ## 'ffi' flag will cause it to search both.
+  ##
+  ## This version will never get called by the runtime, so it expects
+  ## that it is ONLY called when the VM is idle.
+
+  var i = args.len()
+
+  while i != 0:
+    i -= 1
+    let (p, t) = args[i]
+    ctx.push_call_param(p, t)
+
+  for i, item in ctx.obj.funcInfo:
+    if item.funcname != name:
+      continue
+    if t == item.tid or t.baseunify(item.tid) != TBottom:
+      return ctx.foreign_z_call(i + 1)

@@ -1218,7 +1218,7 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
   ctx.fcur      = fn
   fn.codeOffset = ctx.mcur.objInfo.instructions.len() * sizeof(ZInstruction)
   fn.objInfo    = zinfo
-  zinfo.offset  = fn.codeOffset
+  zinfo.offset  = int32(fn.codeOffset)
 
   if fn.fnScope.scopeSize > 0:
     ctx.genPrologue(fn.fnScope.scopeSize - 1)
@@ -1228,7 +1228,7 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
 
   # Keep track of the size of the function implementation.
   let endPos = ctx.mcur.objInfo.instructions.len() * sizeof(ZInstruction)
-  zinfo.size = endPos - zinfo.offset
+  zinfo.size = int32(endPos - zinfo.offset)
   ctx.fcur   = nil
 
   ctx.mcur.objInfo.codesyms[zinfo.offset] = fullname
@@ -1269,18 +1269,42 @@ proc applyArenaId(ctx: CodeGenState, scope: Scope, moduleId: int,
                   curFnId: var int) =
   for (name, sym) in scope.table.items(sort=true):
     sym.moduleId = moduleId
+    # In the global scope, we don't know the right module IDs for
+    # functions yet. The below is just for modules.
+    if moduleid != 0:
+      for fn in sym.fimpls:
+        if fn.externInfo != nil:
+          continue
+        if fn.internalId == 0:
+          fn.internalId = curFnId
+          let fi = ZFnInfo(funcname: name,
+                           mid: int32(moduleId),
+                           tid: fn.tid, offset: int32(fn.codeOffset))
+          ctx.zobj.funcInfo.add(fi)
+          fn.objInfo = fi
+          fi.syms.initDict()
+          fn.fnscope.stashSymbolInfo(fi.syms, fi.symTypes)
+          curFnId += 1
+          ctx.applyArenaId(fn.fnScope, -1, curFnId)
+
+proc applyArenasToGloballyVisibleFuncs(ctx: CodeGenState, scope: Scope,
+                                       curFnId: var int) =
+  for (name, sym) in scope.table.items(sort=true):
     for fn in sym.fimpls:
       if fn.externInfo != nil:
         continue
       if fn.internalId == 0:
         fn.internalId = curFnId
-        let fi = ZFnInfo(funcname: name)   # Info carried into the object file.
-        ctx.zobj.funcInfo.add(fi)
-        fn.objInfo = fi
+        let
+          mid = fn.defModule.objInfo.moduleId
+          fi  = ZFnInfo(funcname: name, mid: int32(mid), tid: fn.tid,
+                        offset: int32(fn.codeOffset))
+        ctx.zobj.funcInfo.adD(fi)
         fi.syms.initDict()
-        fn.fnscope.stashSymbolInfo(fi.syms, fi.symTypes)
+        fn.fnScope.stashSymbolInfo(fi.syms, fi.symTypes)
         curFnId += 1
-      ctx.applyArenaId(fn.fnScope, -1, curFnId)
+        ctx.applyArenaId(fn.fnScope, -1, curFnId)
+
 
 proc addFfiInfo(ctx: CodeGenState, m: Module) =
   # Since we want people to be able to add modules to already existing
@@ -1378,12 +1402,16 @@ proc extractSectionDocs(ctx: CodeGenState,
     d[sec] = docObj
 
 proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
+  # This call applies a unique number to each module
+  # and then applies a unique number to each function.
+  # We first number the global scope 0, then do modules plus
+  # the functions they hold, then come back to number functions
+  # in the global scope we need to hit.
+
   var
     curArena = 1
     curFnId  = 1
 
-  # This applies a unique number to each module (an moduleId id)
-  # and then applies a unique number to each function.
   ctx.applyArenaId(ctx.cc.globalScope, 0, curFnId)
   ctx.zobj.globals.initDict()
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals, ctx.zobj.symTypes)
@@ -1410,6 +1438,10 @@ proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
 
     module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
     mi.codesyms[0] = module.modname & ".__mod_run__()"
+
+  # Finally, apply module IDs to the functions that are globally visible
+  # so we can look up their addresses.
+  ctx.applyArenasToGloballyVisibleFuncs(ctx.cc.globalScope, curFnId)
 
 proc fillCallBackpatches(ctx: CodeGenState) =
   for (fn, dstmodule, patchloc) in ctx.callBackpatches:

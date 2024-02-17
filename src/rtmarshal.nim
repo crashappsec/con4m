@@ -78,8 +78,10 @@ proc marshal_one_func(f: ZFnInfo): C4Str =
     toAdd.add(f.funcName.marshal_nim_string())
     toAdd.add(f.syms.marshal_sym_names())
     toAdd.add(f.symTypes.marshal_sym_types())
-    toAdd.add(cast[pointer](f.offset).marshal_64_bit_value())
-    toAdd.add(cast[pointer](f.size).marshal_64_bit_value())
+    toAdd.add(cast[pointer](f.tid.followForwards()).marshal_64_bit_value())
+    toadd.add(f.mid.marshal_32_bit_value())
+    toAdd.add(f.offset.marshal_32_bit_value())
+    toAdd.add(f.size.marshal_32_bit_value())
 
 proc unmarshal_one_func(p: var cstring): ZFnInfo =
   result = ZFnInfo()
@@ -87,8 +89,10 @@ proc unmarshal_one_func(p: var cstring): ZFnInfo =
   result.funcName   = p.unmarshal_nim_string()
   result.syms       = p.unmarshal_sym_names()
   result.symTypes   = p.unmarshal_sym_types()
-  result.offset     = int(p.unmarshal_64_bit_value())
-  result.size       = int(p.unmarshal_64_bit_value())
+  result.tid        = cast[TypeId](p.unmarshal_64_bit_value())
+  result.mid        = p.unmarshal_32_bit_value()
+  result.offset     = p.unmarshal_32_bit_value()
+  result.size       = p.unmarshal_32_bit_value()
 
 proc marshal_byte_code(bc: seq[ZInstruction]): C4Str =
   list_marshal_helper(bc):

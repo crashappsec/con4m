@@ -117,7 +117,7 @@ proc initTypeStore*() =
 
 proc copyType*(t: TypeRef): TypeRef
 proc copyType*(t: TypeId): TypeRef =
-  typeStore[t].copyType()
+  return typeStore[t].copyType()
 
 {.emit: """
 #include <stdatomic.h>
@@ -299,11 +299,12 @@ proc copyType*(t: TypeRef): TypeRef =
   else:
     discard
   typeStore[result.typeId] = result
+  assert typeStore.lookup(result.typeId).isSome()
 
 template tCopy*(t: TypeId): TypeId =
   idToTypeRef(t).copyType().typeId
 
-proc baseunify(id1, id2: TypeRef): TypeId {.importc, cdecl.}
+proc baseunify_tobjs(id1, id2: TypeRef): TypeId {.importc, cdecl.}
 
 const oErr = "'oneof' types must have multiple options."
 proc newOneOf*(items: seq[TypeId]): TypeRef =
@@ -314,7 +315,7 @@ proc newOneOf*(items: seq[TypeId]): TypeRef =
   for i in 0 ..< items.len() - 1:
     let toCompare = items[i].copyType()
     for item in items[i + 1 .. ^1]:
-      if toCompare.baseunify(item.copyType()) != TypeId(TBottom):
+      if toCompare.baseunify_tobjs(item.copyType()) != TypeId(TBottom):
         raise newException(ValueError, oErr)
 
   result.typeId = nextVarId()
