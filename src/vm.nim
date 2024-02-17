@@ -108,8 +108,11 @@ template getLineNo(ctx: RuntimeState): int =
 proc getSourceLoc*(ctx: RuntimeState): string =
   ## Decode the source location of the current runtime state from
   ## the current instruction.
-  return ctx.getModName() & " (line #" & $(ctx.getLineNo()) & ")"
-
+  let line = ctx.getLineNo()
+  if line != -1:
+    return ctx.getModName() & " (line #" & $(ctx.getLineNo()) & ")"
+  else:
+    return ""
 
 proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
@@ -133,8 +136,14 @@ proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
 
     cells.add(row)
 
-  result = cells.quicktable(title =  "Stack trace",
-                            caption = "Source location: " & ctx.getSourceLoc())
+  let loc = ctx.getSourceLoc()
+  if loc != "":
+    result = cells.quicktable(title =  "Stack trace",
+                              caption = "Source location: " & c
+                              tx.getSourceLoc())
+  else:
+    result = cells.quicktable(title =  "Stack trace")
+
   result.colWidths([(17, true), (15, true), (20, true)])
   result.tpad(0, true).bpad(0, true)
 
@@ -811,13 +820,14 @@ proc setupFfi(ctx: var RuntimeState) =
       argp:    pointer = nil
       numargs: cuint
 
-    if item.va:
-      runtimeWarn("External variable argument functions are not yet supported.")
-      continue
 
     p       = cast[cstring](addr obj.staticData[item.nameOffset])
     fname   = $(p)
     numArgs = cuint(item.argInfo.len() - 1)
+
+    if item.va:
+      ctx.runtimeWarn("ExternVarargs", args = @[fname])
+      continue
 
     for dllNameOffset in item.dlls:
       p = cast[cstring](addr obj.staticData[dllNameOffset])
@@ -826,7 +836,7 @@ proc setupFfi(ctx: var RuntimeState) =
     let fptr = findSymbol(fname, dlls)
 
     if fptr == nil:
-      runtimeWarn("MissingSym", @[fname])
+      ctx.runtimeWarn("MissingSym", @[fname])
       continue
 
     ctx.externFps[i] = fptr

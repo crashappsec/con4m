@@ -219,6 +219,21 @@ proc list_unmarshal(s: var cstring, t: TypeId, memos: Memos):
   for i in 0 ..< numitems:
     result[i] = s.unmarshal(valt, memos)
 
+proc nim_to_con4m(x: pointer, tid: TypeId): pointer {.importc, cdecl.}
+
+proc nim_list_to_con4m(x: seq[pointer], t: TypeId): FlexArray[pointer] =
+  var processed: seq[pointer]
+
+  let item_type = t.idToTypeRef().items[0]
+
+  for item in x:
+    processed.add(item.nim_to_con4m(item_type))
+
+  result = newArrayFromSeq(processed)
+
+  GC_ref(result)
+
+
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FCastFn]       = cast[pointer](get_cast_func_list)
 listOps[FContainerLit] = cast[pointer](list_lit)
@@ -231,6 +246,7 @@ listOps[FAssignSlice]  = cast[pointer](list_assign_slice)
 listOps[FCopy]         = cast[pointer](list_copy)
 listOps[FMarshal]      = cast[pointer](list_marshal)
 listOps[FUnmarshal]    = cast[pointer](list_unmarshal)
+listOps[FFromNim]      = cast[pointer](nim_list_to_con4m)
 
 TList  = addDataType(name = "list", concrete = false, ops = listOps,
                                                ckind = C4List)

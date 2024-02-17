@@ -77,11 +77,11 @@ proc u32_repr(pre: pointer): string {.cdecl.} =
   else:
     return s.toNimStr()
 
-proc str_repr(n: C4Str): cstring {.cdecl.} =
-  return cast[cstring](n)
+proc str_repr(n: C4Str): C4Str {.cdecl.} =
+  return n
 
-proc rich_repr(s: Rope): cstring {.cdecl.} =
-  return cstring(s.toUtf8())
+proc rich_repr(s: Rope): C4Str {.cdecl.} =
+  return newC4Str(s.toUtf8())
 
 proc rich_pluseq(a: pointer, b: Rope): void {.cdecl.} =
   # I *think* I can declare `a` a `var Rope` here, but just in case.
@@ -144,6 +144,16 @@ proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId,
   GC_ref(rope)
 
   return cast[pointer](rope)
+
+proc nim_str_to_con4m(s: string, tid: TypeId): C4Str =
+  result = newC4Str(s)
+
+proc nim_str_to_con4m_u32(s: string, tid: TypeId): C4Str =
+  if s.len() == 0:
+    return newC4Str("")
+  result = newC4Str(s.len() * 4)
+  let u32 = s.toRunes()
+  copyMem(result, addr u32[0], s.len() * 4)
 
 proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId, err: var string):
                      Rope {.cdecl, exportc.} =
@@ -495,6 +505,8 @@ proc unmarshal_style(s: var cstring): FmtStyle {.exportc, cdecl.} =
   if (flags and 0x08000000) != 0:
     result.alignStyle = some(cast[AlignStyle](s.unmarshal_32_bit_value()))
 
+  GC_ref(result)
+
 proc rope_unmarshal*(p: var cstring, t: TypeId, memos: Memos): Rope
     {.exportc, cdecl.} =
 
@@ -578,6 +590,7 @@ strOps[FCopy]         = cast[pointer](c4str_copy)
 strOps[FLen]          = cast[pointer](c4str_len)
 strOps[FMarshal]      = cast[pointer](str_marshal)
 strOps[FUnmarshal]    = cast[pointer](str_unmarshal)
+strOps[FFromNim]      = cast[pointer](nim_str_to_con4m)
 bufOps[FRepr]         = cast[pointer](str_repr)
 bufOps[FCastFn]       = cast[pointer](get_cast_from_string)
 bufOps[FEq]           = cast[pointer](c4str_eq)
@@ -591,6 +604,7 @@ bufOps[FCopy]         = cast[pointer](c4str_copy)
 bufOps[FLen]          = cast[pointer](c4str_len)
 bufOps[FMarshal]      = cast[pointer](str_marshal)
 bufOps[FUnmarshal]    = cast[pointer](str_unmarshal)
+bufOps[FFromNim]      = cast[pointer](nim_str_to_con4m)
 utf32Ops[FRepr]       = cast[pointer](u32_repr)
 utf32Ops[FCastFn]     = cast[pointer](get_cast_from_u32)
 utf32Ops[FEq]         = cast[pointer](c4str_eq)
@@ -604,6 +618,7 @@ utf32Ops[FCopy]       = cast[pointer](c4str_copy)
 utf32Ops[FLen]        = cast[pointer](u32_len)
 utf32Ops[FMarshal]    = cast[pointer](str_marshal)
 utf32Ops[FUnmarshal]  = cast[pointer](str_unmarshal)
+utf32Ops[FFromNim]    = cast[pointer](nim_str_to_con4m_u32)
 richOps[FRepr]        = cast[pointer](rich_repr)
 richOps[FCastFn]      = cast[pointer](get_cast_from_rich)
 richOps[FEq]          = cast[pointer](value_eq)

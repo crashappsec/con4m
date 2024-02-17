@@ -169,13 +169,16 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
         if not call_eq(value, curInfo.contents, curInfo.tid):
           return false
         else:
-          # Set to same value.
+          # Set to same value; ignore it basically.
           return true
     if curInfo.lockOnWrite:
       newInfo.locked = true
 
   if override:
     newInfo.override = true
+
+  if ctx.running:
+    newInfo.lastset = addr ctx.curModule.instructions[ctx.ip]
 
   # Don't trigger write lock if we're setting a default (i.e., internal is set).
   if (lock or wlock) and not internal:

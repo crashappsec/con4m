@@ -18,10 +18,12 @@ proc print_one_section(spec: SectionSpec, n: string) =
               if spec.allowedSections.len() == 0:
                 em("None")
               else:
-                text((spec.allowedSections & spec.requiredSections).join(", "))])
+                text((spec.allowedSections &
+                  spec.requiredSections).join(", "))])
 
   if spec.requiredSections.len() != 0:
-    cells.add(@[text("Required sections"), text(spec.requiredSections.join(", "))])
+    cells.add(@[text("Required sections"),
+                text(spec.requiredSections.join(", "))])
 
   print quickTable(cells,
                    verticalHeaders = true).colWidths([(40, true),
@@ -155,7 +157,7 @@ proc rangeValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
 
   else:
     let args = @[$(cast[cstring](path)),$(v), $(lowval), $(hival)]
-    return format_validation_error("BadRange", args)
+    return ctx.format_validation_error(path, "BadRange", args)
 
 proc choiceValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
                       param: FlexArray[pointer]): Rope {.exportc, cdecl.} =
@@ -171,9 +173,10 @@ proc choiceValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
   for item in choices:
     choice_list.add($(call_repr(item, t)))
 
-  return format_validation_error("BadChoice", @[ $(cast[cstring](path)),
-                                                 $(call_repr(val, t)),
-                                                 choice_list.join(", ")])
+  return ctx.format_validation_error(path, "BadChoice",
+                                     @[ $(cast[cstring](path)),
+                                        $(call_repr(val, t)),
+                                        choice_list.join(", ")])
 
 proc userFieldValidator*(ctx: RuntimeState, path: C4Str, t: TypeId,
                          val: pointer, cb: ptr ZCallback): Rope
@@ -184,9 +187,9 @@ proc userFieldValidator*(ctx: RuntimeState, path: C4Str, t: TypeId,
   ctx.push_call_param(val, t)
   ctx.push_call_param(cast[pointer](path), TString)
 
-  let cb_result = cast[Rope](ctx.run_callback(cb))
-  if cb_result != nil:
-    result = custom_validation_error(cb_result)
+  let cb_result = cast[C4Str](ctx.run_callback(cb))
+  if cb_result != nil and cb_result.len() != 0:
+    result = ctx.custom_validation_error(path, cb_result, cb)
 
 proc userSectionValidator*(ctx: RuntimeState, path: C4Str, f: pointer,
                            cb: ptr ZCallback): Rope
@@ -197,9 +200,9 @@ proc userSectionValidator*(ctx: RuntimeState, path: C4Str, f: pointer,
   ctx.push_call_param(f, tList(TString))
   ctx.push_call_param(cast[pointer](path), TString)
 
-  let cb_result = cast[Rope](ctx.run_callback(cb))
-  if cb_result != nil:
-    result = custom_validation_error(cb_result)
+  let cb_result = cast[C4Str](ctx.run_callback(cb))
+  if cb_result != nil and cb_result.len() != 0:
+    result = ctx.custom_validation_error(path, cb_result, cb)
 
 proc lock_con4m_spec*(ctx: RuntimeState) {.cdecl, exportc.} =
   if ctx.obj.spec != nil:
@@ -327,7 +330,9 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
     if secname notin spec.allowedSections and
        secname notin spec.requiredSections:
 
-      errs.add(format_validation_error("BadSection", @[tree.path, secname]))
+      errs.add(ctx.format_validation_error(tree.path,
+                                           "BadSection",
+                                           @[secname]))
     else:
       let newSpec = ctx.obj.spec.secSpecs[secname]
       if newSpec.maxAllowed == 1:
@@ -338,14 +343,14 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
 
   for requirement in spec.requiredSections:
     if requirement notin found_s_names:
-      errs.add(format_validation_error("MissingSection",
-                                       @[tree.path, requirement]))
+      errs.add(ctx.format_validation_error(tree.path, "MissingSection",
+                                           @[requirement]))
 
   if not spec.userDefOk:
     for name in found_f_names:
       if spec.fields.lookup(name).isNone():
-        errs.add(format_validation_error("BadField",
-                                         @[tree.path, name, spec.name]))
+        errs.add(ctx.format_validation_error(tree.path, "BadField",
+                                             @[name, spec.name]))
 
   for name in found_f_names:
     let specOpt = spec.fields.lookup(name)
@@ -353,14 +358,15 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
       let fieldSpec = specOpt.get()
       for item in fieldSpec.exclusions:
         if item in found_f_names:
-          errs.add(format_validation_error("FieldMutex",
-                                           @[tree.path, name, item]))
+          errs.add(ctx.format_validation_error(tree.path, "FieldMutex",
+                                               @[name, item]))
         else:
           excluded_fields.add(item)
 
   for (name, field_spec) in spec.fields.items():
     if name notin (found_f_names & excluded_fields) and field_spec.required:
-      errs.add(format_validation_error("MissingField", @[tree.path, name]))
+      errs.add(ctx.format_validation_error(tree.path, "MissingField",
+                                           @[name]))
     else:
       var
         expected_type = TBottom
@@ -379,8 +385,8 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
 
         if unify(tTypeSpec(), foundType) == TBottom:
 
-          errs.add(format_validation_error("NotTSpec",
-                                           @[ready_to_append, name, full_path]))
+          errs.add(ctx.format_validation_error(full_path, "NotTSpec",
+                                               @[ready_to_append, name]))
           continue
 
       full_path = ready_to_append & name
@@ -397,7 +403,8 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
         if field_spec.required:
           # This is in some sense a dupe check to above, but it's possible
           # for us to att an entry w/o setting a value.
-          errs.add(format_validation_error("MissingField", @[tree.path, name]))
+          errs.add(ctx.format_validation_error(tree.path, "MissingField",
+                                               @[name]))
         continue
 
       for valid_obj in field_spec.validators:
@@ -456,8 +463,8 @@ proc run_validator*(ctx: RuntimeState, startwith = ""):
       let specOpt = ctx.obj.spec.secSpecs.lookup(parts[i])
 
       if specOpt.isNone():
-        errs.add(format_validation_error("NoSpecForSec",
-                                         @[startwith, parts[i]]))
+        errs.add(ctx.format_validation_error(startwith, "NoSpecForSec",
+                                             @[parts[i]]))
         break
       spec  = specOpt.get()
       sofar = if i == 0: parts[0] else: sofar & "." & parts[i]
@@ -469,13 +476,14 @@ proc run_validator*(ctx: RuntimeState, startwith = ""):
           break
 
       if tree.path != sofar:
-        errs.add(format_validation_error("InvalidStart", @[startwith, sofar]))
+        errs.add(ctx.format_validation_error(startwith, "InvalidStart",
+                                             @[sofar]))
         break
 
       if spec.maxAllowed == 1:
         continue
       if i == parts.len():
-        errs.add(format_validation_error("NoInstance", @[startwith]))
+        errs.add(ctx.format_validation_error(startwith, "NoInstance", @[]))
         break
 
       sofar &= "." & parts[i]
@@ -487,7 +495,8 @@ proc run_validator*(ctx: RuntimeState, startwith = ""):
           break
 
       if tree.path != sofar:
-        errs.add(format_validation_error("InvalidStart", @[startwith, sofar]))
+        errs.add(ctx.format_validation_error(startwith, "InvalidStart",
+                                             @[sofar]))
         break
 
     if errs.len() == 0:

@@ -108,7 +108,7 @@ proc emitInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                          typeInfo: tid.getTid())
   ctx.mcur.objInfo.instructions.add(ins)
 
-proc findStringAt*(mem: string, offset: int): string =
+proc find_string_at*(mem: string, offset: int): string {.exportc, cdecl.} =
   let endIx = mem.find('\0', offset)
 
   return mem[offset ..< endIx]
@@ -1080,10 +1080,11 @@ proc genBinary(ctx: CodeGenState, n: IrNode) =
   ctx.oneIrNode(cur.bLhs)
   ctx.oneIrNode(cur.bRhs)
 
+  ctx.genTCall(cur.opId and 0x7f, tid = n.tid)
+
   if cur.opId > 128:
     ctx.genNot()
 
-  ctx.genTCall(cur.opId and 0x7f, tid = n.tid)
 
 proc genLogic(ctx: CodeGenState, cur: IrContents) =
   var backpatchLoc: int
@@ -1317,13 +1318,12 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
         zinfo.dlls.add(ctx.addStaticObject(dll))
 
       if typeinfo.items.len() > cinfo.cArgTypes.len():
-        lateError("ExternZArgCt", @[name, $(typeinfo.items.len()),
-                                    $(cinfo.cArgTypes.len()),
-                                    typeinfo.typeId.toString()])
-
+        codeGenError("ExternZArgCt", @[name, $(typeinfo.items.len()),
+                                  $(cinfo.cArgTypes.len()),
+                                  typeinfo.typeId.toString()])
 
       elif typeinfo.items.len() < cinfo.cArgTypes.len():
-        lateError("ExternCArgCt", @[name, $(typeinfo.items.len()),
+        codegenError("ExternCArgCt", @[name, $(typeinfo.items.len()),
                                     $(cinfo.cArgTypes.len())])
       for i, param in cinfo.cArgTypes:
         var

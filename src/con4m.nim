@@ -9,10 +9,12 @@
 # a) Handle defaults, setting them on component entry if needed.
 # b) Auto-lock attrs that *can* be set in a component, when the component
 #   exits.
-# - Hook up user validators
+# - Hook up user validators (well, test them)
 # - Test 'Other' data types
 # - Documentation.
 # - Array rcs
+# - run_callback(rt, str)
+# - Finish toCon4m() for tuples and dicts.
 
 # === Semi-high priority -- could ship internally w/ known issues ===
 # - Embed f() docs as an option.
@@ -96,9 +98,10 @@
 # - Proper scoping for loop vars
 # - Ideally, target LLVM
 # - Clean up generating calls for operators, etc.
+# - Overload not to flip bits.
 
 # == Lower priority ==
-
+# - A 'once' annotation
 # - Add 'error' to functions.
 # - string enums
 # - some sort of module scope operator; perhaps root::, module::,

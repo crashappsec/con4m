@@ -111,12 +111,16 @@ proc unmarshal_nim_string*(s: var cstring): string {.exportc, cdecl.} =
     l = s.unmarshal_32_bit_value()
 
   if l == 0:
-    result = ""
+    result = newString(1)
   else:
+    result = newString(l + 1)
     for i in 0 ..< l:
-      result.add(s[i])
+      result[i] = s[i]
 
     s.pointer_add(l)
+
+  GC_ref(result)
+
 
 proc marshal_bool*(v: bool): C4Str {.exportc, cdecl.} =
   # Ascii printables for easier debugging

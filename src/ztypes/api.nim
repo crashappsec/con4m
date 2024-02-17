@@ -204,6 +204,21 @@ proc call_plus_eq_ref*(v1, v2: pointer, t: TypeId) {.exportc, cdecl.} =
 
   op(v1, v2)
 
+proc nim_to_con4m*(x: pointer, tid: TypeId): pointer {.exportc, cdecl.} =
+  let
+    info = tid.get_data_type()
+    op   = cast[FromNimFn](info.ops[FFromNim])
+
+  if op == nil:
+    return x
+
+  return op(x, tid)
+
+proc toCon4m*[T](x: T, tid: TypeId): pointer =
+  var n = x
+
+  return nim_to_con4m(addr x, tid)
+
 
 ## When we cast for the below, we rely on the fact that we understand
 ## memory layout... the refcount is the first thing in a RefValue; it

@@ -4,6 +4,12 @@ extern con4m_repr(a: ptr) -> ptr {
   pure: true
 }
 
+extern con4m_repr(a: ptr) -> ptr {
+  "Convert data to a string."
+  local: $(s: `x) -> string
+  pure: true
+}
+
 extern str_strip(s: ptr) -> ptr {
 """
 Returns a copy of the input, with any leading or trailing white space

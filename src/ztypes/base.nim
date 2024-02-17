@@ -30,6 +30,7 @@ type
   PlusEqFn*    = proc(l, r: pointer) {.cdecl.}
   MarshalFn*   = proc(v: pointer, t: TypeId, m: Memos): C4Str {.cdecl.}
   UnmarshalFn* = proc(s: var cstring, t: TypeId, m: Memos): pointer {.cdecl.}
+  FromNimFn*   = proc(v: pointer, t: TypeId): pointer {.cdecl.}
 
   SyntaxInfo* = object
     primary*: DataType

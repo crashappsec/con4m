@@ -1,9 +1,13 @@
 import "."/base
+import ".."/err
 
 proc run_0c00l_vm(ctx: RuntimeState): int {.importc, cdecl.}
 
 template pushFrame*(ctx: RuntimeState, cm: ZModuleInfo, cl: int32,
                    tl: int32, tf: ZFnInfo, tm: ZModuleInfo) =
+  if ctx.numFrames == MAX_CALL_DEPTH:
+    ctx.runtimeError("StackOverflow", cm, cl)
+
   ctx.frameInfo[ctx.numFrames].callmodule   = cm
   ctx.frameInfo[ctx.numFrames].calllineno   = cl
   ctx.frameInfo[ctx.numFrames].targetline   = tl
@@ -43,8 +47,8 @@ fnOps[FCopy] = cast[pointer](fn_copy)
 
 TFunc = addDataType(name = "func", concrete = true, ops = fnOps, ckind = C4Func)
 
-proc z_native_call*(ctx: RuntimeState, funcid: int, module: int,
-                    instr: ZInstruction) =
+template z_native_call*(ctx: RuntimeState, funcid: int, module: int,
+                        instr: untyped) =
   ## This is the raw 0c00l call implementation for 0c00l byte code.
   ## It assumes the virtual machine state is set up, so should only
   ## be called internally.
@@ -72,7 +76,7 @@ proc z_native_call*(ctx: RuntimeState, funcid: int, module: int,
   ctx.ip            = fobj.offset div sizeof(ZInstruction)
 
   ctx.curModule       = ctx.obj.moduleContents[module - 1]
-  let nextInstruction = ctx.curModule.instructions[ctx.ip]
+  let nextInstruction = addr ctx.curModule.instructions[ctx.ip]
 
   ctx.pushFrame(oldmodule, instr.lineno, nextInstruction.lineno,
                 fobj, ctx.curModule)

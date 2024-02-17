@@ -1,4 +1,4 @@
-import std/posix
+import std/[posix, terminal]
 import "."/common
 
 ## If we have to bail on control flow, we'll do so here.
@@ -371,6 +371,9 @@ const errorMsgs = [
                      "<em>$2</em>, which is specified to not be able " &
                      "to appear together in a section with the field " &
                      "<em>$3</em> (which was also present)."),
+  ("ExternVarargs",  "External variable argument functions are not yet " &
+                     " supported (external function <em>$1</em>)"),
+  ("StackOverflow",  "Exceeded the maximum stack depth."),
 
  ]
 
@@ -626,58 +629,152 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       var one = table + container(errs[i].getVerboseInfo())
       result += one
 
-proc formatLateError*(err: string, severity: Con4mSeverity,
-                      args: seq[string], verbose = true): seq[Rope] =
-  var msg = err.lookupMsg() & "<i> (" & err & ")</i>"
+proc getStackTrace(ctx: RuntimeState): Rope {.importc, cdecl.}
+proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
+proc toString(x: TypeId): string {.importc, cdecl.}
+
+proc location_from_instruction*(ctx: RuntimeState,
+                                ins: ptr ZInstruction): (string, int) =
+  return (ctx.obj.moduleContents[ins.moduleId - 1].modname,
+          int(ins.lineno))
+
+proc print_con4m_trace*(ctx: RuntimeState) {.exportc, cdecl.} =
+  print(ctx.getStackTrace(), file = stderr)
+
+proc formatLateError(err: string, severity: Con4mSeverity, location: string,
+                     args: seq[string], verbose = true): Rope =
+  # `location` should be an indication of the instruction if we are executing,
+  # attribute information if we're validating, and whatever is appropriate
+  # if it's some other error.
+  var
+    msg = lookupMsg(err)
+    row: seq[Rope]
 
   performSubs(args, msg)
 
   case severity
   of LlErr, LlFatal:
-    result.add(fgColor("error:", "red").td().lpad(0))
+    row.add(fgColor("error: ", "red").td().lpad(0))
   of LlWarn:
-    result.add(fgColor("warn:", "yellow").td().overflow(OTruncate))
+    row.add(fgColor("warn: ", "yellow").td().overflow(OTruncate))
   of LLInfo:
-    result.add(fgColor("info:", "atomiclime").td().overflow(OTruncate))
+    row.add(fgColor("info: ", "atomiclime").td().overflow(OTruncate))
   of LlNone:
     unreachable
 
-  result.add(markdown(msg))
+  row.add(italic(location & ": "))
+  row.add(markdown(msg))
+  row.add(italic("(" & err & ")"))
 
-proc formatValidationError*(err: string, args: seq[string]): Rope =
+  var
+    width_used = 11 + location.len() + err.len()
+    remains    = terminalWidth() - width_used
+    msg_width  = row[2].runeLength() + 1
+    msg_col: int
+
+  if msg_width < remains:
+    msg_col = msg_width
+  else:
+    msg_col = remains
+
+  result = @[row].quickTable(noheaders = true, borders = BorderNone)
+  result.colWidths([(7, true), (location.len() + 2, true),
+                    (msg_col, true), (err.len() + 2, true)])
+  result.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
+
+proc assemble_validation_msg(ctx: RuntimeState, path: string, msg: Rope,
+                             code: string, other: Rope = nil): Rope =
+    var
+      nim_path = path
+      last_touch: Rope
+
+    if nim_path.len() != 0:
+      if nim_path[0] == '.':
+        nim_path = nim_path[1 .. ^1]
+
+      if nim_path[^1] == '.':
+        nim_path = nim_path[0 ..< ^1]
+
+      let attrOpt = ctx.attrs.lookup(nim_path)
+      if attrOpt.isSome():
+        let record = attrOpt.get()
+        if record.lastset == nil:
+          last_touch = text("Attribute has not been set this execution.")
+        else:
+          let (module, line) = ctx.location_from_instruction(record.lastset)
+
+          last_touch = text("Attribute last set at: ") +
+                       em(module & ":" & $line)
+
+    if nim_path.len() == 0:
+      nim_path = "root attribute section"
+
+    result  = text("Validation for ") + em(nim_path) + text(" failed: ")
+    result += italic(msg)
+    result += last_touch
+
+    if other != nil:
+      result += text(" ") + other
+
+    result += italic(" (" & code & ")")
+    GC_ref(result)
+
+proc formatValidationError*(ctx: RuntimeState, attr: string, err: string,
+                            args: seq[string]): Rope =
   var msg = err.lookupMsg()
   performSubs(args, msg)
 
-  result = li(htmlStringToRope(msg, markdown = false, add_div = false) +
-                            italic(" (" & err & ")"))
-  GC_ref(result)
+  let asRope = htmlStringToRope(msg, markdown = false, add_div = false)
 
-proc customValidationError*(msg: Rope): Rope =
-  return msg + italic(" (CustomValidator)")
+  return ctx.assemble_validation_msg(attr, asRope, err)
 
-proc runtimeWarn*(err: string, args: seq[string] = @[]) =
+proc formatValidationError*(ctx: RuntimeState, attr: C4Str, err: string,
+                            args: seq[string]): Rope =
+  return ctx.formatValidationError(attr.toNimStr(), err, args)
+
+proc customValidationError*(ctx: RuntimeState, path: C4Str, usrmsg: C4Str,
+                            cb: ptr ZCallback): Rope =
   let
-    cells   = @[err.formatLateError(LlWarn, args)]
-    toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
+    asRope         = htmlStringToRope(usrmsg.toNimStr(), markdown = false,
+                                      add_div = false)
+    cbName         = findStringAt(ctx.obj.staticData, cb.nameOffset)
+    validator_info = text("Validation function: ") +
+                     em(cbname & cb.tid.toString())
 
-  print(toPrint, file = stderr)
+  return ctx.assemble_validation_msg(path.toNimStr(), asRope,
+                                     "CustomValidator", validator_info)
 
-template printItAndQuitIt(cells: seq[seq[Rope]]) =
-  let toPrint = cells.quicktable(noHeaders = true, borders = BorderNone)
+proc runtimeIssue(ctx: RuntimeState, err: string, args: seq[string],
+                  severity = LLFatal) =
+  let
+    instr   = addr ctx.curModule.instructions[ctx.ip]
+    (m, l)  = ctx.location_from_instruction(instr)
+    loc     = "When executing " & m & ":" & $(l)
 
-  toPrint.colWidths([(10, true), (0, false)])
-  toPrint.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
-  print(toPrint, file = stderr)
-  quit(-2)
+  print(err.formatLateError(severity, loc, args), file = stderr)
 
-proc lateError*(err: string, args: seq[string] = @[]) =
-  printItAndQuitIt(@[err.formatLateError(LlErr, args)])
+proc runtimeWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
+  if config_debug:
+    ctx.print_con4m_trace()
+  ctx.runtimeIssue(err, args, LlWarn)
 
-proc exitOnValidationError*(err: Rope) =
-  if err == nil:
-    return
+proc runtimeError*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
+  ctx.print_con4m_trace()
+  ctx.runtimeIssue(err, args)
+  quit(-1)
 
-  printItAndQuitIt(@[@[fgColor("error:", "red"), err]])
+proc runtimeError*(ctx: RuntimeState, err: string, file: ZModuleInfo, line: int,
+                   args: seq[string] = @[]) =
+  let loc = "When executing " & file.modname & ":" & $(line)
+
+  ctx.print_con4m_trace()
+  print(err.formatLateError(LlErr, loc, args), file = stderr)
+  quit(-1)
+
+proc codeGenError*(err: string, args: seq[string] = @[]) =
+  # TODO: the module / function info needs to show up here.
+  print err.formatLateError(LlErr, "When generating code: ", args)
+  quit(-1)
 
 let sigNameMap = { 1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL",
                    6: "SIGABRT",7: "SIGBUS", 9: "SIGKILL", 11: "SIGSEGV",
@@ -685,8 +782,6 @@ let sigNameMap = { 1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL",
 var
   LC_ALL {.importc, header: "<locale.h>".}: cint
   savedTermState: Termcap
-
-proc getStackTrace(ctx: RuntimeState): Rope {.importc, cdecl.}
 
 proc restoreTerminal() {.noconv.} =
   tcSetAttr(cint(1), TcsaConst.TCSAFLUSH, savedTermState)

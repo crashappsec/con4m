@@ -61,3 +61,138 @@ Causes the program to exit, and return the passed error code to the OS.
   pure: false
 }
 
+
+extern con4m_osname() -> ptr {
+"""
+Return a `string` containing the runtime operating system
+used. Possible values: "macos", "linux", "windows", "netbsd",
+"freebsd", "openbsd".
+"""
+  local: osname() -> string
+  pure: false
+  # once: true  
+}
+
+extern con4m_arch() -> ptr {
+"""
+Return a `string` containing the underlying hardware
+architecture. Supported values: "amd64", "arm64"
+
+nThe value "amd64" is returned for any x86-64 platform. Other values
+may be returned on other operating systems, such as i386 on 32-bit
+X86, but Con4m is not built or tested against other environments.
+"""
+  local: arch() -> string
+  pure: false
+  # once: true  
+}
+
+extern con4m_get_argv() -> ptr {
+"""
+Return the arguments passed to the program. This does *not* include
+the program name (see `program_name()` and `program_path()`)
+"""
+  local: program_args() -> list[string]
+  pure:  false
+  # once: true  
+}
+
+extern con4m_get_exe_path() -> ptr {
+"""
+Returns the absolute path of the currently running program.
+"""
+  local: program_path() -> string
+  pure:  false
+  # once: true  
+}
+
+extern con4m_get_exe_name() -> ptr {
+"""
+Returns the name of the executable program being run, without any path
+component.
+"""
+  local: program_name() -> string
+  pure:  false
+  # once: true
+}
+
+extern con4m_highest_int() -> i64 {
+"""
+Returns the highest possible value storable by an int. The int data type is always a signed 64-bit value, so this will always be: `9223372036854775807`
+"""
+  local: high() -> int
+  pure: true
+}
+
+extern con4m_lowest_int() -> i64 {
+"""
+Returns the lowest possible value storable by an int. The int data type is always a signed 64-bit value, so this will always be: `-9223372036854775808`
+"""
+  local: low() -> int
+  pure: true
+}
+
+extern con4m_rand() -> i64 {
+"""
+Return a secure random, uniformly distributed 64-bit number.
+"""
+  local: rand() -> int
+  pure: false
+}
+
+extern con4m_now() -> i64 {
+"""
+Return the current Unix time in ms since Jan 1, 1970. Divide by 1000
+for seconds.
+
+Need to do a version (possibly named `timestamp()`? that returns a `datetime`
+
+"""
+  local: now() -> int
+  pure: false
+}
+
+extern con4m_container_name() -> ptr {
+"""
+Returns the name of the container we're running in, or the empty string if we
+don't seem to be running in one.
+"""
+  local: container_name() -> string
+  pure: false
+  # once: true  
+}
+
+extern con4m_in_container() -> cu8 {
+"""
+Returns true if we can determine that we're running in a container, and false
+if not.
+"""
+  local: in_container() -> bool
+  pure: false
+  # once: true
+}
+
+extern con4m_run(cmd: ptr) -> ptr {
+"""
+Execute the passed parameter via a shell, returning the output. This
+function blocks while the subprocess runs.
+
+The exit code is not returned in this version.
+
+Stdout and Stderr are combined in the output.
+"""
+  local: run(cmd: string) -> string
+  pure: false
+}
+
+extern con4m_system(cmd: ptr) -> ptr {
+"""
+Execute the passed parameter via a shell, returning a tuple containing
+the output and the return code of the subprocess. This function blocks
+while the subprocess runs.
+
+Stdout and Stderr are combined in the output.
+"""
+   local: system(cmd: string) -> tuple[string, int]
+   pure: false
+}

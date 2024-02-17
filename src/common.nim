@@ -47,12 +47,14 @@ const
   # This is not meant for the IR, just for the compiler / interpreter;
   # it produces a lit from the raw literal token contents.
   FNewLit*           = 32
-  FMax*              = 33
+  FFromNim*          = 33
+  FMax*              = 34
+
 
   # These don't generate function calls but get used in a slot for
   # operator numbers, so they are distinct from the above #'s.
-  OpLogicOr*         = 34
-  OpLogicAnd*        = 35
+  OpLogicOr*         = 40
+  OpLogicAnd*        = 41
 
   # These also do not generate ops directly, they generate a NOT and
   # the corresponding op. They're the same number as their negation,
@@ -906,8 +908,8 @@ type
     ourType*: int32  # To look up any FFI processing we do for the type.
 
   ZFFiInfo* = ref object
-    nameOffset*: int
-    localName*:  int
+    nameoffset*: int
+    localname*:  int
     va*:         bool
     dlls*:       seq[int]
     argInfo*:    seq[ZffiArgInfo]
@@ -996,6 +998,7 @@ type
    lockOnWrite*: bool
    override*:    bool
    contents*:    pointer
+   lastset*:     ptr ZInstruction # (not marhshaled)
 
   AttrDocs* = ref object
     shortdoc*: Rope
@@ -1030,6 +1033,7 @@ type
     running*:           bool
     memos*:             Memos
     cmdline_info*:      ArgResult
+
 
   MixedObj* = object
     t*:     TypeId
