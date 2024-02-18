@@ -1066,7 +1066,7 @@ template boolPropConvert(guard: untyped, name: string): bool =
     if tree == nil:
       false
     elif tree.tid.unify(TBool) == TBottom:
-        ctx.irError("NotBool", @[name])
+        ctx.irError("NotBool", @[name, tree.tid.toString()])
         false
     else:
         cast[bool](tree.value)
@@ -1207,7 +1207,7 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
       for kid in n.children[1 .. ^1]:
         let exclusion = kid.getText()
         if exclusion in result.exclusions:
-          ctx.irWarn("DupeExclusion", @["exclusion"])
+          ctx.irWarn("DupeExclusion", @[exclusion])
         else:
           result.exclusions.add(exclusion)
     of "validator":
@@ -1266,10 +1266,10 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
       case n.children[0].getText()
       of "user_def_ok":
         if gotDefOk:
-          ctx.irWarn("DupUseDefOk")
+          ctx.irWarn("DupeProp", @["use_def_ok"])
       of "hidden", "hide":
         if gotHidden:
-          ctx.irWarn("DupHidden")
+          ctx.irWarn("DupeProp", @["hidden"])
       of "validator":
         if n.children[1].kind != NodeCallbackLit:
           ctx.irError("ParamType", @["validator", "callback"], n.children[1])
@@ -1288,7 +1288,7 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
           if secName in allows:
             ctx.irWarn("DupeAllow", @[secName])
           elif secName in requires:
-            ctx.irWarn("AllowInReq", @[secName])
+            ctx.irWarn("AllowAndReq", @[secName])
           else:
             allows.add(secName)
       of "require", "required":
@@ -1297,7 +1297,7 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
           if secName in requires:
             ctx.irWarn("DupeRequire", @[secName])
           elif secName in allows:
-            ctx.irWarn("ReqAfterAllow", @[secName])
+            ctx.irWarn("AllowAndReq", @[secName])
           requires.add(secName)
       else:
         unreachable
@@ -1896,7 +1896,6 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
         try:
           branchType = tOneOf(opts)
         except:
-          raise
           ctx.irError("TCaseOverlap", w = ctx.parseKid(i, 0, 0))
       else:
         branchType = ctx.parseKid(i, 0, 0).buildType()

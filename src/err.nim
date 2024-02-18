@@ -294,10 +294,11 @@ const errorMsgs = [
                      "modifier after (e.g., <em>\"2 gb\"'size</em> for " &
                      "a size literal.)"),
   ("OtherQuotes",    "The <em>:=</em> operator is used for values of special " &
-                     "types, where the system takes all input till the end of " &
-                     "the line, then tries to treat it as a primitive type. " &
-                     "The quotes here are treated like they're inside the " &
-                     "data you're providing, which may not be what you want."),
+                     "types, where the system takes all input till the end " &
+                     " of the line, then tries to treat it as a primitive " &
+                     "type. The quotes here are treated like they're inside " &
+                     "the data you're providing, which may not be what you " &
+                     "want."),
   ("OtherBrak",      "The <em>:=</em> operator does not process brackets " &
                      "or parentheses of any kind; this will be treated as " &
                      "a single string."),
@@ -374,8 +375,37 @@ const errorMsgs = [
   ("ExternVarargs",  "External variable argument functions are not yet " &
                      " supported (external function <em>$1</em>)"),
   ("StackOverflow",  "Exceeded the maximum stack depth."),
-
+  ("NoSpecForSec",   "Used a section <em>$1</em>, which is not defined " &
+                     "by the attribute specification."),
+  ("InvalidStart",   "Found the start of an attribute assignment that " &
+                     "is invalid according to the spec, at: <em>$1</em>"),
+  ("NoInstance",     "This section must have an <i>instance</i>, meaning " &
+                     "you must specify named sections underneath it."),
+  ("DupeProp",       "Property <em>$1</em> cannot appear twice in one " &
+                     "item spec"),
+  ("NotBool",        "Property <em>$1</em> is reuquired to be bool, " &
+                     "but here is <em>$2</em>)"),
+  ("RangeAndChoice", "Cannot have both <em>range</em> and <em>choice</em> " &
+                     "constraints for the same field."),
+  ("TyDiffListItem", "Inconsistent item type for choice. Previously " &
+                     "it type was <em>$1</em>, but here it was <em>$2</em>"),
+  ("BadRangeSpec",   "Start value for a range must be less than the end " &
+                     "value."),
+  ("SpecWhenLocked", "Cannot add <em>confspec</em> fields; the " &
+                     "specification has already been locked."),
+  ("DupeSpecField",  "Duplicate specification for field <em>$1</em>."),
+  ("TCaseOverlap",   "Type cases have overlapping types."),
+  ("DupeExclusion",  "Exclusion duplicated for <em>$1</em>."),
+  ("DupeAllow",      "Section <em>$1</em> appears multiple times in " &
+                     "<i>allow</i> list"),
+  ("AllowInReq",     "Section <em>$1</em> appears in both <i>require</i>" &
+                     "and <i>allow</i>; suggest removing from <i>allow</i>"),
+  ("DupeRequire",    "Section <em>$1</em> appears multiple times in " &
+                     "<i>require</i> list"),
+  ("DupeRootSpec",   "Should not have duplicate <em>root</em> section" &
+                     "in one module"),
  ]
+# "CustomValidator" is possible, but not looked up in this array.
 
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
                 modname: string, line: int, lineOffset: int,
@@ -773,7 +803,14 @@ proc runtimeError*(ctx: RuntimeState, err: string, file: ZModuleInfo, line: int,
 
 proc codeGenError*(err: string, args: seq[string] = @[]) =
   # TODO: the module / function info needs to show up here.
-  print(err.formatLateError(LlErr, "When generating code", args), file = stderr)
+  print(err.formatLateError(LlErr, "When generating code", args),
+        file = stderr)
+  quit(-1)
+
+proc objLoadWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
+  # TODO: the module / function info needs to show up here.
+  print(err.formatLateError(LlWarn, "When loading object file", args),
+        file = stderr)
   quit(-1)
 
 let sigNameMap = { 1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL",

@@ -1,0 +1,6 @@
+x = "Hello, world!"'h1
+
+print(x)
+print(repr(x))
+print(osname())
+print(arch())

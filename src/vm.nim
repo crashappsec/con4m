@@ -804,7 +804,7 @@ proc setupArena(ctx:        RuntimeState,
 
   ctx.moduleAllocations.add(moduleAllocation)
 
-proc setupFfi(ctx: var RuntimeState) =
+proc setupFfi(ctx: var RuntimeState, compiling: bool) =
   var
     obj = ctx.obj
 
@@ -826,7 +826,7 @@ proc setupFfi(ctx: var RuntimeState) =
     numArgs = cuint(item.argInfo.len() - 1)
 
     if item.va:
-      ctx.runtimeWarn("ExternVarargs", args = @[fname])
+      ctx.objLoadWarn("ExternVarargs", args = @[fname])
       continue
 
     for dllNameOffset in item.dlls:
@@ -835,8 +835,8 @@ proc setupFfi(ctx: var RuntimeState) =
 
     let fptr = findSymbol(fname, dlls)
 
-    if fptr == nil:
-      ctx.runtimeWarn("MissingSym", @[fname])
+    if fptr == nil and not compiling:
+      ctx.objLoadWarn("MissingSym", @[fname])
       continue
 
     ctx.externFps[i] = fptr
@@ -872,7 +872,7 @@ proc setup_first_execution*(ctx: var RuntimeState) {.exportc, cdecl.} =
     ctx.applyOneSectionSpecDefaults("", ctx.obj.spec.rootSpec)
 
   # Add module allocations.
-  ctx.setupFfi()
+  ctx.setupFfi(compiling = true)
   ctx.setupArena(ctx.obj.symTypes, ctx.obj.globalScopeSz)
   for i, item in ctx.obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
@@ -902,6 +902,6 @@ proc resume_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   ctx.sp        = STACK_SIZE
   ctx.fp        = ctx.sp
 
-  ctx.setupFfi()
+  ctx.setupFfi(compiling = false)
 
   return ctx.run_0c00l_vm()
