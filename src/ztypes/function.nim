@@ -89,6 +89,9 @@ template initForeignModule(): ZModuleInfo =
                 ZInstruction(op: ZHalt)
                 ])
 
+proc run_validator(ctx: RuntimeState, startswith: string):
+                   FlexArray[pointer] {.cdecl, importc.}
+
 proc foreign_z_call(ctx: RuntimeState, funcid: int):
                pointer {.exportc, cdecl.} =
   # We use a dummy module with two instructions, a call and a halt,
@@ -111,6 +114,13 @@ proc foreign_z_call(ctx: RuntimeState, funcid: int):
 
   # We reset the sp to the bottom after a foreign call.
   ctx.sp        = STACK_SIZE
+
+  # Run validation unilaterally for now.
+  let validation_errors = ctx.run_validator("")
+
+  if len(validation_errors) != 0:
+    raise newException(ValueError, "Post-callback state validation failed!")
+
 
 proc z_ffi_call*(ctx: RuntimeState, ix: int) {.exportc, cdecl.} =
   var

@@ -1441,5 +1441,6 @@ proc parse_command_line*(code: string, refname = "c4m_getopt"): RuntimeState =
     quit(-1)
 
 
-proc con4m_getopt*(code: cstring, refname: cstring): RuntimeState {.exportc, cdecl.} =
+proc con4m_getopt*(code: cstring, refname: cstring):
+                 RuntimeState {.exportc, cdecl.} =
   return parse_command_line($(code), $(refname))
