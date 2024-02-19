@@ -21,7 +21,10 @@ proc newDict*(t: TypeId): Con4mDict =
     to      = t.idToTypeRef()
     keyType = to.items[0].followForwards()
 
-  if keyType.isIntType():
+  # isTVar() should not get instantiated at runtime, but could
+  # happen at compile time with an empty dict.
+  # TODO: make sure this works w/ generic functions right.
+  if keyType.isTVar() or keyType.isIntType():
     hashApproach = KtInt
   elif keyType.isFloatType():
     hashApproach = KtFloat
@@ -194,6 +197,8 @@ proc dict_len(d: var Con4mDict): int {.exportc, cdecl.} =
   let n = d.obj.items()
 
   return n.len()
+
+addStaticFunction("dict_len", dict_len)
 
 proc dict_marshal(d: Con4mDict, t: TypeId, memos: Memos):
                  C4Str {.exportc, cdecl.} =

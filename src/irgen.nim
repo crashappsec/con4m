@@ -1651,7 +1651,11 @@ proc convertDictLit(ctx: Module): IrNode =
     kNodes.add(ctx.downNode(i, 0))
     iNodes.add(ctx.downNode(i, 1))
 
-  keyType = ctx.unifyOrCast(kNodes, errIx)
+  if ctx.numKids() != 0:
+    keyType = ctx.unifyOrCast(kNodes, errIx)
+  else:
+    keyType = tVar()
+
 
   if keyType == TBottom:
     ctx.irError("TyDiffKey", kNodes[errIx],
@@ -1659,7 +1663,11 @@ proc convertDictLit(ctx: Module): IrNode =
                   kNodes[errIx].getTid().toString()])
     return
 
-  itemType = ctx.unifyOrCast(iNodes, errIx)
+  if ctx.numKids() != 0:
+    itemType = ctx.unifyOrCast(iNodes, errIx)
+  else:
+    itemType = tVar()
+
   if itemType == TBottom:
     ctx.irError("TyDiffVal", iNodes[errIx],
                 @[iNodes[0].getTid().toString(),

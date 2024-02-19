@@ -33,10 +33,13 @@ template programWarn(ctx: CompileCtx, code: string, sym: SymbolInfo,
                   extra: seq[string] = @[]) =
   ctx.programErrBase(code, sym, extra, LlWarn)
 
-proc getAllScopes(ctx: CompileCtx, attrs: bool): seq[Scope] =
+proc getAllUserScopes(ctx: CompileCtx, attrs: bool): seq[Scope] =
   result.add(ctx.globalScope)
 
   for (_, m) in ctx.modules.items():
+    if m.system:
+      continue
+
     if m.moduleScope notin result:
       result.add(m.moduleScope)
     for (_, sym) in m.moduleScope.table.items():
@@ -46,7 +49,7 @@ proc getAllScopes(ctx: CompileCtx, attrs: bool): seq[Scope] =
             result.add(fimpl.fnScope)
 
 proc defWoUseCheck(ctx: CompileCtx) =
-  for scope in ctx.getAllScopes(false):
+  for scope in ctx.getAllUserScopes(false):
     for (name, sym) in scope.table.items():
       if sym.isFunc:
         continue
@@ -65,7 +68,7 @@ proc defWoUseCheck(ctx: CompileCtx) =
       ctx.programWarn("DefWoUse", sym, @[name])
 
 proc useWoDefCheck(ctx: CompileCtx) =
-  for scope in ctx.getAllScopes(false):
+  for scope in ctx.getAllUserScopes(false):
     for (name, sym) in scope.table.items():
       if sym.isFunc or sym.formal:
         continue
@@ -73,7 +76,7 @@ proc useWoDefCheck(ctx: CompileCtx) =
         ctx.programError("UseWoDef", sym, @[name])
 
 proc constAssignmentCheck(ctx: CompileCtx) =
-  for scope in ctx.getAllScopes(false):
+  for scope in ctx.getAllUserScopes(false):
     for (name, sym) in scope.table.items():
       if sym.immutable and not sym.haveConst:
         ctx.programError("ConstNotSet", sym, @[name])

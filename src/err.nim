@@ -404,6 +404,8 @@ const errorMsgs = [
                      "<i>require</i> list"),
   ("DupeRootSpec",   "Should not have duplicate <em>root</em> section" &
                      "in one module"),
+  ("NotConst",       "Value must be a constant at compile time."),
+
  ]
 # "CustomValidator" is possible, but not looked up in this array.
 
@@ -413,6 +415,8 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
                 extraContents: seq[string] = @[], detail: Rope = nil,
                 trace: string = "", ii: Option[InstantiationInfo] =
                                   none(InstantiationInfo)) =
+  if severity < config_log_level:
+    return
   var err = Con4mError(phase: phase, severity: severity, code: code,
                        cursor: cursor, modname: modname, line: line,
                        offset: lineOffset, extra: extraContents, detail: detail)
@@ -776,6 +780,9 @@ proc customValidationError*(ctx: RuntimeState, path: C4Str, usrmsg: C4Str,
 
 proc runtimeIssue(ctx: RuntimeState, err: string, args: seq[string],
                   severity = LLFatal) =
+  if severity < config_log_level:
+    return
+
   let
     instr   = addr ctx.curModule.instructions[ctx.ip]
     (m, l)  = ctx.location_from_instruction(instr)
@@ -808,6 +815,9 @@ proc codeGenError*(err: string, args: seq[string] = @[]) =
   quit(-1)
 
 proc objLoadWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
+  if config_log_level > LlWarn:
+    return
+
   # TODO: the module / function info needs to show up here.
   print(err.formatLateError(LlWarn, "When loading object file", args),
         file = stderr)

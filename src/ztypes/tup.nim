@@ -93,7 +93,24 @@ proc tup_index*(tup: Con4mTuple, i: int, t: TypeId, err: var bool): pointer
 
 proc tup_assign_ix(tup: Con4mTuple, o: pointer, i: int,
                    t: TypeId, err: var bool) {.exportc, cdecl.} =
-  discard flexarray_set(tup.obj, uint64(i),  o)
+
+  err = not flexarray_set(tup.obj, uint64(i),  o)
+
+proc `[]=`*(tup: Con4mTuple, i: int, v: pointer) =
+  var err: bool
+
+  tup_assign_ix(tup, v, i, TVoid, err)
+
+  if err:
+    raise newException(ValueError, "Array index out of bounds")
+
+proc `[]`*(tup: Con4mTuple, i: int): pointer =
+  var err: bool
+
+  result = tup_index(tup, i, TVoid, err)
+
+  if err:
+    raise newException(ValueError, "Array index out of bounds")
 
 proc tup_copy(tup: Con4mTuple, t: TypeId): Con4mTuple {.exportc, cdecl.} =
   let

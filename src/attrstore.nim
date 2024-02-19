@@ -391,3 +391,86 @@ proc print_section_docs*(ctx: RuntimeState) =
       cells.add(@[text("Long"), v.longdoc])
 
     print(cells.quickTable(verticalHeaders = true))
+
+
+proc con4m_sections(s: cstring): pointer {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+
+  return toCon4m(ctx.get_subsections($s), tList(TString))
+
+addStaticFunction("con4m_sections", con4m_sections)
+
+proc con4m_fields(s: cstring): pointer {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+
+  return toCon4m(ctx.get_section_contents($s), tList(TString))
+
+addStaticFunction("con4m_fields", con4m_fields)
+
+proc con4m_field_exists(s: cstring): bool {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+
+  return ctx.attrs.lookup($s).isSome()
+
+addStaticFunction("con4m_field_exists", con4m_field_exists)
+
+proc con4m_section_exists(s: cstring): bool {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+
+  return ctx.allSections.lookup($s).isSome()
+
+addStaticFunction("con4m_section_exists", con4m_section_exists)
+
+proc con4m_add_override(s: cstring, v: pointer): bool {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+  if ctx.obj.spec.locked:
+    return false
+
+  var n: Mixed = cast[Mixed](v)
+
+  return ctx.set($s, n.value, n.t, override = true)
+
+addStaticFunction("con4m_add_override", con4m_add_override)
+
+proc con4m_attr_type(s: cstring): TypeId {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+
+  let infoOpt = ctx.attrs.lookup($s)
+
+  if infoOpt.isNone():
+    return TBottom
+
+  return infoOpt.get().tid
+
+addStaticFunction("con4m_attr_type", con4m_attr_type)
+
+proc con4m_attr_split(s: C4Str): Con4mTuple {.cdecl, exportc.} =
+  result = newTuple(tTuple(@[TString, TString]))
+  let
+    str = `$`(cast[cstring](s))
+    ix  = rfind(str, '.')
+
+  if ix == -1:
+    result[0] = newC4Str("")
+    result[1] = s
+  else:
+    result[0] = newC4Str(str[0 ..< ix])
+    result[1] = newC4Str(str[ix + 1 .. ^1])
+
+addStaticFunction("con4m_attr_split", con4m_attr_split)
+
+proc con4m_typecmp(t1: TypeId, t2: TypeId): bool {.cdecl, exportc.} =
+  return t1.copyType().unify(t2.copyType()) != TBottom
+
+addStaticFunction("con4m_typecmp", con4m_typecmp)
+
+proc con4m_attr_get(s: cstring, t: TypeId): pointer {.cdecl, exportc.} =
+  let ctx = get_con4m_runtime()
+  var err: bool
+
+  result = ctx.get($s, err, expectedType = t)
+
+  if err:
+    return nil
+
+addStaticFunction("con4m_attr_get", con4m_attr_get)

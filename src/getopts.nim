@@ -772,7 +772,7 @@ proc loadChoices(cmdObj: CommandSpec, info: LoadInfo) =
       p          = info.base_path & flagname & "."
       realName   = u2d(flagname)
       aliases    = lookup[Array](rt, p & "aliases").get().strlist()
-      choices    = lookup[Array](rt, p & "aliases").get().strlist()
+      choices    = lookup[Array](rt, p & "choices").get().strlist()
       addFlags   = lookup[bool](rt, p & "add_choice_flags").get()
       sdoc       = rt.get_short_doc(p)
       ldoc       = rt.get_long_doc(p)
@@ -1412,7 +1412,8 @@ proc parse_command_line*(code: string, refname = "c4m_getopt"): RuntimeState =
     spec = ctx.loadInternalModule(refname, code)
 
   ctx.buildProgram(spec)
-  if not ctx.printErrors(file = stderr):
+  if not ctx.canproceed():
+    discard ctx.printErrors(file = stderr)
     quit(-4)
 
   var

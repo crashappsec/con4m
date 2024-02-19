@@ -1,0 +1,9 @@
+func n(m) {
+  if m <= 1 {
+    return 1
+  }
+  
+  return n(m - 1) + n(m - 2)
+}
+
+assert n(18) == 4181

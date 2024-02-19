@@ -196,3 +196,250 @@ Stdout and Stderr are combined in the output.
    local: system(cmd: string) -> tuple[string, int]
    pure: false
 }
+
+extern con4m_using_tty() -> u8 {
+"""
+Returns `true` if the current process is attached to a TTY (unix
+terminal driver). Generally, logged-in users can be expected to have a
+TTY (though some automation tools can have a TTY with no user).
+
+Still, it's common to act as if a user is present when there is a
+TTY. For instance, it's common to default to showing colors when
+attached to a TTY, but to default to no-color otherwise.
+"""
+
+  local: using_tty() -> bool
+  pure: false
+  # once: true
+}
+
+extern con4m_find_exe(ptr, ptr) -> ptr {
+"""
+Locate an executable with the given name in the PATH, adding any extra
+directories passed in the second argument.
+"""
+
+  local: find_exe(name: string, extra_search_path: list[string]) -> string
+  pure:  false
+}
+
+extern con4m_list_dir(ptr) -> ptr {
+"""
+Returns a list of files in the specified directory. If the directory
+is invalid, no error is given; the results will be the same as if the
+directory were empty.
+"""
+  local: list_dir(dirname: string) -> list[string]
+  pure: false
+}
+
+func list_dir() {
+  "Returns a list of files in the current working directory."
+  return list_dir(".")
+}
+
+extern con4m_read_file(ptr) -> ptr {
+"""
+Returns the contents of the file. On error, this will return the
+empty `string`.
+"""
+  local: read_file(full_path: string) -> string
+  pure: false
+}
+
+extern con4m_write_file(ptr, ptr) -> u8 {
+"""
+Writes, to the file name given in the first argument, the value of the
+`string` given in the second argument. Returns `true` if successful,
+`false` otherwise.
+"""
+  local: write_file(full_path: string, contents: string) -> bool
+  pure: false
+}
+
+extern con4m_copy_file(ptr, ptr) -> bool {
+"""
+Copies the contents of the file specified by the first argument to the
+file specified by the second, creating the new file if necessary,
+overwriting it otherwise. Returns `true` if successful, `false`
+otherwise.
+"""
+  local: copy_file(src: string, dst: string) -> bool
+  pure: false
+}
+
+extern con4m_join_path(ptr, ptr) -> ptr {
+"""
+Combines two pieces of a path in a way where you don't have to worry
+about extra slashes.
+"""
+  local: join_path(p1: string, p2: string) -> string
+  pure: true
+}
+
+extern con4m_split_path(ptr) -> ptr {
+"""
+Separates out the final path component from the rest of the path,
+i.e., typically used to split out the file name from the remainder of
+the path.
+"""
+  local: split_path(path: string) -> tuple[string, string]
+  pure: true
+}  
+
+extern con4m_resolve_path(ptr) -> ptr {
+"""
+Turns a possibly relative path into an absolute path. This also
+expands home directories.
+"""
+  local: resolve_path(path: string) -> string
+  pure: true
+}
+
+extern con4m_cwd() -> ptr {
+  """
+Changes the current working directory of the process. Returns `true`
+if successful.
+"""
+
+  local: cwd() -> string
+  pure: false
+}
+
+extern con4m_chdir(ptr) -> u8 {
+"""
+Changes the current working directory of the process. Returns `true`
+if successful.
+"""
+  local: chdir(p: string) -> bool
+  pure: false
+}
+
+extern con4m_mkdir(ptr) -> u8 {
+  "Creates a directory, and returns `true` on success."
+  local: mkdir(p: string) -> bool
+  pure: false
+}
+
+extern con4m_is_dir(ptr) -> u8 {
+"""
+Returns `true` if the given file name exists at the time of the call,
+and is a directory.
+"""
+  local: is_dir(p: string) -> bool
+  pure: false
+}
+
+extern con4m_is_file(ptr) -> u8 {
+"""
+Returns `true` if the given file name exists at the time of the call,
+and is a regular file.
+"""
+  local: is_file(p: string) -> bool
+  pure: false
+}
+
+extern con4m_is_link(ptr) -> u8 {
+"""
+Returns `true` if the given file name exists at the time of the call,
+and is a link.
+"""
+
+  local: is_link(p: string) -> bool
+  pure: false
+}
+
+extern con4m_chmod(ptr, u16) -> u8 {
+"""
+Attempt to set the file permissions; returns `true` if successful.
+Takes a raw value; in C you'd set in Octal, but Con4m doesn't support
+Octal literals, so recommend hex.
+"""
+  
+  local: chmod(p: string, i: int) -> bool
+  pure: false
+}
+
+extern con4m_file_len(ptr) -> i64 {
+"""
+Returns the number of bytes in the specified file, or -1 if there is
+an error (e.g., no file, or not readable).
+"""
+  local: file_len(p: string) -> int
+  pure: false
+}
+
+extern con4m_tmp_write(ptr, ptr) -> ptr {
+"""
+Writes the `string` in the first argument to a new temporary file. The
+second argument specifies an extension; a random value is used in the
+tmp file name.
+
+This call returns the location that the file was written to.
+"""
+  local: to_tmp_file(contents: string, extension: string) -> string
+  pure: false
+}
+
+func to_tmp_file(contents: string) -> string {
+  return to_tmp_file(contents)
+}
+
+extern con4m_move(ptr, ptr) -> u8 {
+"""
+Moves the file specified by the first argument to the location
+specified by the second, overwriting any file, if present. Returns
+`true` if successful, `false` otherwise.
+"""
+  local: move_file(src: string, dst: string) -> bool
+  pure: false
+}
+
+extern con4m_shell_quote(ptr) -> ptr {
+"""
+Quote a `string`, so that it can be safely passed as a parameter to
+any shell (e.g., via `run()`)
+"""
+  local: quote_shell(s: string) -> string
+  pure: true
+}
+
+extern con4m_get_uid() -> i64 {
+  "Returns the real UID of the underlying logged in user."
+  local: getuid() -> int
+  pure: false
+}
+
+extern con4m_get_euid() -> i64 {
+  "Returns the effective UID of the underlying logged in user."
+  local: geteuid() -> int
+  pure: false
+}
+
+extern con4m_uname() -> ptr {
+  """
+Returns a `list[string]` with common system information, generally
+should be the same as running `uname -a` on the command line, but
+the values map to the following fields (in order):
+
+- `sysname`
+- `nodename`
+- `release`
+- `version`
+- `machine`
+  """
+  local: uname() -> list[string]
+  pure: false
+  #once: true
+}
+
+extern con4m_rm(ptr) -> bool {
+"""
+Removes the specified file, if it exists, and the operation is
+allowed.  Returns `true` if successful.
+"""
+
+  local: rm_file(path: string) -> bool
+  pure: false
+}
+

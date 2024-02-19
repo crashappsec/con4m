@@ -162,9 +162,8 @@ proc getDataType*(t: TypeId): DataType {.cdecl, exportc.} =
     of C4TypeSpec:
       return TTSpec.getDataType()
     else:
-      echo to.kind
+      return nil
       # Eventually will need to add objects, maybes, etc.
-      unreachable
 
 proc tinfo*(t: TypeId): TypeId {.cdecl, exportc.} =
   return t.getDataType().dtid

@@ -1,0 +1,116 @@
+extern con4m_mime_to_dict(ptr) -> ptr {
+"""
+Takes a `string` consisting of mime headers, and converts them into
+a dictionary of key/value pairs.
+
+For instance:
+```
+mime_to_dict("Content-Type: text/html\r\nCustom-Header: hi!\r\n")
+```
+
+will return:
+```
+{ "Content-Type" : "text/html",
+  "Custom-Header" : "hi!"
+}
+```
+
+Note that lines that aren't validly formatted are skipped.
+"""
+  local: mime_to_dict(s: string) -> dict[string, string]
+  pure: true
+}
+
+extern con4m_url_fetch(ptr, u8, ptr, ptr, ptr, i64) -> ptr {
+"""
+Raw function for basic HTTPS connections.
+The `method` parameter is currently:
+
+| Number | Method |
+|--------|--------|
+| 0 | GET |
+| 1 | POST |
+| 2 | PUT |
+| Anything else | invalid (reserved for expansion) |
+
+"""
+  local: fetch_url(url: string, method: int, body: string,
+                   headers: dict[string, string], pinned_cert: string,
+                   timeout: int) -> tuple[bool, string]
+  pure: false                   
+}
+
+func url_get(s: string) -> string {
+"""
+Retrieve the contents of the given URL, returning a string. If it's
+a HTTPS URL, the remote host's certificate chain must validate for
+data to be returned.
+
+If there is an error, the first three digits will be an error code,
+followed by a space, followed by any returned message. If the error
+wasn't from a remote HTTP response code, it will be 000.
+
+Requests that take more than 5 seconds will be canceled.
+"""
+  (success, result) = fetch_url(s, 0, "", {}, "", 5000)
+}
+
+func url_get_pinned(s: string, cert: string) -> string {
+"""
+Same as `url_get()`, except takes a second parameter, which is a path to a
+pinned certificate.
+
+The certificate will only be checked if it's an HTTPS connection, but
+the remote connection *must* be the party associated with the
+certificate passed, otherwise an error will be returned, instead of data.
+"""
+  (success, result) = fetch_url(s, 0, "", {}, cert, 5000)
+}
+
+func url_post(s: string, body: string,
+              headers: dict[string, string]) -> string {
+"""
+Uses HTTP post to post to a given URL, returning the resulting as a
+string, if successful. If not, the error code works the same was as
+for `url_get()`.
+
+The parameters here are:
+
+1. The URL to which to post
+2. The body to send with the request
+3. The MIME headers to send, as a dictionary. Generally you should at least
+   pass a Content-Type field (e.g., {"Content-Type" : "text/plain"}). Con4m
+   will NOT assume one for you.
+
+Requests that take more than 5 seconds will be canceled.
+"""
+  (success, result) = fetch_url(s, 1, body, headers, "", 5000)
+}
+
+func url_post_pinned(s: string, body: string, headers: dict[string, string],
+                cert: string) -> string {
+ """
+Same as `url_post()`, but takes a certificate file location in the final
+parameter, with which HTTPS connections must authenticate against.
+"""                
+  (success, result) = fetch_url(s, 1, body, headers, cert, 5000)
+}
+
+func url_put(s: string, body: string, headers: dict[string, string]) -> string {
+"Same as `url_post()`, except uses the HTTP PUT method."
+
+  (success, result) = fetch_url(s, 2, body, headers, "", 5000)
+}
+
+func url_put_pinned(s: string, body: string, headers: dict[string, string],
+                cert: string) -> string {
+"Same as `url_post_pinned()`, except uses the HTTP PUT method."
+
+  (success, result) = fetch_url(s, 2, body, headers, cert, 5000)
+}
+
+extern con4m_get_ipv4_addr() -> ptr {
+  "Returns the external IP address for the current machine."
+  local: external_ip() -> string
+  pure: false
+}

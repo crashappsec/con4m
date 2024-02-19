@@ -434,12 +434,13 @@ template lineSkipRecover() =
       if getCurrentException().msg == "BAIL":
         raise
       while true:
+        if ctx.curKind() == TtEof:
+          raise
         if ctx.atEndOfLine() and ctx.curKind() notin [TtRBrace, TtRParen]:
           ctx.advance()
           break
         else:
           ctx.advance()
-
 
 # When it comes to whitespace in Con4m, we always skip whitespace
 # tokens. There's no white space token sensitivity after the lexing

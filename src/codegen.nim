@@ -1342,12 +1342,12 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
         zinfo.dlls.add(ctx.addStaticObject(dll))
 
       if typeinfo.items.len() > cinfo.cArgTypes.len():
-        codeGenError("ExternZArgCt", @[name, $(typeinfo.items.len()),
+        codeGenError("ExternZArgCt", @[item.externName, $(typeinfo.items.len()),
                                   $(cinfo.cArgTypes.len()),
                                   typeinfo.typeId.toString()])
 
       elif typeinfo.items.len() < cinfo.cArgTypes.len():
-        codegenError("ExternCArgCt", @[name, $(typeinfo.items.len()),
+        codegenError("ExternCArgCt", @[item.externName, $(typeinfo.items.len()),
                                     $(cinfo.cArgTypes.len())])
       for i, param in cinfo.cArgTypes:
         var

@@ -14,8 +14,7 @@ getopts {
   """
 ## See `help [command]` for more details on individual commands.
 
-## The below flags can be given with any command. Individual commands
-   may have additional flags.
+## The below flags can be given with any command. Individual commands may have additional flags.
 """
 
   default_command:   "run"
@@ -36,8 +35,13 @@ getopts {
       field_to_set: "pretty"
   }
 
+  flag_choice log_level {
+     "Set the log level for errors."
+     choices: ["info", "warn", "error"]
+     field_to_set: "log_level"
+  }
+
   command run {
-  
       " Run a con4m program, compiling if nessary."
       
  """

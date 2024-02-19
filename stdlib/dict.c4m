@@ -26,6 +26,11 @@ extern dict_values(d: ptr) -> ptr {
   "Returns a list of the values in a dictionary."
   local: items(d: dict[`x, `y]) -> list[`y]
   pure: true
+}
 
+extern dict_len(d: ptr) -> i64 {
+  "Returns the length of a dictionary."
 
+  local: len(d: dict[`x, `y]) -> int
+  pure: true
 }

@@ -4,6 +4,11 @@ import "."/[base, marshal]
 
 var listOps = newVtable()
 
+proc from_con4m_str_list*(x: FlexArray[pointer]):
+                        seq[string]{.exportc, cdecl.} =
+  for item in x.items():
+    result.add(cast[C4Str](item).toNimStr())
+
 proc call_cast(v: pointer, tcur, tdst: TypeId, err: var string): pointer {.
                 importc, cdecl.}
 
@@ -232,7 +237,6 @@ proc nim_list_to_con4m(x: seq[pointer], t: TypeId): FlexArray[pointer] =
   result = newArrayFromSeq(processed)
 
   GC_ref(result)
-
 
 listOps[FRepr]         = cast[pointer](list_repr)
 listOps[FCastFn]       = cast[pointer](get_cast_func_list)

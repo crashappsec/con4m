@@ -217,7 +217,9 @@ proc buildFromEntryPoint*(ctx: CompileCtx, entrypointName: string):
 proc processSystemDirectory(ctx: CompileCtx) =
   if ctx.sysdir == "":
     return
-  var all = getAllFileNames(ctx.sysdir.resolvePath())
+  var
+    all           = getAllFileNames(ctx.sysdir.resolvePath())
+    savedLogLevel = config_log_level
 
   for item in all:
     let (dir, fname, ext) = item.splitFile()

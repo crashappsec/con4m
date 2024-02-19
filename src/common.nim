@@ -1167,6 +1167,7 @@ var
   config_format*:        bool
   config_save_object*:   bool
   config_reentry_point*: string
+  config_log_level*:     Con4mSeverity = LlInfo
 
 proc get_con4m_runtime*(): RuntimeState =
   return currentRuntime
