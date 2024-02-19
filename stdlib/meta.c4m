@@ -1,0 +1,93 @@
+extern con4m_sections(ptr) -> ptr {
+"""
+Returns a list of section names found under a particular attribute
+path (passed as the first argument).
+"""
+  local: sections(s: string) -> list[string]
+  pure: false
+}
+
+extern con4m_fields(ptr) -> ptr {
+"""
+
+This function is primarily intended to aid in custom config file
+validation.
+
+This function returns a list of all the available 'fields' for the
+attribute listed, which is expected to be a section (a singleton, or
+an object instantiation).
+
+It does not return subsections, so to list all instantiations of a
+section, use the `sections()` call.
+"""
+
+  local: fields(s: string) -> list[string]
+  pure: false
+}
+
+extern con4m_field_exists(ptr) -> u8 {
+"""
+Returns true if the input is a currently existing field, and false otherwise.
+"""
+  local: field_exists(s: string) -> bool
+  pure: false
+}
+
+extern con4m_section_exists(ptr) -> u8 {
+"""
+Returns true if the input is a currently existing section, and false otherwise.
+"""
+  local: section_exists(s: string) -> bool
+  pure: false
+}
+
+func attr_exists(s: string) -> bool {
+  return field_exists(s) or section_exists(s)
+}
+
+extern con4m_add_override(ptr, ptr) -> u8 {
+"""
+This is intended to be used to set a value 'override' for an attribute.
+It can only be called until the spec is `locked` at which point, it
+will always return false.
+"""
+
+  local: add_override(s: string, v: `t) -> bool 
+  pure: false
+}
+
+extern con4m_attr_type(ptr) -> ptr {
+"""
+This returns the type associated with the attribute name passed.
+"""  
+  local: attr_type(s: string) -> typespec
+  pure: false
+}
+
+extern con4m_typecmp(ptr, ptr) -> u8 {
+"""
+This allows validators to compare types of two attributes in the configuration
+file by attribute name.
+
+Returns `true` if the types are compatable, and `false` if not.
+
+`typeof()` blocks should generally work just as well.
+"""
+  local: typecmp(t1: typespec, t2: typespec) -> bool
+  pure: true
+}
+
+extern con4m_attr_get(ptr, i64) -> ptr {
+"""
+Dynamically look up an attribute, and return its value.
+
+This requires passing an expected type, since it can be used when the
+static checker cannot ensure type safety. If there is a type error,
+this will return whatever the type's default value is (usually some
+variant of 0).
+
+The same thing happens if the attribute doesn't exist.
+"""
+local: attr_get(attr: string, t: typespec[`t]) -> `t
+pure: false
+}
