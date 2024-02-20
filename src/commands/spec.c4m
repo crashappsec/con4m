@@ -115,6 +115,29 @@ Future runs can save a new entry point via the `--entry` flag.
       args: (1, 1)
   }
 
+  command add {
+      " Add a new module into an object."
+"""
+## Incrementally compiles a new module, updating the object file.
+
+This command will compile the new module and any dependencies
+necessary that aren't already in the object file, updating the object
+file, and setting the new module as the entry point to run.
+
+#### Parameters
+
+1. The object file
+2. The new entry point module to add.
+
+#### Output
+
+The new object does *not* overwrite the original object file. Instead,
+a new object file (.0c00l extension) will get added, using the name
+of your new entrypoint.
+"""
+      args: (2, 2)
+  }
+
   command check {
       "Parse and validate <em>con4m</em> code"
       

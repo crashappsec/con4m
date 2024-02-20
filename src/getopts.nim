@@ -1417,7 +1417,7 @@ proc parse_command_line*(code: string, refname = "c4m_getopt"): RuntimeState =
     quit(-4)
 
   var
-    rt     = ctx.generateCode()
+    rt     = ctx.generateInitialCodeObject()
     exit   = rt.executeObject()
     params = commandLineParams()
 

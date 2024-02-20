@@ -110,9 +110,8 @@ proc cmd_resume*() =
 
   rt.run_object(fname, resumed = true)
 
-proc base_compile*(ctx: CompileCtx): RuntimeState =
+proc base_compile(ctx: CompileCtx, entryname: string): bool =
   let
-    entryname   = config_args[0]
     can_proceed = ctx.buildFromEntryPoint(entryname)
     entry       = ctx.entrypoint
 
@@ -130,19 +129,19 @@ proc base_compile*(ctx: CompileCtx): RuntimeState =
 
   if config_debug:
     if entry.tokens.len() == 0:
-      return nil
+      return false
 
     print(h1("Tokens for module '" & entry.modname & "'"))
     entry.printTokens()
 
     if entry.root == nil:
-      return nil
+      return false
 
     print(h1("Parse tree for module '" & entry.modname & "'"))
     entry.printParseTree()
 
     if entry.ir == nil:
-      return nil
+      return false
 
     print(h1("IR for module '" & entry.modname & "'"))
     entry.printIr()
@@ -174,13 +173,47 @@ proc base_compile*(ctx: CompileCtx): RuntimeState =
       print(h1("Global CFG"))
       ctx.printProgramCfg()
 
-  if not ctx.printErrors():
+  return can_proceed
+
+proc base_initial_compile*(ctx: CompileCtx): RuntimeState =
+  if not ctx.base_compile(config_args[0]) or not ctx.printErrors():
     return nil
 
-  return ctx.generateCode()
+  return ctx.generateInitialCodeObject()
+
+proc cmd_add*() =
+  if config_args[1].endswith(obj_file_extension):
+      print(fgcolor("error: ", "red") +
+            text("Cannot compile object file ") + em(config_args[1]) +
+            text(". Please specify a module entry point."))
+      quit(-4)
+
+  config_save_object = true
+
+  var
+    obj         = config_args[0]
+    module      = config_args[1]
+    rt          = obj.load_object_file()
+    cc          = rt.setup_incremental_compile()
+
+  if cc.base_compile(module) and cc.printErrors():
+    rt.generate_incremental_code(cc, cc.entryPoint)
+
+  if config_debug:
+    print rt.obj.disassembly()
+
+  rt.save_object_to_disk(cc.entrypoint.modname)
 
 proc cmd_compile*(ctx: CompileCtx) =
-  var rt = ctx.base_compile()
+  if config_args[0].endswith(obj_file_extension):
+      print(fgcolor("error: ", "red") +
+            text("Cannot compile object file ") + em(config_args[0]) +
+            text(". Please specify a module entry point."))
+      quit(-4)
+
+  config_save_object = true
+
+  var rt = ctx.base_initial_compile()
 
   if rt == nil or rt.obj == nil:
     quit(-1)
@@ -197,7 +230,7 @@ proc cmd_compile*(ctx: CompileCtx) =
 
 proc cmd_run*(ctx: CompileCtx) =
   var
-    rt = ctx.base_compile()
+    rt = ctx.base_initial_compile()
 
   if rt == nil or rt.obj == nil:
     quit(-1)

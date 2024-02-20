@@ -938,6 +938,7 @@ proc setup_first_execution*(ctx: var RuntimeState) {.exportc, cdecl.} =
   for i, item in ctx.obj.moduleContents:
     ctx.setupArena(item.symTypes, item.moduleVarSize)
 
+
 proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
   ## This call is intended for first execution, not for save /
   ## resumption.

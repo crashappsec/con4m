@@ -18,7 +18,7 @@
 # defer typing things at the top-level; this will be a subtlety we
 # deal with when we get to doing the REPL.
 
-import "."/irgen
+import "."/[irgen, compile]
 import ztypes/api
 
 proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
@@ -174,6 +174,8 @@ proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     of ZTCall:
       arg1 = text(hex(item.arg))
       lbl  = em(tCallReverseMap[item.arg])
+    of ZCallModule:
+      arg1 = text($(item.arg))
     of Z0Call:
       # Look up the symbol name by moduleId. It's always going to be a module,
       # so it's really about indexing into the right module in the
@@ -1359,7 +1361,7 @@ proc applyArenaId(ctx: CodeGenState, scope: Scope, moduleId: int,
 
 proc applyArenasToGloballyVisibleFuncs(ctx: CodeGenState, scope: Scope,
                                        curFnId: var int) =
-  for (name, sym) in scope.table.items(sort=true):
+  for (name, sym) in scope.table.items(sort = true):
     for fn in sym.fimpls:
       if fn.externInfo != nil:
         continue
@@ -1369,7 +1371,7 @@ proc applyArenasToGloballyVisibleFuncs(ctx: CodeGenState, scope: Scope,
           mid = fn.defModule.objInfo.moduleId
           fi  = ZFnInfo(funcname: name, mid: int32(mid), tid: fn.tid,
                         offset: int32(fn.codeOffset))
-        ctx.zobj.funcInfo.adD(fi)
+        ctx.zobj.funcInfo.add(fi)
         fi.syms.initDict()
         fn.fnScope.stashSymbolInfo(fi.syms, fi.symTypes)
         curFnId += 1
@@ -1471,6 +1473,27 @@ proc extractSectionDocs(ctx: CodeGenState,
     let docObj = AttrDocs(shortdoc: node.shortdoc, longdoc: node.longdoc)
     d[sec] = docObj
 
+template setupOneModule() =
+    var mi = ZModuleInfo(moduleId: curArena, modname: module.modname,
+                         key: module.key, ext: module.ext, url: module.url,
+                         moduleVarSize: module.moduleScope.scopeSize)
+    module.objInfo = mi
+    ctx.applyArenaId(module.moduleScope, curArena, curFnId)
+    curArena              = curArena + 1
+    ctx.minfo[module.key] = module
+    ctx.zobj.moduleContents.add(mi)
+    mi.codesyms.initDict()
+    mi.datasyms.initDict()
+
+    # TODO: I have disabled eliding source code until incremental
+    # compilation is properly done.
+
+    #if not module.system:
+    mi.source = $(module.s.runes)
+
+    module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
+    mi.codesyms[0] = module.modname & ".__mod_run__()"
+
 proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
   # This call applies a unique number to each module
   # and then applies a unique number to each function.
@@ -1487,31 +1510,28 @@ proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals, ctx.zobj.symTypes)
   ctx.zobj.globalScopeSz = ctx.cc.globalScope.scopeSize
 
-  for (_, module) in ctx.cc.modules.items(sort=true):
+  for (_, module) in ctx.cc.modules.items(sort = true):
     ctx.addFfiInfo(module)
     ctx.extractSectionDocs(module, d)
 
 
-  for (_, module) in ctx.cc.modules.items(sort=true):
-    var mi = ZModuleInfo(moduleId: curArena, modname: module.modname,
-                         moduleVarSize: module.moduleScope.scopeSize)
-    module.objInfo = mi
-    ctx.applyArenaId(module.moduleScope, curArena, curFnId)
-    curArena              = curArena + 1
-    ctx.minfo[module.key] = module
-    ctx.zobj.moduleContents.add(mi)
-    mi.codesyms.initDict()
-    mi.datasyms.initDict()
-
-    if not module.system:
-      mi.source = $(module.s.runes)
-
-    module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
-    mi.codesyms[0] = module.modname & ".__mod_run__()"
-
+  for (_, module) in ctx.cc.modules.items(sort = true):
+    setupOneModule()
   # Finally, apply module IDs to the functions that are globally visible
   # so we can look up their addresses.
   ctx.applyArenasToGloballyVisibleFuncs(ctx.cc.globalScope, curFnId)
+
+proc setupNewModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
+  # The incremental version.
+  var
+    curArena = ctx.zobj.moduleContents[^1].moduleId + 1
+    curFnId  = ctx.zobj.funcInfo.len() + 1
+
+  for (_, module) in ctx.cc.modules.items(sort = true):
+    if module.objInfo != nil:
+      continue
+
+    setupOneModule()
 
 proc fillCallBackpatches(ctx: CodeGenState) =
   for (fn, dstmodule, patchloc) in ctx.callBackpatches:
@@ -1525,8 +1545,7 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
   # output, we go ahead and keep any type that does not forward.  This
   # is far less error prone than trying to make sure we always
   # remember to save off type info, but it might end up causing too
-  # much bloat. I doubt it, though! However, we definitely should
-  # collect metrics on this.
+  # much bloat. I doubt it, though!
 
   for (id, tObj) in typeStore.items(sort=true):
     if tObj.typeId != id:
@@ -1538,12 +1557,7 @@ proc cacheAllTypeInfo(ctx: CodeGenState) =
 
     discard ctx.zobj.tInfo.add(id, loc)
 
-  var typeCache: seq[string]
-  for (k, v) in ctx.zobj.tInfo.items(sort=true):
-    typeCache.add($(cast[int](k)))
-    typeCache.add($(cast[cstring](addr ctx.zobj.staticdata[v])))
-
-proc generateCode*(cc: CompileCtx, nextId = -1): RuntimeState =
+proc generateInitialCodeObject*(cc: CompileCtx, nextId = -1): RuntimeState =
   var ctx = CodeGenState()
 
   result     = RuntimeState()
@@ -1566,6 +1580,100 @@ proc generateCode*(cc: CompileCtx, nextId = -1): RuntimeState =
   result.obj.entrypoint     = int32(cc.entrypoint.objInfo.moduleId)
   result.obj.nextEntrypoint = int32(nextId)
   result.obj.spec           = ctx.cc.attrSpec
+
+when false:
+  proc setup_incremental_compile*(ctx: RuntimeState): CompileCtx =
+    result             = ctx.newCompileContext(ctx.obj.spec)
+    result.incremental = true
+
+    for (attr, contents) in ctx.attrs:
+      var sym = SymbolInfo(name: attr, tid: contents.tid,
+                           isAttr: true, inObj: true)
+      result.usedAttrs.table[attr] = sym
+
+    for (offset, name) in ctx.obj.globals.items():
+      var sym = SymbolInfo(name: name)
+
+      sym.tid          = x
+      sym.constValue   = x
+      sym.declaredType = x
+      sym.immutable    = x
+      sym.global       = true
+      sym.inObj        = true
+      sym.offset       = offset
+      sym.moduleId     = 0
+
+      result.globalScope.table[name] = sym
+
+    for zmod in ctx.obj.moduleContents:
+      var module = Module(loaded: true, system: true, modname: zmod.modname,
+                          where: zmod.location, ext: zmod.ext, key: zmod.key,
+                          exitNode: CfgNode(), processed: true,
+                          objinfo: zmod)
+      result.modules[module.key] = module
+
+    # global functions
+    # ffi functions
+    # module stubs
+else:
+  proc setup_incremental_compile*(ctx: RuntimeState): CompileCtx =
+    # Assume this all is going to just work...
+    result = CompileCtx()
+
+    result.globalScope = initScope()
+    result.usedAttrs   = initScope()
+    result.modules.initDict()
+
+    let entrypointix = ctx.obj.entrypoint
+    var entry: Module
+
+    var modlist: seq[Module]
+
+    for zmod in ctx.obj.moduleContents:
+      let m = newModuleObj(result, zmod.source, zmod.modname, zmod.location,
+                           zmod.ext, zmod.url, zmod.key)
+      if zmod.moduleId == entrypointix:
+        entry = m
+
+      m.objInfo = zmod
+      result.modules[zmod.key] = m
+
+      modlist.add(m)
+
+    for m in modlist:
+      m.system = true
+      result.loadModule(m)
+
+    discard result.build_program(entry)
+
+    for m in modlist:
+      m.processed = true
+
+proc generate_incremental_code*(rt: RuntimeState, cc: CompileCtx,
+                              newEntry: Module) =
+  # TODO -- Rebuild the string cache?
+  let start   = rt.obj.moduleContents.len()
+  var ctx     = CodeGenState()
+  ctx.cc      = cc
+  ctx.zobj    = rt.obj
+  ctx.memos   = Memos()
+  rt.obj.spec = cc.attrSpec
+  ctx.minfo   = cc.modules
+
+  ctx.strCache.initDict()
+  ctx.memos.map.initDict()
+  ctx.cacheAllTypeInfo()
+  ctx.setupNewModules(rt.sectionDocs)
+  ctx.genModule(newEntry)
+  ctx.fillCallBackpatches()
+
+  rt.obj.entrypoint = int32(newEntry.objInfo.moduleId)
+
+  for i, item in rt.obj.moduleContents:
+    if i < start:
+      continue
+    var moduleAllocation = newSeq[pointer](item.moduleVarSize * 2)
+    rt.moduleAllocations.add(moduleAllocation)
 
 # TODO -- pushTypeOf needs to handle attributes.
 # TODO -- varargs for func entry.

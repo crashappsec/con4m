@@ -58,18 +58,12 @@ when isMainModule:
     session.cmd_pretty()
   elif config_cmd == "resume":
     cmd_resume()
+  elif config_cmd == "add":
+    cmd_add()
+  elif config_cmd == "compile":
+    session.cmd_compile()
   elif config_cmd == "help":
     rt.cmd_help()
-  elif config_cmd == "compile":
-    if config_args[0].endswith(obj_file_extension):
-        print(fgcolor("error: ", "red") +
-              text("Cannot compile object file ") + em(config_args[0]) +
-              text(". Please specify a module entry point."))
-        quit(-4)
-
-    config_save_object = true
-
-    session.cmd_compile()
   elif config_cmd == "run":
     if config_args[0].endswith(obj_file_extension):
       cmd_resume()

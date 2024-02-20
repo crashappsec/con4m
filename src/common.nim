@@ -457,6 +457,7 @@ type
     formal*:       bool
     declNode*:     ParseNode
     pinfo*:        ParamInfo
+    inObj*:        bool
 
     # heapalloc is only true for global variables and
     # indicates that the offset generated won't be relative to the
@@ -624,9 +625,9 @@ type
     # available (stashed in attrSpec).
 
     # First two fields are refs to the one in the compile context.
-    globalScope*:   Scope
-    attrSpec*:      ValidationSpec
-    declaredSpec*:  ValidationSpec
+    globalScope*:    Scope
+    attrSpec*:       ValidationSpec
+    declaredSpec*:   ValidationSpec
     moduleScope*:    Scope
     funcScope*:      Scope
     usedAttrs*:      Scope
@@ -675,16 +676,6 @@ type
     # These help us to fold.
     branchOrLoopDepth*: int
 
-    # We currently lift out any attrs set from a module if they are
-    # not nested in any control flow or function, if the values are
-    # constant, and there are no uses earlier in the file, or in a
-    # function.
-    #
-    # This is particularly useful for being able to statically apply
-    # specs.
-
-    staticAttrs*:   Dict[string, AttrContents]
-
     # Used in code generation.
     processed*:     bool
     loopLocs*:      seq[(IrNode, int)]
@@ -693,17 +684,19 @@ type
     secDocNodes*:   seq[IRNode]
 
   CompileCtx* = ref object
-    modules*:     Dict[string, Module]
-    defaultExt*:  string      = ".c4m"
-    attrSpec*:    ValidationSpec
-    globalScope*: Scope
-    usedAttrs*:   Scope
-    entrypoint*:  Module
-    fatal*:       bool
-    topExitNode*: CfgNode # Used when building CFG
-    modulePath*:  seq[string] = @[".", "https://chalkdust.io/"]
-    sysdir*:      string
-    errors*:      seq[Con4mError]
+    incremental*:  bool
+    modules*:      Dict[string, Module]
+    defaultExt*:   string      = ".c4m"
+    attrSpec*:     ValidationSpec
+    globalScope*:  Scope
+    usedAttrs*:    Scope
+    entrypoint*:   Module
+    fatal*:        bool
+    topExitNode*:  CfgNode # Used when building CFG
+    modulePath*:   seq[string] = @[".", "https://chalkdust.io/"]
+    sysdir*:       string
+    errors*:       seq[Con4mError]
+
 
   # The remaining data structures are used in code generation and / or
   # runtime. Any type here with a Z in front is intended to get
@@ -1015,6 +1008,9 @@ type
   ZModuleInfo* = ref object
     modname*:        string
     location*:       string
+    key*:            string
+    ext*:            string
+    url*:            string
     version*:        string
     symTypes*:       seq[(int, TypeId)]
     codesyms*:       Dict[int, string]
@@ -1078,7 +1074,6 @@ type
     memos*:             Memos
     cmdline_info*:      ArgResult
     module_lock_stack*: seq[int32]
-
 
   MixedObj* = object
     t*:     TypeId

@@ -7,7 +7,7 @@ proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
 proc mergeStaticSpec(m: Module) {.cdecl, importc.}
 proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] {.exportc,
                                                                        cdecl.}
-proc loadModule(ctx: CompileCtx, module: Module)
+proc loadModule*(ctx: CompileCtx, module: Module)
 
 
 
@@ -125,7 +125,7 @@ proc findAndLoadFromUrl(ctx: CompileCtx, url: string): Option[Module] =
   let (loc, name, ext) = url.splitFile()
   return ctx.findAndLoadModule(loc, name, ext)
 
-proc loadModule(ctx: CompileCtx, module: Module) =
+proc loadModule*(ctx: CompileCtx, module: Module) =
   # This is the thing that actually orchestrates the load once found.
   #
   # The module's global scope is for its own view on what symbols

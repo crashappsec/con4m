@@ -151,6 +151,9 @@ proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
   basic_marshal_helper:
     toAdd.add(m.modname.marshal_nim_string())
     toAdd.add(m.location.marshal_nim_string())
+    toAdd.add(m.key.marshal_nim_string())
+    toAdd.add(m.ext.marshal_nim_string())
+    toAdd.add(m.url.marshal_nim_string())
     toAdd.add(m.version.marshal_nim_string())
     toAdd.add(m.symTypes.marshal_sym_types())
     toAdd.add(m.codesyms.marshal_sym_names())
@@ -168,6 +171,9 @@ proc unmarshal_one_module(rt: RuntimeState, p: var cstring): ZModuleInfo =
 
   result.modname       = p.unmarshal_nim_string()
   result.location      = p.unmarshal_nim_string()
+  result.key           = p.unmarshal_nim_string()
+  result.ext           = p.unmarshal_nim_string()
+  result.url           = p.unmarshal_nim_string()
   result.version       = p.unmarshal_nim_string()
   result.symTypes      = p.unmarshal_sym_types()
   result.codeSyms      = p.unmarshal_sym_names()
@@ -343,6 +349,11 @@ proc unmarshal_types(p: var cstring): Dict[TypeId, int] =
     result[k] = v
 
 proc marshal_object(rt: RuntimeState, nextmid: int32): C4Str =
+  var nextmid = nextmid
+
+  if nextmid == 0 and rt.obj.nextEntrypoint != 0:
+    nextmid = rt.obj.nextEntrypoint
+
   basic_marshal_helper:
     toAdd.add(cast[pointer](rt.obj.zeroMagic).marshal_64_bit_value())
     toAdd.add(rt.obj.zcObjectVers.marshal_16_bit_value())
