@@ -405,6 +405,24 @@ const errorMsgs = [
   ("DupeRootSpec",   "Should not have duplicate <em>root</em> section" &
                      "in one module"),
   ("NotConst",       "Value must be a constant at compile time."),
+  ("ParamValParTy",  "The validation function for this parameter takes an " &
+                     "argument that is inconsistent with the type we have " &
+                     "for the parameter. Previously, we had <em>$1</em>, " &
+                     "But the function takes a $2."),
+  ("ParamValNArgs",  "Validation functions for parameters must take a " &
+                     "single argument, where a value to validate will be " &
+                     "passed. It must return a string; the empty string " &
+                     "indicates no validation error. Otherwise, the return " &
+                     "value should be an error message."),
+  ("ParamValRetTy",  "Validation functions for parameters must return " &
+                     "a string, which represents any error message to " &
+                     "give as feedback."),
+  ("NoCbMatch",      "Could not find a function to match to the callback " &
+                     "<em>$1$2</em>"),
+  ("ParamNotSet",    "Module parameter <em>$1</em> was not set when entering " &
+                     "module <em>$2</em>."),
+  ("ParamNotValid",  "Module parameter <em>$1</em> was set when entering " &
+                     "module <em>$2</em>, but was not valid: <em>$3</em>"),
 
  ]
 # "CustomValidator" is possible, but not looked up in this array.
@@ -786,7 +804,8 @@ proc runtimeIssue(ctx: RuntimeState, err: string, args: seq[string],
   let
     instr   = addr ctx.curModule.instructions[ctx.ip]
     (m, l)  = ctx.location_from_instruction(instr)
-    loc     = "When executing " & m & ":" & $(l)
+    extra   = if l == -1: "" else: ":" & $(l)
+    loc     = "When executing " & m & extra
 
   print(err.formatLateError(severity, loc, args), file = stderr)
 
@@ -802,7 +821,11 @@ proc runtimeError*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
 
 proc runtimeError*(ctx: RuntimeState, err: string, file: ZModuleInfo, line: int,
                    args: seq[string] = @[]) =
-  let loc = "When executing " & file.modname & ":" & $(line)
+  var extra: string = ""
+  if line != -1:
+    extra = ":" & $(line)
+
+  let loc = "When executing " & file.modname & extra
 
   ctx.print_con4m_trace()
   print(err.formatLateError(LlErr, loc, args), file = stderr)

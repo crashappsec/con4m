@@ -1,6 +1,6 @@
 # This is just a basic runtime with no thought to performance; we'll
 # do one more focused on performance later, probably directly in C.
-import "."/[stchecks, attrstore]
+import "."/[stchecks, attrstore, modparams]
 export attrstore
 
 proc load_spec() {.cdecl, importc.}
@@ -113,6 +113,10 @@ proc getSourceLoc*(ctx: RuntimeState): string =
     return ctx.getModName() & " (line #" & $(ctx.getLineNo()) & ")"
   else:
     return ""
+
+proc get_current_instruction*(ctx: RuntimeState):
+                            ptr ZInstruction {.exportc, cdecl.} =
+  return addr ctx.curModule.instructions[ctx.ip]
 
 proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
@@ -707,9 +711,66 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ctx.run_callback_internal(cbObj)
     of ZRet:
       leaveFrame()
+    of ZModuleEnter:
+      if instr.arg != 0:
+        for i, param in ctx.curModule.parameters:
+          var
+            val: pointer
+            t:   TypeId
+
+          ## Fill in all parameter values now. If there's a validator,
+          ## it will get called after this loop, along w/ a call to
+          ## ZParamCheck.
+
+          if param.attr != "":
+            let attropt = ctx.attrs.lookup(param.attr)
+            if attropt.isNone():
+              (val, t) = ctx.get_param_value(param)
+              discard ctx.set(param.attr, val, param.tid, lock = true,
+                              internal = true)
+          else:
+            let
+              p        = param.offset
+              id       = ctx.curModule.moduleId
+              a        = addr ctx.moduleAllocations[id][p * 2]
+              address  = cast[ptr pointer](a)
+              typeaddr = cast[ptr pointer](cast[uint](address) +
+                                           uint(sizeof(pointer)))
+            if typeaddr[] == nil: # TBottom
+              (val, t)   = ctx.get_param_value(param)
+              address[]  = val
+              typeaddr[] = cast[pointer](t)
+
+        ctx.module_lock_stack.add(int32(ctx.curModule.moduleId))
+      else:
+        if ctx.module_lock_stack.len() == 0:
+          ctx.module_lock_stack.add(0)
+        else:
+           ctx.module_lock_stack.add(ctx.module_lock_stack[^1])
+
+    of ZParamCheck:
+      let s = cast[C4Str](ctx.stack[ctx.sp])
+
+      ctx.sp += 2
+
+      if s != nil and s.len() != 0:
+        var
+          param   = ctx.curModule.parameters[instr.arg]
+          modname = ctx.curModule.modname
+          err     = s.toNimStr()
+          name: string
+
+        if param.attr != "":
+          name = param.attr
+        else:
+          name = ctx.curModule.datasyms[param.offset]
+
+        ctx.runtimeError("ParamNotValid", @[name, modname, err])
+
     of ZModuleRet:
       if ctx.numFrames <= 2:
         return
+      discard ctx.module_lock_stack.pop()
       leaveFrame()
     of ZFFICall:
       ctx.z_ffi_call(instr.arg)
@@ -799,8 +860,8 @@ proc setupArena(ctx:        RuntimeState,
   # 128 bits per item.
   var moduleAllocation = newSeq[pointer](moduleIdSz * 2)
 
-  for (offset, tid) in typeInfo:
-    moduleAllocation[offset*2 + 1] = cast[pointer](tid)
+  #for (offset, tid) in typeInfo:
+  #  moduleAllocation[offset*2 + 1] = cast[pointer](tid)
 
   ctx.moduleAllocations.add(moduleAllocation)
 

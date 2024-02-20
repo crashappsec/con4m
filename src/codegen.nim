@@ -308,10 +308,11 @@ proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
 
 proc disassembly*(ctx: ZObjectFile, skip_nops = true): Rope =
     for item in ctx.moduleContents:
-      if item.instructions.len() == 3 and skip_nops:
+      if item.instructions.len() == 4 and skip_nops:
         if item.instructions[0].op == ZNop and
-           item.instructions[1].op == ZModuleRet and
-           item.instructions[2].op == ZNop:
+           item.instructions[1].op == ZModuleEnter and
+           item.instructions[2].op == ZModuleRet and
+           item.instructions[3].op == ZNop:
           continue
       result = result + rawReprInstructions(item, ctx)
 
@@ -886,6 +887,7 @@ proc genExternCall(ctx: CodeGenState, cur: IrContents) =
   if tid != TVoid:
     ctx.emitInstruction(ZPushRes, tid = tid)
 
+
 proc genRunCallback(ctx: CodeGenState, cur: IrContents) =
   var
     i = cur.actuals.len()
@@ -1197,9 +1199,6 @@ proc oneIrNode(ctx: CodeGenState, n: IrNode) =
 
   ctx.curNode = saved
 
-proc addParameter(ctx: CodeGenState, symbol: SymbolInfo) =
-  discard
-
 proc stashSymbolInfo(scope: Scope, d: var Dict[int, string],
                      t: var seq[(int, TypeId)]) =
   for (name, sym) in scope.table.items(sort=true):
@@ -1233,6 +1232,74 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
 
   ctx.mcur.objInfo.codesyms[zinfo.offset] = fullname
 
+proc stashParam(ctx: CodeGenState, m: Module, info: ParamInfo) =
+
+  var zparam = ZParamInfo(shortdoc: info.shortdoc,
+                          longdoc:  info.longdoc)
+
+  if info.sym.isAttr:
+    zparam.attr   = info.sym.name
+  else:
+    zparam.offset = info.sym.offset
+
+  if info.defaultIr.isSome():
+    # TODO: do I need to check if this is constant? Don't remember
+    zparam.haveDefault = true
+    zparam.default = info.defaultIr.get().value
+
+  zparam.tid = info.sym.tid
+
+  if info.validatorIr.isSome():
+    var
+      offset  = info.backpatchLoc
+      ### m.instructions[offset] is ZPushVmPtr
+      ### next one is ZRunCallback
+      litnode = info.validatorIr.get()
+      cb      = cast[ptr Callback](litnode.value)
+
+    if cb.impl.externInfo != nil:
+      # TODO Shouldn't the offset already be in cb.impl?
+      # Not sure we need to loop; just copying from above.
+      zparam.native = false
+      for i, item in ctx.zobj.ffiInfo:
+        let
+          p = cast[pointer](addr ctx.zobj.staticData[item.nameOffset])
+          s = $(cast[cstring](p))
+
+        if s == cb.impl.externName:
+          zparam.funcIx                           = int32(i)
+          m.objinfo.instructions[offset].arg      = zparam.funcIx
+          m.objinfo.instructions[offset].typeInfo = zparam.tid
+          break
+    else:
+      zparam.native = true
+      zparam.funcIx = int32(cb.impl.internalId)
+      m.objinfo.instructions[offset].arg = zparam.funcIx
+
+    offset += 1
+    m.objinfo.instructions[offset].typeInfo = cb.tid
+
+  else:
+    zparam.funcIx = -1
+
+
+  m.objInfo.parameters.add(zparam)
+
+proc placeholdParamValidation(ctx: CodeGenState, m: Module, i: int) =
+   m.params[i].backpatchLoc = m.objInfo.instructions.len()
+   ctx.emitInstruction(ZPushVmPtr)
+   ctx.emitInstruction(ZRunCallback, arg = 1)
+   ctx.emitInstruction(ZMoveSp, -1)
+   ctx.emitInstruction(ZPushRes)
+
+proc genParamChecks(ctx: CodeGenState, m: Module) =
+  for i, param in m.params:
+    if param.validatorIr.isNone():
+      continue
+    ctx.genLoadSymbol(param.sym)
+    ctx.placeholdParamValidation(m, i)
+    ctx.emitInstruction(ZParamCheck, arg = i)
+
 proc genModule(ctx: CodeGenState, m: Module) =
   let curMod = ctx.minfo[m.key]
   if curMod.processed:
@@ -1241,10 +1308,10 @@ proc genModule(ctx: CodeGenState, m: Module) =
   ctx.mcur = curMod
 
   ctx.genLabel("Module '" & m.modname & "' :")
+  ctx.emitInstruction(ZModuleEnter, arg = m.params.len())
 
-  for (_, sym) in m.moduleScope.table.items(sort=true):
-    if sym.pInfo != nil:
-      ctx.addParameter(sym)
+  if m.params.len() != 0:
+    ctx.genParamChecks(m)
 
   ctx.oneIrNode(m.ir)
   ctx.emitInstruction(ZModuleRet)
@@ -1257,6 +1324,9 @@ proc genModule(ctx: CodeGenState, m: Module) =
       if fn.externInfo != nil:
         continue
       ctx.genFunction(fn)
+
+  for param in m.params:
+      ctx.stashParam(m, param)
 
   curMod.processed = true
 

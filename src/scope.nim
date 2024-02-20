@@ -65,7 +65,7 @@ proc lookupOrAdd(ctx: Module, scope: Scope, n: string,
 
 proc scopeDeclare*(ctx: Module, scope: Scope, n: string,
                    isfunc: bool, tid = TBottom, immutable = false,
-                  declnode = ctx.pt):
+                   declnode = ctx.pt, inparam = false):
                      Option[SymbolInfo] =
  # This is meant for things that should be declared in a specific scope,
  # like enums, functions and explicitly declared variables.
@@ -79,8 +79,10 @@ proc scopeDeclare*(ctx: Module, scope: Scope, n: string,
   var sym = result.get()
 
   # Funcs can have multiple declarations as long as signatures are disjoint.
-  if sym.declaredType and not isFunc:
-    ctx.irWarn("VarRedef")
+  # Similarly, we ignore this in param blocks.
+  if sym.declaredType and not isFunc and not inparam:
+    echo getStackTrace()
+    ctx.irWarn("VarRedef", @[sym.name])
   else:
     sym.declNode = declnode
 

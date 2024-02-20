@@ -398,11 +398,43 @@ type
 
   ParamInfo*  = ref object
     ## Module parameters.
-    shortdoc*:      Option[string]
-    doc*:           Option[string]
-    validator*:     Option[Callback]
+    sym*:           SymbolInfo
+    shortdoc*:      string
+    longdoc*:       string
+    validatorIr*:   Option[IrNode]
     defaultParse*:  Option[ParseNode]
     defaultIr*:     Option[IrNode]
+    backpatchLoc*:  int
+
+  ZParamInfo* = ref object
+    ## What we stick in the obj file.
+    attr*:         string       # Either it's an attribute...
+    offset*:       int          # or in theerr current module.
+    default*:      pointer
+    tid*:          TypeId
+    haveDefault*:  bool
+    native*:       bool
+    funcIx*:       int32
+    userparam*:    pointer
+    userType*:     TypeId
+    shortdoc*:     string
+    longdoc*:      string
+
+  ZParamExport* = ref object
+    ## What we pass when asked what parameters need to be provided.
+    ## Currently, con4m is NOT storing these parameters itself between
+    ## runs, but if the modules holding the parameter gets called,
+    ## there will be a value set, and we'll report that it's got
+    ## a default value.
+    name*:        string
+    modname*:     string
+    shortdoc*:    string
+    longdoc*:     string
+    modid*:       int32
+    paramid*:     int32
+    tid*:         TypeId
+    havedefault*: bool
+    default*:     pointer
 
   SymbolInfo* = ref object
     name*:         string
@@ -411,7 +443,6 @@ type
     uses*:         seq[IrNode]
     defs*:         seq[IrNode]
     fimpls*:       seq[FuncInfo]
-    pInfo*:        ParamInfo
     defaultVal*:   pointer
     constValue*:   pointer
     isFunc*:       bool
@@ -425,6 +456,8 @@ type
     err*:          bool
     formal*:       bool
     declNode*:     ParseNode
+    pinfo*:        ParamInfo
+
     # heapalloc is only true for global variables and
     # indicates that the offset generated won't be relative to the
     # stack, but from some start offset associated with the module
@@ -628,6 +661,7 @@ type
     attrContext*:    bool         # True when we are def processing an attr.
     ambigAssign*:    bool
     secDefContext*:  bool
+    inParamCtx*:     bool
     curSym*:         SymbolInfo
     usedModules*:    seq[(string, string)]
     funcsToResolve*: seq[(IrNode, TypeId, string)]
@@ -636,6 +670,7 @@ type
     curSecSpec*:     SectionSpec
     didFoldingPass*: bool # Might not be using this anymore.
     maxOffset*:      int
+    params*:         seq[ParamInfo]
 
     # These help us to fold.
     branchOrLoopDepth*: int
@@ -836,6 +871,15 @@ type
      ZModuleRet     = 0x81,
      ZHalt          = 0x82,
 
+     # Generated on module entry. If the module takes parameters,
+     # the argument is non-zero, and
+     # are checked and validated on entry to the module.
+     ZModuleEnter   = 0x83,
+
+     # Checks a single parameter once its validator has run, popping
+     # the string result off the stack, and erroring if it's not null.
+     ZParamCheck    = 0x84,
+
      # SetRet should be called by any function before exiting, where
      # that function is non-void. It moves the value at fp - 2
      # into the return register.
@@ -979,6 +1023,7 @@ type
     moduleId*:       int
     moduleVarSize*:  int
     initSize*:       int # size of init code before functions begin.
+    parameters*:     seq[ZParamInfo]
     instructions*:   seq[ZInstruction]
 
   # Used in vm.nim
@@ -994,6 +1039,7 @@ type
    isSet*:       bool
    locked*:      bool
    lockOnWrite*: bool
+   moduleLock*:  int32
    override*:    bool
    contents*:    pointer
    lastset*:     ptr ZInstruction # (not marhshaled)
@@ -1031,6 +1077,7 @@ type
     running*:           bool
     memos*:             Memos
     cmdline_info*:      ArgResult
+    module_lock_stack*: seq[int32]
 
 
   MixedObj* = object

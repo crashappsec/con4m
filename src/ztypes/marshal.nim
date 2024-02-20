@@ -111,9 +111,9 @@ proc unmarshal_nim_string*(s: var cstring): string {.exportc, cdecl.} =
     l = s.unmarshal_32_bit_value()
 
   if l == 0:
-    result = newString(1)
+    result = ""
   else:
-    result = newString(l + 1)
+    result = newString(l)
     for i in 0 ..< l:
       result[i] = s[i]
 

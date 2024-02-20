@@ -19,6 +19,33 @@ proc get_basic_object_info*(obj: ZObjectFile): Rope =
   result = cells.quickTable(title = "Basic object info", verticalHeaders = true,
                                     caption = config_args[0].resolvePath())
 
+proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Rope =
+  var cells: seq[seq[string]] = @[@["Attr or offset",
+                                    "Type",
+                                    "Native func?",
+                                    "Function index", "Short Doc", "Long Doc"]]
+  for item in params:
+    var row: seq[string] = @[]
+    if item.attr != "":
+      echo "Attr = ", item.attr
+      row.add(item.attr)
+    else:
+      echo "offset = ", item.offset
+      row.add($item.offset)
+    row.add(item.tid.toString())
+    if item.native:
+      row.add("✓")
+    else:
+      row.add("✗")
+    row.add($item.funcIx)
+    row.add(item.shortdoc & " ")
+    row.add(item.longdoc & " ")
+    cells.add(row)
+
+  return cells.quickTable(title   = "Module param info",
+                          caption = "Sorry, haven't had the dump look up " &
+                                    "local names or functions yet")
+
 proc get_per_module_info*(obj: ZObjectFile): Rope =
   var cells: seq[seq[string]]
 
@@ -75,6 +102,11 @@ proc get_per_module_info*(obj: ZObjectFile): Rope =
     else:
       result += h2(text("Source code for ") + em(item.modname))
       result += item.source.pretty()
+
+    if item.parameters.len() == 0:
+      result += h2("No stored parameters.")
+    else:
+      result += obj.format_module_params(item.parameters)
 
     result += h2(text("Disassembly for ") + em(item.modname))
     result += item.rawReprInstructions(obj)

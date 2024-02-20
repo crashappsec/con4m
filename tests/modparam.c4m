@@ -1,0 +1,26 @@
+func example_checker(x) {
+  result = ""
+
+  if (x % 2) != 0 {
+    result = "Parameter value must be even."
+  }
+}
+
+parameter var example1 {
+  "This should be some documentation."
+  "Also this."
+  default:  100
+  validator: func example_checker(int) -> string
+}
+
+parameter var example2 {
+  "This should be some documentation."
+  "Also this."
+  default:  101
+  validator: func example_checker(int) -> string
+}
+
+# Neither of these should happen.
+print(example1)
+print(example2)
+assert false

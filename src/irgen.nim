@@ -199,11 +199,24 @@ proc extractShortDoc(n: ParseNode): Rope =
   else:
     return doc_extract(n.docNodes.children[0].getText())
 
+proc extractShortDocPlain(n: ParseNode): string =
+  if n == nil or n.docNodes == nil:
+    return ""
+  else:
+    return n.docNodes.children[0].getText()
+
 proc extractLongDoc(n: ParseNode): Rope =
   if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
     return nil
   else:
     return doc_extract(n.docNodes.children[1].getText())
+
+proc extractLongDocPlain(n: ParseNode): string =
+  if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
+    return ""
+  else:
+    return n.docNodes.children[1].getText()
+
 
 proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
   result = atom(s).fgColor("atomiclime")
@@ -601,7 +614,7 @@ proc extractSymInfo(ctx: Module, scope: Scope, isConst = false,
 
   for i, (name, tid, kid) in toAdd:
     let symOpt = ctx.scopeDeclare(scope, name, false, tid.getTid(), isConst,
-                                  declnode = kid)
+                                  declnode = kid, inparam = ctx.inParamCtx)
     if i == toAdd.len() - 1 and symOpt.isSome():
       result = symOpt.get()
 
@@ -648,8 +661,9 @@ proc convertConstStmt(ctx: Module) =
 
 proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
   var
-    gotShort, gotLong, gotValid, gotDefault: bool
-    paramInfo = ParamInfo()
+    gotValid, gotDefault: bool
+    paramInfo = ParamInfo(shortdoc: ctx.pt.extractShortDocPlain(),
+                          longdoc:  ctx.pt.extractLongDocPlain())
 
   independentSubtree:
     for i in 0 ..< ctx.numKids():
@@ -658,66 +672,79 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
         continue
       let propname = ctx.getText(i, 0)
       case propname
-      of "shortdoc":
-        if gotShort:
-          ctx.irError("DupeParamProp", @["shortdoc"], ctx.pt.children[i])
-          continue
-        if ctx.kidKind(i, 1) != NodeStringLit:
-          ctx.irError("BadParamProp", @["shortdoc", "string literal"],
-                      ctx.pt.children[i])
-          continue
-        paramInfo.shortdoc = some(ctx.getText(i, 1))
-        gotShort = true
-      of "doc":
-        if gotLong:
-          ctx.irError("DupeParamProp", @["doc"], ctx.pt.children[i])
-          continue
-        if ctx.kidKind(i, 1) != NodeStringLit:
-          ctx.irError("BadParamProp", @["doc", "string literal"],
-                      ctx.pt.children[i])
-          continue
-        paramInfo.doc = some(ctx.getText(i, 1))
-        gotLong = true
       of "validator":
-        if ctx.kidKind(i, 1) != NodeCallbackLit:
+        let
+          irNode = ctx.downNode(i, 1)
+          to     = irNode.tid.idToTypeRef()
+
+        if to.kind != C4Func:
           ctx.irError("ParamType", @["validator", "callback"],
                       ctx.pt.children[i])
-        let irNode = ctx.downNode(i, 1)
-        ctx.typeCheck(irNode.tid, tFunc(@[sym.tid, TRich]))
-        let cb              = extractRef[Callback](irNode.value)
-        paramInfo.validator = some(cb)
-        gotValid            = true
+        elif to.items.len() != 0:
+          if to.items.len() != 2:
+            ctx.irError("ParamValNArgs")
+          else:
+            if unify(sym.tid, to.items[0]) == TBottom:
+              ctx.irError("ParamValParTy", @[sym.tid.toString(),
+                                             irnode.tid.toString()],
+                          w = irNode.parseNode)
+
+            elif unify(irNode.tid, tFunc(@[sym.tid, TString])) == TBottom:
+              ctx.irError("ParamValRetTy")
+
+        paramInfo.validatorIr = some(irNode)
+        gotValid              = true
       of "default":
         if gotDefault:
           ctx.irError("DupeParamProp", @["default"], ctx.pt.children[i])
           continue
+        let irNode = ctx.downNode(i, 1)
         paramInfo.defaultParse = some(ctx.pt.children[i].children[1])
         gotDefault             = true
+        ctx.typeCheck(irNode.tid, sym.tid, where = irNode.parseNode)
       else:
         ctx.irError("BadParamProp", @[propname], ctx.pt.children[i])
         continue
 
-  sym.pinfo = paramInfo
+  paramInfo.sym = sym
+  sym.pinfo     = paramInfo
+
+  ctx.params.add(paramInfo)
 
 proc convertParamBlock(ctx: Module) =
   var sym: SymbolInfo
+  var ir:  IrNode
+
+  ctx.inParamCtx = true
+
 
   if ctx.pt.children[0].kind == NodeMember:
 
     independentSubtree:
-      let memberIr = ctx.downNode(0)
-      sym = ctx.scopeDeclare(ctx.usedAttrs, memberIr.contents.name, false,
+      ir = ctx.downNode(0)
+      sym = ctx.scopeDeclare(ctx.usedAttrs, ir.contents.name, false,
                              tVar()).getOrElse(nil)
-  else: # will be something we can call extractSymInfo on.
-    var savedPt = ctx.pt
-    ctx.pt = ctx.pt.children[0]
-    sym = ctx.extractSymInfo(ctx.moduleScope, checkdollar = true)
-    ctx.pt = savedPt
+  else:
+    let
+      ir   = IrNode()
+      n    = ctx.pt.children[0].children[0]
+      name = n.getText()
+      opt  = ctx.scopeDeclare(ctx.moduleScope, name, false, tid = tVar(),
+                              declNode = n, inparam = true)
+
+    if opt.isSome():
+      sym = opt.get()
+    else:
+      unreachable # TODO, make sure this is true
+
+  sym.defs.add(ir)
 
   var savedPt = ctx.pt
   ctx.pt = ctx.pt.children[1]
   ctx.convertParamBody(sym)
   ctx.pt = savedPt
+
+  ctx.inParamCtx = false
 
 proc extractCTypes(ctx: Module, n: ParseNode, fn: var FuncInfo) =
   var
@@ -1371,7 +1398,7 @@ proc findDeclarations(ctx: Module, n: ParseNode) =
   for kid in n.children:
     ctx.pt = kid
     case kid.kind
-    of NodeFuncDef:
+    of NodeFuncDef, NodeParamBlock:
       continue
     of NodeVarStmt:
       ctx.convertVarStmt()
@@ -1379,8 +1406,6 @@ proc findDeclarations(ctx: Module, n: ParseNode) =
       ctx.convertGlobalStmt()
     of NodeConstStmt:
       ctx.convertConstStmt()
-    of NodeParamBlock:
-      ctx.convertParamBlock()
     of NodeExternBlock:
       ctx.convertExternBlock()
     of NodeConfSpec:
@@ -1410,6 +1435,10 @@ proc findDeclarations*(ctx: Module) =
       # Function definitions are processed for declarations.
       ctx.pt = item
       ctx.convertFuncDefinition()
+      continue
+    of NodeParamBlock:
+      ctx.pt = item
+      ctx.convertParamBlock()
       continue
     else:
       ctx.findDeclarations(item)
@@ -2407,15 +2436,22 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
         n.contents.toCall = matches[0]
       continue
     elif matches.len() == 0:
-
-      let info = showCallMistakes(n.contents.fname, fails, t)
-      m.irError("BadSig", n, @[n.contents.fname, t.toString(), "call"],
-                detail = info)
+      if n.contents.kind == IrLit:
+        m.irError("NoCbMatch", w = n, @[name, t.toString])
+      else:
+        let info = showCallMistakes(n.contents.fname, fails, t)
+        m.irError("BadSig", n, @[n.contents.fname, t.toString(), "call"],
+                  detail = info)
     else:
-      let info = fmtImplementationList(n.contents.fname,
-                                       matches, t).quicktable()
-      m.irError("CallAmbig", n, @[n.contents.fname, t.toString(), "call"],
-                 detail = info)
+      if n.contents.kind == IrLit:
+        let info = fmtImplementationList(name, matches, t).quicktable()
+        m.irError("CallAmbig", w = n, @[name, t.toString(), "callback"],
+                                 detail = info)
+      else:
+        let info = fmtImplementationList(n.contents.fname,
+                                         matches, t).quicktable()
+        m.irError("CallAmbig", n, @[n.contents.fname, t.toString(), "call"],
+                  detail = info)
 
   m.funcsToResolve = @[]
 

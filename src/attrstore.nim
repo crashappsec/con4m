@@ -160,11 +160,14 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
 
   if curOpt.isSome():
     curInfo = curOpt.get()
+    newInfo.moduleLock = curInfo.moduleLock
 
     if newInfo.override and not override:
       return true # Pretend it was successful.
 
-    if curInfo.locked:
+    if curInfo.locked or
+       (curInfo.moduleLock != 0 and
+        curInfo.moduleLock != ctx.curModule.moduleId):
       if not override:
         if not call_eq(value, curInfo.contents, curInfo.tid):
           return false
@@ -179,6 +182,8 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
 
   if ctx.running:
     newInfo.lastset = addr ctx.curModule.instructions[ctx.ip]
+    if ctx.module_lock_stack.len() != 0:
+      newInfo.moduleLock = ctx.module_lock_stack[^1]
 
   # Don't trigger write lock if we're setting a default (i.e., internal is set).
   if (lock or wlock) and not internal:

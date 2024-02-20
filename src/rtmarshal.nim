@@ -7,7 +7,7 @@ proc marshal_int_list[T](l: seq[T]): C4Str =
 
 proc unmarshal_int_list(p: var cstring): seq[int] =
   list_unmarshal_helper(p):
-    let i = cast[int](p.unmarshal_64_bit_value())
+    let i  = cast[int](p.unmarshal_64_bit_value())
     result.add(i)
 
 proc marshal_ffi_arg_info(args: seq[ZFFiArgInfo]): C4Str =
@@ -117,6 +117,36 @@ proc unmarshal_byte_code(p: var cstring): seq[ZInstruction] =
     instr.typeInfo  = cast[TypeId](p.unmarshal_64_bit_value())
     result.add(instr)
 
+proc marshal_mod_params(rt: RuntimeState, params: seq[ZParamInfo]): C4Str =
+  list_marshal_helper(params):
+    toAdd.add(item.attr.marshal_nim_string())
+    toAdd.add(item.shortdoc.marshal_nim_string())
+    toAdd.add(item.longdoc.marshal_nim_string())
+    toAdd.add(item.offset.int32().marshal_32_bit_value())
+    toAdd.add(item.native.marshal_bool())
+    toAdd.add(cast[pointer](item.tid.followForwards()).marshal_64_bit_value())
+    toAdd.add(item.funcIx.marshal_32_bit_value())
+    toAdd.add(item.haveDefault.marshal_bool())
+    if item.haveDefault:
+      toAdd.add(marshal(item.default, item.tid, rt.memos))
+
+proc unmarshal_mod_params(rt: RuntimeState, p: var cstring): seq[ZParamInfo] =
+  list_unmarshal_helper(p):
+    var param = ZParamInfo()
+
+    param.attr        = p.unmarshal_nim_string()
+    param.shortdoc    = p.unmarshal_nim_string()
+    param.longdoc     = p.unmarshal_nim_string()
+    param.offset      = int(p.unmarshal_32_bit_value())
+    param.native      = p.unmarshal_bool()
+    param.tid         = cast[TypeId](p.unmarshal_64_bit_value())
+    param.funcIx      = p.unmarshal_32_bit_value()
+    param.haveDefault = p.unmarshal_bool()
+    if param.haveDefault:
+      param.default = p.unmarshal(param.tid, rt.memos)
+
+    result.add(param)
+
 proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
   basic_marshal_helper:
     toAdd.add(m.modname.marshal_nim_string())
@@ -130,6 +160,7 @@ proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
     toAdd.add(cast[pointer](m.moduleId).marshal_64_bit_value())
     toAdd.add(cast[pointer](m.moduleVarSize).marshal_64_bit_value())
     toAdd.add(cast[pointer](m.initSize).marshal_64_bit_value())
+    toAdd.add(rt.marshal_mod_params(m.parameters))
     toAdd.add(m.instructions.marshal_byte_code())
 
 proc unmarshal_one_module(rt: RuntimeState, p: var cstring): ZModuleInfo =
@@ -145,6 +176,7 @@ proc unmarshal_one_module(rt: RuntimeState, p: var cstring): ZModuleInfo =
   result.moduleId      = int(p.unmarshal_64_bit_value())
   result.moduleVarSize = int(p.unmarshal_64_bit_value())
   result.initSize      = int(p.unmarshal_64_bit_value())
+  result.parameters    = rt.unmarshal_mod_params(p)
   result.instructions  = p.unmarshal_byte_code()
 
 proc marshal_validators(rt: RuntimeState, vlist: seq[Validator]): C4Str =

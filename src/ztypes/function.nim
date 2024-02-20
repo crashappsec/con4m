@@ -92,8 +92,8 @@ template initForeignModule(): ZModuleInfo =
 proc run_validator(ctx: RuntimeState, startswith: string):
                    FlexArray[pointer] {.cdecl, importc.}
 
-proc foreign_z_call(ctx: RuntimeState, funcid: int):
-               pointer {.exportc, cdecl.} =
+proc foreign_z_call*(ctx: RuntimeState, funcid: int):
+                   pointer {.exportc, cdecl.} =
   # We use a dummy module with two instructions, a call and a halt,
   # then we re-start the VM using that as an entry point.
   # Any result is left in the return register.
@@ -209,10 +209,10 @@ proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
 proc baseunify(id1, id2: TypeId): TypeId {.importc, cdecl.}
 
 proc run_callback*(ctx:  RuntimeState,
-                       name: string,
-                       t:    TypeId,
-                       args: openarray[(pointer, TypeId)] = [],
-                       ffi = false): pointer {.discardable, exportc, cdecl.} =
+                   name: string,
+                   t:    TypeId,
+                   args: openarray[(pointer, TypeId)] = [],
+                  ffi = false): pointer {.discardable, exportc, cdecl.} =
   ## This version of run_callback finds the function to call, and
   ## creates the callback pointer for you, based on the name and
   ## signature.
