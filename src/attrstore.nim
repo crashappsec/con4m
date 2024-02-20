@@ -358,8 +358,8 @@ proc print_attributes*(ctx: RuntimeState) =
   tree.print_attributes()
   GC_unref(tree.cache)
 
-
-proc get_section_docs*(ctx: RuntimeState, path: string): Option[AttrDocs]
+proc get_section_docs_internal*(ctx: RuntimeState,
+                                path: string): Option[DocsContainer]
     {.exportc, cdecl.} =
 
   var path = path
@@ -370,7 +370,7 @@ proc get_section_docs*(ctx: RuntimeState, path: string): Option[AttrDocs]
 
 
 proc get_short_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
-  let docOpt = ctx.get_section_docs(path)
+  let docOpt = ctx.get_section_docs_internal(path)
 
   if docOpt.isNone():
     return nil
@@ -379,7 +379,7 @@ proc get_short_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
   return docs.shortdoc
 
 proc get_long_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
-  let docOpt = ctx.get_section_docs(path)
+  let docOpt = ctx.get_section_docs_internal(path)
 
   if docOpt.isNone():
     return nil

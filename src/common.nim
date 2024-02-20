@@ -389,8 +389,8 @@ type
     cfg*:            CfgNode
     exitNode*:       CfgNode
     pure*:           bool
-    doc1*:           string
-    doc2*:           string
+    shortdoc*:       Rope
+    longdoc*:        Rope
     maxOffset*:      int
     internalId*:     int
     codeOffset*:     int # Measured in bytes.
@@ -682,6 +682,8 @@ type
     backpatchLocs*: seq[(IrNode, int)]
     objInfo*:       ZModuleInfo
     secDocNodes*:   seq[IRNode]
+    shortdoc*:      string
+    longdoc*:       string
 
   CompileCtx* = ref object
     incremental*:  bool
@@ -942,13 +944,18 @@ type
                      # in the FFI.
     argType*: int16  # an index into the CTypeNames data structure in ffi.nim.
     ourType*: int32  # To look up any FFI processing we do for the type.
+    name*:    string
 
   ZFFiInfo* = ref object
     nameoffset*: int
     localname*:  int
+    mid*:        int32
+    tid*:        TypeId
     va*:         bool
     dlls*:       seq[int]
     argInfo*:    seq[ZffiArgInfo]
+    shortdoc*:   Rope
+    longdoc*:    Rope
 
   ZCallback* = object
     impl*:       pointer
@@ -978,6 +985,18 @@ type
     mid*:        int32
     offset*:     int32
     size*:       int32
+    shortdoc*:   Rope
+    longdoc*:    Rope
+
+  FuncDocs* = ref object
+    funcname*:   string
+    paramNames*: seq[string]
+    tid*:        TypeId
+    mid*:        int32
+    extern*:     bool
+    shortdoc*:   Rope
+    longdoc*:    Rope
+
 
   # This is all the data that will be in an "object" file; we'll
   # focus on being able to marshal and load these only.
@@ -1016,6 +1035,8 @@ type
     codesyms*:       Dict[int, string]
     datasyms*:       Dict[int, string]
     source*:         string
+    shortdoc*:       string
+    longdoc*:        string
     moduleId*:       int
     moduleVarSize*:  int
     initSize*:       int # size of init code before functions begin.
@@ -1040,7 +1061,7 @@ type
    contents*:    pointer
    lastset*:     ptr ZInstruction # (not marhshaled)
 
-  AttrDocs* = ref object
+  DocsContainer* = ref object
     shortdoc*: Rope
     longdoc*:  Rope
 
@@ -1051,7 +1072,7 @@ type
     moduleAllocations*: seq[seq[pointer]]
     attrs*:             Dict[string, AttrContents]
     allSections*:       Dict[string, bool]
-    sectionDocs*:       Dict[string, AttrDocs] # Not marshalling yet.
+    sectionDocs*:       Dict[string, DocsContainer]
     usingAttrs*:        bool
 
     # The rest of this gets re-initialized every run.

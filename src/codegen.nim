@@ -1309,6 +1309,11 @@ proc genModule(ctx: CodeGenState, m: Module) =
 
   ctx.mcur = curMod
 
+  if curMod.shortdoc == "":
+    curMod.shortdoc = m.shortdoc
+  if curMod.longdoc == "":
+    curMod.longdoc = m.longdoc
+
   ctx.genLabel("Module '" & m.modname & "' :")
   ctx.emitInstruction(ZModuleEnter, arg = m.params.len())
 
@@ -1371,6 +1376,10 @@ proc applyArenasToGloballyVisibleFuncs(ctx: CodeGenState, scope: Scope,
           mid = fn.defModule.objInfo.moduleId
           fi  = ZFnInfo(funcname: name, mid: int32(mid), tid: fn.tid,
                         offset: int32(fn.codeOffset))
+
+        fi.shortdoc   = fn.shortdoc
+        fi.longdoc    = fn.longdoc
+
         ctx.zobj.funcInfo.add(fi)
         fi.syms.initDict()
         fn.fnScope.stashSymbolInfo(fi.syms, fi.symTypes)
@@ -1400,7 +1409,10 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
       zinfo.nameOffset = ctx.addStaticObject(item.externName)
       zinfo.localName  = ctx.addStaticObject(item.name)
-
+      zinfo.shortdoc   = item.shortdoc
+      zinfo.longdoc    = item.longdoc
+      zinfo.tid        = item.tid.followForwards()
+      zinfo.mid        = int32(m.objinfo.moduleId)
 
       for entry in ctx.zobj.ffiInfo:
         if entry.nameOffset == zinfo.nameOffset:
@@ -1456,7 +1468,7 @@ proc addFfiInfo(ctx: CodeGenState, m: Module) =
 
 proc extractSectionDocs(ctx: CodeGenState,
                         m:   Module,
-                        d:   Dict[string, AttrDocs]) =
+                        d:   Dict[string, DocsContainer]) =
   # TODO: warn about multiple adds.
   for node in m.secDocNodes:
     var sec = node.contents.prefix
@@ -1470,7 +1482,7 @@ proc extractSectionDocs(ctx: CodeGenState,
     if sec != "" and sec[^1] == '.':
       sec = sec[0 ..< ^1]
 
-    let docObj = AttrDocs(shortdoc: node.shortdoc, longdoc: node.longdoc)
+    let docObj = DocsContainer(shortdoc: node.shortdoc, longdoc: node.longdoc)
     d[sec] = docObj
 
 template setupOneModule() =
@@ -1494,7 +1506,7 @@ template setupOneModule() =
     module.moduleScope.stashSymbolInfo(mi.datasyms, mi.symTypes)
     mi.codesyms[0] = module.modname & ".__mod_run__()"
 
-proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
+proc setupModules(ctx: CodeGenState, d: Dict[string, DocsContainer]) =
   # This call applies a unique number to each module
   # and then applies a unique number to each function.
   # We first number the global scope 0, then do modules plus
@@ -1510,18 +1522,19 @@ proc setupModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
   ctx.cc.globalScope.stashSymbolInfo(ctx.zobj.globals, ctx.zobj.symTypes)
   ctx.zobj.globalScopeSz = ctx.cc.globalScope.scopeSize
 
+
+  for (_, module) in ctx.cc.modules.items(sort = true):
+    setupOneModule()
+
   for (_, module) in ctx.cc.modules.items(sort = true):
     ctx.addFfiInfo(module)
     ctx.extractSectionDocs(module, d)
 
-
-  for (_, module) in ctx.cc.modules.items(sort = true):
-    setupOneModule()
   # Finally, apply module IDs to the functions that are globally visible
   # so we can look up their addresses.
   ctx.applyArenasToGloballyVisibleFuncs(ctx.cc.globalScope, curFnId)
 
-proc setupNewModules(ctx: CodeGenState, d: Dict[string, AttrDocs]) =
+proc setupNewModules(ctx: CodeGenState, d: Dict[string, DocsContainer]) =
   # The incremental version.
   var
     curArena = ctx.zobj.moduleContents[^1].moduleId + 1

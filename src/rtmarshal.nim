@@ -28,19 +28,27 @@ proc unmarshal_ffi_arg_info(p: var cstring): seq[ZFFiArgInfo] =
 
     result.add(a)
 
-proc marshal_one_ffi_info_obj(f: ZFFiInfo): C4Str =
+proc marshal_one_ffi_info_obj(rt: RuntimeState, f: ZFFiInfo): C4Str =
   basic_marshal_helper:
     toAdd.add(cast[pointer](f.nameOffset).marshal_64_bit_value())
     toAdd.add(cast[pointer](f.localName).marshal_64_bit_value())
+    toAdd.add(cast[pointer](f.tid).marshal_64_bit_value())
+    toAdd.add(f.shortdoc.rope_marshal(TRich, rt.memos))
+    toAdd.add(f.longdoc.rope_marshal(TRich, rt.memos))
+    toAdd.add(f.mid.marshal_32_bit_value())
     toAdd.add(f.va.marshal_bool())
     toAdd.add(f.dlls.marshal_int_list())
     toAdd.add(f.argInfo.marshal_ffi_arg_info())
 
-proc unmarshal_one_ffi_info_obj(p: var cstring): ZFFiInfo =
+proc unmarshal_one_ffi_info_obj(rt: RuntimeState, p: var cstring): ZFFiInfo =
   result = ZFFiInfo()
 
   result.nameOffset = int(p.unmarshal_64_bit_value())
   result.localName  = int(p.unmarshal_64_bit_value())
+  result.tid        = cast[TypeId](p.unmarshal_64_bit_value())
+  result.shortdoc   = p.rope_unmarshal(TRich, rt.memos)
+  result.longdoc    = p.rope_unmarshal(TRich, rt.memos)
+  result.mid        = p.unmarshal_32_bit_value()
   result.va         = p.unmarshal_bool()
   result.dlls       = p.unmarshal_int_list()
   result.argInfo    = p.unmarshal_ffi_arg_info()
@@ -73,7 +81,7 @@ proc unmarshal_sym_names(p: var cstring): Dict[int, string] =
 
     result[k] = v
 
-proc marshal_one_func(f: ZFnInfo): C4Str =
+proc marshal_one_func(rt: RuntimeState, f: ZFnInfo): C4Str =
   basic_marshal_helper:
     toAdd.add(f.funcName.marshal_nim_string())
     toAdd.add(f.syms.marshal_sym_names())
@@ -82,8 +90,10 @@ proc marshal_one_func(f: ZFnInfo): C4Str =
     toadd.add(f.mid.marshal_32_bit_value())
     toAdd.add(f.offset.marshal_32_bit_value())
     toAdd.add(f.size.marshal_32_bit_value())
+    toAdd.add(f.shortdoc.rope_marshal(TRich, rt.memos))
+    toAdd.add(f.longdoc.rope_marshal(TRich, rt.memos))
 
-proc unmarshal_one_func(p: var cstring): ZFnInfo =
+proc unmarshal_one_func(rt: RuntimeState, p: var cstring): ZFnInfo =
   result = ZFnInfo()
 
   result.funcName   = p.unmarshal_nim_string()
@@ -93,6 +103,8 @@ proc unmarshal_one_func(p: var cstring): ZFnInfo =
   result.mid        = p.unmarshal_32_bit_value()
   result.offset     = p.unmarshal_32_bit_value()
   result.size       = p.unmarshal_32_bit_value()
+  result.shortdoc   = p.rope_unmarshal(TRich, rt.memos)
+  result.longdoc    = p.rope_unmarshal(TRich, rt.memos)
 
 proc marshal_byte_code(bc: seq[ZInstruction]): C4Str =
   list_marshal_helper(bc):
@@ -158,8 +170,9 @@ proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
     toAdd.add(m.symTypes.marshal_sym_types())
     toAdd.add(m.codesyms.marshal_sym_names())
     toAdd.add(m.datasyms.marshal_sym_names())
-
     toAdd.add(m.source.marshal_nim_string())
+    toAdd.add(m.shortdoc.marshal_nim_string())
+    toAdd.add(m.longdoc.marshal_nim_string())
     toAdd.add(cast[pointer](m.moduleId).marshal_64_bit_value())
     toAdd.add(cast[pointer](m.moduleVarSize).marshal_64_bit_value())
     toAdd.add(cast[pointer](m.initSize).marshal_64_bit_value())
@@ -179,6 +192,8 @@ proc unmarshal_one_module(rt: RuntimeState, p: var cstring): ZModuleInfo =
   result.codeSyms      = p.unmarshal_sym_names()
   result.dataSyms      = p.unmarshal_sym_names()
   result.source        = p.unmarshal_nim_string()
+  result.shortdoc      = p.unmarshal_nim_string()
+  result.longdoc       = p.unmarshal_nim_string()
   result.moduleId      = int(p.unmarshal_64_bit_value())
   result.moduleVarSize = int(p.unmarshal_64_bit_value())
   result.initSize      = int(p.unmarshal_64_bit_value())
@@ -312,19 +327,19 @@ proc unmarshal_spec(rt: RuntimeState, p: var cstring): ValidationSpec =
 
 proc marshal_ffi_info(rt: RuntimeState, l: var seq[ZFfiInfo]): C4Str =
   list_marshal_helper(l):
-    toAdd.add(item.marshal_one_ffi_info_obj())
+    toAdd.add(rt.marshal_one_ffi_info_obj(item))
 
 proc unmarshal_ffi_info(rt: RuntimeState, p: var cstring): seq[ZffiInfo] =
   list_unmarshal_helper(p):
-    result.add(p.unmarshal_one_ffi_info_obj())
+    result.add(rt.unmarshal_one_ffi_info_obj(p))
 
 proc marshal_func_info(rt: RuntimeState, l: var seq[ZFnInfo]): C4Str =
   list_marshal_helper(l):
-    toAdd.add(item.marshal_one_func())
+    toAdd.add(rt.marshal_one_func(item))
 
 proc unmarshal_func_info(rt: RuntimeState, p: var cstring): seq[ZFnInfo] =
   list_unmarshal_helper(p):
-    result.add(p.unmarshal_one_func())
+    result.add(rt.unmarshal_one_func(p))
 
 proc marshal_modules(rt: RuntimeState, l: var seq[ZModuleInfo]): C4Str =
   list_marshal_helper(l):
@@ -472,7 +487,7 @@ proc unmarshal_section_docs(rt: RuntimeState, p: var cstring) =
         key       = p.unmarshal_nim_string()
         shortdoc  = p.rope_unmarshal(TRich, rt.memos)
         longdoc   = p.rope_unmarshal(TRich, rt.memos)
-        docs      = AttrDocs(shortdoc: shortdoc, longdoc: longdoc)
+        docs      = DocsContainer(shortdoc: shortdoc, longdoc: longdoc)
 
       rt.sectionDocs[key] = docs
       echo key

@@ -909,9 +909,8 @@ proc convertExternBlock(ctx: Module) =
     let k = ctx.pt.children[i]
     case k.kind
     of NodeDocString:
-      fn.doc1 = ctx.getText(i, 0)
-      if ctx.numKids(i) > 1:
-        fn.doc2 = ctx.getText(i, 1)
+      fn.shortdoc = ctx.pt.children[i].extractShortDoc()
+      fn.longdoc  = ctx.pt.children[i].extractLongDoc()
     of NodeExternLocal:
       if gotLocal:
         ctx.irError("DupeExtField", @["local"])
@@ -1028,12 +1027,15 @@ proc convertFuncDefinition(ctx: Module) =
   info.name = funcName
   ctx.handleFuncdefSymbols(info)
 
-  info.rawImpl = ctx.pt.children[^1]
+  info.rawImpl  = ctx.pt.children[^1]
+  info.shortdoc = ctx.pt.children[^1].extractShortDoc()
+  info.longdoc  = ctx.pt.children[^1].extractLongDoc()
 
   ctx.funcScope = info.fnScope
   ctx.findDeclarations(info.rawImpl)
   ctx.funcScope = nil
   info.lockFn()
+
 
   # Below, we also 'lift' this function into the global scope, unless
   # there is a global variable that currently conflicts.
@@ -2477,6 +2479,8 @@ proc parseTreeToIr(ctx: Module): IrNode =
   case ctx.pt.kind:
     of NodeModule, NodeBody:
       result = ctx.statementsToIr()
+      result.shortdoc = ctx.pt.extractShortDoc()
+      result.longdoc  = ctx.pt.extractLongDoc()
     of NodeIdentifier:
       result = ctx.convertIdentifier()
     of NodeExpression, NodeLiteral, NodeElseStmt, NodeParenExpr:

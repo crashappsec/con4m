@@ -173,10 +173,10 @@ proc base_compile(ctx: CompileCtx, entryname: string): bool =
       print(h1("Global CFG"))
       ctx.printProgramCfg()
 
-  return can_proceed
+  return ctx.printErrors()
 
 proc base_initial_compile*(ctx: CompileCtx): RuntimeState =
-  if not ctx.base_compile(config_args[0]) or not ctx.printErrors():
+  if not ctx.base_compile(config_args[0]) or not ctx.canProceed():
     return nil
 
   return ctx.generateInitialCodeObject()
@@ -216,6 +216,7 @@ proc cmd_compile*(ctx: CompileCtx) =
   var rt = ctx.base_initial_compile()
 
   if rt == nil or rt.obj == nil:
+    discard ctx.printErrors()
     quit(-1)
 
   if config_reentry_point == "":
@@ -232,7 +233,8 @@ proc cmd_run*(ctx: CompileCtx) =
   var
     rt = ctx.base_initial_compile()
 
-  if rt == nil or rt.obj == nil:
+
+  if rt == nil:
     quit(-1)
 
   var
@@ -271,6 +273,5 @@ proc cmd_run*(ctx: CompileCtx) =
 
     if config_reentry_point != entryname:
       print rt.get_next_entry_heap_info()
-
 
   quit(exitcode)

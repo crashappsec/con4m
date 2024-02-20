@@ -9,9 +9,10 @@
 ## :Author: John Viega (john@crashoverride.com)
 ## :Copyright: 2022 - 2024
 
-import std/os
-import "."/getopts
+import "std"/os
+import "."/[getopts, docsapi]
 import "commands"/[run, objdump, cmd_base]
+export docsapi
 
 const
   spec_file = joinPath(splitPath(currentSourcePath()).head,

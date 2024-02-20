@@ -78,18 +78,22 @@ proc set_user_param*(ctx: RuntimeState, mid: int, paramix: int,
   param.userType  = t
   param.userparam = value
 
-proc get_param_value*(ctx: RuntimeState, param: ZParamInfo): (pointer, TypeId) =
+proc get_param_name*(param: ZParamInfo, m: ZModuleInfo):
+                   string {.exportc, cdecl.} =
+  if param.attr != "":
+    return param.attr
+  else:
+    return m.datasyms[param.offset]
+
+
+proc get_param_value*(ctx: RuntimeState, param: ZParamInfo):
+                    (pointer, TypeId) {.exportc, cdecl.} =
   if param.userType != TBottom:
     return (param.userparam, param.userType)
 
   if param.haveDefault:
     return (param.default, param.tid)
 
-  var name: string
-
-  if param.attr != "":
-    name = param.attr
-  else:
-    name = ctx.curModule.datasyms[param.offset]
+  var name = param.get_param_name(ctx.curModule)
 
   ctx.runtimeError("ParamNotSet", @[name, ctx.curModule.modName])
