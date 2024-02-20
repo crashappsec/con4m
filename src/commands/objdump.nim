@@ -150,8 +150,8 @@ proc get_obj_ffi_info*(obj: ZObjectFile): Rope =
               "Param Info"]]
     for item in obj.ffiInfo:
       var
-        xname = findStringAt(obj.staticData, item.nameOffset)
-        lname = findStringAt(obj.staticData, item.localName)
+        xname = find_string_at(obj.staticData, item.nameOffset)
+        lname = find_string_at(obj.staticData, item.localName)
         vargs = if item.va: "✓" else: "✗"
         dlls: seq[string]
         pinf: seq[string] = @[]
@@ -160,7 +160,7 @@ proc get_obj_ffi_info*(obj: ZObjectFile): Rope =
         dlls = @["none required"]
       else:
         for ix in item.dlls:
-          dlls.add(findStringAt(obj.staticData, ix))
+          dlls.add(find_string_at(obj.staticData, ix))
 
       for i, ainfo in item.argInfo:
         var s = ""

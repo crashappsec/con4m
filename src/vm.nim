@@ -118,7 +118,7 @@ proc get_current_instruction*(ctx: RuntimeState):
                             ptr ZInstruction {.exportc, cdecl.} =
   return addr ctx.curModule.instructions[ctx.ip]
 
-proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
+proc get_stack_trace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
                                    "Call target"]]
 
@@ -152,7 +152,7 @@ proc getStackTrace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
   result.tpad(0, true).bpad(0, true)
 
 proc printStackTrace*(ctx: RuntimeState) =
-  print ctx.getStackTrace()
+  print ctx.get_stack_trace()
 
 proc bailHere(ctx: RuntimeState, errCode: string, extra: seq[string] = @[]) =
   var

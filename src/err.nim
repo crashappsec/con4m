@@ -681,7 +681,7 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       var one = table + container(errs[i].getVerboseInfo())
       result += one
 
-proc getStackTrace(ctx: RuntimeState): Rope {.importc, cdecl.}
+proc get_stack_trace*(ctx: RuntimeState): Rope {.importc, cdecl.}
 proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
 proc toString(x: TypeId): string {.importc, cdecl.}
 
@@ -691,7 +691,7 @@ proc location_from_instruction*(ctx: RuntimeState,
           int(ins.lineno))
 
 proc print_con4m_trace*(ctx: RuntimeState) {.exportc, cdecl.} =
-  print(ctx.getStackTrace(), file = stderr)
+  print(ctx.get_stack_trace(), file = stderr)
 
 proc formatLateError(err: string, severity: Con4mSeverity, location: string,
                      args: seq[string], verbose = true): Rope =
@@ -789,7 +789,7 @@ proc customValidationError*(ctx: RuntimeState, path: C4Str, usrmsg: C4Str,
   let
     asRope         = htmlStringToRope(usrmsg.toNimStr(), markdown = false,
                                       add_div = false)
-    cbName         = findStringAt(ctx.obj.staticData, cb.nameOffset)
+    cbName         = find_string_at(ctx.obj.staticData, cb.nameOffset)
     validator_info = text("Validation function: ") +
                      em(cbname & cb.tid.toString())
 
@@ -865,7 +865,7 @@ proc regularTerminationSignal(signal: cint) {.noconv.} =
   let rt = getCon4mRuntime()
 
   if rt != nil and rt.running:
-    print(getCon4mRuntime().getStackTrace(), file = stderr)
+    print(getCon4mRuntime().get_stack_trace(), file = stderr)
   else:
     print(h2(text("Program was ") + em("NOT") +
               text(" executing when we crashed.")))

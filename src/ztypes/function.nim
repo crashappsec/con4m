@@ -1,7 +1,7 @@
 import "."/base
 import ".."/err
 
-proc run_0c00l_vm(ctx: RuntimeState): int {.importc, cdecl.}
+proc run_0c00l_vm*(ctx: RuntimeState): int {.importc, cdecl.}
 
 template pushFrame*(ctx: RuntimeState, cm: ZModuleInfo, cl: int32,
                    tl: int32, tf: ZFnInfo, tm: ZModuleInfo) =

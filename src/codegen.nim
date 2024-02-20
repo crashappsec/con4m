@@ -149,7 +149,7 @@ proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
     case item.op
     of ZNop:
       if item.arg != 0:
-        var str = mem.findStringAt(item.immediate)
+        var str = mem.find_string_at(item.immediate)
 
         if str.len > 30:
           str = str[0 .. 14] & " … " & str[^14 .. ^1]
@@ -241,7 +241,7 @@ proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       lbl = text(tmp & " -> " & dstName)
     of ZPushStaticPtr:
       arg1 = text("+" & hex(item.arg))
-      lbl  = text(mem.findStringAt(item.arg))
+      lbl  = text(mem.find_string_at(item.arg))
     of ZPushRes:
       lbl = text("(ret) -> (stack)")
     of ZSetRes:
@@ -294,7 +294,7 @@ proc rawReprInstructions*(module: ZModuleInfo, ctx: ZObjectFile, fn = 0): Rope =
       ty = text(" ")
     of ZPushFfiPtr, ZPushVmPtr:
       arg1 = text(hex(item.arg))
-      arg2 = em(ctx.staticData.findStringAt(int(item.immediate)))
+      arg2 = em(ctx.staticData.find_string_at(int(item.immediate)))
     else:
       discard
 
