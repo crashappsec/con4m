@@ -9,10 +9,10 @@ proc get_parameter_info*(ctx: RuntimeState): seq[ZParamExport] =
         data = ZParamExport(modid:    int32(module.moduleId),
                             modname:  module.modname,
                             paramid:  int32(i),
+                            private:  param.private,
                             shortdoc: param.shortdoc,
                             longdoc:  param.longdoc,
                             tid:      param.tid)
-        default: pointer
 
       if param.attr != "":
         data.name = param.attr
@@ -43,6 +43,15 @@ proc get_parameter_info*(ctx: RuntimeState): seq[ZParamExport] =
         data.havedefault = true
         data.default     = param.default
 
+      elif param.iFnIx != -1:
+        if param.iNative:
+          ctx.z_ffi_call(cast[int](param.iFnIx))
+          data.default = ctx.returnRegister
+          data.tid     = cast[TypeId](ctx.rrType)
+        else:
+          data.default = ctx.foreign_z_call(cast[int](param.iFnIx))
+          data.tid     = cast[TypeId](ctx.rrType)
+
 proc get_current_instruction(ctx: RuntimeState):
                             ptr ZInstruction {.importc, cdecl.}
 
@@ -52,10 +61,10 @@ proc run_param_validator*(ctx: RuntimeState, p: ZParamInfo,
   if p.tid.tCopy().unify(t) == TBottom:
     return "Specified type for parameter was not compatable with the " &
            "stored type (" & t.toString() & ")"
-  if p.funcIx != -1:
-    var cb = ZCallback(impl: cast[pointer](int64(p.funcIx)))
+  if p.vFnIx != -1:
+    var cb = ZCallback(impl: cast[pointer](int64(p.vFnIx)))
 
-    if not p.native:
+    if not p.vNative:
       cb.ffi = true
 
     let s = ctx.run_callback_internal(addr cb, [(val, p.tid)])

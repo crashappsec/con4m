@@ -402,23 +402,29 @@ type
     shortdoc*:      string
     longdoc*:       string
     validatorIr*:   Option[IrNode]
+    initializeIr*:  Option[IrNode]
     defaultParse*:  Option[ParseNode]
     defaultIr*:     Option[IrNode]
-    backpatchLoc*:  int
+    private*:       bool
+    iPatchLoc*:     int
+    vPatchLoc*:     int
 
   ZParamInfo* = ref object
     ## What we stick in the obj file.
-    attr*:         string       # Either it's an attribute...
-    offset*:       int          # or in theerr current module.
-    default*:      pointer
-    tid*:          TypeId
-    haveDefault*:  bool
-    native*:       bool
-    funcIx*:       int32
-    userparam*:    pointer
-    userType*:     TypeId
-    shortdoc*:     string
-    longdoc*:      string
+    attr*:           string       # Either it's an attribute...
+    offset*:         int          # or in theerr current module.
+    default*:        pointer
+    tid*:            TypeId
+    haveDefault*:    bool
+    private*:        bool
+    vFnIx*:          int32
+    vNative*:        bool # Whether the validation fn is native.
+    iFnIx*:          int32
+    iNative*:        bool # Whether the validation fn is native.
+    userparam*:      pointer
+    userType*:       TypeId
+    shortdoc*:       string
+    longdoc*:        string
 
   ZParamExport* = ref object
     ## What we pass when asked what parameters need to be provided.
@@ -433,6 +439,7 @@ type
     modid*:       int32
     paramid*:     int32
     tid*:         TypeId
+    private*:     bool
     havedefault*: bool
     default*:     pointer
 
@@ -896,6 +903,9 @@ type
      # the top of the stack. The only way to lock immediately is
      # through a ZAssignAttr.
      ZLockOnWrite   = 0xb0,
+
+     # Print an error message and abort.
+     ZBail          = 0xee,
 
      # A no-op. These double as labels for disassembly too.
      ZNop           = 0xff

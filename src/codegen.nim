@@ -516,8 +516,8 @@ proc genContainerIndex(ctx: CodeGenState, sym: SymbolInfo = nil,
   else:
     ctx.genTCall(FIndex)
 
-proc genPushStaticString(ctx: CodeGenState, name: string) =
-  ctx.emitInstruction(ZPushStaticPtr, ctx.addStaticObject(name), tid = TString)
+proc genPushStaticString(ctx: CodeGenState, s: string) =
+  ctx.emitInstruction(ZPushStaticPtr, ctx.addStaticObject(s), tid = TString)
 
 proc genLoadAttr(ctx: CodeGenState, tid: TypeId, mode = 0) =
   ctx.emitInstruction(ZLoadFromAttr, tid = tid, arg = mode)
@@ -1234,73 +1234,115 @@ proc genFunction(ctx: CodeGenState, fn: FuncInfo) =
 
   ctx.mcur.objInfo.codesyms[zinfo.offset] = fullname
 
+# Returns true if native.
+proc backpatch_callback(ctx: CodeGenState, patchloc: int,
+                         node: IrNode): (int32, bool) =
+  ## m.instructions[offset] is ZPushVmPtr, which needs to be patched.
+  ## next one is ZRunCallback
+  var
+    m       = ctx.mcur
+    offset  = patchloc
+    cb      = cast[ptr Callback](node.value)
+    fnid:   int32
+    native: bool
+
+  if cb.impl.externInfo != nil:
+    # TODO Shouldn't the offset already be in cb.impl?
+    # Not sure we need to loop; just copying from above.
+    native = false
+
+    for i, item in ctx.zobj.ffiInfo:
+      let
+        p = cast[pointer](addr ctx.zobj.staticData[item.nameOffset])
+        s = $(cast[cstring](p))
+
+      if s == cb.impl.externName:
+        let to = cb.tid.idToTypeRef()
+        fnid                                    = int32(i)
+        m.objinfo.instructions[offset].arg      = fnid
+        m.objinfo.instructions[offset].typeInfo = to.items[^1]
+        break
+  else:
+    fnid                               = int32(cb.impl.internalId)
+    native                             = true
+    m.objinfo.instructions[offset].arg = fnid
+
+  offset += 1
+  m.objinfo.instructions[offset].typeInfo = cb.tid
+
+  return (fnid, native)
+
 proc stashParam(ctx: CodeGenState, m: Module, info: ParamInfo) =
 
   var zparam = ZParamInfo(shortdoc: info.shortdoc,
-                          longdoc:  info.longdoc)
-
+                          longdoc:  info.longdoc,
+                          private:  info.private)
   if info.sym.isAttr:
     zparam.attr   = info.sym.name
   else:
     zparam.offset = info.sym.offset
 
   if info.defaultIr.isSome():
-    # TODO: do I need to check if this is constant? Don't remember
+    # TODO: I think may need to ensure const?
     zparam.haveDefault = true
-    zparam.default = info.defaultIr.get().value
+    zparam.default     = info.defaultIr.get().value
 
   zparam.tid = info.sym.tid
 
+  if info.initializeIr.isSome():
+    var
+      offset         = info.iPatchLoc
+      litnode        = info.initializeIr.get()
+
+    (zparam.iFnIx, zparam.iNative) = ctx.backpatch_callback(offset, litnode)
+  else:
+    zparam.iFnIx = -1
+
   if info.validatorIr.isSome():
     var
-      offset  = info.backpatchLoc
-      ### m.instructions[offset] is ZPushVmPtr
-      ### next one is ZRunCallback
+      offset  = info.vPatchLoc
       litnode = info.validatorIr.get()
-      cb      = cast[ptr Callback](litnode.value)
 
-    if cb.impl.externInfo != nil:
-      # TODO Shouldn't the offset already be in cb.impl?
-      # Not sure we need to loop; just copying from above.
-      zparam.native = false
-      for i, item in ctx.zobj.ffiInfo:
-        let
-          p = cast[pointer](addr ctx.zobj.staticData[item.nameOffset])
-          s = $(cast[cstring](p))
-
-        if s == cb.impl.externName:
-          zparam.funcIx                           = int32(i)
-          m.objinfo.instructions[offset].arg      = zparam.funcIx
-          m.objinfo.instructions[offset].typeInfo = zparam.tid
-          break
-    else:
-      zparam.native = true
-      zparam.funcIx = int32(cb.impl.internalId)
-      m.objinfo.instructions[offset].arg = zparam.funcIx
-
-    offset += 1
-    m.objinfo.instructions[offset].typeInfo = cb.tid
-
+    (zparam.vFnIx, zparam.iNative) = ctx.backpatch_callback(offset, litnode)
   else:
-    zparam.funcIx = -1
-
+    zparam.vFnIx = -1
 
   m.objInfo.parameters.add(zparam)
 
-proc placeholdParamValidation(ctx: CodeGenState, m: Module, i: int) =
-   m.params[i].backpatchLoc = m.objInfo.instructions.len()
-   ctx.emitInstruction(ZPushVmPtr)
-   ctx.emitInstruction(ZRunCallback, arg = 1)
-   ctx.emitInstruction(ZMoveSp, -1)
-   ctx.emitInstruction(ZPushRes)
+proc emitBail(ctx: CodeGenState, msg: string) =
+  ctx.genPushStaticString(msg)
+  ctx.emitInstruction(ZBail)
 
 proc genParamChecks(ctx: CodeGenState, m: Module) =
   for i, param in m.params:
-    if param.validatorIr.isNone():
-      continue
-    ctx.genLoadSymbol(param.sym)
-    ctx.placeholdParamValidation(m, i)
-    ctx.emitInstruction(ZParamCheck, arg = i)
+    ctx.genPushTypeOf(param.sym)
+    let patchloc = m.objInfo.instructions.len()
+    ctx.startJnz()
+    ctx.emitBail("Parameter " & param.sym.name & " was not set when " &
+                 "entering module " & m.modname)
+    ctx.backpatch(patchloc)
+
+    if param.validatorIr.isSome():
+      ctx.genLoadSymbol(param.sym)
+      m.params[i].vPatchLoc = m.objInfo.instructions.len()
+      ctx.emitInstruction(ZPushVmPtr) # Will overwrite this later.
+      ctx.emitInstruction(ZRunCallback, arg = 1)
+      ctx.emitInstruction(ZMoveSp, -1)
+      ctx.emitInstruction(ZPushRes)
+      ctx.emitInstruction(ZParamCheck, arg = i)
+
+proc genInitializer(ctx: CodeGenState, p: ParamInfo) =
+  ctx.genPushTypeOf(p.sym)
+  let patchloc = ctx.mcur.objInfo.instructions.len()
+  ctx.startJnz()
+  # Not sure what kind of callback we're pushing yet.
+  # We'll come back to the next instruction we emit later.
+  p.iPatchloc = ctx.mcur.objInfo.instructions.len()
+  ctx.emitInstruction(ZPushVmPtr)
+  ctx.emitInstruction(ZRunCallback, arg = -1)
+  ctx.emitInstruction(ZPushRes)
+  ctx.genStore(p.sym)
+  ctx.backPatch(patchloc)
 
 proc genModule(ctx: CodeGenState, m: Module) =
   let curMod = ctx.minfo[m.key]
@@ -1315,6 +1357,10 @@ proc genModule(ctx: CodeGenState, m: Module) =
     curMod.longdoc = m.longdoc
 
   ctx.genLabel("Module '" & m.modname & "' :")
+  for param in m.params:
+    if param.initializeIr.isSome():
+      ctx.genInitializer(param)
+
   ctx.emitInstruction(ZModuleEnter, arg = m.params.len())
 
   if m.params.len() != 0:

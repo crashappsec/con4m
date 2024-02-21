@@ -2301,7 +2301,10 @@ proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
         va = true
         items.add(kid.children[0].buildType(tvars))
       elif kid.kind == NodeReturnType:
-        items.add(kid.children[0].buildType(tvars))
+        if kid.children.len() == 0:
+          items.add(tVar())
+        else:
+          items.add(kid.children[0].buildType(tvars))
       else:
         items.add(kid.buildType(tvars))
     return newFuncType(items, va).typeId

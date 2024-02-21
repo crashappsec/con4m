@@ -179,7 +179,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ctx.stack[ctx.sp] = cast[pointer](instr.immediate)
     of ZPushRes:
       ctx.sp -= 1
-      ctx.stack[ctx.sp] = cast[pointer](instr.typeInfo)
+      ctx.stack[ctx.sp] = cast[pointer](ctx.rrType)
       ctx.sp -= 1
       ctx.stack[ctx.sp] = ctx.returnRegister
     of ZSetRes:
@@ -710,7 +710,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
     of ZModuleRet:
       if ctx.numFrames <= 2:
-        return
+        return 0
       discard ctx.module_lock_stack.pop()
       leaveFrame()
     of ZFFICall:
@@ -770,6 +770,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ctx.tupleStash = cast[Con4mTuple](ctx.stack[ctx.sp])
       ctx.stashType  = ctx.stack[ctx.sp + 1]
       ctx.sp += 2
+
     of ZUnpack:
       let
         n  = instr.arg
@@ -792,6 +793,11 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
         address[]  = valaddr
         typeaddr[] = cast[pointer](itemType)
+
+    of ZBail:
+      let s = cast[cstring](ctx.stack[ctx.sp])
+      print(fgColor("error: ", "red") + text($s))
+      return -1
 
     ctx.ip += 1
 

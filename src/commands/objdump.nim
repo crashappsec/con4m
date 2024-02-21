@@ -22,8 +22,8 @@ proc get_basic_object_info*(obj: ZObjectFile): Rope =
 proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Rope =
   var cells: seq[seq[string]] = @[@["Attr or offset",
                                     "Type",
-                                    "Native func?",
-                                    "Function index", "Short Doc", "Long Doc"]]
+                                    "Native Validator?",
+                                    "Validator index", "Short Doc", "Long Doc"]]
   for item in params:
     var row: seq[string] = @[]
     if item.attr != "":
@@ -33,11 +33,11 @@ proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Rope =
       echo "offset = ", item.offset
       row.add($item.offset)
     row.add(item.tid.toString())
-    if item.native:
+    if item.vnative:
       row.add("✓")
     else:
       row.add("✗")
-    row.add($item.funcIx)
+    row.add($item.vfnIx)
     row.add(item.shortdoc & " ")
     row.add(item.longdoc & " ")
     cells.add(row)

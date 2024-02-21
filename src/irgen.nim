@@ -661,7 +661,7 @@ proc convertConstStmt(ctx: Module) =
 
 proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
   var
-    gotValid, gotDefault: bool
+    gotValid, gotDefault, gotInitialize, gotPrivate, isPrivate: bool
     paramInfo = ParamInfo(shortdoc: ctx.pt.extractShortDocPlain(),
                           longdoc:  ctx.pt.extractLongDocPlain())
 
@@ -672,6 +672,28 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
         continue
       let propname = ctx.getText(i, 0)
       case propname
+      of "initialize":
+        if gotDefault:
+          ctx.irError("DefaultMutex", @[], ctx.pt.children[i])
+        if gotInitialize:
+          ctx.irError("DupeParamProp", @["initialize"], ctx.pt.children[i])
+        let
+          irNode = ctx.downNode(i, 1)
+          to     = irNode.tid.idToTypeRef()
+
+        if to.kind != C4Func:
+          ctx.irError("ParamType", @["initializor", "callback"],
+                      ctx.pt.children[i])
+        elif to.items.len() != 0:
+          if to.items.len() != 1:
+            ctx.irError("InitArg", @[], ctx.pt.children[i])
+          else:
+            if unify(tFunc(@[sym.tid]), irNode.tid) == TBottom:
+              ctx.irError("InitArg", @[], ctx.pt.children[i])
+
+        paramInfo.initializeIr = some(irNode)
+        gotInitialize          = true
+
       of "validator":
         let
           irNode = ctx.downNode(i, 1)
@@ -682,7 +704,7 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
                       ctx.pt.children[i])
         elif to.items.len() != 0:
           if to.items.len() != 2:
-            ctx.irError("ParamValNArgs")
+            ctx.irError("ParamValNArgs", @[], ctx.pt.children[i])
           else:
             if unify(sym.tid, to.items[0]) == TBottom:
               ctx.irError("ParamValParTy", @[sym.tid.toString(),
@@ -694,7 +716,22 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
 
         paramInfo.validatorIr = some(irNode)
         gotValid              = true
+
+      of "private":
+        if gotPrivate:
+          ctx.irError("DupeParamProp", @["private"], ctx.pt.children[i])
+        else:
+          gotPrivate = true
+          let irNode = ctx.downNode(i, 1)
+          ctx.typeCheck(irNode.tid, TBool, where = irNode.parseNode)
+          if irNode.contents.kind != IrLit:
+            ctx.irError("LitRequired",
+                        @["<em>private</em> field for parameters", "bool"],
+                        ctx.pt.children[i])
+          isPrivate = cast[bool](irNode.value)
       of "default":
+        if gotInitialize:
+          ctx.irError("DefaultMutex", @[], ctx.pt.children[i])
         if gotDefault:
           ctx.irError("DupeParamProp", @["default"], ctx.pt.children[i])
           continue
@@ -706,8 +743,12 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
         ctx.irError("BadParamProp", @[propname], ctx.pt.children[i])
         continue
 
-  paramInfo.sym = sym
-  sym.pinfo     = paramInfo
+  paramInfo.private = isPrivate
+  paramInfo.sym     = sym
+  sym.pinfo         = paramInfo
+
+  if isPrivate and not gotDefault and not gotInitialize:
+    ctx.irError("CantInitialize")
 
   ctx.params.add(paramInfo)
 

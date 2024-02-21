@@ -1,3 +1,7 @@
+func value_provider() {
+  return 101
+}
+
 func example_checker(x) {
   result = ""
 
@@ -16,7 +20,7 @@ parameter var example1 {
 parameter var example2 {
   "This should be some documentation."
   "Also this."
-  default:  101
+  initialize:  func value_provider() 
   validator: func example_checker(int) -> string
 }
 
