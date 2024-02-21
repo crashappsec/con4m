@@ -1,10 +1,10 @@
 import std/uri, base
 
-proc repr_url(m: pointer): string {.cdecl.} =
-  return $(extractRef[Uri](m))
+proc repr_url(m: Uri): string {.cdecl.} =
+  return $(m)
 
-proc eq_url(a, b: pointer): bool {.cdecl.} =
-  return `$`(extractRef[Uri](a)) == `$`(extractRef[Uri](b))
+proc eq_url(a, b: Uri): bool {.cdecl.} =
+  return `$`(a) == `$`(b)
 
 proc new_url(s: string, st: SyntaxType, lmod: string,
              err: var string): pointer {.cdecl.} =

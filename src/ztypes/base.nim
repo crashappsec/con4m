@@ -184,14 +184,6 @@ let
   TBottom* = addDataType("none (type error)", true, @[])
   TVoid*   = addDataType("void", true, @[])
 
-proc newRefValue*[T](item: T, tid: TypeId): pointer
-
-proc extractRef*[T](item: pointer, decref = false): T =
-  let o = cast[RefValue[T]](item)
-  if decref:
-    GC_unref(o)
-  return o.item
-
 template newVTable*(): seq[pointer] =
   newSeq[pointer](int(FMax))
 
@@ -257,14 +249,6 @@ proc parseInt128*(s: string, res: var uint128, sign: var bool): int {.cdecl.} =
       return 4
     else:
       return 1
-
-proc box*[T](item: T, t: TypeId): pointer =
-  let info = getDataType(t)
-
-  if info == nil or not info.byValue:
-    return newRefValue[T](item, t)
-  else:
-    return cast[pointer](item)
 
 template getTid*(x: TypeId): TypeId =
   x.followForwards()
@@ -335,19 +319,6 @@ proc getNumFormals*(id: TypeId): int {.exportc, cdecl.} =
   let tr = typestore[id.followForwards()]
   # The last item is always the return type even if it's void.
   return tr.items.len() - 1
-
-
-proc newRefValue*[T](item: T, tid: TypeId): pointer =
-  var dt = tid.getDataType()
-
-  let o = RefValue[T](dtInfo: dt, item: item,
-                      fullType: tid.followForwards(), refCount: 1)
-
-
-  GC_ref(o)
-
-  return cast[pointer](o)
-
 
 proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
   let

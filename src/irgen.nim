@@ -1630,7 +1630,7 @@ proc convertTypeLit(ctx: Module): IrNode =
   result         = ctx.irNode(IrLit)
   result.tid     = tTypeSpec()
   tinfo          = ctx.pt.buildType(tvars)
-  result.value   = tinfo.newRefValue(TTSpec)
+  result.value   = cast[pointer](tinfo)
   result.haveVal = true
 
 proc convertListLit(ctx: Module): IrNode =

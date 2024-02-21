@@ -38,7 +38,7 @@ type
 
   DateTime* = ref DateTimeObj
 
-proc usWrittenDate(lit: string, res: var DateTime): bool =
+proc usWrittenDate(lit: string, res: DateTime): bool =
   var
     monthPart = ""
     dayPart   = ""
@@ -144,7 +144,7 @@ proc usWrittenDate(lit: string, res: var DateTime): bool =
 
   return true
 
-proc otherWrittenDate(lit: string, res: var DateTime): bool =
+proc otherWrittenDate(lit: string, res: DateTime): bool =
   var
     dayPart   = ""
     s         = lit
@@ -172,7 +172,7 @@ proc otherWrittenDate(lit: string, res: var DateTime): bool =
 
   return usWrittenDate(s[startix ..< ix] & " " & dayPart & s[ix .. ^1], res)
 
-proc isoDateTime(lit: string, res: var DateTime): bool =
+proc isoDateTime(lit: string, res: DateTime): bool =
   var
     s = lit
     m = 0
@@ -246,14 +246,14 @@ proc isoDateTime(lit: string, res: var DateTime): bool =
   res.flags = res.flags + { DTHaveMonth, DTHaveDay, DTHaveYear }
   return true
 
-proc otherLitToNativeDate*(lit: string, res: var DateTime): bool =
+proc otherLitToNativeDate*(lit: string, res: DateTime): bool =
   result = lit.isoDateTime(res)
   if not result:
     result = lit.usWrittenDate(res)
   if not result:
     result = lit.otherWrittenDate(res)
 
-proc otherLitToNativeTime*(lit: string, res: var DateTime): bool =
+proc otherLitToNativeTime*(lit: string, res: DateTime): bool =
   var
     hr, min, sec:   int
     s:              string = lit
@@ -377,7 +377,7 @@ proc otherLitToNativeTime*(lit: string, res: var DateTime): bool =
 
   return true
 
-proc otherLitToNativeDateTime*(lit: string, res: var DateTime): bool =
+proc otherLitToNativeDateTime*(lit: string, res: DateTime): bool =
   var
     ix0 = lit.find('T')
     ix1 = lit.find('t')
@@ -412,43 +412,29 @@ proc new_time(s: string, st: SyntaxType, lmod: string, err: var string):
                       pointer {.cdecl.}
 
 
-proc baseDtRepr(fmt: string, dt: var DateTime): string =
-  var buf = cast[cstring](alloc(128))
+proc baseDtRepr(fmt: string, dt: DateTime): C4Str =
+  result = newC4Str(128)
 
-  discard strftime(buf, 128, cstring(fmt), dt.dt)
+  discard strftime(cast[cstring](result), 128, cstring(fmt), dt.dt)
 
-  return $buf
-
-proc repr_date_time(m: pointer): string {.cdecl.} =
-  var dt = extractRef[DateTime](m)
+proc repr_date_time(dt: DateTime): C4Str {.cdecl.} =
   return baseDtRepr("%Y-%m-%dT%H:%M:%S", dt)
 
-proc repr_date(m: pointer): string {.cdecl.} =
-  var dt = extractRef[DateTime](m)
-
+proc repr_date(dt: DateTime): C4Str {.cdecl.} =
   return baseDtRepr("%Y-%m-%d", dt)
 
-proc repr_time(m: pointer): string {.cdecl.} =
-  var dt = extractRef[DateTime](m)
-
+proc repr_time(dt: DateTime): C4Str {.cdecl.} =
   return baseDtRepr("%H:%M:%S", dt)
 
-proc eq_dt(a, b: pointer): bool {.cdecl.} =
-  var
-    d1 = extractRef[DateTime](a)
-    d2 = extractRef[DateTime](b)
-
-  let r = memcmp(cast[pointer](d1.dt),
+proc eq_dt(d1, d2: DateTime): bool {.cdecl.} =
+  return memcmp(cast[pointer](d1.dt),
                  cast[pointer](d2.dt),
-                 csize_t(sizeof(Tm)))
-
-  return r == 0
+                 csize_t(sizeof(Tm))) == 0
 
 var
   dtOps = newVtable()
   dOps  = newVtable()
   tOps  = newVtable()
-
 
 proc new_date_time(s: string, st: SyntaxType, lmod: string, err: var string):
                   pointer =
@@ -498,8 +484,8 @@ tOps[FNewLit]  = cast[pointer](new_time)
 
 let
   TDateTime* = addDataType(name = "datetime", concrete = true, ops = dtOps)
-  TDate*     = addDataType(name = "date", concrete = true, ops = dOps)
-  TTime*     = addDataType(name = "time", concrete = true, ops = tOps)
+  TDate*     = addDataType(name = "date",     concrete = true, ops = dOps)
+  TTime*     = addDataType(name = "time",     concrete = true, ops = tOps)
 
 registerSyntax(TDateTime, STOther, @["dt"])
 registerSyntax(TDateTime, STStrQuotes, @["dt"])

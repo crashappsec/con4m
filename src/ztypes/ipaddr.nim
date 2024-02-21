@@ -12,7 +12,7 @@ var
 proc repr4(pre: pointer): string {.cdecl.} =
   # TODO: port as well.
   var
-    inaddr = extractRef[Ipv4](pre)
+    inaddr = cast[Ipv4](pre)
     mem:     cstring = cast[cstring](alloc(128))
     s      = inet_ntop(AF_INET, cast[pointer](addr inaddr), mem, 128)
 
@@ -21,7 +21,7 @@ proc repr4(pre: pointer): string {.cdecl.} =
 proc repr6(pre: pointer): string {.cdecl.} =
   # TODO: port as well.
   var
-    inaddr = extractRef[Ipv6](pre)
+    inaddr = cast[Ipv6](pre)
     mem:     cstring = cast[cstring](alloc(128))
     s      = inet_ntop(AF_INET6, cast[pointer](addr inaddr), mem, 128)
 
@@ -29,8 +29,8 @@ proc repr6(pre: pointer): string {.cdecl.} =
 
 proc ipv4_eq(a, b: pointer): bool {.cdecl.} =
   var
-    d1 = extractRef[Ipv4](a)
-    d2 = extractRef[Ipv4](b)
+    d1 = cast[Ipv4](a)
+    d2 = cast[Ipv4](b)
 
   let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Ipv4)))
 
@@ -38,8 +38,8 @@ proc ipv4_eq(a, b: pointer): bool {.cdecl.} =
 
 proc ipv6_eq(a, b: pointer): bool {.cdecl.} =
   var
-    d1 = extractRef[Ipv6](a)
-    d2 = extractRef[Ipv6](b)
+    d1 = cast[Ipv6](a)
+    d2 = cast[Ipv6](b)
 
   let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Ipv6)))
 

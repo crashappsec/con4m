@@ -5,21 +5,16 @@ type Duration* = ref Timeval
 
 var durOps = newVTable()
 
-proc repr_duration(pre: pointer): string {.cdecl.} =
+proc repr_duration(dur: Duration): string {.cdecl.} =
   # TODO: do better.
-  var dur = extractRef[Duration](pre)
-
   result = $(cast[int32](dur.tv_sec)) & " sec"
 
   if dur.tv_usec != 0:
     result &= " " & $(dur.tv_usec) & " usec"
 
-proc eq_duration(a, b: pointer): bool {.cdecl.} =
-  var
-    d1 = extractRef[Duration](a)
-    d2 = extractRef[Duration](b)
-
-  let r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Timeval)))
+proc eq_duration(d1, d2: Duration): bool {.cdecl.} =
+  let
+    r = memcmp(cast[pointer](d1), cast[pointer](d2), csize_t(sizeof(Timeval)))
 
   return r == 0
 
