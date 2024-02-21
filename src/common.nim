@@ -1218,8 +1218,6 @@ template debug*(s: string, s2: string, moreargs: varargs[string]) =
 
   debug(cells.quickTable(verticalHeaders = true))
 
-
-
 # The current runtime, so that builtin functions can access the state.
 # Was having a weird link error so moved this here.
 var
