@@ -12,10 +12,19 @@ proc validateParameter*(state: ConfigState, param: ParameterInfo):
       err    = unpack[string](boxOpt.get())
 
     if err != "":
-      return some(text(err))
+      return some(color("error: ", "red") + text(err))
 
   return none(Rope)
 
+
+proc setAndValidateParameter(state: ConfigState, param: ParameterInfo,
+                             value: Option[Box]): bool =
+  param.value = value
+  let err = state.validateParameter(param)
+  if err.isSome():
+    print(err.get())
+    return false
+  return true
 
 proc basicConfigureOneParam(state:     ConfigState,
                             component: ComponentInfo,
@@ -30,6 +39,23 @@ proc basicConfigureOneParam(state:     ConfigState,
     boxOpt = param.default
   elif param.defaultCb.isSome():
     boxOpt = state.sCall(param.defaultCb.get(), @[])
+
+  if not param.prompt:
+    if boxOpt.isNone():
+      print(atom("Non-prompting parameter ") + em(param.name) +
+            text(" does not define a default value either as literal or callback. ") +
+            text("Please manually provide value:"))
+      boxOpt = none(Box)
+    else:
+      if state.setAndValidateParameter(param, boxOpt):
+        return
+      else:
+        # if the default is invalid, even though its non-prompting param
+        # fallback to manual user input to allow to fix the value
+        print(color("error: ", "red") + text("Non-prompting parameter ") +
+              em(param.name) + text(" does not have valid default value. ") +
+              text("Please manually fix it:"))
+        boxOpt = none(Box)
 
   if boxOpt.isSome():
     default = h2(atom("Default is: ") +
@@ -65,14 +91,8 @@ proc basicConfigureOneParam(state:     ConfigState,
       let f = float(unpack[int](box))
       boxOpt = some(pack(f))
 
-    param.value = boxOpt
-
-    let err = state.validateParameter(param)
-
-    if err.isNone():
+    if state.setAndValidateParameter(param, boxOpt):
       break
-
-    print(err.get())
 
 proc basicConfigureParameters*(state:         ConfigState,
                                component:     ComponentInfo,

@@ -320,6 +320,7 @@ type
     defaultType*:   Con4mType
     defaultCb*:     Option[CallbackObj]
     value*:         Option[Box]
+    prompt*:        bool # wheter to prompt user for the value or use default only
 
 let
   # These are just shared instances for types that aren't

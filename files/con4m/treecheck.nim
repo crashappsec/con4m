@@ -1038,7 +1038,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # aren't going to be interpreted in the way they are in any other
     # part of a program.
     const
-      validParamProps = ["doc", "shortdoc", "validator", "default"]
+      validParamProps = ["doc", "shortdoc", "validator", "default", "prompt"]
     var
       foundProps: seq[string]
 
@@ -1078,6 +1078,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           if allowedCallbackType.unify(kid.children[1].typeInfo).isBottom():
             fatal("Callback must be a function that takes no arguments and " &
               "Returns a value of the proper type.")
+      of "prompt":
+        if kid.children[1].kind != NodeSimpLit or
+          boolType.unify(kid.children[1].typeInfo).isBottom():
+            fatal("Prompt must be a boolean")
       of "validator":
         let allowedValidatorType = "(`x) -> string".toCon4mType()
         if kid.children[1].kind != NodeCallbackLit or
@@ -1117,7 +1121,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
 
       s.waitingForTypeInfo = true
       var
-        paramObj = ParameterInfo(name: name, defaultType: newTypeVar())
+        paramObj = ParameterInfo(name: name, defaultType: newTypeVar(), prompt: true)
         assnNodes: seq[Con4mNode]
 
       if len(node.children) > 1:
@@ -1140,6 +1144,13 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           if paramobj.defaultType.unify(callback.tInfo.params[0]).isBottom():
             fatal2Type("Validator parameter does not match inferred type",
                        assignNode, paramObj.defaultType, callback.tInfo)
+        of "prompt":
+          let defType = assignNode.children[1].typeInfo
+          if defType.kind == TypeBool:
+            paramObj.prompt = unpack[bool](assignNode.children[1].value)
+          else:
+            fatal2Type("Prompt value needs to be a boolean",
+                       assignNode, paramObj.defaultType, defType)
         of "default":
           let defType = assignNode.children[1].typeInfo
 
