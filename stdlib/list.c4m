@@ -22,8 +22,7 @@ extern list_contains(l1: ptr, l2: ptr) -> bool {
 Returns true if, at the time checked, the value in the second parameter
 appears in the list.
 """
-  
+
   local: contains(l: list[`t], value: `t) -> bool
   pure: true
 }
-

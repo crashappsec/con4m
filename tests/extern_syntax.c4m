@@ -29,4 +29,3 @@ extern callecho2(a: ptr, b: ptr) -> ptr {
   holds: a
   allocs: b, return
 }
-

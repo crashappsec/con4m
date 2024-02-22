@@ -1,5 +1,5 @@
 extern con4m_repr(a: ptr) -> ptr {
-  "Generic implementation of repr()" 
+  "Generic implementation of repr()"
   local: repr(s: `x) -> string
   pure: true
 }

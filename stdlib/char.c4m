@@ -1,7 +1,7 @@
 extern char_rune_len(c: cint) -> cint {
 """
 Returns the number of bytes needed to encode this character in UTF8.
-"""  
+"""
   local: len(c: char) -> int
   pure: true
 }

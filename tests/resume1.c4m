@@ -3,10 +3,10 @@ confspec {
     field intval {
       type:    int
       default: 0
-    
+
     }
   }
-  
+
   root {
     allow: example
   }
