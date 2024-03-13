@@ -1115,6 +1115,16 @@ proc c4mLSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   return some(pack[seq[Box]](l))
 
+proc c4mDGetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  var
+    t    = unpack[OrderedTableRef[Box, Box]](args[0])
+    key  = args[1]
+
+  if key notin t:
+    return none(Box)
+
+  return some(t[key])
+
 proc c4mDSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   var
     t    = unpack[OrderedTableRef[Box, Box]](args[0])
@@ -2115,6 +2125,12 @@ This creates a new list, that is a copy of the original list, except that the in
 NO values in Con4m can be mutated. Everything copies.
 """,
    @["list"]),
+  ("get(dict[`k,`v],`k) -> `v",
+   BuiltInFn(c4mDGetItem),
+   """
+Returns a value in a dictionary
+""",
+   @["dict"]),
   ("set(dict[`k,`v],`k,`v) -> dict[`k,`v]",
    BuiltInFn(c4mDSetItem),
    """
