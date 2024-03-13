@@ -262,7 +262,8 @@ proc get_section_contents*(ctx: RuntimeState, key: string, oneLevel = true):
       if not oneLevel or item.find('.', key.len()) == -1:
         result.add(item)
 
-proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true):
+proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true,
+                      fullpath = false):
                     seq[string] =
   var path = path
 
@@ -276,9 +277,15 @@ proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true):
       let remainder = item[l .. ^1]
       if oneLevel:
         if "." notin remainder:
-          result.add(remainder)
+          if fullpath:
+            result.add(item)
+          else:
+            result.add(remainder)
       else:
-        result.add(remainder)
+        if fullpath:
+          result.add(item)
+        else:
+          result.add(remainder)
 
 proc get_all_keys*(ctx: RuntimeState): seq[string] =
   result = ctx.attrs.keys()
