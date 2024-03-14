@@ -25,7 +25,7 @@ arguments.
         }
 
         field arg_name {
-"Used only when printing `USAGE` in help."    
+"Used only when printing `USAGE` in help."
             type:    string
             default: "ARG"
             hidden:  true
@@ -37,7 +37,7 @@ When provided, the value of `command` will be set (as an override) to
 the con4m attribute named.
 
 The attribute provided must be of type `string`.
-"""  
+"""
             type:       string
             require:    false
             #validator:  func command_attribute_check
@@ -54,7 +54,7 @@ will be stored in the con4m attribute named, as an override.
 The attribute provided must be of type `dict[string, string]`
 
 All flag values are stored as strings if put into this dict.
-"""    
+"""
             type:       string
             require:    false
             #validator:  func flag_attribute_check
@@ -80,7 +80,7 @@ So here, the only thing with arguments is the sub-sub-command, so the
 resulting value will be:
 
 { "eks.add.container" : ["foo"] }
-"""    
+"""
             type:       string
             require:    false
             #validator:  func arg_attribute_check
@@ -121,12 +121,12 @@ replaced once resolved.
 Similarly, flag_attribute will be populated with the values from the
 first matching parse. You will not have access to other flag sets
 until the command is finalized.
-"""    
+"""
             type:       string
             require:    false
             lock:       true
             hidden:     true
-            # TODO: write a validator.    
+            # TODO: write a validator.
         }
 
         field default_yes_prefixes {
@@ -148,32 +148,32 @@ will get the following flags:
 --disable-recursion
 --recursion=[enable|disable]
 ```
-"""    
+"""
             type:       list[string]
             default:    []
             lock:       true
             hidden:     true
             #validator:  func global_yes_prefixes_check
         }
-    
+
         field default_no_prefixes {
 """
 Gives a list of prefixes to automatically add to yn flags, that will
 be assigned the boolean value 'true' when the flag is provided on the
 command line.
-"""    
+"""
             type:       list[string]
             default:    ["no"]
             lock:       true
             hidden:     true
-            #validator:  func global_no_prefixes_check    
+            #validator:  func global_no_prefixes_check
         }
 
         field show_doc_on_err {
 """
 If this is true, any error will cause the current parsed command's
 `help` message to be displayed, and the error command to be returned.
-"""    
+"""
             type:       bool
             default:    true
             lock:       true
@@ -184,7 +184,7 @@ If this is true, any error will cause the current parsed command's
     """
 When this is true, unrecognized flags will be passed through as
 arguments.
-"""    
+"""
             type:       bool
             default:    false
             lock:       true
@@ -198,7 +198,7 @@ When it's false, we treat it as: `-f -f -o -o`
 
 This is only checked for single-dash arguments where the flag is a
 single character, even if true.
-"""    
+"""
             type:    bool
             default: true
             lock:    true
@@ -221,7 +221,7 @@ but if you want to turn off colon support, you can.
 
 When you turn this on or off for a command, the value is automatically picked
 up by subcommands, unless you explicitly set it for them.
-"""    
+"""
             type:     bool
             default:  true
             hidden:   true
@@ -243,18 +243,18 @@ the last one above would not be allowed, even if space_ok is on.
 
 When you turn this on or off for a command, the value is automatically
 picked up by subcommands, unless you explicitly set it for them.
-"""    
+"""
             type:     bool
             default:  true
             hidden:   true
         }
-        
+
         field add_help_commands {
 """
 When true, all commands will have a default subcommand called `help`
 added, which will print out the doc string for the command, if
 provided, or a reasonable error message if not.
-"""    
+"""
             type:       bool
             default:    true
             lock:       true
@@ -273,7 +273,7 @@ Configuration for a flag that only takes a boolean yes/no value.
 A list of alternate flag-names that substitute for the `yes` value.
 These flags are *not* given yes/no prefixes. This is primarily
 intended to be used for single-character flags.
-"""    
+"""
             type:       list[string]
             default:    []
             lock:       true
@@ -285,7 +285,7 @@ intended to be used for single-character flags.
 A list of alternate flag-names that substitute for the `yes` value.
 These flags are *not* given yes/no prefixes. This is primarily
 intended to be used for single-character flags.
-"""    
+"""
             type:       list[string]
             default:    []
             lock:       true
@@ -296,25 +296,25 @@ intended to be used for single-character flags.
 """
 What prefixes to use for the `yes` value. See the global version of
 this field for more detail (that field provides the default).
-"""     
+"""
             type:       list[string]
-            # inherits the global property if not provided.                
-            require:    false    
+            # inherits the global property if not provided.
+            require:    false
             lock:       true
             hidden:     true
         }
-    
+
         field no_prefixes  {
 """
 What prefixes to use for the `no` value. See the global version of
 this field for more detail (that field provides the default).
-"""    
+"""
             type:       list[string]
-            require:    false    
+            require:    false
             lock:       true
             hidden:     true
         }
-        
+
         field callback  {
             type:       (bool) -> string
             require:    false
@@ -336,14 +336,14 @@ this field for more detail (that field provides the default).
         user_def_ok: false
 
         field names  {
-"Flags that should produce a help message."        
+"Flags that should produce a help message."
             type:        list[string]
             default:     ["help", "h"]
             lock:        true
             hidden:      true
         }
     }
-        
+
     named flag_choice {
         user_def_ok: false
 
@@ -435,7 +435,7 @@ Note that, even if this is not set, `--foo= --boz` will *not* treat
 
 Plenty of people do accidentally leave off the `=`, or are used to commands
 that allow the space, so we recommend leaving this off when possible.
-"""    
+"""
             type:        bool
             default:     false
             hidden:      true
@@ -445,7 +445,7 @@ that allow the space, so we recommend leaving this off when possible.
     named flag_multi_arg {
 """
 For flags that can take multiple arbitrary arguments.
-"""    
+"""
         user_def_ok: false
 
         field aliases  {
@@ -543,7 +543,7 @@ The minimum number of choices a user must provide when giving the flag.
 """
 The maximum number of choices a user may provide when giving the flag.
 """
-      
+
             type:        int
             default:     0xffffffffffffffff
             lock:        true
@@ -572,7 +572,7 @@ For instance, our program `chalk` has multiple commands, such as:
         allow: flag_arg, flag_multi_arg, command
 
         field aliases  {
-"A list of aliases for this command."        
+"A list of aliases for this command."
             type:        list[string]
             default:     []
             lock:        true
@@ -583,7 +583,7 @@ For instance, our program `chalk` has multiple commands, such as:
 """
 The range for the number of allowed arguments for this command.
 Defaults to `(0, 0)`.
-"""    
+"""
             type:       tuple[int, int]
             default:    (0, 0)
             #lock:       true
@@ -592,7 +592,7 @@ Defaults to `(0, 0)`.
         }
 
         field arg_name {
-"Used only when printing USAGE in help."        
+"Used only when printing USAGE in help."
             type:    string
             default: "ARG"
             hidden:  true
@@ -602,7 +602,7 @@ Defaults to `(0, 0)`.
 """
 This callback will run after all other validation callbacks, passing
 in the arguments specifically for this command.
-"""    
+"""
             type:       (list[string]) -> void
             require:    false
             lock:       true
@@ -624,7 +624,7 @@ Setting this to `false` can be useful in situations when you want to
 be more tolerant of errors, particularly for `help` commands. There,
 it may be worth doing the extra effort to check and give them some
 more detailed guidance than what con4m would automate.
-"""    
+"""
             type:       bool
             default:    true
             lock:       true
@@ -651,19 +651,19 @@ This means:
 1) `ignore_bad_flags` cannot be true.
 2) There cannot be defined sub-commands.
 3) You probably want to set args to `(0, 0xffffffff)`
-"""  
+"""
             type:       bool
             default:    false
             lock:       true
             hidden:     true
             #validator:  func no_flag_check
         }
-        
+
         field ignore_bad_flags {
 """
 When this is true, unrecognized flags will be passed through as
 arguments.
-"""    
+"""
             type:       bool
             require:    false
             lock:       true
@@ -677,11 +677,11 @@ When it's false, we treat it as: `-f -f -o -o`
 
 This is only checked for single-dash arguments where the flag is a
 single character, even if true.
-"""    
+"""
             type:    bool
             default: true
             lock:    true
-            hidden:  true    
+            hidden:  true
         }
 
         field colon_ok {
@@ -700,7 +700,7 @@ but if you want to turn off colon support, you can.
 
 When you turn this on or off for a command, the value is automatically picked
 up by subcommands, unless you explicitly set it for them.
-"""    
+"""
             type:     bool
             require:  false
             hidden:   true

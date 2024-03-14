@@ -3,4 +3,3 @@ shouldwork = "2 gb"'sz
 var shouldnt: duration
 
 shouldnt = "2 gb"'sz
-
