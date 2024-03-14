@@ -21,19 +21,20 @@ proc basicConfigureOneParam(state:     ConfigState,
                             component: ComponentInfo,
                             param:     ParameterInfo) =
   var
-    boxOpt:  Option[Box]
-    default = text("<<no default>>")
+    boxOpt     = none(Box)
+    defaultOpt = none(Box)
+    default    = text("<<no default>>")
 
   if param.value.isSome():
-    boxOpt = param.value
-  elif param.default.isSome():
-    boxOpt = param.default
+    boxOpt     = param.value
+  if param.default.isSome():
+    defaultOpt = param.default
   elif param.defaultCb.isSome():
-    boxOpt = state.sCall(param.defaultCb.get(), @[])
+    defaultOpt = state.sCall(param.defaultCb.get(), @[])
 
-  if boxOpt.isSome():
+  if defaultOpt.isSome():
     default = h2(atom("Default is: ") +
-                  fgColor(param.defaultType.oneArgToString(boxOpt.get()),
+                  fgColor(param.defaultType.oneArgToString(defaultOpt.get()),
                            c0Text))
   let
     short   = param.shortDoc.getOrElse("No description provided")
@@ -43,7 +44,7 @@ proc basicConfigureOneParam(state:     ConfigState,
            text(" -- ") + italic(short)) + markdown(long))
 
   while true:
-    if boxOpt.isSome():
+    if defaultOpt.isSome():
       print(default)
       print("Press [enter] to accept default, or enter a value: ",
             ensureNl = false)
@@ -52,12 +53,20 @@ proc basicConfigureOneParam(state:     ConfigState,
 
     let line = stdin.readLine()
 
-    if line != "":
+    # parse line input if either
+    # * non-empty  - user entered something
+    # * no default - there is no default and so empty string could be valid value
+    if line != "" or defaultOpt.isNone():
       try:
         boxOpt = some(line.parseConstLiteral(param.defaultType))
       except:
-        print (color("error: ", "red") + text(getCurrentExceptionMsg()))
+        print(color("error: ", "red") + text(getCurrentExceptionMsg()))
         continue
+    elif line == "" and defaultOpt.isSome():
+      boxOpt = defaultOpt
+
+    if boxOpt.isNone():
+      raise newException(ValueError, "Component is misconfigured")
 
     let box = boxOpt.get()
 
