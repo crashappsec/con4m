@@ -1,4 +1,4 @@
-import ".."/common
+import ".."/[common, find_string]
 import "."/cmd_base
 
 
