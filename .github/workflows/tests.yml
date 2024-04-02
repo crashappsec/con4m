@@ -20,12 +20,6 @@ jobs:
           - os: linux
             runs-on: ubuntu-22.04
             arch: x86_64
-          - os: macOS
-            runs-on: macos-12
-            arch: x86_64
-          - os: macOS
-            runs-on: macos-14
-            arch: arm64
 
     name: "${{ matrix.os }}-${{ matrix.arch }}"
     runs-on: ${{ matrix.runs-on }}
