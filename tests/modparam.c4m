@@ -20,7 +20,7 @@ parameter var example1 {
 parameter var example2 {
   "This should be some documentation."
   "Also this."
-  initialize:  func value_provider() 
+  initialize:  func value_provider()
   validator: func example_checker(int) -> string
 }
 

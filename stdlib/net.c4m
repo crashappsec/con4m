@@ -37,7 +37,7 @@ The `method` parameter is currently:
   local: fetch_url(url: string, method: int, body: string,
                    headers: dict[string, string], pinned_cert: string,
                    timeout: int) -> tuple[bool, string]
-  pure: false                   
+  pure: false
 }
 
 func url_get(s: string) -> string {
@@ -92,7 +92,7 @@ func url_post_pinned(s: string, body: string, headers: dict[string, string],
  """
 Same as `url_post()`, but takes a certificate file location in the final
 parameter, with which HTTPS connections must authenticate against.
-"""                
+"""
   (success, result) = fetch_url(s, 1, body, headers, cert, 5000)
 }
 

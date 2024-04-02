@@ -47,7 +47,7 @@ Returns `true` if an environment variable with the given name exists.
 }
 
 extern env_all() -> ptr {
-  "Returns a dictionary with the entire environment." 
+  "Returns a dictionary with the entire environment."
   local: env() -> dict[string, string]
   pure:  false
 }
@@ -70,7 +70,7 @@ used. Possible values: "macos", "linux", "windows", "netbsd",
 """
   local: osname() -> string
   pure: false
-  # once: true  
+  # once: true
 }
 
 extern con4m_arch() -> ptr {
@@ -84,7 +84,7 @@ X86, but Con4m is not built or tested against other environments.
 """
   local: arch() -> string
   pure: false
-  # once: true  
+  # once: true
 }
 
 extern con4m_get_argv() -> ptr {
@@ -94,7 +94,7 @@ the program name (see `program_name()` and `program_path()`)
 """
   local: program_args() -> list[string]
   pure:  false
-  # once: true  
+  # once: true
 }
 
 extern con4m_get_exe_path() -> ptr {
@@ -103,7 +103,7 @@ Returns the absolute path of the currently running program.
 """
   local: program_path() -> string
   pure:  false
-  # once: true  
+  # once: true
 }
 
 extern con4m_get_exe_name() -> ptr {
@@ -159,7 +159,7 @@ don't seem to be running in one.
 """
   local: container_name() -> string
   pure: false
-  # once: true  
+  # once: true
 }
 
 extern con4m_in_container() -> cu8 {
@@ -285,7 +285,7 @@ the path.
 """
   local: split_path(path: string) -> tuple[string, string]
   pure: true
-}  
+}
 
 extern con4m_resolve_path(ptr) -> ptr {
 """
@@ -355,7 +355,7 @@ Attempt to set the file permissions; returns `true` if successful.
 Takes a raw value; in C you'd set in Octal, but Con4m doesn't support
 Octal literals, so recommend hex.
 """
-  
+
   local: chmod(p: string, i: int) -> bool
   pure: false
 }
@@ -442,4 +442,3 @@ allowed.  Returns `true` if successful.
   local: rm_file(path: string) -> bool
   pure: false
 }
-

@@ -1,6 +1,6 @@
 confspec {
 
-  singleton test {  
+  singleton test {
     user_def_ok: true
 
     field max {
@@ -8,14 +8,14 @@ confspec {
       default: 0xffffffffffffffff
       lock: true
     }
-    
+
     field audit_id {
       type:   string
       default: "foo"
       range: "please", "fail"
     }
   }
-  
+
   named test2 {
     field audit_location {
       type:   string
@@ -26,7 +26,7 @@ confspec {
   root {
     allow: test
     allow: test2
-    
+
     field log_level {
      type:    string
      require: true
@@ -35,4 +35,3 @@ confspec {
     }
   }
 }
-

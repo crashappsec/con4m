@@ -10,7 +10,7 @@ confspec {
 getopts {
 
   "#### CON4M to our programming language"
-  
+
   """
 ## See `help [command]` for more details on individual commands.
 
@@ -22,7 +22,7 @@ getopts {
   arg_attribute:     "args"
   add_help_commands: false
   args: (0, 0)
-  
+
   flag_yn debug {
       "Debugging output on"
       "## Turn debugging on, which will show all intermediate phase output."
@@ -43,10 +43,10 @@ getopts {
 
   command run {
       " Run a con4m program, compiling if nessary."
-      
+
  """
  ## Compile and run a program.
- 
+
 The required argument, if pointing to a source file, will be the main
 entry point for the first execution. Dependent files are automatically
 pulled in.
@@ -140,7 +140,7 @@ of your new entrypoint.
 
   command check {
       "Parse and validate <em>con4m</em> code"
-      
+
 """
 ## Validate, but do not generate an object.
 
