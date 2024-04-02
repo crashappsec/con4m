@@ -6,7 +6,7 @@ Here is one of its two doc strings.
 
 extern callecho(a: ptr) -> cvoid {
   "This has some docs too."
-  
+
   local: print(x: string) -> void
   pure: false
 }
@@ -19,7 +19,7 @@ extern echoanint(a: cint) -> cvoid {
 func fib(x) {
   "Also doc'd."
   "And double doc'd."
-  
+
   switch x {
     case 0:
         return 0

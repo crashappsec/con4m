@@ -9,7 +9,7 @@ bodyItem ::= lockAttr | ifStmt | forStmt | whileStmt | typeOfStmt |
              varStmt | globalStmt | constStmt | labelStmt | useStmt
 
 body          ::= '{' docString? (bodyItem? EOS)* '}'
-optionalBody  ::= body | 
+optionalBody  ::= body |
 
 enumStmt     ::= "enum" enumItem (',' enumItem)* EOS
 enumItem     ::= ID (('=' | ':') expression)?
@@ -38,13 +38,13 @@ valueCaseCondition ::= expression ('to' expression)? (',' valueCaseCondition)?
 caseElseBlock      ::= 'else' (caseBody | body)
 
 caseBody           ::= ':' (bodyItem EOS)*
-                
+
 funcDef     ::= "func" ID formalList -> returnType body
 
 varArgsFormal ::= '*' ID
 formal        ::= ID (':' typeSpec)
 argList       ::= formal (', ' formal)* varArgsFormal?
-formalList    ::= '(' (varArgsFormal | argList | <empty> ) ')' 
+formalList    ::= '(' (varArgsFormal | argList | <empty> ) ')'
 
 varStmt     ::= "var" ("const")? varSymInfo EOS
 globalStmt  ::= "global" ("const")? varsymInfo EOS
@@ -81,7 +81,7 @@ fieldHidden      ::= 'hidden' ':' (BOOL | ID) EOS
 fieldRange       ::= 'range ':' (int | ID) ':' (int | ID) EOS
 fieldProps       ::= fieldType | fieldDefault | fieldRequire |
                      fieldChoice | fieldExclusions | fieldLock |
-                     fieldValidator | fieldHidden | fieldRange 
+                     fieldValidator | fieldHidden | fieldRange
 fieldSpec        ::= 'field' ID '{' docString (fieldProps)* '}'
 allow            ::= 'allow' ':' ID (',' ID) EOS
 secRequire       ::= 'require' ':' ID (', ID) EOS
@@ -116,7 +116,7 @@ typespec ::= typeVariable | funcType | objectType | listType | dictType |
              builtinType
 funcType ::= '(' typeSpec? (',' typeSpec)* (',' '*' typeSpec)? ')' returnType |
              '(' '*' typeSpec ')' returnType
-             
+
 returnType   ::= ('->' typeSpec)?
 objectType   ::= "struct" '[' (ID | typeVariable) ']'
 typeTypeSpec ::= "typespec" ('[' typeVariable ']')?
@@ -162,13 +162,13 @@ shlExprRHS    ::= exprStart (shlExpr)*
 notExpr       ::= 'not' expression
 
 expressionStart ::= literal | accessExpr
-                
+
 literal ::= (INT | HEX | FLOAT | STR | CHR | BOOL | bracketLit | tupleLit |
             dictLit) litmod? | OTHERLIT | callbackLit | typeSpec | 'nil'
-               
+
 bracketLit     ::= '[' (expression (',' expression)*)? ']'
 tupleLit       ::= '(' expression (',' expression)+ ')'
-dictLit        ::= '{' (kvPair (',' kvPair)* )? 
+dictLit        ::= '{' (kvPair (',' kvPair)* )?
 kvPair         ::= expression ':' expression
 litMod         ::= '\'' ID   # No space allowed
 callbackLit    ::= 'func' ID typeSpec?
@@ -239,5 +239,3 @@ This gives a string vs. date type error. `:=` is the thing that says,
 
 The lexer actually does the conversion, adding an assignment token and the
 `OTHERLIT` token (which maybe we should change to be more descriptive?)
-
-

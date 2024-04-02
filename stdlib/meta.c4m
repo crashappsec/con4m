@@ -52,14 +52,14 @@ It can only be called until the spec is `locked` at which point, it
 will always return false.
 """
 
-  local: add_override(s: string, v: `t) -> bool 
+  local: add_override(s: string, v: `t) -> bool
   pure: false
 }
 
 extern con4m_attr_type(ptr) -> ptr {
 """
 This returns the type associated with the attribute name passed.
-"""  
+"""
   local: attr_type(s: string) -> typespec
   pure: false
 }
