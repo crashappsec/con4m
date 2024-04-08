@@ -1,5 +1,5 @@
 import std/[re, algorithm]
-import "."/compile
+import "."/[compile, vm]
 
 template error(msg: Rope) =
   print(fgcolor("error: ", "red") + msg, file = stderr)

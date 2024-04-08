@@ -204,8 +204,6 @@ proc run_callback_internal*(ctx: RuntimeState, cb: ptr ZCallback,
   else:
     return ctx.foreign_z_call(cast[int](cb.impl))
 
-proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
-
 proc baseunify(id1, id2: TypeId): TypeId {.importc, cdecl.}
 
 proc run_callback*(ctx:  RuntimeState,

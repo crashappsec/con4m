@@ -1,5 +1,5 @@
 import "std"/terminal
-import ".."/common
+import ".."/[common, find_string]
 import "."/[messages, backtrace]
 
 proc lookupMsg(code: string): string =
@@ -115,7 +115,6 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       var one = table + container(errs[i].getVerboseInfo())
       result += one
 
-proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
 proc toString(x: TypeId): string {.importc, cdecl.}
 
 proc location_from_instruction*(ctx: RuntimeState,

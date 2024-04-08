@@ -18,7 +18,7 @@
 # defer typing things at the top-level; this will be a subtlety we
 # deal with when we get to doing the REPL.
 
-import "."/[irgen, compile]
+import "."/[irgen, compile, find_string]
 import ztypes/api
 
 proc findAndLoadModule(ctx: CompileCtx, location, fname, ext: string):
@@ -107,11 +107,6 @@ proc emitInstruction(ctx: CodeGenState, op: ZOp, arg: int = 0,
                          immediate: immediate, lineNo: ctx.getLocation(),
                          typeInfo: tid.getTid())
   ctx.mcur.objInfo.instructions.add(ins)
-
-proc find_string_at*(mem: string, offset: int): string {.exportc, cdecl.} =
-  let endIx = mem.find('\0', offset)
-
-  return mem[offset ..< endIx]
 
 proc hex(x: int, minlen = 2): string =
   let bitlen = int(64 - clzll(cast[uint](x)))
