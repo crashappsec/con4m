@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - jtv/v2
       - main
   pull_request:
   workflow_dispatch:
