@@ -1,8 +1,8 @@
 import std/[re, algorithm]
 import "."/compile
 
-template error(msg: Rope) =
-  print(fgcolor("error: ", "red") + msg, file = stderr)
+template error(msg: Rich) =
+  print_err(fgcolor("error: ", "red") + msg)
   if not thisOneFailed:
     fails += 1
     thisOneFailed = true
@@ -10,7 +10,7 @@ template error(msg: Rope) =
 template error(msg: string) =
   error(text(msg))
 
-template printIfVerbose(r: Rope) =
+template printIfVerbose(r: Rich) =
   if verbose:
     print(r)
 
@@ -78,9 +78,15 @@ proc runInitialTests(verbose = true) =
       if katCodes.join("\n") != errcodes.join("\n"):
         error("Expected error codes did not match found error codes.")
         print h3("Expected codes:")
-        print(ol(katcodes))
+        var toPrint: seq[Grid]
+        for item in katcodes:
+          toPrint.add(cell(c4str(item)))
+        print(ol(toPrint))
+        toPrint = @[]
+        for item in errcodes:
+          toPrint.add(cell(c4str(item)))
         print h3("Acutal codes:")
-        print(ol(errcodes))
+        print(ol(toPrint))
         print h3("Full error output:")
         echo errout
       if expectSuccess and excode != 0:
@@ -97,7 +103,7 @@ proc runInitialTests(verbose = true) =
   quit(fails)
 
 when isMainModule:
-  useCrashTheme()
+  install_default_styles()
   var initialTests: bool = true
 
   for item in commandLineParams():

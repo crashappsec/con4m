@@ -532,17 +532,17 @@ proc xor_u64(a: pointer, b: pointer): pointer {.cdecl.} =
 
   result = cast[pointer](l xor r)
 
-proc bool_repr(n: pointer): C4Str {.cdecl.} =
-  return newC4Str($(cast[bool](n)))
+proc bool_repr(n: pointer): Rich {.cdecl.} =
+  return newRich($(cast[bool](n)))
 
-proc signed_int_repr(n: pointer): C4Str {.cdecl.} =
-  return newC4Str($(cast[int64](n)))
+proc signed_int_repr(n: pointer): Rich {.cdecl.} =
+  return newRich($(cast[int64](n)))
 
-proc unsigned_int_repr(n: pointer): C4Str {.cdecl.} =
-  return newC4Str($(cast[uint64](n)))
+proc unsigned_int_repr(n: pointer): Rich {.cdecl.} =
+  return newRich($(cast[uint64](n)))
 
-proc char_repr(n: pointer): C4Str {.cdecl.} =
-  return newC4Str($(cast[Rune](n)))
+proc char_repr(n: pointer): Rich {.cdecl.} =
+  return newRich($(cast[Rune](n)))
 
 proc parseHex128(s: string, res: var uint128): int {.cdecl.} =
   var
@@ -578,7 +578,6 @@ proc parseHex128(s: string, res: var uint128): int {.cdecl.} =
   if res > high(uint16):
     return 4
   return 1
-
 
 proc construct_int(s: string, st: SyntaxType, err: var string, width: int,
                     sign: var bool): pointer {.cdecl.} =

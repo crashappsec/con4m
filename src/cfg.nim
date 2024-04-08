@@ -7,8 +7,10 @@
 # non-fatal ones; meaning, we might be willing to compile and run the
 # code anyway.
 
-import "."/fold
-export fold
+#import "."/fold
+#export fold
+import "."/irgen
+export irgen
 
 proc addUse(ctx: Module, sym: SymbolInfo, n: IrNode, bb: CfgNode) =
   if sym == nil or sym.immutable or sym in bb.defAtStart or
@@ -135,9 +137,9 @@ proc handleOneNode(ctx: CompileCtx, m: Module, n: IrNode,
         continue
       if item.contents.kind notin [IrBlock, IrSection]:
         result.stmts.add(item)
-      if item.tid.getTid() notin [TVoid, TBottom]:
+      if item.tid.getTid() notin [tspec_void(), tspec_error()]:
         if item.contents.kind != IrAssign:
-          if not item.tid.isTVar():
+          if not item.tid.isTypeVar():
             # Right now, function calls will not always have been
             # resolved when this check is run. CFG needs to be redone.
             m.irWarn("ExprResult", item, @[item.tid.toString()])
@@ -637,140 +639,141 @@ proc prepGraph(n: CfgNode, i: var int, fns: var seq[FuncInfo],
 
   n.nextBlock.prepGraph(i, fns, mods)
 
-proc fmtCfgLoc(n: ParseNode, m: ParseNode = nil): Rope =
-  if m == nil:
-    return text(" (line " & $(n.token.lineNo) & ") ")
-  else:
-    return text(" (lines " & $(n.token.lineNo) & " - " &
-                           $(m.token.lineNo) & ") ")
+# proc fmtCfgLoc(n: ParseNode, m: ParseNode = nil): Rich =
+#   if m == nil:
+#     return text(" (line " & $(n.token.lineNo) & ") ")
+#   else:
+#     return text(" (lines " & $(n.token.lineNo) & " - " &
+#                            $(m.token.lineNo) & ") ")
 
-proc cfgRopeWalk(cur: CfgNode): (Rope, seq[CfgNode]) =
-  var
-    r: Rope = em($(cur.nodeId)) + text(" ")
-    kids: seq[CfgNode]
+# proc cfgRopeWalk(cur: CfgNode): (Rich, seq[CfgNode]) =
+#   var
+#     r: Rope = em($(cur.nodeId)) + text(" ")
+#     kids: seq[CfgNode]
 
-  if cur.exitType == CFXStart:
-    r    = em("Root")
-    kids = @[cur.nextBlock, cur.nextBlock.exitNode]
-    return (r, kids)
+#   if cur.exitType == CFXStart:
+#     r    = em("Root")
+#     kids = @[cur.nextBlock, cur.nextBlock.exitNode]
+#     return (r, kids)
 
-  if cur.loopIrNode != nil:
-    r += fgColor("Loop", "atomiclime")
+#   if cur.loopIrNode != nil:
+#     r += fgColor("Loop", "atomiclime")
 
-    if cur.loopIrNode.contents.label != nil:
-      r += text(" ") + strong(cur.loopIrNode.contents.label.getText()) +
-           text(" ")
-    r += cur.loopIrNode.parseNode.fmtCfgLoc()
-  elif cur.label != "":
-    r += fgColor(cur.label, "atomiclime")
-  elif cur.exitNode != nil:
-    if cur.post.len() == 2:
-      r += fgColor("If", "atomiclime")
-    else:
-      r += fgColor("Start", "atomiclime")
-  elif cur.startNode != nil:
-    if cur.startNode.post.len() <= 1:
-      r += fgColor("End", "atomiclime")
-    else:
-      r += fgColor("Join", "atomiclime")
-  else:
-    r += fgColor("Code",  "atomiclime")
-    case cur.stmts.len()
-    of 0:
-      if cur.irNode != nil:
-        r += cur.irNode.parseNode.fmtCfgLoc()
-    of 1:
-      r += cur.stmts[0].parseNode.fmtCfgLoc()
-    else:
-      let
-        firstNode = cur.stmts[0].parseNode
-        lastNode  = cur.stmts[^1].parseNode
-      r += fmtCfgLoc(firstNode, lastNode)
+#     if cur.loopIrNode.contents.label != nil:
+#       r += text(" ") + strong(cur.loopIrNode.contents.label.getText()) +
+#            text(" ")
+#     r += cur.loopIrNode.parseNode.fmtCfgLoc()
+#   elif cur.label != "":
+#     r += fgColor(cur.label, "atomiclime")
+#   elif cur.exitNode != nil:
+#     if cur.post.len() == 2:
+#       r += fgColor("If", "atomiclime")
+#     else:
+#       r += fgColor("Start", "atomiclime")
+#   elif cur.startNode != nil:
+#     if cur.startNode.post.len() <= 1:
+#       r += fgColor("End", "atomiclime")
+#     else:
+#       r += fgColor("Join", "atomiclime")
+#   else:
+#     r += fgColor("Code",  "atomiclime")
+#     case cur.stmts.len()
+#     of 0:
+#       if cur.irNode != nil:
+#         r += cur.irNode.parseNode.fmtCfgLoc()
+#     of 1:
+#       r += cur.stmts[0].parseNode.fmtCfgLoc()
+#     else:
+#       let
+#         firstNode = cur.stmts[0].parseNode
+#         lastNode  = cur.stmts[^1].parseNode
+#       r += fmtCfgLoc(firstNode, lastNode)
 
-  case cur.exitType
-  of CfxUse:
-    let module = cur.irNode.parseNode.children[0].getText()
-    r += fgcolor("-> runs: " & module, "atomiclime")
-  of CfxCall:
-    let fname = cur.irNode.contents.toCall.name
-    r += fgcolor("-> calls: " & fname, "atomiclime")
-  of CfxBreak:
-    r += fgcolor("-> breaks to #" & $(cur.post[0].nodeId), "atomiclime")
-  of CfxContinue:
-    r += fgcolor("-> continues to #" & $(cur.post[0].nodeId), "atomiclime")
-  of CfxReturn:
-    r += fgcolor("-> exit to #" & $(cur.post[0].nodeId), "atomiclime")
-  else:
-    if cur.post.len() == 1 and cur.post[0] != cur.nextBlock:
-      r += fgcolor("-> #" & $(cur.post[0].nodeId), "atomiclime")
+#   case cur.exitType
+#   of CfxUse:
+#     let module = cur.irNode.parseNode.children[0].getText()
+#     r += fgcolor("-> runs: " & module, "atomiclime")
+#   of CfxCall:
+#     let fname = cur.irNode.contents.toCall.name
+#     r += fgcolor("-> calls: " & fname, "atomiclime")
+#   of CfxBreak:
+#     r += fgcolor("-> breaks to #" & $(cur.post[0].nodeId), "atomiclime")
+#   of CfxContinue:
+#     r += fgcolor("-> continues to #" & $(cur.post[0].nodeId), "atomiclime")
+#   of CfxReturn:
+#     r += fgcolor("-> exit to #" & $(cur.post[0].nodeId), "atomiclime")
+#   else:
+#     if cur.post.len() == 1 and cur.post[0] != cur.nextBlock:
+#       r += fgcolor("-> #" & $(cur.post[0].nodeId), "atomiclime")
 
-  if cur.startNode != nil:
-    r = fgColor("↑" & $(cur.startNode.nodeId) & " ", "fandango") + r
+#   if cur.startNode != nil:
+#     r = fgColor("↑" & $(cur.startNode.nodeId) & " ", "fandango") + r
 
-  elif cur.exitNode != nil:
-    r = fgColor("↓" & $(cur.exitNode.nodeId) & " ", "fandango") + r
+#   elif cur.exitNode != nil:
+#     r = fgColor("↓" & $(cur.exitNode.nodeId) & " ", "fandango") + r
 
-    if cur.post.len() > 1:
-      kids.add(cur.post)
-    else:
-      kids = cur.getSeqDisplayKids()
+#     if cur.post.len() > 1:
+#       kids.add(cur.post)
+#     else:
+#       kids = cur.getSeqDisplayKids()
 
-  let innum  = $cur.defAtStart.len()
-  let outnum = $(cur.defAtStart.len() + cur.defInBlock.len())
-  r = r + text(" in: " & innum & "; out: "  & outnum)
-  return (r, kids)
+#   let innum  = $cur.defAtStart.len()
+#   let outnum = $(cur.defAtStart.len() + cur.defInBlock.len())
+#   r = r + text(" in: " & innum & "; out: "  & outnum)
+#   return (r, kids)
 
-proc toRope*(n: CfgNode, isModule: bool, inclCalls = true): Rope =
-  var
-    lastNum = 0
-    fns:   seq[FuncInfo]
-    mods:  seq[Module]
-    mouts: seq[Rope]
-    fouts: seq[Rope]
-    main:  Rope
-    dummy = CfgNode(exitType: CfxStart, nextBlock: n, post: @[n])
-    mname: string
-    i: int
+proc toRich*(n: CfgNode, isModule: bool, inclCalls = true): Rich =
+  return rich"CFG outputting temporarily unavailable."
+  # var
+  #   lastNum = 0
+  #   fns:   seq[FuncInfo]
+  #   mods:  seq[Module]
+  #   mouts: seq[Rope]
+  #   fouts: seq[Rope]
+  #   main:  Rope
+  #   dummy = CfgNode(exitType: CfxStart, nextBlock: n, post: @[n])
+  #   mname: string
+  #   i: int
 
-  n.label          = "Enter"
-  n.exitNode.label = "Exit"
-  prepGraph(n, lastnum, fns, mods)
-  main = dummy.quickTree(cfgRopeWalk)
+  # n.label          = "Enter"
+  # n.exitNode.label = "Exit"
+  # prepGraph(n, lastnum, fns, mods)
+  # main = dummy.quickTree(cfgRopeWalk)
 
-  while i < mods.len():
-    let module = mods[i]
-    i += 1
-    prepGraph(module.cfg, lastnum, fns, mods)
-    prepGraph(module.exitNode, lastnum, fns, mods)
-    dummy = CfgNode(exitType: CfxStart, nextBlock: module.cfg,
-                    post: @[module.cfg])
-    mouts.add(dummy.quickTree(cfgRopeWalk))
+  # while i < mods.len():
+  #   let module = mods[i]
+  #   i += 1
+  #   prepGraph(module.cfg, lastnum, fns, mods)
+  #   prepGraph(module.exitNode, lastnum, fns, mods)
+  #   dummy = CfgNode(exitType: CfxStart, nextBlock: module.cfg,
+  #                   post: @[module.cfg])
+  #   mouts.add(dummy.quickTree(cfgRopeWalk))
 
-  i = 0
-  while i < fns.len():
-    let fn = fns[i]
-    i += 1
-    prepGraph(fn.cfg, lastnum, fns, mods)
-    prepGraph(fn.exitNode, lastnum, fns, mods)
-    dummy = CfgNode(exitType: CfxStart, nextBlock: fn.cfg, post: @[fn.cfg])
-    fouts.add(dummy.quickTree(cfgRopeWalk))
+  # i = 0
+  # while i < fns.len():
+  #   let fn = fns[i]
+  #   i += 1
+  #   prepGraph(fn.cfg, lastnum, fns, mods)
+  #   prepGraph(fn.exitNode, lastnum, fns, mods)
+  #   dummy = CfgNode(exitType: CfxStart, nextBlock: fn.cfg, post: @[fn.cfg])
+  #   fouts.add(dummy.quickTree(cfgRopeWalk))
 
-  if mouts.len() != 0 or fouts.len() != 0:
-    result = h2("Entry point:")
+  # if mouts.len() != 0 or fouts.len() != 0:
+  #   result = h2("Entry point:")
 
-  result += main
+  # result += main
 
-  for i, mo in mouts:
-    let m = mods[i]
-    if m.where.len() != 0:
-      mname = m.modname & " (from: " & m.where & ")"
-    else:
-      mname = m.modname
+  # for i, mo in mouts:
+  #   let m = mods[i]
+  #   if m.where.len() != 0:
+  #     mname = m.modname & " (from: " & m.where & ")"
+  #   else:
+  #     mname = m.modname
 
-    result += h2("Module: " & mname)
-    result += mo
+  #   result += h2("Module: " & mname)
+  #   result += mo
 
-  for i, fo in fouts:
-    let f = fns[i]
-    result += h3("Function: " & f.name & f.tid.toString())
-    result += fo
+  # for i, fo in fouts:
+  #   let f = fns[i]
+  #   result += h3("Function: " & f.name & f.tid.toString())
+  #   result += fo

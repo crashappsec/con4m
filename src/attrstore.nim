@@ -1,8 +1,6 @@
-import std/algorithm
-import ztypes/api
-export api
+import std/algorithm, common
 
-proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
+proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeSpec,
           lock = false, override = false, internal = false, wlock = false):
             bool {.cdecl, exportc.}
 
@@ -18,7 +16,7 @@ proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
 
   for (fname, fspec) in sec.fields.items():
     if fspec.haveDefault:
-      attrToSet = prefix & fname
+      attrToSet = prefix & fname.toNimStr()
       discard ctx.set(attrToSet, fspec.defaultVal, fspec.tid,
                       fspec.lockOnWrite, internal = true)
 
@@ -27,14 +25,13 @@ proc applyOneSectionSpecDefaults*(ctx: RuntimeState, prefix: string,
       newSecOpt = ctx.obj.spec.secSpecs.lookup(secName)
 
     if newSecOpt.isNone():
-      print(fgColor("error: ", "red") +
-            text("No specification provided for section ") +
-            em(secName))
+      print(r("[red]error: [/]No specification provided for section [i]" &
+        secName.toNimStr()))
       continue
 
     let newSec = newSecOpt.get()
     if newSec.maxAllowed <= 1:
-      ctx.applyOneSectionSpecDefaults(prefix & secName, newSec)
+      ctx.applyOneSectionSpecDefaults(prefix & secName.toNimStr(), newSec)
 
 proc populateDefaults(ctx: RuntimeState, key: string) =
   # Chop off the field.
@@ -46,16 +43,16 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
     start = -1
 
   for i in 0 .. l:
-    if ctx.allSections.lookup(cur).isNone():
+    if ctx.allSections.lookup(r(cur)).isNone():
       start = i
       base  = cur
-      ctx.allSections[cur] = true
+      ctx.allSections[r(cur)] = true
       for n in i ..< l:
         if i == 0:
           cur = parts[i]
         else:
           cur &= "." & parts[i]
-        ctx.allSections[cur] = true
+        ctx.allSections[r(cur)] = true
       break
     if i == 0 and i != l:
       cur = parts[0]
@@ -84,7 +81,7 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
     #if ctx.obj.spec.secSpecs == nil:
     #  return
 
-    let secOpt = ctx.obj.spec.secSpecs.lookup(cur)
+    let secOpt = ctx.obj.spec.secSpecs.lookup(r(cur))
     if secOpt.isNone():
       return
 
@@ -123,7 +120,7 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
 
     let
       cur    = parts[i]
-      secOpt = ctx.obj.spec.secSpecs.lookup(cur)
+      secOpt = ctx.obj.spec.secSpecs.lookup(r(cur))
     if secOpt.isNone():
       return
 
@@ -138,7 +135,7 @@ proc populateDefaults(ctx: RuntimeState, key: string) =
 
 proc print_attributes*(ctx: RuntimeState)
 
-proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
+proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeSpec,
           lock = false, override = false, internal = false, wlock = false):
             bool {.cdecl, exportc.} =
   # We will create a new entry on every write, just to avoid any race
@@ -153,7 +150,7 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
 
   var
     newInfo = AttrContents(contents: value, tid: tid, isSet: true)
-    curOpt  = ctx.attrs.lookup(key)
+    curOpt  = ctx.attrs.lookup(r(key))
     curInfo: AttrContents = nil
 
   GC_ref(newInfo)
@@ -169,7 +166,7 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
        (curInfo.moduleLock != 0 and
         curInfo.moduleLock != ctx.curModule.moduleId):
       if not override:
-        if not call_eq(value, curInfo.contents, curInfo.tid):
+        if not con4m_eq(curInfo.tid, value, curInfo.contents):
           return false
         else:
           # Set to same value; ignore it basically.
@@ -191,27 +188,29 @@ proc set*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId,
   elif wlock:
     newInfo.lockOnWrite = true
 
-  ctx.attrs[key] = newInfo
+  ctx.attrs[r(key)] = newInfo
 
   if curInfo != nil:
     GC_unref(curInfo)
 
   return true
 
-proc override*(ctx: RuntimeState, key: string, value: pointer, tid: TypeId):
+proc override*(ctx: RuntimeState, key: string, value: pointer, tid: TypeSpec):
     bool {.discardable, cdecl, exportc.} =
   return ctx.set(key, value, tid, override = true)
 
-proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
-          byAddr = false, expectedType = TBottom): pointer {.cdecl, exportc.} =
+proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeSpec = nil,
+          byAddr = false, expectedType: TypeSpec = nil):
+            pointer {.cdecl, exportc.} =
+
   ctx.populate_defaults(key)
 
-  let curOpt = ctx.attrs.lookup(key)
+  let curOpt = ctx.attrs.lookup(r(key))
 
   if curOpt.isNone():
     err = true
     if tid != nil:
-      tid[] = TBottom
+      tid[] = tspec_error()
     return nil
 
   let record = curOpt.get()
@@ -222,7 +221,8 @@ proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
   elif tid != nil:
     tid[] = record.tid
 
-  if expectedType != TBottom and expectedType.unify(record.tid) == TBottom:
+  if expectedType != tspec_error() and
+     tspec_compare(expectedType, record.tid) == false:
     err = true
     # Can distinguish which error by checking for the found type.
     return
@@ -237,7 +237,7 @@ proc get*(ctx: RuntimeState, key: string, err: var bool, tid: ptr TypeId = nil,
 proc lookup*[T](ctx: RuntimeState, key: string): Option[T] =
   ctx.populateDefaults(key)
 
-  let curOpt = ctx.attrs.lookup(key)
+  let curOpt = ctx.attrs.lookup(r(key))
 
   if curOpt.isNone():
     return none(T)
@@ -249,22 +249,23 @@ proc lookup*[T](ctx: RuntimeState, key: string): Option[T] =
   return some(cast[T](record.contents))
 
 proc get_section_contents*(ctx: RuntimeState, key: string, oneLevel = true):
-                         seq[string] =
+                         seq[Rich] =
   ## This only pulls fields, not sections.
   ## See `get_subsections()`.
-  var key = if key == "" or key.endswith("."):
+  var key = if key != "" and key.endswith("."):
               key
             else:
               key & "."
 
   for item in ctx.attrs.keys(sort = true):
-    if item.startswith(key):
-      if not oneLevel or item.find('.', key.len()) == -1:
+    let s = item.toNimStr()
+    if s.startswith(key):
+      if not oneLevel or s.find('.', key.len()) == -1:
         result.add(item)
 
 proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true,
                       fullpath = false):
-                    seq[string] =
+                    seq[Rich] =
   var path = path
 
   if path != "" and not path.endswith("."):
@@ -273,36 +274,37 @@ proc get_subsections*(ctx: RuntimeState, path: string, oneLevel = true,
   let l = path.len()
 
   for item in ctx.allSections.keys(sort = true):
-    if item.startswith(path):
-      let remainder = item[l .. ^1]
+    let s = item.toNimStr()
+    if s.startswith(path):
+      let remainder = s[l .. ^1]
       if oneLevel:
         if "." notin remainder:
           if fullpath:
             result.add(item)
           else:
-            result.add(remainder)
+            result.add(r(remainder))
       else:
         if fullpath:
           result.add(item)
         else:
-          result.add(remainder)
+          result.add(r(remainder))
 
-proc get_all_keys*(ctx: RuntimeState): seq[string] =
+proc get_all_keys*(ctx: RuntimeState): seq[Rich] =
   result = ctx.attrs.keys()
 
-proc attr_walker(attr: AttrTree): (Rope, seq[AttrTree]) =
+proc attrOne(attr: AttrTree): Rich =
 
-  let last = text(attr.path.split(".")[^1])
+  let last = r(attr.path.split(".")[^1])
   if attr.kids.len() != 0:
-    result = (last, attr.kids)
+    result = last
 
   else:
-    let opt = attr.cache.lookup(attr.path)
+    let opt = attr.cache.lookup(r(attr.path))
     if opt.isNone():
-      return (text(attr.path) + text(" ") + em("Not Found"), @[])
+      return r(attr.path) + rich" [i]Not Found"
 
     let match = opt.get()
-    var rep   = $(call_repr(match.contents, match.tid))
+    var rep   = con4m_repr(match.contents, match.tid)
     var extra: seq[string]
 
     if not match.isSet:
@@ -318,12 +320,20 @@ proc attr_walker(attr: AttrTree): (Rope, seq[AttrTree]) =
     if match.override:
       extra.add("override: y")
 
-    result = (text(attr.path) + text(" ") + em(rep) + text(" ") +
-              strong(match.tid.toString()) + text(" (") +
-              text(extra.join(", ")) + text(")"), @[])
+    result = c4str(attr.path) + em(rep) +
+    bold(con4m_repr(match.tid)) + c4str(" (" & extra.join(", ") & ")")
+
+proc treeDown(t: Tree, n: AttrTree) =
+  for kid in n.kids:
+    let sub = t.add_node(attrOne(n))
+    treeDown(sub, kid)
+
+proc toRich*(tree: AttrTree): Grid =
+  var t: Tree = new_tree(attrOne(tree))
+  treeDown(t, tree)
 
 proc print_attributes*(tree: AttrTree) =
-  print tree.quickTree(attr_walker)
+  print toRich(tree)
 
 proc build_attr_tree*(ctx: RuntimeState, view = false): AttrTree =
   result = AttrTree()
@@ -332,8 +342,9 @@ proc build_attr_tree*(ctx: RuntimeState, view = false): AttrTree =
 
   for item in ctx.attrs.keys():
     var
+      s     = item.toNimStr()
       cur   = result
-      parts = item.split(".")
+      parts = s.split(".")
       i     = 0
       l     = parts.len()
 
@@ -363,7 +374,6 @@ proc build_attr_tree*(ctx: RuntimeState, view = false): AttrTree =
 proc print_attributes*(ctx: RuntimeState) =
   var tree = ctx.build_attr_tree(true)
   tree.print_attributes()
-  GC_unref(tree.cache)
 
 proc get_section_docs_internal*(ctx: RuntimeState,
                                 path: string): Option[DocsContainer]
@@ -373,10 +383,10 @@ proc get_section_docs_internal*(ctx: RuntimeState,
   if path != "" and path[^1] == '.':
     path = path[0 ..< ^1]
 
-  result = ctx.sectionDocs.lookup(path)
+  result = ctx.sectionDocs.lookup(r(path))
 
 
-proc get_short_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
+proc get_short_doc*(ctx: RuntimeState, path: string): Rich {.exportc, cdecl.} =
   let docOpt = ctx.get_section_docs_internal(path)
 
   if docOpt.isNone():
@@ -385,7 +395,7 @@ proc get_short_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
   let docs = docOpt.get()
   return docs.shortdoc
 
-proc get_long_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
+proc get_long_doc*(ctx: RuntimeState, path: string): Rich {.exportc, cdecl.} =
   let docOpt = ctx.get_section_docs_internal(path)
 
   if docOpt.isNone():
@@ -396,91 +406,88 @@ proc get_long_doc*(ctx: RuntimeState, path: string): Rope {.exportc, cdecl.} =
 
 proc print_section_docs*(ctx: RuntimeState) =
   for (k, v) in ctx.sectionDocs.items():
-    print(h2("Section docs for: " & k))
-    var cells = @[@[text("Short"), v.shortdoc]]
+    print(cell(r("Section docs for: ") + k, "h2"))
+    var cells = @[@[rich"Short", v.shortdoc]]
 
     if v.longdoc != nil:
-      cells.add(@[text("Long"), v.longdoc])
+      cells.add(@[rich"Long", v.longdoc])
 
-    print(cells.quickTable(verticalHeaders = true))
+    print(cells.table(header_rows = 0, header_cols = 1))
 
 
-proc con4m_sections(s: cstring): pointer {.cdecl, exportc.} =
-  let ctx = get_con4m_runtime()
+proc con4m_sections(s: Rich): pointer {.cdecl, exportc.} =
+  let ctx      = get_con4m_runtime()
+  let subsects = ctx.get_subsections(s.toNimStr())
 
-  return toCon4m(ctx.get_subsections($s), tList(TString))
+  return newList[Rich](subsects)
 
 addStaticFunction("con4m_sections", con4m_sections)
 
-proc con4m_fields(s: cstring): pointer {.cdecl, exportc.} =
-  let ctx = get_con4m_runtime()
+proc con4m_fields(s: Rich): pointer {.cdecl, exportc.} =
+  let ctx    = get_con4m_runtime()
+  let fields = ctx.get_section_contents(s.toNimStr())
 
-  return toCon4m(ctx.get_section_contents($s), tList(TString))
+  return newList[Rich](fields)
 
 addStaticFunction("con4m_fields", con4m_fields)
 
-proc con4m_field_exists(s: cstring): bool {.cdecl, exportc.} =
+proc con4m_field_exists(s: Rich): bool {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
 
-  return ctx.attrs.lookup($s).isSome()
+  return ctx.attrs.lookup(s).isSome()
 
 addStaticFunction("con4m_field_exists", con4m_field_exists)
 
-proc con4m_section_exists(s: cstring): bool {.cdecl, exportc.} =
+proc con4m_section_exists(s: Rich): bool {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
 
-  return ctx.allSections.lookup($s).isSome()
+  return ctx.allSections.lookup(s).isSome()
 
 addStaticFunction("con4m_section_exists", con4m_section_exists)
 
-proc con4m_add_override(s: cstring, v: pointer): bool {.cdecl, exportc.} =
+proc con4m_add_override(s: Rich, v: pointer): bool {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
   if ctx.obj.spec.locked:
     return false
 
-  var n: Mixed = cast[Mixed](v)
-
-  return ctx.set($s, n.value, n.t, override = true)
+  return ctx.set(s.toNimStr(), v, cast[C4Obj](v).getMyType(), override = true)
 
 addStaticFunction("con4m_add_override", con4m_add_override)
 
-proc con4m_attr_type(s: cstring): TypeId {.cdecl, exportc.} =
+proc con4m_attr_type(s: Rich): TypeSpec {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
 
-  let infoOpt = ctx.attrs.lookup($s)
+  let infoOpt = ctx.attrs.lookup(s)
 
   if infoOpt.isNone():
-    return TBottom
+    return tspec_error()
 
   return infoOpt.get().tid
 
 addStaticFunction("con4m_attr_type", con4m_attr_type)
 
-proc con4m_attr_split(s: C4Str): Con4mTuple {.cdecl, exportc.} =
-  result = newTuple(tTuple(@[TString, TString]))
+proc con4m_attr_split(s: Rich): CTuple {.cdecl, exportc.} =
+  result = con4m_tuple(tspec_tuple(toXList(@[tspec_string(), tspec_string()])))
+
   let
-    str = `$`(cast[cstring](s))
+    str = s.toNimStr()
     ix  = rfind(str, '.')
 
   if ix == -1:
-    result[0] = newC4Str("")
+    result[0] = rich""
     result[1] = s
   else:
-    result[0] = newC4Str(str[0 ..< ix])
-    result[1] = newC4Str(str[ix + 1 .. ^1])
+    result[0] = c4Str(str[0 ..< ix])
+    result[1] = c4Str(str[ix + 1 .. ^1])
 
 addStaticFunction("con4m_attr_split", con4m_attr_split)
+addStaticFunction("con4m_typecmp", tspec_compare)
 
-proc con4m_typecmp(t1: TypeId, t2: TypeId): bool {.cdecl, exportc.} =
-  return t1.copyType().unify(t2.copyType()) != TBottom
-
-addStaticFunction("con4m_typecmp", con4m_typecmp)
-
-proc con4m_attr_get(s: cstring, t: TypeId): pointer {.cdecl, exportc.} =
+proc con4m_attr_get(s: Rich, t: TypeSpec): pointer {.cdecl, exportc.} =
   let ctx = get_con4m_runtime()
   var err: bool
 
-  result = ctx.get($s, err, expectedType = t)
+  result = ctx.get(s.toNimStr(), err, expectedType = t)
 
   if err:
     return nil

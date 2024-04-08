@@ -6,9 +6,9 @@ template ensure_spec(ctx: RuntimeState) =
   if ctx.obj.spec == nil:
     raise newException(ValueError, "No specification exists.")
 
-template lookup_section(ctx: RuntimeState, section: string): SectionSpec =
+template lookup_section(ctx: RuntimeState, section: Rich): SectionSpec =
   ctx.ensure_spec()
-  if section == "":
+  if section.rich_len() == 0:
     ctx.obj.spec.rootSpec
   else:
     let obj_opt = ctx.obj.spec.secSpecs.lookup(section)
@@ -16,13 +16,13 @@ template lookup_section(ctx: RuntimeState, section: string): SectionSpec =
           raise newException(ValueError, "Invalid section name.")
     obj_opt.get()
 
-proc get_section_docs*(ctx: RuntimeState, section: string):
+proc get_section_docs*(ctx: RuntimeState, section: Rich):
                      DocsContainer {.exportc, cdecl.} =
   let sec_obj = ctx.lookup_section(section)
 
   return DocsContainer(shortdoc: sec_obj.shortdoc, longdoc: sec_obj.doc)
 
-proc get_field_docs*(ctx: RuntimeState, section: string, field: string):
+proc get_field_docs*(ctx: RuntimeState, section: Rich, field: Rich):
                    DocsContainer {.exportc, cdecl.} =
   let
     sec_obj   = ctx.lookup_section(section)
@@ -35,8 +35,8 @@ proc get_field_docs*(ctx: RuntimeState, section: string, field: string):
 
   return DocsContainer(shortdoc: field.shortdoc, longdoc: field.doc)
 
-proc get_all_field_docs*(ctx: RuntimeState, section: string):
-                  Dict[string, DocsContainer] {.exportc, cdecl.} =
+proc get_all_field_docs*(ctx: RuntimeState, section: Rich):
+                  Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   result.initDict()
 
   let sec_obj = ctx.lookup_section(section)
@@ -45,10 +45,10 @@ proc get_all_field_docs*(ctx: RuntimeState, section: string):
     result[k] = DocsContainer(shortdoc: v.shortdoc, longdoc: v.doc)
 
 proc get_all_section_docs*(ctx: RuntimeState):
-                         Dict[string, DocsContainer] {.exportc, cdecl.} =
+                         Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   result.initDict()
-  let root = ctx.lookup_section("")
-  result[""] = DocsContainer(shortdoc: root.shortdoc, longdoc: root.doc)
+  let root = ctx.lookup_section(rich"")
+  result[rich""] = DocsContainer(shortdoc: root.shortdoc, longdoc: root.doc)
 
   for (k, v) in ctx.obj.spec.secSpecs.items(sort = true):
     result[k] = DocsContainer(shortdoc: v.shortdoc, longdoc: v.doc)
@@ -57,62 +57,62 @@ proc base_get_module_docs(ctx: RuntimeState, ix: int):
                          DocsContainer {.exportc, cdecl.} =
   let zm = ctx.obj.moduleContents[ix]
 
-  return DocsContainer(shortdoc: zm.shortdoc.markdown(),
-                       longdoc:  zm.longdoc.markdown())
+  return DocsContainer(shortdoc: r(zm.shortdoc),
+                       longdoc:  r(zm.longdoc))
 
 proc get_all_module_docs*(ctx: RuntimeState):
-                        Dict[string, DocsContainer] {.exportc, cdecl.} =
+                        Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   result.initDict()
 
   for i, item in ctx.obj.moduleContents:
-    result[item.key] = DocsContainer(shortdoc: markdown(item.shortdoc),
-                                     longdoc:  markdown(item.longdoc))
+    result[r(item.key)] = DocsContainer(shortdoc: r(item.shortdoc),
+                                        longdoc:  r(item.longdoc))
 
-proc get_module_docs*(ctx: RuntimeState, n: string):
+proc get_module_docs*(ctx: RuntimeState, n: Rich):
                     DocsContainer {.exportc, cdecl.} =
   for item in ctx.obj.moduleContents:
-    if n == item.key or n == item.modname:
-      return DocsContainer(shortdoc: markdown(item.shortdoc),
-                           longdoc: markdown(item.longdoc))
+    if n.toNimStr() == item.key or n.toNimStr() == item.modname:
+      return DocsContainer(shortdoc: r(item.shortdoc),
+                           longdoc: r(item.longdoc))
 
 proc get_attr_docs*(ctx: RuntimeState):
-                  Dict[string, DocsContainer] {.exportc, cdecl.} =
+                  Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   return ctx.sectionDocs
 
 
-proc get_all_param_docs*(ctx: RuntimeState, module: string):
-                   Dict[string, DocsContainer] {.exportc, cdecl.} =
+proc get_all_param_docs*(ctx: RuntimeState, module: Rich):
+                   Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   result.initDict()
 
   for mobj in ctx.obj.moduleContents:
-    if mobj.key != module and mobj.modname != module:
+    if mobj.key != module.toNimStr() and mobj.modname != module.toNimStr():
       continue
 
     for param in mobj.parameters:
       let
-        container = DocsContainer(shortdoc: markdown(param.shortdoc),
-                                  longdoc: markdown(param.longdoc))
+        container = DocsContainer(shortdoc: param.shortdoc,
+                                  longdoc: param.longdoc)
         name      = param.get_param_name(mobj)
 
       if result.lookup(name).isSome():
-        result[joinPath(mobj.location, name)] = container
+        result[joinPath(mobj.location, name.toNimStr()).r()] = container
       else:
         result[name] = container
 
 
 proc get_param_docs*(ctx: RuntimeState):
-                   Dict[string, DocsContainer] {.exportc, cdecl.} =
+                   Dict[Rich, DocsContainer] {.exportc, cdecl.} =
   result.initDict()
 
   for module in ctx.obj.moduleContents:
     for param in module.parameters:
       let
-        container = DocsContainer(shortdoc: markdown(param.shortdoc),
-                                    longdoc: markdown(param.longdoc))
+        container = DocsContainer(shortdoc: param.shortdoc,
+                                    longdoc: param.longdoc)
         name      = param.get_param_name(module)
 
       if result.lookup(name).isSome():
-        result[joinPath(module.location, name)] = container
+        result[joinPath(module.location, name.toNimStr()).r()] = container
       else:
         result[name] = container
 

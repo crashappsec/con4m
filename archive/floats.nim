@@ -179,7 +179,7 @@ f64Ops[FUnmarshal] = cast[pointer](unmarshal_64_bit_value)
 let
   TF32*   = addDataType(name = "f32", byValue = true, concrete = true,
                         fTy = true, ops = f32Ops)
-  TFloat* = addDataType(name = "f64", byValue = true, concrete = true,
+  TFloat* = addDataType(name = "float", byValue = true, concrete = true,
                         fTy = true, ops = f64Ops)
 
 registerSyntax(TF32,   STFloat,  @[])

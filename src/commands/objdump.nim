@@ -2,7 +2,7 @@ import ".."/common
 import "."/cmd_base
 
 
-proc get_basic_object_info*(obj: ZObjectFile): Rope =
+proc get_basic_object_info*(obj: ZObjectFile): Grid =
   var cells: seq[seq[string]]
 
   cells.add(@["Magic Value", obj.zeroMagic.toHex().toLowerAscii()])
@@ -16,21 +16,20 @@ proc get_basic_object_info*(obj: ZObjectFile): Rope =
     cells.add(@["Next Entrypoint",
                 obj.moduleContents[obj.nextEntryPoint - 1].modname])
 
-  result = cells.quickTable(title = "Basic object info", verticalHeaders = true,
-                                    caption = config_args[0].resolvePath())
+  result = cells.table(title = "Basic object info", header_rows = 0,
+                               header_cols = 1,
+                               caption = config_args[0].resolvePath())
 
-proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Rope =
+proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Grid =
   var cells: seq[seq[string]] = @[@["Attr or offset",
                                     "Type",
                                     "Native Validator?",
                                     "Validator index", "Short Doc", "Long Doc"]]
   for item in params:
     var row: seq[string] = @[]
-    if item.attr != "":
-      echo "Attr = ", item.attr
-      row.add(item.attr)
+    if item.attr.rich_len() != 0:
+      row.add(item.attr.toNimStr())
     else:
-      echo "offset = ", item.offset
       row.add($item.offset)
     row.add(item.tid.toString())
     if item.vnative:
@@ -38,28 +37,31 @@ proc format_module_params*(obj: ZObjectFile, params: seq[ZParamInfo]): Rope =
     else:
       row.add("✗")
     row.add($item.vfnIx)
-    row.add(item.shortdoc & " ")
-    row.add(item.longdoc & " ")
+    row.add(item.shortdoc.toNimStr() & " ")
+    row.add(item.longdoc.toNimStr() & " ")
     cells.add(row)
 
-  return cells.quickTable(title   = "Module param info",
-                          caption = "Sorry, haven't had the dump look up " &
-                                    "local names or functions yet")
+  return cells.table(title = "Module param info",
+                     caption = "Sorry, haven't had the dump look up " &
+                       "local names or functions yet")
 
-proc get_per_module_info*(obj: ZObjectFile): Rope =
-  var cells: seq[seq[string]]
+proc get_per_module_info*(obj: ZObjectFile): Grid =
+  var
+    cells: seq[seq[string]]
+    fseq:  seq[Grid]
+
 
   if obj.symTypes.len() == 0:
-    result = h2("No global symbol info")
+    fseq.add(cell("No global symbol info", "h2"))
   else:
     cells = @[@["Variable name", "Static offset", "Type"]]
     for (offset, tid) in obj.symTypes:
       cells.add(@[obj.globals[offset], $(offset), tid.toString()])
 
-    result += cells.quickTable(title = "Global symbol info")
+    fseq.add(cells.table(title = "Global symbol info"))
 
   for item in obj.moduleContents:
-    result += h1(text("Module: ") + em(item.modname))
+    fseq.add(cell(text("Module: ") + em(item.modname), "h1"))
 
     cells = @[@["Module name", item.modname],
               @["Location",    item.location],
@@ -68,64 +70,68 @@ proc get_per_module_info*(obj: ZObjectFile): Rope =
               @["Var storage", $(item.moduleVarSize)],
               @["Code size",   $(item.initSize)]]
 
-    result += cells.quickTable(verticalHeaders = true)
+    fseq.add(cells.table(header_rows = 0, header_cols = 1))
 
     if item.symTypes.len() == 0:
-      result += h2("No module symbols")
+      fseq.add(cell("No module symbols", "h2"))
     else:
       cells = @[@["Symbol name", "Static offset", "Type"]]
       let view1 = item.datasyms.items(sort = true)
 
       if view1.len() == 0:
-        result +=  h2("No symbol definitions")
+        fseq.add(cell("No symbol definitions", "h2"))
       else:
         for (offset, name) in view1:
           for (o2, tid) in item.symTypes:
             if offset == o2:
               cells.add(@[name, offset.toHex().toLowerAscii(), tid.toString()])
               break
-        result += cells.quickTable(title = item.modname & " Symbol info")
+        fseq.add(cells.table(title = item.modname & " Symbol info"))
 
       let view2 = item.datasyms.items(sort = true)
       if view2.len() == 0:
-        result += h2("Unused; bit; minor refactoring needed")
+        fseq.add(cell("Unused; bit; minor refactoring needed", "h2"))
       else:
         for (offset, name) in view2:
           for (o2, tid) in item.symTypes:
             if offset == o2:
               cells.add(@[name, $(offset), tid.toString()])
               break
-        result += cells.quickTable(title = item.modname & " data symbols")
+        fseq.add(cells.table(title = item.modname & " data symbols"))
 
     if item.source == "":
-      result += h2("No stored source code.")
+      fseq.add(cell("No stored source code.", "h2"))
     else:
-      result += h2(text("Source code for ") + em(item.modname))
-      result += item.source.pretty()
+      fseq.add(cell(text("Source code for ") + em(item.modname), "h2"))
+      fseq.add(cell(item.source)) # item.source.pretty()
+
 
     if item.parameters.len() == 0:
-      result += h2("No stored parameters.")
+      fseq.add(cell("No stored parameters.", "h2"))
     else:
-      result += obj.format_module_params(item.parameters)
+      fseq.add(obj.format_module_params(item.parameters))
 
-    result += h2(text("Disassembly for ") + em(item.modname))
-    result += item.rawReprInstructions(obj)
+    fseq.add(cell(text("Disassembly for ") + em(item.modname), "h2"))
+    fseq.add(item.rawReprInstructions(obj))
 
-proc get_obj_func_info*(obj: ZObjectFile): Rope =
+    return fseq.flow()
+
+proc get_obj_func_info*(obj: ZObjectFile): Grid =
+  # Note: Took out func type for right now.
   var cells: seq[seq[string]]
 
   if obj.funcInfo.len() == 0:
-    result = h2("No native Con4m functions in binary")
+    result = cell("No native Con4m functions in binary", "h2")
   else:
     cells = @[]
 
-    cells.add(@["Name", "Module Address", "Size", "Type",
+    cells.add(@["Name", "Module Address", "Size",
                 "Param names / offsets"])
 
     for item in obj.funcInfo:
       var
-        paramInfo: seq[string] = @[]
-        ptypes:    seq[TypeId] = @[]
+        paramInfo: seq[string]   = @[]
+        ptypes:    seq[TypeSpec] = @[]
 
       for (offset, tid) in item.symTypes:
         paramInfo.add(item.syms[offset] & ": " & $(offset))
@@ -134,16 +140,15 @@ proc get_obj_func_info*(obj: ZObjectFile): Rope =
       cells.add(@[item.funcname,
                   item.offset.toHex.toLowerAscii(),
                   $(item.size),
-                  tFunc(ptypes).toString(),
                   paramInfo.join(", ")])
 
-    result = cells.quickTable(title = "Con4m native function info")
+    result = cells.table(title = "Con4m native function info")
 
-proc get_obj_ffi_info*(obj: ZObjectFile): Rope =
+proc get_obj_ffi_info*(obj: ZObjectFile): Grid =
   var cells: seq[seq[string]]
 
   if obj.ffiInfo.len() == 0:
-    return h2("No foreign functions mapped")
+    return cell("No foreign functions mapped", "h2")
 
   else:
     cells = @[@["Foreign Name", "Local Name", "Varargs?", "dll names",
@@ -174,7 +179,7 @@ proc get_obj_ffi_info*(obj: ZObjectFile): Rope =
         of RTAsPtr:
           s &= "ptr"
         else:
-          s &= cast[TypeId](ainfo.ourType).toString()
+          s &= cast[TypeSpec](ainfo.ourType).toString()
           s &= " +by-value"
 
         if ainfo.held:
@@ -190,10 +195,10 @@ proc get_obj_ffi_info*(obj: ZObjectFile): Rope =
       cells.add(@[xname, lname, vargs, dlls.join(", "),
                   "(" & pinf.join(", ") & ")"])
 
-    return cells.quickTable(title = "Foreign Function Mappings")
+    return cells.table(title = "Foreign Function Mappings")
 
 proc get_low_level_heap_info*(varmap: Dict[int, string], arena: seq[pointer],
-                              title: string): Rope =
+                              title: string): Grid =
   var cells = @[
     @["Variable", "Offset", "Type", "Value", "Repr"]
   ]
@@ -202,18 +207,18 @@ proc get_low_level_heap_info*(varmap: Dict[int, string], arena: seq[pointer],
     var
       vraw = arena[offset * 2]
       traw = arena[offset * 2 + 1]
-      tid  = cast[TypeId](traw)
+      tid  = cast[TypeSpec](traw)
       val  = cast[int](vraw).toHex().toLowerAscii()
       r    = "(No value)"
 
-    if tid != TBottom:
-      r = $(call_repr(vraw, tid))
+    if tid != nil and not tid.is_type_error():
+      r = con4m_repr(vraw, tid).toNimStr()
 
     cells.add(@[name, $offset, tid.toString, val, r])
 
-  return cells.quickTable(title = title)
+  return cells.table(title = title)
 
-proc get_module_heap_info*(rt: RuntimeState, m: ZModuleInfo, title = ""): Rope =
+proc get_module_heap_info*(rt: RuntimeState, m: ZModuleInfo, title = ""): Grid =
   var
     title  = if title != "":
                title
@@ -224,15 +229,16 @@ proc get_module_heap_info*(rt: RuntimeState, m: ZModuleInfo, title = ""): Rope =
 
   return get_low_level_heap_info(varmap, arena, title)
 
-proc get_entry_heap_info*(rt: RuntimeState, title = ""): Rope =
-  return rt.get_module_heap_info(rt.obj.moduleContents[rt.obj.entrypoint - 1], title)
+proc get_entry_heap_info*(rt: RuntimeState, title = ""): Grid =
+  return rt.get_module_heap_info(rt.obj.moduleContents[rt.obj.entrypoint - 1],
+                                 title)
 
-proc get_next_entry_heap_info*(rt: RuntimeState, title = ""): Rope =
+proc get_next_entry_heap_info*(rt: RuntimeState, title = ""): Grid =
   return rt.get_module_heap_info(rt.obj.moduleContents[rt.obj.nextEntrypoint - 1],
                                  title)
 
-proc get_all_heap_info*(rt: RuntimeState): Rope =
-  var cells: seq[seq[string]]
+proc get_all_heap_info*(rt: RuntimeState): Grid =
+  var fcells: seq[Grid]
 
   for i, item in rt.module_allocations:
     var
@@ -247,21 +253,23 @@ proc get_all_heap_info*(rt: RuntimeState): Rope =
         title = "Global variable state"
         arena = rt.moduleAllocations[0]
 
-      result += rt.obj.globals.get_low_level_heap_info(arena, title)
+      fcells.add(rt.obj.globals.get_low_level_heap_info(arena, title))
 
     else:
-      result += rt.get_module_heap_info(rt.obj.moduleContents[i - 1])
+      fcells.add(rt.get_module_heap_info(rt.obj.moduleContents[i - 1]))
 
-proc get_section_docs*(rt: RuntimeState): Rope =
+  return fcells.flow()
+
+proc get_section_docs*(rt: RuntimeState): Grid =
   let view = rt.sectionDocs.items(sort = true)
 
   if view.len() == 0:
-    return h2("No section documentation found.")
+    return cell("No section documentation found.", "h2")
 
-  var cells: seq[seq[Rope]] = @[@[text("Section"), text("Short Doc"),
+  var cells: seq[seq[Rich]] = @[@[text("Section"), text("Short Doc"),
                                 text("Long Doc")]]
   for (k, v) in view:
-    var l, s: Rope
+    var l, s: Rich
 
     if v.shortdoc == nil:
       s = text("None provided.")
@@ -275,17 +283,19 @@ proc get_section_docs*(rt: RuntimeState): Rope =
 
     cells.add(@[em(k), s, l])
 
-  return cells.quicktable(title = text("Section Documentation"))
+  return cells.table(title = "Section Documentation")
 
 proc cmd_objdump*() =
   var
     rt  = config_args[0].load_object_file()
     obj = rt.obj
+    secnames: seq[Rich]
+
 
 
   print obj.get_basic_object_info()
   print h2("Global static data")
-  print pre(obj.staticData.strDump())
+  print c4str(obj.staticData.strDump())
   print obj.get_per_module_info()
   print obj.get_obj_func_info()
 
@@ -300,16 +310,15 @@ proc cmd_objdump*() =
     else:
       print(h2("No attribute specification"))
 
-    var secnames: seq[Rope]
-
     for item in rt.allSections.keys(sort=true):
-      secnames.add(@[li(item)])
+      secnames.add(@[item])
 
     if secnames.len() == 0:
       print(h2("No sections defined."))
     else:
       print(h2("Active attribute sections"))
-      print(ul(secnames))
+      let l = ul(secnames)
+      print(l)
 
     print rt.get_section_docs()
 

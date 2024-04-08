@@ -10,7 +10,6 @@ export irgen
 proc fold[T](n: IrNode, val: T) =
   n.contents = IrContents(kind: IrFold)
   n.value    = cast[pointer](val)
-  n.haveVal  = true
 
 proc foldIr(ctx: Module)
 
@@ -30,7 +29,7 @@ proc loopFold(ctx: Module) =
 
     let
       pre  = n.contents.condition.value
-      post = callCast(pre, n.contents.condition.tid, TBool, err)
+      post = callCast(pre, n.contents.condition.tid, tspec_bool(), err)
       val  = cast[bool](post)
 
     if err != "":
@@ -49,7 +48,7 @@ proc conditionalFold(ctx: Module) =
 
     let
       pre  = n.contents.predicate.value
-      post = callCast(pre, n.contents.predicate.tid, TBool, err)
+      post = callCast(pre, n.contents.predicate.tid, tspec_bool(), err)
       val  = cast[bool](post)
 
     if err != "":
@@ -77,7 +76,7 @@ proc containerFold(ctx: Module) =
       return
     values.add(item.value)
 
-  let c = instantiate_container(n.tid, StNone, n.contents.litmod, values, err)
+  let c = instantiate_container(n.tid, values)
 
   if err != "":
     ctx.irError(err)
@@ -85,9 +84,9 @@ proc containerFold(ctx: Module) =
     n.fold(c)
 
 proc litFold(ctx: Module) =
-  let t = ctx.current.tid.idToTypeRef()
-  case t.kind
-  of C4List, C4Dict, C4Tuple:
+  let t = ctx.current.tid.followForwards()
+  case cast[LibTid](t.base_type_id())
+  of C4_LIST, C4_DICT, C4_TUPLE:
     ctx.containerFold()
   else:
     discard
@@ -100,7 +99,7 @@ proc callFold(ctx: Module) =
   for item in ctx.current.contents.actuals:
     ctx.foldDown(item)
 
-proc replaceCall*(ctx: Module, n: IrNode, name: string, sig: TypeId,
+proc replaceCall*(ctx: Module, n: IrNode, name: string, sig: TypeSpec,
                  actuals: seq[IrNode]) =
   var
     newcontents = IrContents(kind: IrCall, replacement: true)
@@ -112,13 +111,19 @@ proc replaceCall*(ctx: Module, n: IrNode, name: string, sig: TypeId,
 
   n.contents = newcontents
 
+proc isSigned(t: TypeSpec): bool =
+  return cast[LibTid](t.base_type_id()) in [C4_INT, C4_I8, C4_I32]
+
+template canCastToBool(t: TypeSpec): bool = true
+
 proc uminusFold(ctx: Module) =
   let n = ctx.current
 
-  if not n.tid.isBasicType() or (not n.tid.isIntType() and n.tid != TFloat):
+  if not n.tid.isBasicType() or (not n.tid.isIntType() and
+                                 n.tid != tspec_f64()):
     let
       actuals = @[n.contents.uRhs]
-      sig = tFunc(@[n.tid, n.tid])
+      sig = tspec_fn(n.tid, toXList(@[n.tid]), false)
 
     ctx.replaceCall(n, "__uminus__", sig, actuals)
   else:
@@ -145,14 +150,14 @@ proc notFold(ctx: Module) =
     if n.contents.uRhs.isConstant():
       let
         pre  = n.contents.uRhs.value
-        post = callCast(pre, n.contents.uRhs.tid, TBool, err)
+        post = callCast(pre, n.contents.uRhs.tid, tspec_bool(), err)
       if err != "":
         ctx.irError(err)
       else:
         n.fold(not cast[bool](post))
   else:
     let
-      sig     = tFunc(@[n.contents.uRhs.tid, TBool])
+      sig     = tspec_fn(tspec_bool(), @[n.contents.uRhs.tid].toXList(), false)
       actuals = @[n.contents.uRhs]
 
     ctx.replaceCall(n, "__not__", sig, actuals)
@@ -167,7 +172,9 @@ proc replaceBinOpWithCall(ctx: Module, n: IrNode) =
     return
 
   let
-    sig     = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, n.tid])
+    sig     = tspec_fn(n.tid,
+                       @[n.contents.bLhs.tid, n.contents.bRhs.tid].toXList(),
+                       false)
     actuals = @[n.contents.bLhs, n.contents.bRhs]
 
   ctx.opReplace("/",    "__fdiv__")
@@ -187,7 +194,9 @@ proc replaceBoolOpWithCall(ctx: Module, n: IrNode) =
     return
 
   let
-    sig     = tFunc(@[n.contents.bLhs.tid, n.contents.bRhs.tid, TBool])
+    sig     = tspec_fn(tspec_bool(),
+                       @[n.contents.bLhs.tid, n.contents.bRhs.tid].toXList(),
+                       false)
     actuals = @[n.contents.bLhs, n.contents.bRhs]
 
   ctx.opReplace("<",   "__lt__")
@@ -206,7 +215,7 @@ proc boolFold(ctx: Module) =
   ctx.foldDown(bLhs)
   ctx.foldDown(bRhs)
 
-  if node.tid.followForwards() == TBottom:
+  if node.tid.followForwards().is_type_error():
     return
 
   if not bLhs.tid.isNumericBuiltin():
@@ -282,7 +291,7 @@ proc binFold(ctx: Module) =
   ctx.foldDown(bLhs)
   ctx.foldDown(bRhs)
 
-  if node.tid.followForwards() == TBottom:
+  if node.tid.followForwards().is_type_error():
     return
 
   case node.contents.bOp
@@ -292,15 +301,15 @@ proc binFold(ctx: Module) =
         # This will currently be set to an int if the operands
         # were ints; we override it for division below. Thus,
         # we can just do this one check.
-        if node.tid == TFloat:
+        if node.tid == tspec_f64():
           var lhf, rhf: float
 
-          if bLhs.tid == TFloat:
+          if bLhs.tid == tspec_f64():
             lhf = cast[float](bLhs.value)
           else:
             lhf = float(cast[int64](bLhs.value))
 
-          if bRhs.tid == TFloat:
+          if bRhs.tid == tspec_f64():
             rhf = cast[float](bRhs.value)
           else:
             rhf = float(cast[int64](bRhs.value))
@@ -311,21 +320,21 @@ proc binFold(ctx: Module) =
           r = cast[int64](bLhs.value)
 
         node.fold(l / r)
-      node.tid = TFloat
+      node.tid = tspec_f64()
     else:
       ctx.replaceBinOpWithCall(node)
   of "+", "-", "*":
     if not node.tid.isNumericBuiltin():
       ctx.replaceBinOpWithCall(node)
     elif bLhs.isConstant() and bRhs.isConstant():
-      if node.tid == TFloat:
+      if node.tid == tspec_f64():
         var lhf, rhf: float
 
-        if bLhs.tid == TFloat:
+        if bLhs.tid == tspec_f64():
           lhf = cast[float](bLhs.value)
         else:
           lhf = float(cast[int64](bLhs.value))
-        if bRhs.tid == TFloat:
+        if bRhs.tid == tspec_f64():
           rhf = cast[float](bRhs.value)
         else:
           rhf = float(cast[int64](bRhs.value))
@@ -367,7 +376,7 @@ proc binFold(ctx: Module) =
           unreachable
 
   of "<<", ">>", "div", "&", "|", "^", "%":
-    if node.tid == TFloat or not node.tid.isNumericBuiltin():
+    if node.tid == tspec_f64() or not node.tid.isNumericBuiltin():
       ctx.replaceBinOpWithCall(node)
     elif bLhs.isConstant() and bRhs.isConstant():
       if node.tid.isSigned():
@@ -428,16 +437,16 @@ proc logicFold(ctx: Module) =
   ctx.foldDown(bLhs)
   ctx.foldDown(bRhs)
 
-  if node.tid.followForwards() == TBottom:
+  if node.tid.followForwards().is_type_error():
     return
 
   if bLhs.isConstant():
-    if cast[bool](callCast(bLhs.value, bLhs.tid, TBool, err)) == false:
+    if cast[bool](callCast(bLhs.value, bLhs.tid, tspec_bool(), err)) == false:
       if node.contents.bOp == "and":
         node.fold(false)
       elif bRhs.isConstant():
 
-        node.fold(callCast(bRhs.value, bRhs.tid, TBool, err))
+        node.fold(callCast(bRhs.value, bRhs.tid, tspec_bool(), err))
         if err != "":
           ctx.irError(err)
       else:
@@ -446,13 +455,13 @@ proc logicFold(ctx: Module) =
       if node.contents.bOp == "or":
         node.fold(true)
       elif bRhs.isConstant():
-        node.fold(callCast(bRhs.value, bRhs.tid, TBool, err))
+        node.fold(callCast(bRhs.value, bRhs.tid, tspec_bool(), err))
         if err != "":
           ctx.irError(err)
       else:
         node.contents = bRhs.contents
   elif bRhs.isConstant():
-    let val = callCast(bRhs.value, bRhs.tid, TBool, err)
+    let val = callCast(bRhs.value, bRhs.tid, tspec_bool(), err)
     if node.contents.bOp == "and":
       if cast[bool](val) == false:
         node.fold(false)
@@ -477,7 +486,7 @@ proc assignFold(ctx: Module) =
       if sym.immutable:
         # Previous pass would catch multiple assignments.
         sym.constValue       = ctx.current.contents.assignRhs.value
-        sym.haveConst        = ctx.current.contents.assignRhs.haveVal
+        sym.haveConst        = ctx.current.contents.assignRhs != nil
         ctx.current.contents = IrContents(kind: IrNop)
 
 proc foldIr(ctx: Module) =

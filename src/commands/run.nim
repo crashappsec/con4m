@@ -11,7 +11,7 @@ proc save_object_to_disk*(rt: var RuntimeState, modfile: string) {.exportc, cdec
     out_fname &= obj_file_extension
 
   if config_debug:
-    print hex_dump(objfile, uint(objfile.len()), 0)
+    echo hex_dump(objfile, uint(objfile.len()), 0)
 
   try:
     var
@@ -34,7 +34,7 @@ proc save_object_to_disk*(rt: var RuntimeState, modfile: string) {.exportc, cdec
 
   except:
     print fgColor("error: ", "red") + text("Could not write to ") +
-          em(outfname) + text(": ") + italic(getCurrentException().msg)
+          em(outfname) + text(": ") + em(getCurrentException().msg)
     if config_debug:
       echo getCurrentException().getStackTrace()
 
@@ -45,7 +45,7 @@ proc run_object*(rt: var RuntimeState, modfile: string, resumed = false) =
     if config_reentry_point.endswith(".c4m"):
       config_reentry_point = config_reentry_point[0 ..< ^4]
 
-    var allnames: seq[Rope]
+    var allnames: seq[Grid]
 
     for i, m in rt.obj.moduleContents:
       if m.modname == config_reentry_point or
@@ -53,12 +53,13 @@ proc run_object*(rt: var RuntimeState, modfile: string, resumed = false) =
         module_ix = i
         break
 
-      allnames.add(li(m.modname))
+      allnames.add(cell(m.modname, "li"))
 
     if module_ix == -1:
       print fgColor("error: ", "red") + text("Desired entry point module ") +
       em(config_reentry_point) + text(" is not one of the available modules ") +
-      text("in the object file. Found modules are:") + ul(allnames)
+      text("in the object file. Found modules are:")
+      print ul(allnames)
       quit(-143)
 
     else:
@@ -84,10 +85,10 @@ proc run_object*(rt: var RuntimeState, modfile: string, resumed = false) =
   let validation_errors = validate_state()
   if len(validation_errors) != 0:
     print(h4("Post-execution validation failed!"))
-    var bullets: seq[Rope]
+    var bullets: seq[Rich]
     for item in validation_errors.items():
-      bullets.add(cast[Rope](item))
-    print(ul(bullets), file = stderr)
+      bullets.add(cast[Rich](item))
+    print_err(ul(bullets))
 
   if config_debug:
     print(h1("Any set attributes are below."))
@@ -104,9 +105,10 @@ proc cmd_resume*() =
     rt    = fname.load_object_file()
 
   if config_format:
-    print(h2("Original entry point source code"))
-    let m = rt.obj.moduleContents[rt.obj.entryPoint - 1]
-    print(pretty(m.source))
+    print(h2("Pretty printing currently disabled."))
+    #print(h2("Original entry point source code"))
+    #let m = rt.obj.moduleContents[rt.obj.entryPoint - 1]
+    #print(pretty(m.source))
 
   rt.run_object(fname, resumed = true)
 
@@ -119,9 +121,9 @@ proc base_compile(ctx: CompileCtx, entryname: string): bool =
     print(h4("Compilation failed."))
 
   if config_format and entry.root != nil:
-    print(h2("Entrypoint source code"))
+    #print(h2("Entrypoint source code"))
 
-    print pretty(entry.root)
+    #print pretty(entry.root)
 
     if config_debug:
       print(h2("Raw source"))
@@ -251,13 +253,14 @@ proc cmd_run*(ctx: CompileCtx) =
 
   if rt.obj.spec.used:
     let errors = rt.run_validator().items()
-    var items: seq[Rope]
+    var items: seq[Rich]
 
     if errors.len() != 0:
       for item in errors:
-        items.add(li((cast[Rope](item))))
+        items.add((cast[Rich](item)))
 
-      print(h1("Execution validation failed:") + ol(items), file = stderr)
+      print_err(h1("Execution validation failed:"))
+      print_err(ol(items))
       quit(-1)
 
   if config_save_object:

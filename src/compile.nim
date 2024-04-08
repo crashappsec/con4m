@@ -1,5 +1,5 @@
 import std/[httpclient, net, uri, streams]
-import "."/[stchecks, builtins]
+import "."/[stchecks, builtins, fold, cfg]
 export net, uri, streams, stchecks, builtins
 
 proc newSpec(): ValidationSpec {.importc, cdecl.}
@@ -175,14 +175,16 @@ proc buildIr*(ctx: CompileCtx, module: Module) =
   module.toIr()
 
 proc handleFolding(ctx: CompileCtx, module: Module) =
-  if module == nil or module.didFoldingPass:
-    return
+  return
 
-  for item in module.imports:
-    if item.ir == nil:
-      ctx.buildIr(item)
+  #if module == nil or module.didFoldingPass:
+  #  return
 
-  module.foldingPass()
+  #for item in module.imports:
+  #  if item.ir == nil:
+  #    ctx.buildIr(item)
+
+  #module.foldingPass()
 
 proc build_program*(ctx: CompileCtx, entrypoint: Module):
                   bool {.discardable, cdecl, exportc.} =
@@ -259,30 +261,30 @@ proc printTokens*(ctx: Module, start = 0, endix = 0) =
   if endix <= 0:
     last += ctx.tokens.len()
 
-  print ctx.tokens[start ..< last].toRope()
+  print ctx.tokens[start ..< last].toGrid()
 
 proc printParseTree*(ctx: Module) =
   if ctx.root != nil:
-    print(ctx.root.toRope())
+    print(ctx.root.toRich())
   else:
     print h4("No parse tree produced.")
 
 proc printIr*(ctx: Module) =
   if ctx.ir != nil:
-    print ctx.ir.toRope()
+    print ctx.ir.toRich()
   else:
     print h4("No IR produced.")
 
 proc printGlobalScope*(ctx: CompileCtx) =
-  print ctx.globalScope.toRope("Globals used")
+  print ctx.globalScope.toGrid("Globals used")
 
 proc printModuleScope*(ctx: Module) =
-  print ctx.moduleScope.toRope("Scope for module '" & ctx.modname & "'")
+  print ctx.moduleScope.toGrid("Scope for module '" & ctx.modname & "'")
 
 proc printFuncScope*(fn: FuncInfo) =
-  print fn.fnScope.toRope("Scope for function " & fn.name)
+  print fn.fnScope.toGrid("Scope for function " & fn.name)
   if fn.implementation != nil:
-    print fn.implementation.toRope()
+    print fn.implementation.toRich()
 
 proc printAllFuncScopes*(ctx: CompileCtx, m: Module) {.exportc, cdecl.} =
   if m.moduleScope == nil:
@@ -298,15 +300,16 @@ proc printAllFuncScopes*(ctx: CompileCtx, m: Module) {.exportc, cdecl.} =
 
 proc printAttrsUsed*(ctx: Module) =
   if ctx.usedAttrs != nil:
-    print ctx.usedAttrs.toRope("Used attributes")
+    print ctx.usedAttrs.toGrid("Used attributes")
 
 proc printTypeCatalog*(obj: ZObjectFile) =
-  var cells: seq[seq[string]] = @[@["Type", "ID"]]
+  print(rich"[red]Temporarily unavailable.")
+  # var cells: seq[seq[string]] = @[@["Type", "ID"]]
 
-  for k in obj.tInfo.keys(sort = true):
-    cells.add(@[k.toString(), cast[int](k).toHex().toLowerAscii()])
+  # for k in obj.tInfo.keys(sort = true):
+  #   cells.add(@[k.toString(), cast[int](k).toHex().toLowerAscii()])
 
-  print cells.quickTable().colWidths([(40, false), (18, true)]).tpad(0).bpad(0)
+  # print cells.quickTable().colWidths([(40, false), (18, true)]).tpad(0).bpad(0)
 
 proc printErrors*(ctx: Module, verbose = true, ll = LlNone, file = stdout) =
   var errsToPrint: seq[Con4mError]
@@ -315,10 +318,13 @@ proc printErrors*(ctx: Module, verbose = true, ll = LlNone, file = stdout) =
     if cast[int](item.severity) >= cast[int](ll):
       errsToPrint.add(item)
 
-  print(errsToPrint.formatErrors(verbose), file = file)
+  if file == stdout:
+    print(errsToPrint.formatErrors())
+  else:
+    print_err(errsToPrint.formatErrors())
 
 proc printProgramCfg*(ctx: CompileCtx) =
-  print ctx.entrypoint.cfg.toRope(true)
+  print ctx.entrypoint.cfg.toRich(true)
 
 proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone, file = stderr):
   bool =
@@ -333,6 +339,8 @@ proc printErrors*(ctx: CompileCtx, verbose = true, ll = LlNone, file = stderr):
     if cast[int](item.severity) >= cast[int](ll):
       errsToPrint.add(item)
 
-  print(errsToPrint.formatErrors(verbose), file = file)
-
+  if file == stdout:
+    print(errsToPrint.formatErrors())
+  else:
+    print_err(errsToPrint.formatErrors())
   result = errsToPrint.canProceed()

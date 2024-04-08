@@ -6,119 +6,129 @@
 ## :Copyright: 2022
 
 import "."/lex
-import ztypes/api
-export lex, api
+export lex
 
-proc tokenId(n: ParseNode): Rope =
-  return atom(" (tokid:" & `$`(n.token.id) & ")").fgColor("jazzberry")
+proc tokenId(n: ParseNode): Rich =
+  return r(" (tokid: [jazzberry]" & `$`(n.token.id) & ")")
 
-proc ropeNt(n: ParseNode, name: string): Rope =
-  result = atom(name).italic().fgColor("atomiclime") + n.tokenId()
+proc ropeNt(n: ParseNode, name: string): Rich =
+  result = r("[atomic lime i]" & name & "[/]") + n.tokenId()
 
-proc ropeT(n: ParseNode, name: string): Rope =
-  result = atom(name).fgColor("fandango") + n.tokenId()
+proc ropeT(n: ParseNode, name: string): Rich =
+  result = r("[fandango]" & name) + n.tokenId()
 
-proc ropeNtNamed(n: ParseNode, name: string): Rope =
-  result = atom(name).italic().fgColor("atomiclime") + n.tokenId() +
-            atom(" ") + strong($n.token)
+proc ropeNtNamed(n: ParseNode, name: string): Rich =
+  result = r("[atomic lime i]" & name & "[/]") + n.tokenId() + r(" [b]" &
+    $n.token)
 
-proc ropeWalker(n: ParseNode): (Rope, seq[ParseNode]) =
-  var toPrint: Rope
+template getAllBuiltinTypeNames*(): seq[string] =
+  @["void", "bool", "i8", "byte", "i32", "u8", "u32", "char", "int", "uint",
+   "float", "string", "buffer", "grid", "list", "tuple", "dict", "set",
+   "typespec", "ipaddr", "i64", "u64", "callback", "queue", "ring",
+   "ip_addr", "duration", "size", "date_time", "date", "time", "url",
+   "log_ring", "stack", "tree", "stream"]
 
+proc richOne(n: ParseNode): Rich =
   case n.kind
-  of NodeModule:         toPrint = n.ropeNt("Module")
-  of NodeBody:           toPrint = n.ropeNt("Body")
-  of NodeDocString:      toPrint = n.ropeNt("DocString")
-  of NodeParamBlock:     toPrint = n.ropeNt("ParamBlock")
-  of NodeExternBlock:    toPrint = n.ropeNt("ExternBlock")
-  of NodeExternSig:      toPrint = n.ropeNt("ExternSig")
-  of NodeExternParam:    toPrint = n.ropeNt("ExternParam")
-  of NodeExternLocal:    toPrint = n.ropeNt("ExternLocal")
-  of NodeExternDll:      toPrint = n.ropeNt("ExternDll")
-  of NodeExternPure:     toPrint = n.ropeNt("ExternPure")
-  of NodeExternHolds:    toPrint = n.ropeNt("ExternHolds")
-  of NodeExternAllocs:   toPrint = n.ropeNt("ExternAllocs")
-  of NodeExternReturn:   toPrint = n.ropeNt("ExternReturn")
-  of NodeAssign:         toPrint = n.ropeNt("Assign")
-  of NodeAttrSetLock:    toPrint = n.ropeNt("AttrSetLock")
-  of NodeSection:        toPrint = n.ropeNt("Section")
-  of NodeIfStmt:         toPrint = n.ropeNt("If")
-  of NodeCast:           toPrint = n.ropeNt("Cast")
-  of NodeTypeOfStmt:     toPrint = n.ropeNt("TypeOf")
-  of NodeValueOfStmt:    toPrint = n.ropeNt("ValueOf")
-  of NodeCaseCondition:  toPrint = n.ropeNt("CaseCondition")
-  of NodeCase:           toPrint = n.ropeNt("Case")
-  of NodeWhileStmt:      toPrint = n.ropeNt("While")
-  of NodeElifStmt:       toPrint = n.ropeNt("Elif")
-  of NodeElseStmt:       toPrint = n.ropeNt("Else")
-  of NodeForStmt:        toPrint = n.ropeNt("For")
-  of NodeRange:          toPrint = n.ropeNt("Range")
-  of NodeReturnStmt:     toPrint = n.ropeNt("Return")
-  of NodeNot:            toPrint = n.ropeNt("Not")
-  of NodeMember:         toPrint = n.ropeNt("Member")
-  of NodeIndex:          toPrint = n.ropeNt("Index")
-  of NodeCall:           toPrint = n.ropeNt("Call")
-  of NodeActuals:        toPrint = n.ropeNt("Actuals")
-  of NodeParenExpr:      toPrint = n.ropeNt("ParenExpr")
-  of NodeDictLit:        toPrint = n.ropeNt("DictLit")
-  of NodeKVPair:         toPrint = n.ropeNt("KVPair")
-  of NodeListLit:        toPrint = n.ropeNt("ListLit")
-  of NodeTupleLit:       toPrint = n.ropeNt("TupleLit")
-  of NodeOtherLit:       toPrint = n.ropeNt("Other")
-  of NodeCharLit:        toPrint = n.ropeNt("Char")
-  of NodeLiteral:        toPrint = n.ropeNt("Literal")
-  of NodeEnumStmt:       toPrint = n.ropeNt("Enum")
-  of NodeEnumItem:       toPrint = n.ropeNt("EnumItem")
-  of NodeFormalList:     toPrint = n.ropeNt("Formals")
-  of NodeType:           toPrint = n.ropeNt("Type")
-  of NodeTypeVar:        toPrint = n.ropeNt("TypeVar")
-  of NodeTypeFunc:       toPrint = n.ropeNt("TypeFunc")
-  of NodeTypeTuple:      toPrint = n.ropeNt("TypeTuple")
-  of NodeTypeList:       toPrint = n.ropeNt("TypeList")
-  of NodeTypeDict:       toPrint = n.ropeNt("TypeDict")
-  of NodeTypeObj:        toPrint = n.ropeNt("TypeObj")
-  of NodeTypeRef:        toPrint = n.ropeNt("TypeRef")
-  of NodeTypeTypeSpec:   toPrint = n.ropeNt("TypeTypeSpec")
-  of NodeTypeBuiltin:    toPrint = n.ropeNt("TypeBuiltin")
-  of NodeReturnType:     toPrint = n.ropeNt("TypeNodeReturnType")
-  of NodeTypeVararg:     toPrint = n.ropeNt("TypeVararg")
-  of NodeFormal:         toPrint = n.ropeNt("TypeFormal")
-  of NodeVarStmt:        toPrint = n.ropeNt("VarStmt")
-  of NodeGlobalStmt:     toPrint = n.ropeNt("GlobalStmt")
-  of NodeVarSymInfo:     toPrint = n.ropeNt("VarSymInfo")
-  of NodeConstStmt:      toPrint = n.ropeNt("ConstStmt")
-  of NodeUseStmt:        toPrint = n.ropeNt("UseStmt")
-  of NodeLabelStmt:      toPrint = n.ropeNt("LabelStmt")
-  of NodeExpression:     toPrint = n.ropeNt("Expression")
-  of NodeTypeOneOf:      toPrint = n.ropeNt("OneOf")
-  of NodeTypeMaybe:      toPrint = n.ropeNt("Maybe")
-  of NodeAssert:         toPrint = n.ropeNt("Assert")
-  of NodeConfSpec:       toPrint = n.ropeNt("ConfSpec")
-  of NodeSecSpec:        toPrint = n.ropeNt("SecSpec")
-  of NodeSecProp:        toPrint = n.ropeNt("SecProp")
-  of NodeFieldSpec:      toPrint = n.ropeNt("FieldSpec")
-  of NodeFieldProp:      toPrint = n.ropeNt("FieldProp")
-  of NodeBreakStmt:      toPrint = n.ropeT("Break")
-  of NodeContinueStmt:   toPrint = n.ropeT("Continue")
-  of NodeVarargsFormal:  toPrint = n.ropeNt("Varargs")
-  of NodeCallbackLit:    toPrint = n.ropeNtNamed("CallbackLit")
-  of NodeStringLit:      toPrint = n.ropeNtNamed("String")
-  of NodeIntLit:         toPrint = n.ropeNtNamed("Int")
-  of NodeHexLit:         toPrint = n.ropeNtNamed("Hex")
-  of NodeFloatLit:       toPrint = n.ropeNtNamed("Float")
-  of NodeBoolLit:        toPrint = n.ropeNtNamed("Bool")
-  of NodeNilLit:         toPrint = n.ropeNtNamed("Nil")
-  of NodeFuncDef:        toPrint = n.ropeNtNamed("FuncDef")
+  of NodeModule:         result = n.ropeNt("Module")
+  of NodeBody:           result = n.ropeNt("Body")
+  of NodeDocString:      result = n.ropeNt("DocString")
+  of NodeParamBlock:     result = n.ropeNt("ParamBlock")
+  of NodeExternBlock:    result = n.ropeNt("ExternBlock")
+  of NodeExternSig:      result = n.ropeNt("ExternSig")
+  of NodeExternParam:    result = n.ropeNt("ExternParam")
+  of NodeExternLocal:    result = n.ropeNt("ExternLocal")
+  of NodeExternDll:      result = n.ropeNt("ExternDll")
+  of NodeExternPure:     result = n.ropeNt("ExternPure")
+  of NodeExternHolds:    result = n.ropeNt("ExternHolds")
+  of NodeExternAllocs:   result = n.ropeNt("ExternAllocs")
+  of NodeExternReturn:   result = n.ropeNt("ExternReturn")
+  of NodeAssign:         result = n.ropeNt("Assign")
+  of NodeAttrSetLock:    result = n.ropeNt("AttrSetLock")
+  of NodeSection:        result = n.ropeNt("Section")
+  of NodeIfStmt:         result = n.ropeNt("If")
+  of NodeCast:           result = n.ropeNt("Cast")
+  of NodeTypeOfStmt:     result = n.ropeNt("TypeOf")
+  of NodeValueOfStmt:    result = n.ropeNt("ValueOf")
+  of NodeCaseCondition:  result = n.ropeNt("CaseCondition")
+  of NodeCase:           result = n.ropeNt("Case")
+  of NodeWhileStmt:      result = n.ropeNt("While")
+  of NodeElifStmt:       result = n.ropeNt("Elif")
+  of NodeElseStmt:       result = n.ropeNt("Else")
+  of NodeForStmt:        result = n.ropeNt("For")
+  of NodeRange:          result = n.ropeNt("Range")
+  of NodeReturnStmt:     result = n.ropeNt("Return")
+  of NodeNot:            result = n.ropeNt("Not")
+  of NodeMember:         result = n.ropeNt("Member")
+  of NodeIndex:          result = n.ropeNt("Index")
+  of NodeCall:           result = n.ropeNt("Call")
+  of NodeActuals:        result = n.ropeNt("Actuals")
+  of NodeParenExpr:      result = n.ropeNt("ParenExpr")
+  of NodeDictLit:        result = n.ropeNt("DictLit")
+  of NodeKVPair:         result = n.ropeNt("KVPair")
+  of NodeListLit:        result = n.ropeNt("ListLit")
+  of NodeTupleLit:       result = n.ropeNt("TupleLit")
+  of NodeOtherLit:       result = n.ropeNt("Other")
+  of NodeCharLit:        result = n.ropeNt("Char")
+  of NodeLiteral:        result = n.ropeNt("Literal")
+  of NodeEnumStmt:       result = n.ropeNt("Enum")
+  of NodeEnumItem:       result = n.ropeNt("EnumItem")
+  of NodeFormalList:     result = n.ropeNt("Formals")
+  of NodeType:           result = n.ropeNt("Type")
+  of NodeTypeVar:        result = n.ropeNt("TypeVar")
+  of NodeTypeFunc:       result = n.ropeNt("TypeFunc")
+  of NodeTypeTuple:      result = n.ropeNt("TypeTuple")
+  of NodeTypeList:       result = n.ropeNt("TypeList")
+  of NodeTypeDict:       result = n.ropeNt("TypeDict")
+  of NodeTypeObj:        result = n.ropeNt("TypeObj")
+  of NodeTypeRef:        result = n.ropeNt("TypeRef")
+  of NodeTypeTypeSpec:   result = n.ropeNt("TypeTypeSpec")
+  of NodeTypeBuiltin:    result = n.ropeNt("TypeBuiltin")
+  of NodeReturnType:     result = n.ropeNt("TypeNodeReturnType")
+  of NodeTypeVararg:     result = n.ropeNt("TypeVararg")
+  of NodeFormal:         result = n.ropeNt("TypeFormal")
+  of NodeVarStmt:        result = n.ropeNt("VarStmt")
+  of NodeGlobalStmt:     result = n.ropeNt("GlobalStmt")
+  of NodeVarSymInfo:     result = n.ropeNt("VarSymInfo")
+  of NodeConstStmt:      result = n.ropeNt("ConstStmt")
+  of NodeUseStmt:        result = n.ropeNt("UseStmt")
+  of NodeLabelStmt:      result = n.ropeNt("LabelStmt")
+  of NodeExpression:     result = n.ropeNt("Expression")
+  of NodeTypeOneOf:      result = n.ropeNt("OneOf")
+  of NodeTypeMaybe:      result = n.ropeNt("Maybe")
+  of NodeAssert:         result = n.ropeNt("Assert")
+  of NodeConfSpec:       result = n.ropeNt("ConfSpec")
+  of NodeSecSpec:        result = n.ropeNt("SecSpec")
+  of NodeSecProp:        result = n.ropeNt("SecProp")
+  of NodeFieldSpec:      result = n.ropeNt("FieldSpec")
+  of NodeFieldProp:      result = n.ropeNt("FieldProp")
+  of NodeBreakStmt:      result = n.ropeT("Break")
+  of NodeContinueStmt:   result = n.ropeT("Continue")
+  of NodeVarargsFormal:  result = n.ropeNt("Varargs")
+  of NodeCallbackLit:    result = n.ropeNtNamed("CallbackLit")
+  of NodeStringLit:      result = n.ropeNtNamed("String")
+  of NodeIntLit:         result = n.ropeNtNamed("Int")
+  of NodeHexLit:         result = n.ropeNtNamed("Hex")
+  of NodeFloatLit:       result = n.ropeNtNamed("Float")
+  of NodeBoolLit:        result = n.ropeNtNamed("Bool")
+  of NodeNilLit:         result = n.ropeNtNamed("Nil")
+  of NodeFuncDef:        result = n.ropeNtNamed("FuncDef")
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
      NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
-    toPrint = n.ropeNt($(n.token))
-  of NodeIdentifier:   toPrint = n.ropeNtNamed("Identifier")
+    result = n.ropeNt($(n.token))
+  of NodeIdentifier:   result = n.ropeNtNamed("Identifier")
 
-  result = (toPrint, n.children)
+proc treeDown(t: Tree, n: ParseNode) =
+  for kid in n.children:
+    let sub = t.add_node(richOne(kid))
+    treeDown(sub, kid)
 
-proc toRope*(n: ParseNode): Rope =
-  return n.quickTree(ropeWalker)
+proc toRich*(n: ParseNode): Grid =
+  var t: Tree = new_tree(richOne(n))
+  treeDown(t, n)
+
+  return grid_tree(t)
 
 proc getText*(token: Con4mToken, adjust: static[bool] = false): string =
   when adjust:
@@ -146,86 +156,86 @@ proc `$`*(n: ParseNode): string =
   of NodeExternParam:    "an external function parameter"
   of NodeExternLocal:    "the local interface to an external function"
   of NodeExternDll:      "an external function's expected DLL"
-  of NodeExternPure:     "an external function's <em>pure</em> property"
-  of NodeExternHolds:    "an external function's <em>holds</em> spec"
-  of NodeExternAllocs:   "an external function's <em>allocs</em> spec"
-  of NodeExternReturn:   "spec of the <em>return</em> for an external func"
+  of NodeExternPure:     "an external function's [em]pure[/] property"
+  of NodeExternHolds:    "an external function's [em]holds[/] spec"
+  of NodeExternAllocs:   "an external function's [em]allocs[/] spec"
+  of NodeExternReturn:   "spec of the [em]return[/] for an external func"
   of NodeAssign:         "an assignment"
   of NodeAttrSetLock:    "a lock operation"
   of NodeSection:        "a section declaration"
-  of NodeIfStmt:         "an <em>if</em> block"
+  of NodeIfStmt:         "an [em]if[/] block"
   of NodeCast:           "a cast operation"
-  of NodeTypeOfStmt:     "a <em>typeof</em> statement"
-  of NodeValueOfStmt:    "a <em>valueof</em> statement"
-  of NodeCaseCondition:  "a <em>case</em> condition"
-  of NodeCase:           "a <em>case</em> branch"
+  of NodeTypeOfStmt:     "a [em]typeof[/] statement"
+  of NodeValueOfStmt:    "a [em]valueof[/] statement"
+  of NodeCaseCondition:  "a [em]case[/] condition"
+  of NodeCase:           "a [em]case[/] branch"
   of NodeRange:          "a numeric range"
-  of NodeWhileStmt:      "a <em>while</em> loop"
-  of NodeElifStmt:       "an <em>elif</em> block"
-  of NodeElseStmt:       "an <em>else</em> block"
-  of NodeForStmt:        "a <em>for</em> loop"
-  of NodeReturnStmt:     "a <em>return</em> statement"
-  of NodeNot:            "a <em>not</em> statement"
+  of NodeWhileStmt:      "a [em]while[/] loop"
+  of NodeElifStmt:       "an [em]elif[/] block"
+  of NodeElseStmt:       "an [em]else[/] block"
+  of NodeForStmt:        "a [em]for[/] loop"
+  of NodeReturnStmt:     "a [em]return[/] statement"
+  of NodeNot:            "a [em]not[/] statement"
   of NodeMember:         "a member access"
   of NodeIndex:          "an indexing operation"
   of NodeCall:           "a function call"
   of NodeActuals:        "function parameters"
   of NodeParenExpr:      "a parenthesized expression"
-  of NodeDictLit:        "a <em>dict</em> literal"
+  of NodeDictLit:        "a [em]dict[/] literal"
   of NodeKVPair:         "a key / value pair"
-  of NodeListLit:        "a <em>list</em> literal"
-  of NodeTupleLit:       "a <em>tuple</em> literal"
+  of NodeListLit:        "a [em]list[/] literal"
+  of NodeTupleLit:       "a [em]tuple[/] literal"
   of NodeCharLit:        "a character literal"
   of NodeLiteral:        "a literal"
   of NodeOtherLit:       "a literal"
-  of NodeEnumStmt:       "an <em>enum</em> statement"
-  of NodeEnumItem:       "an <em>enum</em> item"
+  of NodeEnumStmt:       "an [em]enum[/] statement"
+  of NodeEnumItem:       "an [em]enum[/] item"
   of NodeFormalList:     "func declaration formals"
   of NodeType:           "a type literal"
   of NodeTypeVar:        "a type variable"
   of NodeTypeFunc:       "a function type"
-  of NodeTypeTuple:      "a <em>tuple</em> type"
-  of NodeTypeList:       "a <em>list</em> type"
-  of NodeTypeDict:       "a <em>dict</em> type"
-  of NodeTypeObj:        "an <em>object</em> type"
-  of NodeTypeRef:        "a <em>ref</em> type"
-  of NodeTypeTypeSpec:   "a <em>typespec</em> type"
+  of NodeTypeTuple:      "a [em]tuple[/] type"
+  of NodeTypeList:       "a [em]list[/] type"
+  of NodeTypeDict:       "a [em]dict[/] type"
+  of NodeTypeObj:        "an [em]object[/] type"
+  of NodeTypeRef:        "a [em]ref[/] type"
+  of NodeTypeTypeSpec:   "a [em]typespec[/] type"
   of NodeTypeBuiltin:    ("a builtin type (" & n.getText() & ")")
-  of NodeReturnType:     "a <em>return</em> type"
-  of NodeTypeVararg:     "a <em>vararg</em> indicator"
+  of NodeReturnType:     "a [em]return[/] type"
+  of NodeTypeVararg:     "a [em]vararg[/] indicator"
   of NodeFormal:         "a formal parameter"
-  of NodeVarStmt:        "a <em>var</em> statement"
-  of NodeGlobalStmt:     "a <em>global</em> statement"
-  of NodeConstStmt:      "a <em>const</em> statement"
-  of NodeVarSymInfo:     "<em>var</em> statement symbol info"
-  of NodeUseStmt:        "a <em>use</em> statement"
-  of NodeLabelStmt:      "a <em>label</em> statement"
+  of NodeVarStmt:        "a [em]var[/] statement"
+  of NodeGlobalStmt:     "a [em]global[/] statement"
+  of NodeConstStmt:      "a [em]const[/] statement"
+  of NodeVarSymInfo:     "[em]var[/] statement symbol info"
+  of NodeUseStmt:        "a [em]use[/] statement"
+  of NodeLabelStmt:      "a [em]label[/] statement"
   of NodeExpression:     "an expression"
-  of NodeTypeOneOf:      "a <em>oneof</em> type"
-  of NodeTypeMaybe:      "a <em>maybe</em> type"
-  of NodeBreakStmt:      "a <em>break</em> statement"
-  of NodeContinueStmt:   "a <em>continue</em> statement"
-  of NodeVarargsFormal:  "a <em>varargs</em> specifier"
-  of NodeCallbackLit:    "a <em>callback</em> literal"
-  of NodeStringLit:      "a <em>string</em> literal"
-  of NodeIntLit:         "an <em>integer</em> literal"
-  of NodeHexLit:         "a <em>hex<em> literal"
-  of NodeFloatLit:       "a <em>float</em> literal"
-  of NodeBoolLit:        "a <em>boolean</em> literal"
-  of NodeNilLit:         "the <em>nil</em> value"
-  of NodeFuncDef:        "a <em>function</em> declaration"
-  of NodeAssert:         "an <em>assert</em> statement"
+  of NodeTypeOneOf:      "a [em]oneof[/] type"
+  of NodeTypeMaybe:      "a [em]maybe[/] type"
+  of NodeBreakStmt:      "a [em]break[/] statement"
+  of NodeContinueStmt:   "a [em]continue[/] statement"
+  of NodeVarargsFormal:  "a [em]varargs[/] specifier"
+  of NodeCallbackLit:    "a [em]callback[/] literal"
+  of NodeStringLit:      "a [em]string[/] literal"
+  of NodeIntLit:         "an [em]integer[/] literal"
+  of NodeHexLit:         "a [em]hex[em] literal"
+  of NodeFloatLit:       "a [em]float[/] literal"
+  of NodeBoolLit:        "a [em]boolean[/] literal"
+  of NodeNilLit:         "the [em]nil[/] value"
+  of NodeFuncDef:        "a [em]function[/] declaration"
+  of NodeAssert:         "an [em]assert[/] statement"
   of NodeConfSpec:       "a configuration specification"
-  of NodeSecSpec:        "a config spec for a <em>section</em>"
-  of NodeSecProp:        "a property for a <em>section</em> spec"
-  of NodeFieldSpec:      "a specification for a <em>field</em>"
-  of NodeFieldProp:      "a property for a <em>field</em> specification"
+  of NodeSecSpec:        "a config spec for a [em]section[/]"
+  of NodeSecProp:        "a property for a [em]section[/] spec"
+  of NodeFieldSpec:      "a specification for a [em]field[/]"
+  of NodeFieldProp:      "a property for a [em]field[/] specification"
   of NodeOr, NodeAnd, NodeNe, NodeCmp, NodeGte, NodeLte, NodeGt,
      NodeLt, NodePlus, NodeMinus, NodeMod, NodeMul, NodeDiv,
      NodeBitOr, NodeBitXor, NodeBitAnd, NodeShl, NodeShr:
-    ("the <em>" & $(n.getText()) & "</em> operator")
+    ("the [em]" & $(n.getText()) & "[/] operator")
   of NodeIdentifier:
-    "an identifier <em>(" & $(n.getText()) & ")</em>"
+    "an identifier [em](" & $(n.getText()) & ")[/]"
 
 proc addKid(parent: ParseNode, kid: ParseNode) =
   parent.children.add(kid)
@@ -1071,7 +1081,7 @@ production(lockAttr, NodeAttrSetLock):
     result.addKid(ctx.assign(x))
   else:
     if x.children[0].kind notin [NodeIdentifier, NodeMember]:
-      print x.toRope()
+      print x.toRich()
       ctx.errSkipStmt("BadLock")
     result.addKid(x.children[0])
 
@@ -1173,13 +1183,13 @@ production(caseBody, NodeBody):
           continue
         of "parameter":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'parameter'</em> blocks"])
+                                  @["[em]'parameter'[/] blocks"])
         of "extern":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'extern'</em> blocks"])
+                                  @["[em]'extern'[/] blocks"])
         of "confspec":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'confspec</em> blocks"])
+                                  @["[em]'confspec[/] blocks"])
         else:
           discard
       else:
@@ -1474,20 +1484,14 @@ production(typeSpec, NodeType):
       result.addKid(ctx.objectType())
   of TtIdentifier:
     case ctx.curTok().getText()
-    of "list":
+    of "list", "queue", "set", "ring", "log_ring", "stack", "tree":
       result.addKid(ctx.listType())
     of "dict":
       result.addKid(ctx.dictType())
     of "tuple":
       result.addKid(ctx.tupleType())
-    of "ref":
-      result.addKid(ctx.refType())
     of "typespec":
       result.addKid(ctx.typeTypeSpec())
-    of "oneof":
-      result.addKid(ctx.typeOneOf())
-    of "maybe":
-      result.addKid(ctx.typeMaybe())
     else:
       result.addKid(ctx.builtinType())
   else:
@@ -1657,7 +1661,7 @@ proc commonExternStart(ctx: Module) =
   of TtColon, TtAssign:
     ctx.advance()
   else:
-    ctx.errSkipStmtNoBackup("MissingTok", @["a <em>:</em>"])
+    ctx.errSkipStmtNoBackup("MissingTok", @["a [em]:[/]"])
 
 production(externLocalDef, NodeExternLocal):
   ctx.commonExternStart()
@@ -2120,13 +2124,13 @@ production(body, NodeBody):
           continue
         of "parameter":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'parameter'</em> blocks"])
+                                  @["[em]'parameter'[/] blocks"])
         of "extern":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'extern'</em> blocks"])
+                                  @["[em]'extern'[/] blocks"])
         of "confspec":
           ctx.errSkipStmtNoBackup("TopLevelPlural",
-                                  @["<em>'confspec</em> blocks"])
+                                  @["[em]'confspec[/] blocks"])
         else:
           discard
       else:
@@ -2249,52 +2253,84 @@ production(topLevel, NodeModule):
     except:
       lineSkipRecover()
 
-proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
+proc buildType*(n: ParseNode, tvars: Dict[string, TypeSpec]): TypeSpec =
   case n.kind
   of NodeTypeBuiltin:
     let biname = n.children[0].getText()
-    return biname.idFromTypeName()
+    case biname
+    of "bool":
+      return get_builtin_type(C4_BOOL)
+    of "i8":
+      return get_builtin_type(C4_I8)
+    of "byte", "u8":
+      return get_builtin_type(C4_BYTE)
+    of "i32":
+      return get_builtin_type(C4_I32)
+    of "u32", "char":
+      return get_builtin_type(C4_CHAR)
+    of "int", "i64":
+      return get_builtin_type(C4_INT)
+    of "uint", "u64":
+      return get_builtin_type(C4_UINT)
+    of "float":
+      return get_builtin_type(C4_F64)
+    of "string":
+      return get_builtin_type(C4_UTF8)
+    of "buffer":
+      return get_builtin_type(C4_BUFFER)
+    of "grid":
+      return get_builtin_type(C4_GRID)
+    of "ip_addr":
+      return get_builtin_type(C4_IPV4)
+    of "duration":
+      return get_builtin_type(C4_DURATION)
+    of "size":
+      return get_builtin_type(C4_SIZE)
+    of "date_time":
+      return get_builtin_type(C4_DATETIME)
+    of "date":
+      return get_builtin_type(C4_DATE)
+    of "time":
+      return get_builtin_type(C4_TIME)
+    of "url":
+      return get_builtin_type(C4_URL)
+    of "stream":
+      return get_builtin_type(C4_STREAM)
+    else:
+      unreachable
   of NodeType:
     return n.children[0].buildType(tvars)
   of NodeTypeList:
-    return tList(n.children[0].buildType(tvars))
+    # TODO: add in other list types.
+    return tspec_list(n.children[0].buildType(tvars))
   of NodeTypeDict:
-    return tDict(n.children[0].buildType(tvars),
-                 n.children[1].buildType(tvars))
+    return tspec_dict(n.children[0].buildType(tvars),
+                       n.children[1].buildType(tvars))
   of NodeTypeTuple:
-    var items: seq[TypeId]
+    var items: seq[TypeSpec]
     for kid in n.children:
       items.add(kid.buildType(tvars))
-    return tTuple(items)
-  of NodeTypeObj:
-    var
-      props: Dict[string, TypeId]
-      name:  string
 
-    props.initDict()
-    if n.children[0].kind == NodeIdentifier:
-      name = n.children[0].getText()
-    return tStruct(props, name)
+    return tspec_tuple(toXList(items))
+
+  of NodeTypeObj:
+    raise newException(ValueError, "Not implemented yet.")
   of NodeTypeVar:
     let varname = n.children[0].getText()
     let objOpt = tvars.lookup(varname)
     if objOpt.isSome():
       return objOpt.get()
-    let tobj = newTypeVar()
-    tobj.localName = some(varname)
-    tvars[varname] = tobj.typeId
-    result = tobj.typeId
+    result = tspec_typevar() # todo: c4str(varname)
+    tvars[varname] = result
   of NodeTypeRef:
-    return tRef(n.children[0].buildType(tvars))
+    raise newException(ValueError, "Not implemented yet.")
   of NodeTypeTypeSpec:
-    if n.children.len() == 0:
-      return tTypeSpec()
-    else:
-      return tTypeSpec(n.children[0].buildType(tvars))
+    return get_builtin_type(C4_TYPESPEC)
   of NodeTypeFunc:
     var
-      items: seq[TypeId]
-      va:    bool = false
+      items:   seq[TypeSpec]
+      rettype: TypeSpec = nil
+      va:      bool = false
 
     for kid in n.children:
       if kid.kind == NodeTypeVararg:
@@ -2302,21 +2338,17 @@ proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
         items.add(kid.children[0].buildType(tvars))
       elif kid.kind == NodeReturnType:
         if kid.children.len() == 0:
-          items.add(tVar())
+          rettype = tspec_typevar()
         else:
-          items.add(kid.children[0].buildType(tvars))
+          rettype = kid.children[0].buildType(tvars)
       else:
         items.add(kid.buildType(tvars))
-    return newFuncType(items, va).typeId
+    return tspec_fn(rettype, toXlist(items), va)
 
   of NodeTypeOneOf:
-    var items: seq[TypeId]
-    for kid in n.children:
-      items.add(kid.buildType(tvars))
-
-    return tOneOf(items)
+    raise newException(ValueError, "Not implemented yet.")
   of NodeTypeMaybe:
-    return tMaybe(n.children[0].buildType(tvars))
+    raise newException(ValueError, "Not implemented yet.")
   else:
     var errs: seq[Con4mError]
 
@@ -2324,18 +2356,18 @@ proc buildType*(n: ParseNode, tvars: Dict[string, TypeId]): TypeId =
     print errs.formatErrors()
     raise newCon4mException(errs)
 
-proc buildType*(n: ParseNode): TypeId =
+proc buildType*(n: ParseNode): TypeSpec =
   ## Take a parse tree containing type information, and yield a type
   ## indicator (TypeId)
-  var tvars: Dict[string, TypeId]
+  var tvars: Dict[string, TypeSpec]
 
   tvars.initDict()
   return n.buildType(tvars)
 
-proc parseType*(s: string): TypeId {.exportc: "parse_con4m_type", cdecl.} =
+proc parseType*(s: string): TypeSpec {.exportc: "parse_con4m_type", cdecl.} =
   var
     errs:  seq[Con4mError]
-    tvars: Dict[string, TypeId]
+    tvars: Dict[string, TypeSpec]
 
   tvars.initDict()
 

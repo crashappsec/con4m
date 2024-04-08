@@ -1,644 +1,479 @@
 import "."/[common, attrstore]
-import "ztypes"/[api, marshal]
 
-proc marshal_int_list[T](l: seq[T]): C4Str =
-  list_marshal_helper(l):
-    toAdd.add(cast[pointer](item).marshal_64_bit_value())
-
-proc unmarshal_int_list(p: var cstring): seq[int] =
-  list_unmarshal_helper(p):
-    let i  = cast[int](p.unmarshal_64_bit_value())
-    result.add(i)
-
-proc marshal_ffi_arg_info(args: seq[ZFFiArgInfo]): C4Str =
-  list_marshal_helper(args):
-    toAdd.add(item.held.marshal_bool())
-    toAdd.add(item.alloced.marshal_bool())
-    toAdd.add(item.argType.marshal_16_bit_value())
-    toAdd.add(item.ourType.marshal_32_bit_value())
-
-proc unmarshal_ffi_arg_info(p: var cstring): seq[ZFFiArgInfo] =
-  list_unmarshal_helper(p):
-    var a = ZFFiArgInfo()
-
-    a.held    = p.unmarshal_bool()
-    a.alloced = p.unmarshal_bool()
-    a.argtype = p.unmarshal_16_bit_value()
-    a.ourtype = p.unmarshal_32_bit_value()
-
-    result.add(a)
-
-proc marshal_one_ffi_info_obj(rt: RuntimeState, f: ZFFiInfo): C4Str =
-  basic_marshal_helper:
-    toAdd.add(cast[pointer](f.nameOffset).marshal_64_bit_value())
-    toAdd.add(cast[pointer](f.localName).marshal_64_bit_value())
-    toAdd.add(cast[pointer](f.tid).marshal_64_bit_value())
-    toAdd.add(f.shortdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(f.longdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(f.mid.marshal_32_bit_value())
-    toAdd.add(f.va.marshal_bool())
-    toAdd.add(f.dlls.marshal_int_list())
-    toAdd.add(f.argInfo.marshal_ffi_arg_info())
-
-proc unmarshal_one_ffi_info_obj(rt: RuntimeState, p: var cstring): ZFFiInfo =
-  result = ZFFiInfo()
-
-  result.nameOffset = int(p.unmarshal_64_bit_value())
-  result.localName  = int(p.unmarshal_64_bit_value())
-  result.tid        = cast[TypeId](p.unmarshal_64_bit_value())
-  result.shortdoc   = p.rope_unmarshal(TRich, rt.memos)
-  result.longdoc    = p.rope_unmarshal(TRich, rt.memos)
-  result.mid        = p.unmarshal_32_bit_value()
-  result.va         = p.unmarshal_bool()
-  result.dlls       = p.unmarshal_int_list()
-  result.argInfo    = p.unmarshal_ffi_arg_info()
-
-proc marshal_sym_types(l: var seq[(int, TypeId)]): C4Str =
-  view_marshal_helper(l):
-    toAdd.add(cast[pointer](k).marshal_64_bit_value())
-    toAdd.add(cast[pointer](v).marshal_64_bit_value())
-
-proc unmarshal_sym_types(p: var cstring): seq[(int, TypeId)] =
-  list_unmarshal_helper(p):
-    let
-      k = cast[int](p.unmarshal_64_bit_value())
-      v = cast[TypeId](p.unmarshal_64_bit_value())
-
-    result.add((k, v))
-
-proc marshal_sym_names(d: Dict[int, string]): C4Str =
-  dictionary_marshal_helper(d):
-    toAdd.add(k.int32().marshal_32_bit_value())
-    toAdd.add(v.marshal_nim_string())
-
-proc unmarshal_sym_names(p: var cstring): Dict[int, string] =
+proc symTypeXForm(st: seq[(int, TypeSpec)]): Dict[int, TypeSpec] =
   result.initDict()
 
-  list_unmarshal_helper(p):
-    let
-      k = int(p.unmarshal_32_bit_value())
-      v = p.unmarshal_nim_string()
+  for (n, t) in st:
+    result[n] = t
 
-    result[k] = v
+proc toST(s: Dict[int, TypeSpec]): seq[(int, TypeSpec)] =
+   return s.items(sort = true)
 
-proc marshal_one_func(rt: RuntimeState, f: ZFnInfo): C4Str =
-  basic_marshal_helper:
-    toAdd.add(f.funcName.marshal_nim_string())
-    toAdd.add(f.syms.marshal_sym_names())
-    toAdd.add(f.symTypes.marshal_sym_types())
-    toAdd.add(cast[pointer](f.tid.followForwards()).marshal_64_bit_value())
-    toadd.add(f.mid.marshal_32_bit_value())
-    toAdd.add(f.offset.marshal_32_bit_value())
-    toAdd.add(f.size.marshal_32_bit_value())
-    toAdd.add(f.shortdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(f.longdoc.rope_marshal(TRich, rt.memos))
+proc marshal_modules(rt: RuntimeState) =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    a = addr rt.next_memoid
 
-proc unmarshal_one_func(rt: RuntimeState, p: var cstring): ZFnInfo =
-  result = ZFnInfo()
+  marshal_i32(cint(rt.obj.moduleContents.len()), s)
+  for module in rt.obj.moduleContents:
+    con4m_sub_marshal(c4Str(module.modname), s, m, a)
+    con4m_sub_marshal(c4Str(module.location), s, m, a)
+    con4m_sub_marshal(c4Str(module.key), s, m, a)
+    con4m_sub_marshal(c4Str(module.ext), s, m, a)
+    con4m_sub_marshal(c4Str(module.url), s, m, a)
+    con4m_sub_marshal(c4Str(module.version), s, m, a)
+    con4m_sub_marshal(module.symTypes.symTypeXForm(), s, m, a)
+    con4m_sub_marshal(module.codesyms, s, m, a)
+    con4m_sub_marshal(module.datasyms, s, m, a)
+    con4m_sub_marshal(c4Str(module.source), s, m, a)
+    con4m_sub_marshal(c4Str(module.shortdoc), s, m, a)
+    con4m_sub_marshal(c4Str(module.longdoc), s, m, a)
+    marshal_i64(module.moduleId, s)
+    marshal_i64(module.moduleVarSize, s)
+    marshal_i64(module.initSize, s)
+    marshal_i32(cint(module.parameters.len()), s)
+    for param in module.parameters:
+      con4m_sub_marshal(param.attr, s, m, a)
+      marshal_i64(param.offset, s)
+      con4m_sub_marshal(param.default, s, m, a)
+      marshal_i32(param.vFnIx, s)
+      marshal_bool(param.vNative, s)
+      marshal_i32(param.iFnIx, s)
+      marshal_bool(param.iNative, s)
+      con4m_sub_marshal(param.userparam, s, m, a)
+      con4m_sub_marshal(param.userType, s, m, a)
+      con4m_sub_marshal(param.shortdoc, s, m, a)
+      con4m_sub_marshal(param.longdoc, s, m, a)
+    marshal_i32(cint(module.instructions.len()), s)
+    for instruction in module.instructions:
+      marshal_u8(cast[uint8](instruction.op), s)
+      marshal_i16(instruction.moduleId, s)
+      marshal_i32(instruction.lineNo, s)
+      marshal_i32(instruction.arg, s)
+      marshal_i64(instruction.immediate, s)
+      con4m_sub_marshal(instruction.typeInfo, s, m, a)
 
-  result.funcName   = p.unmarshal_nim_string()
-  result.syms       = p.unmarshal_sym_names()
-  result.symTypes   = p.unmarshal_sym_types()
-  result.tid        = cast[TypeId](p.unmarshal_64_bit_value())
-  result.mid        = p.unmarshal_32_bit_value()
-  result.offset     = p.unmarshal_32_bit_value()
-  result.size       = p.unmarshal_32_bit_value()
-  result.shortdoc   = p.rope_unmarshal(TRich, rt.memos)
-  result.longdoc    = p.rope_unmarshal(TRich, rt.memos)
+proc unmarshal_modules(rt: RuntimeState): seq[ZModuleInfo] =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    l = s.unmarshal_i32()
 
-proc marshal_byte_code(bc: seq[ZInstruction]): C4Str =
-  list_marshal_helper(bc):
-    toAdd.add(marshal_8_bit_value(cast[uint8](item.op)))
-    toAdd.add(marshal_8_bit_value(0'u8))
-    toAdd.add(marshal_16_bit_value(item.moduleId))
-    toAdd.add(marshal_32_bit_value(item.lineNo))
-    toAdd.add(marshal_32_bit_value(item.arg))
-    toAdd.add(cast[pointer](item.immediate).marshal_64_bit_value())
-    toAdd.add(cast[pointer](item.typeInfo).marshal_64_bit_value())
+  for i in 0 ..< l:
+    var mi = ZModuleInfo()
+    mi.modname  = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.location = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.key      = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.ext      = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.url      = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.version  = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.symTypes = con4m_sub_unmarshal[Dict[int, TypeSpec]](s, m).toST()
+    mi.codesyms = con4m_sub_unmarshal[Dict[int, string]](s, m)
+    mi.datasyms = con4m_sub_unmarshal[Dict[int, string]](s, m)
+    mi.source   = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.shortdoc = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    mi.longdoc  = con4m_sub_unmarshal[Rich](s, m).toNimStr()
 
-proc unmarshal_byte_code(p: var cstring): seq[ZInstruction] =
-  list_unmarshal_helper(p):
-    var instr = ZInstruction()
+    mi.moduleId      = s.unmarshal_i64()
+    mi.moduleVarSize = s.unmarshal_i64()
+    mi.initSize      = s.unmarshal_i64()
 
-    instr.op        = cast[ZOp](p.unmarshal_8_bit_value())
-    discard           p.unmarshal_8_bit_value()
-    instr.moduleId  = p.unmarshal_16_bit_value()
-    instr.lineNo    = p.unmarshal_32_bit_value()
-    instr.arg       = p.unmarshal_32_bit_value()
-    instr.immediate = int64(p.unmarshal_64_bit_value())
-    instr.typeInfo  = cast[TypeId](p.unmarshal_64_bit_value())
-    result.add(instr)
+    let nparams = s.unmarshal_i32()
+    for j in 0 ..< nparams:
+      var p       = ZParamInfo()
+      p.attr      = con4m_sub_unmarshal[Rich](s, m)
+      p.offset    = s.unmarshal_i64()
+      p.default   = con4m_sub_unmarshal[pointer](s, m)
+      p.vFnIx     = s.unmarshal_i32()
+      p.vNative   = s.unmarshal_bool()
+      p.iFnIx     = s.unmarshal_i32()
+      p.iNative   = s.unmarshal_bool()
+      p.userparam = con4m_sub_unmarshal[pointer](s, m)
+      p.userType  = con4m_sub_unmarshal[TypeSpec](s, m)
+      p.shortdoc  = con4m_sub_unmarshal[Rich](s, m)
+      p.longdoc   = con4m_sub_unmarshal[Rich](s, m)
+      mi.parameters.add(p)
 
-proc marshal_mod_params(rt: RuntimeState, params: seq[ZParamInfo]): C4Str =
-  list_marshal_helper(params):
-    toAdd.add(item.attr.marshal_nim_string())
-    toAdd.add(item.shortdoc.marshal_nim_string())
-    toAdd.add(item.longdoc.marshal_nim_string())
-    toAdd.add(item.offset.int32().marshal_32_bit_value())
-    toAdd.add(item.private.marshal_bool())
-    toAdd.add(cast[pointer](item.tid.followForwards()).marshal_64_bit_value())
-    toAdd.add(item.vFnIx.marshal_32_bit_value())
-    toAdd.add(item.iFnIx.marshal_32_bit_value())
-    toAdd.add(item.vNative.marshal_bool())
-    toAdd.add(item.iNative.marshal_bool())
-    toAdd.add(item.haveDefault.marshal_bool())
-    if item.haveDefault:
-      toAdd.add(marshal(item.default, item.tid, rt.memos))
+    let ninstr = s.unmarshal_i32()
+    for j in 0 ..< ninstr:
+      var ins       = ZInstruction()
+      ins.op        = cast[ZOp](s.unmarshal_u8())
+      ins.moduleId  = s.unmarshal_i16()
+      ins.lineNo    = s.unmarshal_i32()
+      ins.arg       = s.unmarshal_i32()
+      ins.immediate = s.unmarshal_i64()
+      ins.typeInfo  = con4m_sub_unmarshal[TypeSpec](s, m)
+      mi.instructions.add(ins)
 
-proc unmarshal_mod_params(rt: RuntimeState, p: var cstring): seq[ZParamInfo] =
-  list_unmarshal_helper(p):
-    var param = ZParamInfo()
+    result.add(mi)
 
-    param.attr        = p.unmarshal_nim_string()
-    param.shortdoc    = p.unmarshal_nim_string()
-    param.longdoc     = p.unmarshal_nim_string()
-    param.offset      = int(p.unmarshal_32_bit_value())
-    param.private     = p.unmarshal_bool()
-    param.tid         = cast[TypeId](p.unmarshal_64_bit_value())
-    param.vFnIx       = p.unmarshal_32_bit_value()
-    param.iFnIx       = p.unmarshal_32_bit_value()
-    param.vNative     = p.unmarshal_bool()
-    param.iNative     = p.unmarshal_bool()
-    param.haveDefault = p.unmarshal_bool()
-    if param.haveDefault:
-      param.default = p.unmarshal(param.tid, rt.memos)
+proc marshal_func_info(rt: RuntimeState) =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    a = addr rt.next_memoid
 
-    result.add(param)
+  marshal_u32(cuint(rt.obj.funcInfo.len()), s)
+  for fn in rt.obj.funcInfo:
+    con4m_sub_marshal(c4str(fn.funcname), s, m, a)
+    con4m_sub_marshal(fn.syms, s, m, a)
+    con4m_sub_marshal(fn.symTypes.symTypeXform(), s, m, a)
+    con4m_sub_marshal(fn.tid, s, m, a)
+    marshal_i32(fn.mid, s)
+    marshal_i32(fn.offset, s)
+    marshal_i32(fn.size, s)
+    con4m_sub_marshal(fn.shortdoc, s, m, a)
+    con4m_sub_marshal(fn.longdoc, s, m, a)
 
-proc marshal_one_module(rt: RuntimeState, m: ZModuleInfo): C4Str =
-  basic_marshal_helper:
-    toAdd.add(m.modname.marshal_nim_string())
-    toAdd.add(m.location.marshal_nim_string())
-    toAdd.add(m.key.marshal_nim_string())
-    toAdd.add(m.ext.marshal_nim_string())
-    toAdd.add(m.url.marshal_nim_string())
-    toAdd.add(m.version.marshal_nim_string())
-    toAdd.add(m.symTypes.marshal_sym_types())
-    toAdd.add(m.codesyms.marshal_sym_names())
-    toAdd.add(m.datasyms.marshal_sym_names())
-    toAdd.add(m.source.marshal_nim_string())
-    toAdd.add(m.shortdoc.marshal_nim_string())
-    toAdd.add(m.longdoc.marshal_nim_string())
-    toAdd.add(cast[pointer](m.moduleId).marshal_64_bit_value())
-    toAdd.add(cast[pointer](m.moduleVarSize).marshal_64_bit_value())
-    toAdd.add(cast[pointer](m.initSize).marshal_64_bit_value())
-    toAdd.add(rt.marshal_mod_params(m.parameters))
-    toAdd.add(m.instructions.marshal_byte_code())
+proc unmarshal_func_info(rt: RuntimeState): seq[ZFnInfo] =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    l = s.unmarshal_u32()
 
-proc unmarshal_one_module(rt: RuntimeState, p: var cstring): ZModuleInfo =
-  result = ZModuleInfo()
+  for i in 0 ..< l:
+    var info      = ZFnInfo()
+    info.funcname = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+    info.syms     = con4m_sub_unmarshal[Dict[int, string]](s, m)
+    info.symTypes = con4m_sub_unmarshal[Dict[int, TypeSpec]](s, m).toST()
+    info.tid      = con4m_sub_unmarshal[TypeSpec](s, m)
+    info.mid      = s.unmarshal_i32()
+    info.offset   = s.unmarshal_i32()
+    info.size     = s.unmarshal_i32()
+    info.shortdoc = con4m_sub_unmarshal[Rich](s, m)
+    info.longdoc  = con4m_sub_unmarshal[Rich](s, m)
 
-  result.modname       = p.unmarshal_nim_string()
-  result.location      = p.unmarshal_nim_string()
-  result.key           = p.unmarshal_nim_string()
-  result.ext           = p.unmarshal_nim_string()
-  result.url           = p.unmarshal_nim_string()
-  result.version       = p.unmarshal_nim_string()
-  result.symTypes      = p.unmarshal_sym_types()
-  result.codeSyms      = p.unmarshal_sym_names()
-  result.dataSyms      = p.unmarshal_sym_names()
-  result.source        = p.unmarshal_nim_string()
-  result.shortdoc      = p.unmarshal_nim_string()
-  result.longdoc       = p.unmarshal_nim_string()
-  result.moduleId      = int(p.unmarshal_64_bit_value())
-  result.moduleVarSize = int(p.unmarshal_64_bit_value())
-  result.initSize      = int(p.unmarshal_64_bit_value())
-  result.parameters    = rt.unmarshal_mod_params(p)
-  result.instructions  = p.unmarshal_byte_code()
+proc marshal_ffi_info(rt: RuntimeState) =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    a = addr rt.next_memoid
 
-proc marshal_validators(rt: RuntimeState, vlist: seq[Validator]): C4Str =
-  discard
-  # TODO: there's some more work to do here.
+  marshal_u32(uint32(rt.obj.ffiInfo.len()), s)
+  for info in rt.obj.ffiInfo:
+    marshal_i64(info.nameoffset, s)
+    marshal_i64(info.localname, s)
+    marshal_i32(info.mid, s)
+    con4m_sub_marshal(info.tid, s, m, a)
+    marshal_bool(info.va, s)
+    con4m_sub_marshal(info.dlls.toXList(), s, m, a)
+    marshal_u32(uint32(info.argInfo.len()), s)
+    for arg in info.argInfo:
+      marshal_bool(arg.held, s)
+      marshal_bool(arg.alloced, s)
+      marshal_i16(arg.argType, s)
+      marshal_i32(arg.ourType, s)
+      con4m_sub_marshal(c4Str(arg.name), s, m, a)
+    con4m_sub_marshal(info.shortdoc, s, m, a)
+    con4m_sub_marshal(info.longdoc, s, m, a)
 
-proc unmarshal_validators(rt: RuntimeState, p: var cstring): seq[Validator] =
-  discard
+proc unmarshal_ffi_info(rt: RuntimeState): seq[ZFfiInfo] =
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    l = s.unmarshal_u32()
 
-proc marshal_field_spec(rt: RuntimeState, fs: FieldSpec): C4Str =
-  basic_marshal_helper:
-    toAdd.add(fs.name.marshal_nim_string())
-    toAdd.add(marshal_64_bit_value(cast[pointer](fs.tid)))
-    toAdd.add(fs.lockOnWrite.marshal_bool())
-    toAdd.add(fs.haveDefault.marshal_bool())
-    if fs.haveDefault:
-      toAdd.add(marshal(fs.defaultVal, fs.tid, rt.memos))
-    #toAdd.add(rt.marshal_validators(fs.validators))
-    toAdd.add(fs.hidden.marshal_bool())
-    toAdd.add(fs.required.marshal_bool())
-    toAdd.add(fs.doc.rope_marshal(TRich, rt.memos))
-    toAdd.add(fs.shortdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(marshal_64_bit_value(cast[pointer](fs.errIx)))
-    toAdd.add(fs.exclusions.marshal_nimstr_list())
-    toAdd.add(fs.deferredType.marshal_nim_string())
+  for i in 0 ..< l:
+    var info = ZFfiInfo()
+    info.nameoffset     = s.unmarshal_i64()
+    info.localname      = s.unmarshal_i64()
+    info.mid            = s.unmarshal_i32()
+    info.tid            = con4m_sub_unmarshal[TypeSpec](s, m)
+    info.va             = s.unmarshal_bool()
+    let arr: XList[int] = con4m_sub_unmarshal[XList[int]](s, m)
+    info.dlls           = arr.toSeq()
+    let nargs           = s.unmarshal_u32()
+    for j in 0 ..< nargs:
+      var arg = ZFfiArgInfo()
+      arg.held    = s.unmarshal_bool()
+      arg.alloced = s.unmarshal_bool()
+      arg.argType = s.unmarshal_i16()
+      arg.ourType = s.unmarshal_i32()
+      arg.name    = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+      info.argInfo.add(arg)
 
-proc unmarshal_field_spec(rt: RuntimeState, p: var cstring): FieldSpec =
-  result = FieldSpec()
+    info.shortDoc = con4m_sub_unmarshal[Rich](s, m)
+    info.longDoc  = con4m_sub_unmarshal[Rich](s, m)
+    result.add(info)
 
-  result.name        = p.unmarshal_nim_string()
-  result.tid         = cast[TypeId](p.unmarshal_64_bit_value())
-  result.lockOnWrite = p.unmarshal_bool()
-  result.haveDefault = p.unmarshal_bool()
+proc marshal_one_field(rt: RuntimeState, name: Rich, f: FieldSpec) =
+  let
+    s          = rt.marshalStream
+    m          = rt.memos
+    a          = addr rt.next_memoid
 
-  if result.haveDefault:
-    result.defaultVal = p.unmarshal(result.tid, rt.memos)
+  con4m_sub_marshal(name, s, m, a)
+  con4m_sub_marshal(f.tid, s, m, a)
+  marshal_bool(f.lockOnWrite, s)
+  con4m_sub_marshal(f.defaultVal, s, m, a)
 
-  #result.validators   = rt.unmarshal_validators(p)
-  result.hidden       = p.unmarshal_bool()
-  result.required     = p.unmarshal_bool()
-  result.doc          = p.rope_unmarshal(TRich, rt.memos)
-  result.shortdoc     = p.rope_unmarshal(TRich, rt.memos)
-  result.errIx        = int(p.unmarshal_64_bit_value())
-  result.exclusions   = p.unmarshal_nimstr_list()
-  result.deferredType = p.unmarshal_nim_string()
+  marshal_u16(cast[uint16](f.validators.len()), s)
 
-proc marshal_fields(rt: RuntimeState, f: Dict[string, FieldSpec]): C4Str =
-  if f == nil:
-    return marshal_64_bit_value(nil)
+  for v in f.validators:
+    con4m_sub_marshal(v.fn, s, m, a)
+    con4m_sub_marshal(v.params, s, m, a)
+    con4m_sub_marshal(v.paramType, s, m, a)
 
-  dictionary_marshal_helper(f):
-    toAdd.add(k.marshal_nim_string())
-    toAdd.add(rt.marshal_field_spec(v))
+  marshal_bool(f.hidden, s)
+  marshal_bool(f.required, s)
+  con4m_sub_marshal(f.doc, s, m, a)
+  con4m_sub_marshal(f.shortdoc, s, m, a)
+  marshal_u32(cast[uint32](f.fieldKind), s)
 
-proc unmarshal_fields(rt: RuntimeState, p: var cstring):
-                     Dict[string, FieldSpec] =
-  result.initDict()
+  marshal_i64(f.errIx, s)
+  con4m_sub_marshal(f.exclusions.toRichXlist(), s, m, a)
+  con4m_sub_marshal(c4Str(f.deferredType), s, m, a)
 
-  list_unmarshal_helper(p):
-    let
-      k = p.unmarshal_nim_string()
-      v = rt.unmarshal_field_spec(p)
+proc unmarshal_one_field(rt: RuntimeState, name: Rich): FieldSpec =
+  let
+    s          = rt.marshalStream
+    m          = rt.memos
 
-    result[k] = v
+  result = FieldSpec(name: name.toNimStr())
 
-proc marshal_one_section(rt: RuntimeState, sec: SectionSpec): C4Str =
-  basic_marshal_helper:
-    toAdd.add(sec.name.marshal_nim_string())
-    toAdd.add(cast[pointer](sec.maxAllowed).marshal_64_bit_value())
-    toAdd.add(rt.marshal_fields(sec.fields))
-    toAdd.add(sec.userDefOk.marshal_bool())
-    #toAdd.add(rt.marshal_validators(sec.validators))
-    toAdd.add(sec.hidden.marshal_bool())
-    toAdd.add(sec.doc.rope_marshal(TRich, rt.memos))
-    toAdd.add(sec.shortdoc.rope_marshal(TRich, rt.memos))
-    toAdd.add(sec.allowedSections.marshal_nimstr_list())
-    toAdd.add(sec.requiredSections.marshal_nimstr_list())
+  result.tid         = con4m_sub_unmarshal[TypeSpec](s, m)
+  result.lockOnWrite = s.unmarshal_bool()
+  result.defaultVal  = con4m_sub_unmarshal[pointer](s, m)
 
-proc unmarshal_one_section(rt: RuntimeState, p: var cstring): SectionSpec =
-  result = SectionSpec()
+  var n = uint32(s.unmarshal_u16())
 
-  result.name             = p.unmarshal_nim_string()
-  result.maxAllowed       = int(p.unmarshal_64_bit_value())
-  result.fields           = rt.unmarshal_fields(p)
-  result.userDefOk        = p.unmarshal_bool()
-  #result.validators       = rt.unmarshal_validators(p)
-  result.hidden           = p.unmarshal_bool()
-  result.doc              = p.rope_unmarshal(TRich, rt.memos)
-  result.shortdoc         = p.rope_unmarshal(TRich, rt.memos)
-  result.allowedSections  = p.unmarshal_nimstr_list()
-  result.requiredSections = p.unmarshal_nimstr_list()
+  for i in 0 ..< n:
+    var v       = Validator()
+    v.fn        = con4m_sub_unmarshal[pointer](s, m)
+    v.params    = con4m_sub_unmarshal[pointer](s, m)
+    v.paramType = con4m_sub_unmarshal[TypeSpec](s, m)
 
-proc marshal_sections(rt: RuntimeState,
-                      secSpecs: Dict[string, SectionSpec]): C4Str =
-  dictionary_marshal_helper(secSpecs):
-    toAdd.add(k.marshal_nim_string())
-    toAdd.add(rt.marshal_one_section(v))
+    result.validators.add(v)
 
-proc unmarshal_sections(rt: RuntimeState, p: var cstring):
-                       Dict[string, SectionSpec] =
-  result.initDict()
+  result.hidden     = s.unmarshal_bool()
+  result.required   = s.unmarshal_bool()
+  result.doc        = con4m_sub_unmarshal[Rich](s, m)
+  result.shortdoc   = con4m_sub_unmarshal[Rich](s, m)
+  result.fieldKind  = cast[FsKind](s.unmarshal_u32())
+  result.errIx      = s.unmarshal_i64()
 
-  list_unmarshal_helper(p):
-    let
-      k = p.unmarshal_nim_string()
-      v = rt.unmarshal_one_section(p)
+  let
+    exclusions = con4m_sub_unmarshal[XList[Rich]](s, m)
 
-    result[k] = v
+  result.exclusions   = exclusions.toSeqStr()
+  result.deferredType = con4m_sub_unmarshal[Rich](s, m).toNimStr()
 
-proc marshal_spec(rt: RuntimeState, spec: ValidationSpec): C4Str =
-  if spec == nil:
-    return marshal_bool(false)
+proc marshal_one_spec(rt: RuntimeState, name: Rich, sec: SectionSpec) =
+  let
+    s          = rt.marshalStream
+    m          = rt.memos
+    a          = addr rt.next_memoid
+    field_view = sec.fields.items(sort = true)
 
-  basic_marshal_helper:
-    toAdd.add(spec.used.marshal_bool())
-    if spec.used:
-      toAdd.add(rt.marshal_one_section(spec.rootSpec))
-      toAdd.add(rt.marshal_sections(spec.secSpecs))
+  con4m_sub_marshal(name, s, m, a)
+  marshal_i64(sec.minAllowed, s)
+  marshal_i64(sec.maxAllowed, s)
+  marshal_u16(uint16(field_view.len()), s)
+  for (name, info) in field_view:
+    marshal_one_field(rt, name, info)
+  marshal_bool(sec.userDefOk, s)
+  marshal_u16(uint16(sec.validators.len()), s)
 
-proc unmarshal_spec(rt: RuntimeState, p: var cstring): ValidationSpec =
-  result = ValidationSpec()
+  for v in sec.validators:
+    con4m_sub_marshal(v.fn, s, m, a)
+    con4m_sub_marshal(v.params, s, m, a)
+    con4m_sub_marshal(v.paramType, s, m, a)
 
-  result.used = p.unmarshal_bool()
-  if result.used:
-    result.rootSpec = rt.unmarshal_one_section(p)
-    result.secSpecs = rt.unmarshal_sections(p)
+  marshal_bool(sec.hidden, s)
+  con4m_sub_marshal(sec.doc, s, m, a)
+  con4m_sub_marshal(sec.shortdoc, s, m, a)
+  con4m_sub_marshal(sec.allowedSections.toXList(), s, m, a)
+  con4m_sub_marshal(sec.requiredSections.toXlist(), s, m, a)
 
-proc marshal_ffi_info(rt: RuntimeState, l: var seq[ZFfiInfo]): C4Str =
-  list_marshal_helper(l):
-    toAdd.add(rt.marshal_one_ffi_info_obj(item))
+proc unmarshal_one_spec(rt: RuntimeState): SectionSpec =
+  let
+    s    = rt.marshalStream
+    m    = rt.memos
+    name = con4m_sub_unmarshal[Rich](s, m)
+    sec  = SectionSpec(name: name.toNimStr())
 
-proc unmarshal_ffi_info(rt: RuntimeState, p: var cstring): seq[ZffiInfo] =
-  list_unmarshal_helper(p):
-    result.add(rt.unmarshal_one_ffi_info_obj(p))
+  sec.minAllowed = s.unmarshal_i64()
+  sec.maxAllowed = s.unmarshal_i64()
 
-proc marshal_func_info(rt: RuntimeState, l: var seq[ZFnInfo]): C4Str =
-  list_marshal_helper(l):
-    toAdd.add(rt.marshal_one_func(item))
+  let nfields = s.unmarshal_u16()
+  sec.fields.initDict()
 
-proc unmarshal_func_info(rt: RuntimeState, p: var cstring): seq[ZFnInfo] =
-  list_unmarshal_helper(p):
-    result.add(rt.unmarshal_one_func(p))
+  for i in 0 ..< uint32(nFields):
+    let name         = con4m_sub_unmarshal[Rich](s, m)
+    sec.fields[name] = rt.unmarshal_one_field(name)
 
-proc marshal_modules(rt: RuntimeState, l: var seq[ZModuleInfo]): C4Str =
-  list_marshal_helper(l):
-    toAdd.add(rt.marshal_one_module(item))
+  sec.userDefOk = s.unmarshal_bool()
 
-proc unmarshal_modules(rt: RuntimeState, p: var cstring): seq[ZModuleInfo] =
-  lisT_unmarshal_helper(p):
-    result.add(rt.unmarshal_one_module(p))
+  let nvalid = s.unmarshal_u16()
 
-proc marshal_types(d: Dict[TypeId, int]): C4Str =
-  dictionary_marshal_helper(d):
-    toAdd.add(cast[pointer](k).marshal_64_bit_value())
-    toAdd.add(cast[pointer](v).marshal_64_bit_value())
+  for i in 0 ..< uint32(nvalid):
+    var v       = Validator()
+    v.fn        = con4m_sub_unmarshal[pointer](s, m)
+    v.params    = con4m_sub_unmarshal[pointer](s, m)
+    v.paramType = con4m_sub_unmarshal[TypeSpec](s, m)
 
-proc unmarshal_types(p: var cstring): Dict[TypeId, int] =
-  result.initDict()
-  list_unmarshal_helper(p):
-    var
-      k = cast[TypeId](p.unmarshal_64_bit_value())
-      v = int(p.unmarshal_64_bit_value())
+    sec.validators.add(v)
 
-    result[k] = v
+  sec.hidden   = s.unmarshal_bool()
+  sec.doc      = con4m_sub_unmarshal[Rich](s, m)
+  sec.shortdoc = con4m_sub_unmarshal[Rich](s, m)
 
-proc marshal_object(rt: RuntimeState, nextmid: int32): C4Str =
+  let
+    allowedX  = con4m_sub_unmarshal[XList[Rich]](s, m)
+    requiredX = con4m_sub_unmarshal[XList[Rich]](s, m)
+
+  sec.allowedSections  = allowedX.toSeq()
+  sec.requiredSections = requiredX.toSeq()
+
+  return sec
+
+
+proc marshal_spec(rt: RuntimeState) =
+  let
+    spec = rt.obj.spec
+    view = spec.secSpecs.items(sort = true)
+
+  var
+    n: uint16 = uint16(view.len())
+
+  if spec.rootSpec != nil:
+    n += 1
+
+  if spec.used == false or n == 0:
+    marshal_u16(0, rt.marshalStream)
+    return
+
+  marshal_u16(n, rt.marshalStream)
+  marshal_one_spec(rt, nil, spec.rootSpec)
+  for (name, item) in view:
+    marshal_one_spec(rt, name, item)
+
+proc unmarshal_spec(rt: RuntimeState): ValidationSpec =
+  result.secSpecs.initDict()
+
+  for i in 0 ..< uint32(rt.marshalStream.unmarshal_u16()):
+    if i == 0:
+     result.rootSpec = rt.unmarshal_one_spec()
+    else:
+      let spec                      = rt.unmarshal_one_spec()
+      result.secSpecs[r(spec.name)] = spec
+
+proc marshal_object(rt: RuntimeState, nextmid: int32) =
   var nextmid = nextmid
 
   if nextmid == 0 and rt.obj.nextEntrypoint != 0:
     nextmid = rt.obj.nextEntrypoint
 
-  basic_marshal_helper:
-    toAdd.add(cast[pointer](rt.obj.zeroMagic).marshal_64_bit_value())
-    toAdd.add(rt.obj.zcObjectVers.marshal_16_bit_value())
-    toAdd.add(rt.obj.staticData.marshal_nim_string())
-    toAdd.add(rt.obj.tInfo.marshal_types())
-    toAdd.add(rt.obj.globals.marshal_sym_names())
-    toAdd.add(rt.obj.symTypes.marshal_sym_types())
-    toAdd.add(rt.obj.globalScopeSz.int32().marshal_32_bit_value())
-    toAdd.add(rt.marshal_modules(rt.obj.moduleContents))
-    toAdd.add(rt.obj.entryPoint.marshal_32_bit_value())
-    toAdd.add(nextmid.marshal_32_bit_value())
-    toAdd.add(rt.marshal_func_info(rt.obj.funcInfo))
-    toAdd.add(rt.marshal_ffi_info(rt.obj.ffiInfo))
-    toAdd.add(rt.marshal_spec(rt.obj.spec))
+  let
+    s = rt.marshalStream
+    m = rt.memos
+    a = addr rt.next_memoid
 
-proc unmarshal_object(rt: RuntimeState, p: var cstring) =
-  if p.unmarshal_64_bit_value() != rt.obj.zeroMagic:
-    raise newException(ValueError, "Invalid magic (expected two '0x0c001dea's)")
+  marshal_u64(rt.obj.zeroMagic, s)
+  marshal_i16(rt.obj.zcObjectVers, s)
+  con4m_sub_marshal(c4str(rt.obj.staticData), s, m, a)
+  con4m_sub_marshal(rt.obj.globals, s, m, a)
+  con4m_sub_marshal(rt.obj.symTypes.symTypeXform(), s, m, a)
+  marshal_i64(rt.obj.globalScopeSz, s)
+  rt.marshal_modules()
+  marshal_i32(rt.obj.entrypoint, s)
+  marshal_i32(nextmid, s)
+  rt.marshal_func_info()
+  rt.marshal_ffi_info()
+  rt.marshal_spec()
 
-  if p.unmarshal_16_bit_value() != rt.obj.zcObjectVers:
-    raise newException(ValueError, "Invalid object version.")
-  rt.obj.staticData     = p.unmarshal_nim_string()
-  rt.obj.tInfo          = p.unmarshal_types()
-  rt.obj.globals        = p.unmarshal_sym_names()
-  rt.obj.symTypes       = p.unmarshal_sym_types()
-  rt.obj.globalScopeSz  = int(p.unmarshal_32_bit_value())
-  rt.obj.moduleContents = rt.unmarshal_modules(p)
-  rt.obj.entrypoint     = p.unmarshal_32_bit_value()
-  rt.obj.nextentrypoint = p.unmarshal_32_bit_value()
-  rt.obj.funcInfo       = rt.unmarshal_func_info(p)
-  rt.obj.ffiInfo        = rt.unmarshal_ffi_info(p)
-  rt.obj.spec           = rt.unmarshal_spec(p)
+proc unmarshal_object(rt: RuntimeState) =
+  let
+    m   = rt.memos
+    s   = rt.marshalStream
+    obj = rt.obj
 
-proc marshal_attrs(rt: RuntimeState): C4Str =
-  basic_marshal_helper:
-    let
-      view = rt.attrs.items()
-      l    = int32(view.len())
+  obj.zeroMagic      = s.unmarshal_u64()
+  obj.zcObjectVers   = s.unmarshal_i16()
+  obj.staticData     = con4m_sub_unmarshal[Rich](s, m).toNimStr()
+  obj.globals        = con4m_sub_unmarshal[Dict[int, string]](s, m)
+  obj.symTypes       = con4m_sub_unmarshal[Dict[int, TypeSpec]](s, m).toST()
+  obj.globalScopeSz  = s.unmarshal_i64()
+  obj.moduleContents = rt.unmarshal_modules()
+  obj.entrypoint     = s.unmarshal_i32()
+  obj.nextEntryPoint = s.unmarshal_i32()
+  obj.funcInfo       = rt.unmarshal_func_info()
+  obj.ffiInfo        = rt.unmarshal_ffi_info()
+  obj.spec           = rt.unmarshal_spec()
 
-    toAdd.add(l.marshal_32_bit_value())
+proc marshal_attrs(rt: RuntimeState) =
+  let
+    m = rt.memos
+    s = rt.marshalStream
+    a = addr rt.next_memoid
 
-    if l != 0:
-      for (k, v) in view:
-        let isSet = v.isSet
-        toAdd.add(isSet.marshal_bool())
-        toAdd.add(k.marshal_nim_string())
-        toAdd.add(cast[pointer](v.tid).marshal_64_bit_value())
+  marshal_bool(rt.usingAttrs, s)
 
-        if isSet:
-          toAdd.add(v.locked.marshal_bool())
-          toAdd.add(v.lockOnWrite.marshal_bool())
-          toAdd.add(v.override.marshal_bool())
-          toAdd.add(v.contents.marshal(v.tid, rt.memos))
-
-proc unmarshal_attrs(rt: RuntimeState, p: var cstring) =
-  rt.attrs.initDict()
-
-  let n = p.unmarshal_32_bit_value()
-
-  if n != 0:
-    rt.usingAttrs = true
-
-    for i in 0 ..< n:
-      var
-        k: string
-        t: TypeId
-        s:    bool
-        l:    bool    = false
-        wrlk: bool    = false
-        o:    bool    = false
-        c:    pointer = nil
-
-      s = p.unmarshal_bool()
-      k = p.unmarshal_nim_string()
-      t = cast[TypeId](p.unmarshal_64_bit_value())
-
-      if s:
-        l    = p.unmarshal_bool()
-        wrlk = p.unmarshal_bool()
-        o    = p.unmarshal_bool()
-        c    = p.unmarshal(t, rt.memos)
-
-
-      let item = AttrContents(tid: t, isSet: s, locked: l,
-                                 lockOnWrite: wrlk, override: o,
-                                 contents: c)
-      GC_ref(item)
-      rt.attrs[k] = item
-
-proc marshal_section_list(rt: RuntimeState): C4Str =
-  if rt.usingAttrs:
-    let secs = rt.allSections.keys(sort=true)
-    list_marshal_helper(secs):
-      toAdd.add(item.marshal_nim_string())
-  else:
-    return marshal_32_bit_value(0'i32)
-
-proc marshal_section_docs(rt: RuntimeState): C4Str =
-  if rt.usingAttrs:
-    dictionary_marshal_helper(rt.sectionDocs):
-      echo "key 1 = ", k
-      toAdd.add(k.marshal_nim_string())
-      toAdd.add(v.shortdoc.rope_marshal(TRich, rt.memos))
-      toAdd.add(v.longdoc.rope_marshal(TRich, rt.memos))
-
-proc unmarshal_section_docs(rt: RuntimeState, p: var cstring) =
-  rt.sectionDocs.initDict()
-
-  if rt.usingAttrs:
-    var num = p.unmarshal_32_bit_value()
-
-    while num > 0:
-      num = num - 1
-
-      let
-        key       = p.unmarshal_nim_string()
-        shortdoc  = p.rope_unmarshal(TRich, rt.memos)
-        longdoc   = p.rope_unmarshal(TRich, rt.memos)
-        docs      = DocsContainer(shortdoc: shortdoc, longdoc: longdoc)
-
-      rt.sectionDocs[key] = docs
-      echo key
-
-proc unmarshal_section_list(rt: RuntimeState, p: var cstring) =
-  rt.allSections.initDict()
-
-  var n = p.unmarshal_32_bit_value()
-
-  if n != 0:
-    rt.usingAttrs = true
-    while n != 0:
-      rt.allSections[p.unmarshal_nim_string()] = true
-      n -= 1
-
-proc marshal_one_arena(rt: RuntimeState, ix, sz: int): C4Str =
-  let itemcount = rt.moduleallocations[ix].len() div 2
-
-  basic_marshal_helper:
-    toAdd.add(marshal_32_bit_value(int32(itemcount)))
-    for i in 0 ..< itemcount:
-      let
-        rawt = rt.moduleAllocations[ix][i * 2 + 1]
-        t    = cast[TypeId](rawt)
-
-      toAdd.add(rawt.marshal_64_bit_value())
-      if rawt == nil:
-        toAdd.add(marshal_64_bit_value(nil))
-      else:
-        let value = rt.moduleAllocations[ix][i * 2]
-        toAdd.add(marshal(value, t, rt.memos))
-
-proc unmarshal_one_arena(rt: RuntimeState, p: var cstring): seq[pointer] =
-  let itemcount = p.unmarshal_32_bit_value()
-
-  if itemcount == 0:
+  if not rt.usingAttrs:
     return
 
-  for i in 0 ..< itemcount:
-    let t = cast[TypeId](p.unmarshal_64_bit_value())
+  let view = rt.attrs.items(sort = true)
+  marshal_u32(uint32(view.len()), s)
+  for (name, contents) in view:
 
-    if t == TBottom:
-      result.add(cast[pointer](p.unmarshal_64_bit_value()))
-    else:
-      let val = cast[pointer](p.unmarshal(t, rt.memos))
-      result.add(val)
+    con4m_sub_marshal(name, s, m, a)
+    con4m_sub_marshal(contents.tid, s, m, a)
+    marshal_bool(contents.isSet, s)
+    marshal_bool(contents.locked, s)
+    marshal_bool(contents.lockOnWrite, s)
+    marshal_i32(contents.moduleLock, s)
+    marshal_bool(contents.override, s)
+    con4m_sub_marshal(contents.contents, s, m, a)
 
-    result.add(cast[pointer](t))
+  con4m_sub_marshal(rt.allSections, s, m, a)
+  let docview = rt.sectionDocs.items(sort = true)
+  marshal_u16(cast[uint16](docview.len()), s)
+  for (secName, docContainer) in docview:
+    con4m_sub_marshal(secname, s, m, a)
+    con4m_sub_marshal(docContainer.shortdoc, s, m, a)
+    con4m_sub_marshal(docContainer.longdoc, s, m, a)
 
-proc marshal_module_allocations(rt: RuntimeState): C4Str =
-  basic_marshal_helper:
-    toAdd.add(marshal_32_bit_value(int32(rt.obj.moduleContents.len() + 1)))
-    toAdd.add(rt.marshal_one_arena(0, rt.obj.globalScopeSz))
-    for i, item in rt.obj.moduleContents:
-      toAdd.add(rt.marshal_one_arena(i + 1, item.moduleVarSize))
+proc unmarshal_attrs(rt: RuntimeState) =
+  let
+    m = rt.memos
+    s = rt.marshalStream
+    b = s.unmarshal_bool()
 
-proc unmarshal_module_allocations(rt: RuntimeState, p: var cstring) =
-  rt.moduleAllocations = @[]
-  list_unmarshal_helper(p):
-    rt.moduleAllocations.add(rt.unmarshal_one_arena(p))
+  if not b:
+    return
 
-proc marshal_object_props(d: Dict[string, TypeId]): C4Str =
-  dictionary_marshal_helper(d):
-    toAdd.add(k.marshal_nim_string())
-    toAdd.add(marshal_64_bit_value(cast[pointer](v.followForwards())))
-
-proc unmarshal_object_props(p: var cstring): Dict[string, TypeId] =
-  result.initDict()
-
-  list_unmarshal_helper(p):
-    let
-      k = p.unmarshal_nim_string()
-      v = cast[TypeId](p.unmarshal_64_bit_value())
-
-    result[k] = v
-
-proc marshal_type_store(): C4Str =
-  let view  = typeStore.items()
-  var count = 0'i32
-
-  basic_marshal_helper:
-    for (k, v) in view:
-      if v.typeId != k:
-        # This entry is forwarded.
-        continue
-      count += 1
-      toAdd.add(marshal_64_bit_value(cast[pointer](k)))
-      toAdd.add(marshal_bool(v.isLocked))
-
-      var titems: seq[TypeId]
-      for item in v.items:
-        titems.add(item.followForwards())
-      toAdd.add(marshal_int_list(titems))
-      toAdd.add(marshal_32_bit_value(cast[int32](v.kind)))
-      case v.kind
-      of C4TVar:
-        toAdd.add(marshal_64_bit_value(cast[pointer](v.tvarId)))
-        let haveLocalName = v.localName.isSome()
-        toAdd.add(haveLocalName.marshal_bool())
-        if haveLocalName:
-          toAdd.add(v.localName.get().marshal_nim_string())
-
-      of C4Func:
-        toAdd.add(v.va.marshal_bool())
-
-      of C4Struct:
-        toAdd.add(v.name.marshal_nim_string())
-        toAdd.add(v.props.marshal_object_props())
-
-      else:
-        discard
-
-    toAdd = @[marshal_32_bit_value(count)] & toAdd
-
-proc unmarshal_type_store(p: var cstring) =
-  typeStore = nil
-  typeStore.initDict()
-
-  list_unmarshal_helper(p):
+  rt.attrs.initDict()
+  var n = s.unmarshal_u32()
+  for i in 0 ..< n:
     var
-      k      = cast[TypeId](p.unmarshal_64_bit_value())
-      lock   = p.unmarshal_bool()
-      titems = cast[seq[TypeId]](p.unmarshal_int_list())
-      kind   = cast[C4TypeKind](p.unmarshal_32_bit_value())
-      to     = TypeRef(typeid: k, isLocked: lock, items: titems, kind: kind)
+      name     = con4m_sub_unmarshal[Rich](s, m)
+      contents = AttrContents()
 
-    case kind
-    of C4TVar:
-      to.tvarId = cast[TypeId](p.unmarshal_64_bit_value())
-      if p.unmarshal_bool():
-        to.localName = some(p.unmarshal_nim_string())
+    contents.tid         = con4m_sub_unmarshal[TypeSpec](s, m)
+    contents.isSet       = s.unmarshal_bool()
+    contents.locked      = s.unmarshal_bool()
+    contents.lockOnWrite = s.unmarshal_bool()
+    contents.moduleLock  = s.unmarshal_i32()
+    contents.override    = s.unmarshal_bool()
+    contents.contents    = con4m_sub_unmarshal[pointer](s, m)
 
-    of C4Func:
-      to.va = p.unmarshal_bool()
+    rt.attrs[name] = contents
 
-    of C4Struct:
-      to.name  = p.unmarshal_nim_string()
-      to.props = p.unmarshal_object_props()
+  rt.allSections = con4m_sub_unmarshal[Dict[Rich, bool]](s, m)
+  rt.sectionDocs.initDict()
+  n = s.unmarshal_u16()
+  for i in 0 ..< n:
+    var
+      name = con4m_sub_unmarshal[Rich](s, m)
+      c    = DocsContainer()
 
-    else:
-      discard
+    c.shortdoc = con4m_sub_unmarshal[Rich](s, m)
+    c.longdoc  = con4m_sub_unmarshal[Rich](s, m)
 
-    typeStore[k] = to
+    rt.sectionDocs[name] = c
 
-proc marshal_runtime*(rt: RuntimeState, next_entry: int32): C4Str =
+proc marshal_runtime*(rt: RuntimeState, next_entry_point: int32): Buffer =
   ## The object must not be running when we save, and we assume the stack
   ## is empty (it is a programmer mistake to push things then save before
   ## calling).
@@ -650,38 +485,46 @@ proc marshal_runtime*(rt: RuntimeState, next_entry: int32): C4Str =
   if rt.running:
     raise newException(ValueError, "Cannot marshal runtime while running.")
 
-  rt.memos = Memos()
-  rt.memos.map.initDict()
+  result = new_buffer(16)
 
-  basic_marshal_helper:
-      toAdd.add(rt.marshal_object(next_entry))
-      toAdd.add(marshal_64_bit_value(cast[pointer](getVarId())))
-      toAdd.add(marshal_type_store())
-      toAdd.add(rt.marshal_section_list())
-      toAdd.add(rt.marshal_attrs())
-      toAdd.add(rt.marshal_module_allocations())
-      toAdd.add(rt.marshal_section_docs())
+  rt.memos         = alloc_marshal_memos()
+  rt.next_memoid   = 1
+  rt.marshalStream = buffer_outstream(result)
 
-proc unmarshal_runtime*(s: C4Str): RuntimeState =
+  let
+    m = rt.memos
+    s = rt.marshalStream
+    a = addr rt.next_memoid
+
+  rt.marshal_object(int32(len(rt.obj.moduleContents)))
+  marshal_type_environment(s, m, a)
+  rt.marshal_attrs()
+  marshal_u16(uint16(rt.moduleAllocations.len()), s)
+  for item in rt.moduleAllocations:
+    marshal_u16(cast[uint16](item.len()), s)
+    for p in item:
+      marshal_u64(cast[uint64](p), s)
+
+
+proc unmarshal_runtime*(s: CStream): RuntimeState =
+  result               = RuntimeState()
+  result.obj           = ZObjectFile()
+  result.memos         = alloc_unmarshal_memos()
+  result.marshalStream = s
+
+  let
+    m = result.memos
+
+  result.unmarshal_object()
+  unmarshal_type_environment(s, m)
+  result.unmarshal_attrs()
   var
-    l = s.len()
-    p = cast[cstring](s)
-    e = cast[cstring](s)
+    l = int32(s.unmarshal_u16())
+    oneAlloc: seq[pointer]
 
-  e.pointer_add(l)  # Seek to the end
-  result       = RuntimeState()
-  result.obj   = ZObjectFile()
-  result.memos = Memos()
-
-
-  result.obj.globals.initDict()
-  result.obj.tinfo.initDict()
-  result.memos.map.initDict()
-
-  result.unmarshal_object(p)
-  setVarId(uint64(p.unmarshal_64_bit_value()))
-  p.unmarshal_type_store()
-  result.unmarshal_section_list(p)
-  result.unmarshal_attrs(p)
-  result.unmarshal_module_allocations(p)
-  result.unmarshal_section_docs(p)
+  for i in 0 ..< l:
+    let n = int32(s.unmarshal_u16())
+    oneAlloc = @[]
+    for j in 0 ..< n:
+      oneAlloc.add(cast[pointer](s.unmarshal_u64()))
+    result.moduleAllocations.add(oneAlloc)

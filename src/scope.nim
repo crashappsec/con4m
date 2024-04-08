@@ -1,9 +1,29 @@
 import "."/[parse, specs]
+import "err"/errbase
 
-template getTid*(s: SymbolInfo): TypeId =
+template getTid*(s: SymbolInfo): TypeSpec =
   s.tid.getTid()
 
 var next_id = 1
+
+proc typeError*(ctx: Module, t1, t2: TypeSpec, where: ParseNode = nil,
+                err = "TypeMismatch") =
+  var where = if where == nil: ctx.pt else: where
+  ctx.irError(err, @[t1.toString(), t2.toString()], where)
+
+proc typeCheck*(ctx: Module, t1, t2: TypeSpec, where: ParseNode = nil,
+                err = "TypeMismatch"): TypeSpec {.discardable.} =
+
+  result = t1.getTid().unify(t2.getTid())
+
+  if result.isTypeError() and not t1.getTid().isTypeError() and
+     not t2.getTid().isTypeError():
+    ctx.typeError(t1, t2, where, err)
+
+proc typeCheck*(ctx: Module, sym: SymbolInfo, t: TypeSpec,
+              where: ParseNode = nil, err = "TypeMismatch"):
+                TypeSpec {.discardable.} =
+  return ctx.typeCheck(sym.tid, t, where, err)
 
 proc initScope*(fn = false): Scope =
   result         = Scope()
@@ -25,7 +45,7 @@ proc newModuleObj*(ctx: CompileCtx, contents: string, name: string, where = "",
   ctx.modules[key]   = result
 
 proc lookupOrAdd(ctx: Module, scope: Scope, n: string,
-                 isFunc: bool, tid = TBottom): Option[SymbolInfo] =
+                 isFunc: bool, tid = tspec_error()): Option[SymbolInfo] =
   # This is a helper function to look up a symbol in the given scope,
   # or create the symbol in the scope, if it is not found.
   #
@@ -49,7 +69,7 @@ proc lookupOrAdd(ctx: Module, scope: Scope, n: string,
         ctx.irError("AlreadyAVar")
         return none(SymbolInfo)
 
-    if tid != TBottom:
+    if tid != tspec_error():
       ctx.typeCheck(sym, tid)
   else:
     sym = SymbolInfo(name: n, tid: tid, isFunc: isFunc, module: ctx)
@@ -64,7 +84,7 @@ proc lookupOrAdd(ctx: Module, scope: Scope, n: string,
       sym.heapAlloc = true
 
 proc scopeDeclare*(ctx: Module, scope: Scope, n: string,
-                   isfunc: bool, tid = TBottom, immutable = false,
+                   isfunc: bool, tid = tspec_error(), immutable = false,
                    declnode = ctx.pt, inparam = false):
                      Option[SymbolInfo] =
  # This is meant for things that should be declared in a specific scope,
@@ -94,15 +114,15 @@ proc scopeDeclare*(ctx: Module, scope: Scope, n: string,
   sym.declaredType = true
   sym.immutable    = immutable
 
-proc typeFromSpec*(sec: SectionSpec, name: string): TypeId =
+proc typeFromSpec*(sec: SectionSpec, name: string): TypeSpec =
   if sec == nil:
-    return TBottom
+    return tspec_error()
 
-  let fsOpt = sec.fields.lookup(name)
+  let fsOpt = sec.fields.lookup(r(name))
   if fsOpt.isNone():
-    return TBottom
+    return tspec_error()
 
-  result = fsOpt.get().tid.copyType().typeId
+  result = fsOpt.get().tid.copyType()
 
 proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
   var
@@ -112,11 +132,11 @@ proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
   while i < n.len():
     let
       subSecName = n[i]
-      subSecOpt  = ctx.attrSpec.secSpecs.lookup(subSecName)
+      subSecOpt  = ctx.attrSpec.secSpecs.lookup(r(subSecName))
 
 
     # Allowed section in cur spec?
-    if subSecName notin curSpec.allowedSections:
+    if r(subSecName) notin curSpec.allowedSections:
       if subSecOpt.isSome():
         ctx.irError("SecNotAllowed", @[subSecName, curSpec.name])
       else:
@@ -124,7 +144,7 @@ proc resolveSection*(ctx: Module, n: seq[string]): SectionSpec =
 
     if subSecOpt.isNone():
       if curSpec != nil and curSpec.maxAllowed > 1 and i != 0:
-        if n[i - 1] in curSpec.allowedSections:
+        if r(n[i - 1]) in curSpec.allowedSections:
           ctx.irError("4gotObjName?", @[subSecName, n[i - 1]])
           return nil
       ctx.irError("NotASection", @[subSecName])
@@ -182,10 +202,10 @@ proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
   else:
     return none(SymbolInfo)
 
-  sym = SymbolInfo(name: name, tid: fi.tid.tCopy(), isAttr: true)
+  sym = SymbolInfo(name: name, tid: fi.tid.copyType(), isAttr: true)
 
-  if fi.tid == TBottom:
-    fi.tid = tVar()
+  if fi.tid == tspec_error():
+    fi.tid = tspec_typevar()
 
   sym.defaultVal            = fi.defaultVal
   sym.haveDefault           = fi.haveDefault
@@ -195,7 +215,7 @@ proc searchForSymbol*(ctx: Module, name: string): Option[SymbolInfo] =
   return some(sym)
 
 proc addVarDef*(ctx: Module, name: string, loc: IRNode,
-             tid: TypeId): Option[SymbolInfo] =
+             tid: TypeSpec): Option[SymbolInfo] =
   ## This is the interface for *variables* used on the LHS. It should
   ## *not* be called during an explicit definition via `global` or
   ## `var` (unless we later add assignment within these statements).
@@ -263,7 +283,7 @@ proc addVarDef*(ctx: Module, name: string, loc: IRNode,
       ctx.irError("Immutable")
       return
 
-    if sym.tid != TBottom:
+    if sym.tid != tspec_error():
       ctx.typeCheck(sym.tid, tid)
 
   else:
@@ -283,7 +303,7 @@ proc addVarDef*(ctx: Module, name: string, loc: IRNode,
   result = some(sym)
 
 proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
-                 tid: TypeId, canConvertToVar: bool): Option[SymbolInfo] =
+                 tid: TypeSpec, canConvertToVar: bool): Option[SymbolInfo] =
   ## `canConvertToVar` means that we used the `=` operator, which does
   ## attribute assignment, unless the attribute isn't allowed, in which
   ## case:
@@ -327,11 +347,11 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
 
   case fieldInfo.fieldKind
   of FsUserDefField, FsErrorNoSpec:
-    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true)
+    sym = SymbolInfo(name: name, tid: tspec_typevar(), isAttr: true)
     ctx.usedattrs.numSyms += 1
   of FsField:
     # Don't mess up other sections if there's a type variable..
-    sym = SymbolInfo(name: name, tid: fieldInfo.tid.tCopy(), isAttr: true)
+    sym = SymbolInfo(name: name, tid: fieldInfo.tid.copyType(), isAttr: true)
     ctx.usedattrs.numSyms += 1
     sym.defaultVal  = fieldInfo.defaultVal
     sym.haveDefault = fieldInfo.haveDefault
@@ -360,7 +380,7 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
     ctx.irError("AttrNotSpecd", loc, @[name])
 
   if sym == nil:
-    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
+    sym = SymbolInfo(name: name, tid: tspec_typevar(), isAttr: true, err: true)
     ctx.usedattrs.numSyms += 1
 
   ctx.usedAttrs.table[name] = sym
@@ -373,15 +393,15 @@ proc addAttrDef*(ctx: Module, name: string, loc: IRNode,
   result = some(sym)
 
 proc addDef*(ctx: Module, name: string, loc: IRNode,
-             tid = TBottom): Option[SymbolInfo] =
+             tid = tspec_error()): Option[SymbolInfo] =
   if ctx.attrContext or '.' in name or
-     ctx.attrSpec.getRootSection().fields.lookup(name).isSome():
+     ctx.attrSpec.getRootSection().fields.lookup(r(name)).isSome():
     result = ctx.addAttrDef(name, loc, tid, ctx.ambigAssign)
   else:
     result = ctx.addVarDef(name, loc, tid)
 
 proc addUse*(ctx: Module, name: string, loc: IRNode,
-             tid: TypeId): Option[SymbolInfo] =
+             tid: TypeSpec): Option[SymbolInfo] =
   var sym: SymbolInfo
 
   result = ctx.searchForSymbol(name)
@@ -399,7 +419,7 @@ proc addUse*(ctx: Module, name: string, loc: IRNode,
     # but doesn't give any error message.
     case fieldInfo.fieldKind
     of FsErrorNoSpec, FsUserDefField:
-      sym = SymbolInfo(name: name, tid: tid.tCopy(), isAttr: true)
+      sym = SymbolInfo(name: name, tid: tid.copyType(), isAttr: true)
       sym.uses.add(loc)
       ctx.usedAttrs.table[name] = sym
       ctx.usedAttrs.numSyms    += 1
@@ -423,7 +443,7 @@ proc addUse*(ctx: Module, name: string, loc: IRNode,
     of FsErrorFieldNotAllowed:
       ctx.irError("AttrNotSpecd", loc, @[name])
 
-    sym = SymbolInfo(name: name, tid: tVar(), isAttr: true, err: true)
+    sym = SymbolInfo(name: name, tid: tspec_typevar(), isAttr: true, err: true)
     ctx.usedAttrs.table[name] = sym
     ctx.usedAttrs.numSyms    += 1
     sym.uses.add(loc)
@@ -449,41 +469,41 @@ proc addUse*(ctx: Module, name: string, loc: IRNode,
 
   sym.uses.add(loc)
 
-template isDeclaredRepr(v: bool): Rope =
+template isDeclaredRepr(v: bool): Rich =
   if v:
-    fgColor("✓", "atomiclime")
+    rich"[atomiclime]✓"
   else:
-    fgColor("✗", "red")
+    rich"[red]✗"
 
-proc toRope*(s: Scope, title = ""): Rope =
+proc toGrid*(s: Scope, title = ""): Grid =
   if s == nil:
-    return h4("Scope is not initialized.")
+    return cell("Scope is not initialized.", "h4")
   var
-    hdr   = @[atom("Symbol"), atom("Type"), atom("Offset"), atom("Decl?"),
-              atom("Const"), atom("fn?"), atom("#Def"), atom("#Use")]
+    hdr   = @[rich"Symbol", rich"Type", rich"Offset", rich"Decl?",
+              rich"Const", rich"fn?", rich"#Def", rich"#Use"]
     cells = @[hdr]
     contents = s.table.items(sort = true)
 
   if contents.len() == 0:
     if title != "":
-      return h4(title & ": Scope contains no contents.")
+      return cell(title & ": Scope contains no contents.", "h4")
     else:
-      return h4("Scope contains no contents.")
+      return cell("Scope contains no contents.", "h4")
 
   for (name, sym) in contents:
     var
-      cc     = fgColor("✗", "red")
-      isFunc = fgColor("✗", "red")
+      cc     = rich"[red]✗"
+      isFunc = rich"[red]✗"
     if sym.haveConst:
       let box = sym.constValue
-      cc = fgColor($(call_repr(box, sym.tid)), "atomiclime")
+      cc = con4m_repr(box, sym.tid)
     elif sym.immutable:
       cc = fgColor("✓ ", "atomiclime") + fgColor("(not set)", "yellow")
     if sym.fImpls.len() != 0:
       isFunc = fgColor("✓", "atomiclime")
 
     if sym.fImpls.len() == 0:
-      cells.add(@[name.atom(), sym.tid.followForwards().toRope(),
+      cells.add(@[name.atom(), sym.tid.followForwards().con4m_repr(),
                   atom($(sym.offset)),
                   sym.declaredType.isDeclaredRepr(), cc, isFunc,
                   atom($(sym.defs.len())),
@@ -491,13 +511,13 @@ proc toRope*(s: Scope, title = ""): Rope =
             ])
     else:
       for item in sym.fImpls:
-        cells.add(@[name.atom(), item.tid.toRope(), atom("n/a"),
+        cells.add(@[name.atom(), item.tid.con4m_repr(), atom("n/a"),
                   sym.declaredType.isDeclaredRepr(),
                   fgColor("✓", "atomiclime"), fgColor("✓", "atomiclime"),
                   atom("n/a"), atom("n/a")])
 
 
-  return quickTable(cells, title = title, caption = $(s.numSyms) & " symbols")
+  return table(cells, title = title, caption = $(s.numSyms) & " symbols")
 
 proc allFunctions*(s: Scope): seq[FuncInfo] =
   for (_, v) in s.table.items(sort = true):

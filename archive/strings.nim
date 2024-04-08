@@ -13,19 +13,13 @@ var
   richOps  = newVTable()
 
 proc str_new_lit(s: string, st: SyntaxType, lmod: string, err: var string):
-                C4Str {.cdecl.} =
-  return newC4Str(s)
+                Rich {.cdecl.} =
+  return newRich(s)
 
 proc u32_new_lit(s: string, st: SyntaxType, lmod: string, err: var string):
-                C4Str {.cdecl.} =
-  if s.len() == 0:
-    return newC4Str("")
-  let
-    runes = s.toRunes()
-    l     = runes.len() * 4
-
-  result = newC4Str(l)
-  copyMem(cast[pointer](result), addr runes[0], l)
+                Rich {.cdecl.} =
+  # Going to get rid of this as a separate data type.
+  return newRich(s)
 
 proc rich_new_lit(s: string, st: SyntaxType, lmod: string, err: var string):
                  Rope {.cdecl.} =
@@ -70,18 +64,18 @@ proc rich_new_lit(s: string, st: SyntaxType, lmod: string, err: var string):
   GC_ref(result)
 
 proc u32_repr(pre: pointer): string {.cdecl.} =
-  let s = cast[C4Str](pre)
+  let s = cast[Rich](pre)
 
   if s == nil:
     return ""
   else:
     return s.toNimStr()
 
-proc str_repr(n: C4Str): C4Str {.cdecl.} =
+proc str_repr(n: Rich): Rich {.cdecl.} =
   return n
 
-proc rich_repr(s: Rope): C4Str {.cdecl.} =
-  return newC4Str(s.toUtf8())
+proc rich_repr(s: Rope): Rich {.cdecl.} =
+  return newRich(s.toUtf8())
 
 proc rich_pluseq(a: pointer, b: Rope): void {.cdecl.} =
   # I *think* I can declare `a` a `var Rope` here, but just in case.
@@ -92,7 +86,7 @@ proc rich_pluseq(a: pointer, b: Rope): void {.cdecl.} =
 proc rich_add(a, b: Rope): Rope {.cdecl.} =
   return a + b
 
-proc str_index(a: C4Str, b: int, err: var bool): int64 {.cdecl.} =
+proc str_index(a: Rich, b: int, err: var bool): int64 {.cdecl.} =
   var x = cast[cstring](a)
 
   if b < 0 or b >= x.len():
@@ -102,10 +96,10 @@ proc str_index(a: C4Str, b: int, err: var bool): int64 {.cdecl.} =
   return int64(x[b])
 
 proc u32_index(a: pointer, b: int, err: var bool): int64 {.cdecl.} =
-  # Pointer is to the char* part of a C4String.
+  # Pointer is to the char* part of a Riching.
   let bytelen = b * 4
 
-  if bytelen < 0 or bytelen >= c4str_len(cast[C4Str](a)):
+  if bytelen < 0 or bytelen >= string_codepoints(cast[Rich](a)):
     err = true
     return 0
 
@@ -117,20 +111,20 @@ proc rich_len(p: pointer): int {.cdecl.} =
   let r = cast[string](p)
   return r.runeLength()
 
-proc u32_len(s: C4Str): int {.cdecl.} =
+proc u32_len(s: Rich): int {.cdecl.} =
   return s.len() div 4
 
 proc rich_copy(r: Rope): Rope {.cdecl, exportc.} =
   result = r.copy()
   GC_ref(result)
 
-proc cast_str_to_u32(pre: C4Str, tfrom, tto: TypeId, err: var string):
-                    C4Str {.cdecl, exportc.} =
+proc cast_str_to_u32(pre: Rich, tfrom, tto: TypeId, err: var string):
+                    Rich {.cdecl, exportc.} =
   let
     l = pre.len()
     s = `$`(cast[cstring](pre)).toRunes()
 
-  result = newC4Str(l * 4)
+  result = newRich(l * 4)
 
   if l != 0:
     copyMem(cast[pointer](result), addr s[0], l)
@@ -145,17 +139,17 @@ proc cast_str_to_rich(pre: pointer, tfrom, tto: TypeId,
 
   return cast[pointer](rope)
 
-proc nim_str_to_con4m(s: string, tid: TypeId): C4Str =
-  result = newC4Str(s)
+proc nim_str_to_con4m(s: string, tid: TypeId): Rich =
+  result = newRich(s)
 
-proc nim_str_to_con4m_u32(s: string, tid: TypeId): C4Str =
+proc nim_str_to_con4m_u32(s: string, tid: TypeId): Rich =
   if s.len() == 0:
-    return newC4Str("")
-  result = newC4Str(s.len() * 4)
+    return newRich("")
+  result = newRich(s.len() * 4)
   let u32 = s.toRunes()
   copyMem(result, addr u32[0], s.len() * 4)
 
-proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId, err: var string):
+proc cast_u32_to_rich(pre: Rich, tfrom, tto: TypeId, err: var string):
                      Rope {.cdecl, exportc.} =
   var
     l = (pre.len() div 4) * 4
@@ -167,8 +161,8 @@ proc cast_u32_to_rich(pre: C4Str, tfrom, tto: TypeId, err: var string):
   result = text($(s))
   GC_ref(result)
 
-proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId, err: var string):
-                    C4Str {.cdecl, exportc.} =
+proc cast_u32_to_str(pre: Rich, tfrom, tto: TypeId, err: var string):
+                    Rich {.cdecl, exportc.} =
   var
     l = (pre.len() div 4) * 4
     s = newSeq[Rune](int(l))
@@ -176,22 +170,22 @@ proc cast_u32_to_str(pre: C4Str, tfrom, tto: TypeId, err: var string):
   if l != 0:
     copyMem(addr s[0], cast[pointer](pre), l)
 
-  result = newC4Str($s)
+  result = newRich($s)
 
 proc cast_rich_to_u32(r: Rope, tfrom, to: TypeId, err: var string):
-                     C4Str {.cdecl, exportc.} =
+                     Rich {.cdecl, exportc.} =
   let
     s = r.toUtf8(r.runeLength())
     u = s.toRunes()
     l = u.len() * 4
 
-  result = newC4Str(l)
+  result = newRich(l)
   if l != 0:
     copyMem(cast[pointer](result), addr u[0], l)
 
 proc cast_rich_to_str(r: Rope, tfrom, tto: TypeId, err: var string):
-                     C4Str {.cdecl, exportc.} =
-  return newC4Str(r.toUtf8(r.runeLength()))
+                     Rich {.cdecl, exportc.} =
+  return newRich(r.toUtf8(r.runeLength()))
 
 proc str_slice(a: pointer, b, c: int, err: bool): pointer =
   let
@@ -210,7 +204,7 @@ proc str_slice(a: pointer, b, c: int, err: bool): pointer =
   if b >= c or b < 0 or c >= l:
     return nil
 
-  return newC4Str(`$`(x)[b .. c])
+  return newRich(`$`(x)[b .. c])
 
 proc u32_slice(a: pointer, b, c: int, err: var bool): pointer =
   return str_slice(a, b * 4, c * 4, err)
@@ -223,7 +217,7 @@ proc get_cast_from_u32(dt: Datatype, t1, t2: TypeId,
 proc get_cast_from_rich(dt: Datatype, t1, t2: TypeId,
                         err: var string): pointer
 
-proc str_marshal(s: C4Str, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
+proc str_marshal(s: Rich, t: TypeId, memos: Memos): Rich {.exportc, cdecl.} =
   if s == nil:
     return marshal_32_bit_value(0)
 
@@ -231,12 +225,12 @@ proc str_marshal(s: C4Str, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
     str_len   = int32(s.len())
     total_len = str_len + sizeof(int32)
 
-  result = newC4Str(total_len)
+  result = newRich(total_len)
   c4str_write_offset(result, marshal_32_bit_value(str_len), 0)
   c4str_write_offset(result, s, sizeof(int32))
 
 proc str_unmarshal(s: var cstring, t: TypeId, memos: Memos):
-                  C4Str {.exportc, cdecl.} =
+                  Rich {.exportc, cdecl.} =
 
   let
     l = s.unmarshal_32_bit_value()
@@ -244,14 +238,14 @@ proc str_unmarshal(s: var cstring, t: TypeId, memos: Memos):
   if l == 0:
     return nil
 
-  result = newC4Str(l)
+  result = newRich(l)
   copyMem(cast[pointer](result), addr s[0], l)
   pointer_add(s, l)
 
-proc marshal_style(s: FmtStyle): C4Str =
+proc marshal_style(s: FmtStyle): Rich =
   var
     flags:    int64
-    toConcat: seq[C4Str]
+    toConcat: seq[Rich]
     num:      int32
 
   if s.isNil:
@@ -352,7 +346,7 @@ proc marshal_style(s: FmtStyle): C4Str =
   for item in toConcat:
     total_len += item.len()
 
-  result = newC4Str(total_len)
+  result = newRich(total_len)
 
   copyMem(cast[pointer](result), cast[pointer](flagfield), sizeof(int64))
 
@@ -360,7 +354,7 @@ proc marshal_style(s: FmtStyle): C4Str =
     c4str_write_offset(result, item, offset)
     offset += item.len()
 
-proc rope_marshal*(r: Rope, t: TypeId, memos: Memos): C4Str {.exportc, cdecl.} =
+proc rope_marshal*(r: Rope, t: TypeId, memos: Memos): Rich {.exportc, cdecl.} =
   if r == nil:
     return marshal_64_bit_value(nil)
 
@@ -683,123 +677,123 @@ proc get_cast_from_rich(dt: Datatype, t1, t2: TypeId,
     result = cast[pointer](cast_to_bool)
     err    = "LoseFormat"
 
-proc str_strip*(s1: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(unicode.strip(s1.toNimStr()))
+proc str_strip*(s1: Rich): Rich {.exportc, cdecl.} =
+  newRich(unicode.strip(s1.toNimStr()))
 
 addStaticFunction("str_strip", str_strip)
 
-proc str_contains*(s1: C4Str, s2: C4Str): bool {.exportc, cdecl.} =
+proc str_contains*(s1: Rich, s2: Rich): bool {.exportc, cdecl.} =
   s1.toNimStr().contains(s2.toNimStr())
 
 addStaticFunction("str_contains", str_contains)
 
-proc str_starts_with(s1: C4Str, s2: C4Str): bool {.exportc, cdecl.} =
+proc str_starts_with(s1: Rich, s2: Rich): bool {.exportc, cdecl.} =
   s1.toNimStr().startswith(s2.toNimStr())
 
 addStaticFunction("str_starts_with", str_starts_with)
 
-proc str_ends_with(s1: C4Str, s2: C4Str): bool {.exportc, cdecl.} =
+proc str_ends_with(s1: Rich, s2: Rich): bool {.exportc, cdecl.} =
   s1.toNimStr().endswith(s2.toNimStr())
 
 addStaticFunction("str_ends_with", str_ends_with)
 
-proc str_find(s1: C4Str, s2: C4Str): int {.exportc, cdecl.} =
+proc str_find(s1: Rich, s2: Rich): int {.exportc, cdecl.} =
   s1.toNimStr().find(s2.toNimStr())
 
 addStaticFunction("str_find", str_find)
 addStaticFunction("str_len", c4str_len)
 
 import std/base64
-proc str_base64(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(base64.encode(s.toNimStr()))
+proc str_base64(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(base64.encode(s.toNimStr()))
 
 addStaticFunction("str_base64", str_base64)
 
-proc str_base64_web(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(base64.encode(s.toNimStr(), safe = true))
+proc str_base64_web(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(base64.encode(s.toNimStr(), safe = true))
 
 addStaticFunction("str_base64_web", str_base64_web)
 
-proc str_decode(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(base64.decode(s.toNimStr()))
+proc str_decode(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(base64.decode(s.toNimStr()))
 
 addStaticFunction("str_decode", str_decode)
 
-proc str_to_hex(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(s.toNimStr().toHex().toLowerAscii())
+proc str_to_hex(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(s.toNimStr().toHex().toLowerAscii())
 
 addStaticFunction("str_to_hex", str_to_hex)
 
-proc str_to_hex_int(s: int): C4Str {.exportc, cdecl.} =
-  newC4Str(s.toHex().toLowerAscii())
+proc str_to_hex_int(s: int): Rich {.exportc, cdecl.} =
+  newRich(s.toHex().toLowerAscii())
 
 addStaticFunction("str_to_hex_int", str_to_hex_int)
 
-proc str_from_hex(s: C4Str): C4Str {.exportc, cdecl.} =
+proc str_from_hex(s: Rich): Rich {.exportc, cdecl.} =
   try:
-    return newC4Str(s.toNimStr().parseHexStr())
+    return newRich(s.toNimStr().parseHexStr())
   except:
-    return newC4Str("")
+    return newRich("")
 
 addStaticFunction("str_from_hex", str_from_hex)
 
-proc str_sha256(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(s.toNimStr().sha256Hex())
+proc str_sha256(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(s.toNimStr().sha256Hex())
 
 addStaticFunction("str_sha256", str_sha256)
 
-proc str_sha512(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(s.toNimStr().sha512Hex())
+proc str_sha512(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(s.toNimStr().sha512Hex())
 
 addStaticFunction("str_sha512", str_sha512)
 
-proc str_upper(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(unicode.toUpper(s.toNimStr()))
+proc str_upper(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(unicode.toUpper(s.toNimStr()))
 
 addStaticFunction("str_upper", str_upper)
 
-proc str_lower(s: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(unicode.toLower(s.toNimStr()))
+proc str_lower(s: Rich): Rich {.exportc, cdecl.} =
+  newRich(unicode.toLower(s.toNimStr()))
 
 addStaticFunction("str_lower", str_lower)
 
-proc str_split(s1: C4Str, s2: C4Str): FlexArray[pointer] {.exportc, cdecl.} =
+proc str_split(s1: Rich, s2: Rich): FlexArray[pointer] {.exportc, cdecl.} =
   let
     pieces = s1.toNimStr().split(s2.toNimStr())
 
   result = newArray[pointer](pieces.len())
 
   for i, item in pieces:
-    result[i] = newC4Str(item)
+    result[i] = newRich(item)
 
   result.metadata = cast[pointer](tList(TString))
 
 addStaticFunction("str_split", str_split)
 
-proc str_join(s: FlexArray[pointer], joiner: C4Str): C4Str {.exportc, cdecl.} =
+proc str_join(s: FlexArray[pointer], joiner: Rich): Rich {.exportc, cdecl.} =
   var
     l: seq[string]
 
   for item in s.items():
-    l.add(cast[C4Str](item).toNimStr())
+    l.add(cast[Rich](item).toNimStr())
 
-  return newC4Str(l.join(joiner.toNimStr()))
+  return newRich(l.join(joiner.toNimStr()))
 
 addStaticFunction("str_join", str_join)
 
-proc str_replace(base, match, replacement: C4Str): C4Str {.exportc, cdecl.} =
-  newC4Str(replace(base.toNimStr(), match.toNimStr(), replacement.toNimStr()))
+proc str_replace(base, match, replacement: Rich): Rich {.exportc, cdecl.} =
+  newRich(replace(base.toNimStr(), match.toNimStr(), replacement.toNimStr()))
 
 
 addStaticFunction("str_replace", str_replace)
 
-proc str_pad(s: C4Str, width: int64): C4Str {.exportc, cdecl.} =
+proc str_pad(s: Rich, width: int64): Rich {.exportc, cdecl.} =
   let l = s.len()
 
   if l >= width:
     return s
 
-  result = newC4Str(width)
+  result = newRich(width)
   if l != 0:
     copyMem(cast[pointer](result), cast[pointer](s), l)
 

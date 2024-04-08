@@ -835,54 +835,59 @@ proc `$`*(tok: Con4mToken): string =
   if tok.litType != "":
     result &= "'" & tok.litType
 
-proc toRope*(tok: Con4mToken): Rope =
-  result = atom(`$`tok)
+proc toRich*(tok: Con4mToken): Rich =
+  var
+    info  = getCurrentCodeStyle()
+    style = new_text_style()
 
   case tok.kind
   of TtStringLit:
-    result.fgColor(getCurrentCodeStyle().stringLitColor)
+    fg_color(style, info.stringLitColor)
   of TtCharLit:
-    result.fgColor(getCurrentCodeStyle().charLitColor)
+    fg_color(style, info.charLitColor)
   of TtIntLit, TtFloatLit, TtHexLit:
-    result.fgColor(getCurrentCodeStyle().numericLitColor)
+    fg_color(style, info.numericLitColor)
   of TtTrue, TtFalse, TtNil:
-    result.fgColor(getCurrentCodeStyle().boolLitColor)
+    fg_color(style, info.boolLitColor)
   of TtOtherLit:
-    result.fgColor(getCurrentCodeStyle().otherLitColor)
+    fg_color(style, info.otherLitColor)
   of TtMul, TtMulEq, TtDiv, TtDivEq, TtMod, TtModEq, TtLte, TtLt, TtGte, TtGt,
      TtCmp, TtNeq, TtPlus, TtPlusEq, TtAssign, TtComma, TtPeriod, TtSemi,
      TtMinus, TtMinusEq, TtLockAttr, TtBacktick, TtArrow, TtColon, TtIn,
      TtBitAnd, TtBitAndEq, TtBitOr, TtBitOrEq, TtBitXor, TtBitXorEq, TtShl,
      TtShlEq, TtShr, TtShrEq:
-    result.fgColor(getCurrentCodeStyle().operatorColor)
+    fg_color(style, info.operatorColor)
   of TtLineComment, TtLongComment:
-    result.fgColor(getCurrentCodeStyle().commentColor)
+    fg_color(style, info.commentColor)
   of TtLBrace, TtRBrace, TtLBracket, TtRBracket, TtLParen, TtRParen,
        TtRBraceMod, TtRBracketMod, TtRParenMod:
-    result.fgColor(getCurrentCodeStyle().otherDelimColor)
+    fg_color(style, info.otherDelimColor)
   of TtNot, TtAnd, TtOr, TtIf, TtElIf, TTElse, TtFor, TtFrom,
      TtTo, TtBreak, TtContinue, TtReturn, TtEnum, TtFunc, TtVar, TtObject,
      TtWhile, TtGlobal, TtConst, TtValueOf, TtTypeOf, TtCase:
-    result.fgColor(getCurrentCodeStyle().keywordColor)
+    fg_color(style, info.keywordColor)
   of TtIdentifier:
-    result.fgColor(getCurrentCodeStyle().identColor)
+    fg_color(style, info.identColor)
   of TtWhiteSpace, TtNewLine, TtSof, TtEof, ErrorTok:
     discard
 
-proc toRope*(tokens: seq[Con4mToken]): Rope =
-  var cells: seq[seq[Rope]] = @[@[atom("Number"), atom("Type"), atom("Line"),
-                                atom("Col"), atom("Value")]]
+  result = c4Str($tok)
+  applyStyle(result, style)
+
+proc toGrid*(tokens: seq[Con4mToken]): Grid =
+  var cells: seq[seq[Rich]] = @[@[c4"Number", c4"Type", c4"Line",
+                                c4"Col", c4"Value"]]
 
   for i, item in tokens:
-    var row: seq[Rope] = @[]
-    row.add(atom($(i + 1)))
-    row.add(atom($(item.kind)))
-    row.add(atom($(item.lineNo)))
-    row.add(atom($(item.lineOffset)))
-    row.add(item.toRope())
+    var row: seq[Rich] = @[]
+    row.add(c4Str($(i + 1)))
+    row.add(c4Str($(item.kind)))
+    row.add(c4Str($(item.lineNo)))
+    row.add(c4Str($(item.lineOffset)))
+    row.add(item.toRich())
     cells.add(row)
 
-  return quickTable(cells)
+  return table(cells)
 
 proc `$`*(kind: Con4mTokenKind): string =
   case kind

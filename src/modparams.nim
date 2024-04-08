@@ -1,4 +1,4 @@
-import "."/[stchecks, attrstore]
+import "."/[stchecks, attrstore, vm_func]
 
 proc get_parameter_info*(ctx: RuntimeState): seq[ZParamExport] =
   ## Pass back the big list of all the parameters we know about, with
@@ -7,58 +7,54 @@ proc get_parameter_info*(ctx: RuntimeState): seq[ZParamExport] =
     for i, param in module.parameters:
       var
         data = ZParamExport(modid:    int32(module.moduleId),
-                            modname:  module.modname,
+                            modname:  r(module.modname),
                             paramid:  int32(i),
                             private:  param.private,
                             shortdoc: param.shortdoc,
                             longdoc:  param.longdoc,
                             tid:      param.tid)
 
-      if param.attr != "":
+      if param.attr.rich_len() != 0:
         data.name = param.attr
         var
           err: bool
-          tid: TypeId
+          tid: TypeSpec
 
-        let val = ctx.get(data.name, err, addr tid)
+        let val = ctx.get(data.name.toNimStr(), err, addr tid)
         if not err:
-          data.havedefault = true
           data.default     = val
           data.tid         = tid
           continue
       else:
-        data.name = ctx.curModule.datasyms[param.offset]
+        data.name = cast[Rich](ctx.curModule.datasyms[param.offset])
         let
           p         = param.offset
           dataaddr  = addr ctx.moduleAllocations[module.moduleId][p]
-          typeaddr  = cast[ptr TypeId](cast[uint](dataaddr) +
+          typeaddr  = cast[ptr TypeSpec](cast[uint](dataaddr) +
                                        uint(sizeof(pointer)))
-        if typeaddr[] != TBottom:
-          data.havedefault = true
+        if typeaddr[] != tspec_error() and typeaddr[] != nil:
           data.default     = dataaddr[]
           data.tid         = typeaddr[]
           continue
 
-      if param.havedefault:
-        data.havedefault = true
-        data.default     = param.default
+      data.default = param.default
 
-      elif param.iFnIx != -1:
+      if data.default == nil and param.iFnIx != -1:
         if param.iNative:
           ctx.z_ffi_call(cast[int](param.iFnIx))
           data.default = ctx.returnRegister
-          data.tid     = cast[TypeId](ctx.rrType)
+          data.tid     = cast[TypeSpec](ctx.rrType)
         else:
           data.default = ctx.foreign_z_call(cast[int](param.iFnIx))
-          data.tid     = cast[TypeId](ctx.rrType)
+          data.tid     = cast[TypeSpec](ctx.rrType)
 
 proc get_current_instruction(ctx: RuntimeState):
                             ptr ZInstruction {.importc, cdecl.}
 
 proc run_param_validator*(ctx: RuntimeState, p: ZParamInfo,
-                          val: pointer, t: TypeId): string =
+                          val: pointer, t: TypeSpec): string =
 
-  if p.tid.tCopy().unify(t) == TBottom:
+  if p.tid.tspec_compare(t) == false:
     return "Specified type for parameter was not compatable with the " &
            "stored type (" & t.toString() & ")"
   if p.vFnIx != -1:
@@ -70,10 +66,10 @@ proc run_param_validator*(ctx: RuntimeState, p: ZParamInfo,
     let s = ctx.run_callback_internal(addr cb, [(val, p.tid)])
 
     if s != nil and s.len() != 0:
-      return s.toNimStr()
+      return cast[Rich](s).toNimStr()
 
 proc set_user_param*(ctx: RuntimeState, mid: int, paramix: int,
-                     value: pointer, t: TypeId): string {.exportc, cdecl.} =
+                     value: pointer, t: TypeSpec): string {.exportc, cdecl.} =
   ## Sets the user parameter, and runs the validator. If it returns
   ## an error message, then it's feedback for the user, and try
   ## again. Otherwise, it succeeded.
@@ -88,21 +84,21 @@ proc set_user_param*(ctx: RuntimeState, mid: int, paramix: int,
   param.userparam = value
 
 proc get_param_name*(param: ZParamInfo, m: ZModuleInfo):
-                   string {.exportc, cdecl.} =
-  if param.attr != "":
+                   Rich {.exportc, cdecl.} =
+  if param.attr.rich_len() != 0:
     return param.attr
   else:
-    return m.datasyms[param.offset]
+    return cast[Rich](m.datasyms[param.offset])
 
 
 proc get_param_value*(ctx: RuntimeState, param: ZParamInfo):
-                    (pointer, TypeId) {.exportc, cdecl.} =
-  if param.userType != TBottom:
+                    (pointer, TypeSpec) {.exportc, cdecl.} =
+  if param.userType.tspec_compare(tspec_typevar()) == true:
     return (param.userparam, param.userType)
 
-  if param.haveDefault:
+  if param.default != nil:
     return (param.default, param.tid)
 
   var name = param.get_param_name(ctx.curModule)
 
-  ctx.runtimeError("ParamNotSet", @[name, ctx.curModule.modName])
+  ctx.runtimeError("ParamNotSet", @[name.toNimStr(), ctx.curModule.modName])

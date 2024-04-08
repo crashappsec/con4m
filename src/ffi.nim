@@ -169,7 +169,7 @@ proc ffi_call*(cif: var CallerInfo, fn: pointer, ret: pointer,
                args: pointer) {.importc, cdecl.}
 
 proc ffi_test*(s: cstring): int {.cdecl.} =
-  print h2($(s))
+  print new_rich($(s), "h2")
   return 0
 
 {.emit: """
@@ -187,10 +187,11 @@ static void *attempt_lib_load(char *name) {
 """.}
 
 var staticSymbols: Dict[string, pointer]
-staticSymbols.initDict()
+
+initDict[string, pointer](staticSymbols)
 
 proc addStaticFunction*[T](s: string, f: T) =
-  staticSymbols[s] = cast[pointer](f)
+  staticSymbols[s] = f
 
 proc global_lookup(sym: cstring): pointer {.importc, cdecl, nodecl.}
 proc attempt_lib_load(sym: cstring): pointer {.importc, cdecl, nodecl.}

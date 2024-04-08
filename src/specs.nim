@@ -1,33 +1,29 @@
-import "."/[common, attrstore]
-import ztypes/api
-
+import "."/[common, attrstore, vm_func]
+import "err"/[errbase, output]
 
 proc print_one_section(spec: SectionSpec, n: string) =
-  var cells: seq[seq[Rope]]
+  var cells: seq[seq[Rich]]
 
   cells.add(@[text("Name"), em(n)])
   cells.add(@[text("Instantiable?"), if spec.maxAllowed > 1:
-                                       fgColor("✓", "atomiclime")
+                                       rich"[atomic lime]✓"
                                      else:
-                                       fgColor("✗", "red")])
+                                       rich"[red]✗"])
   cells.add(@[text("User-defined fields?"), if spec.userDefOk:
-                                              fgColor("✓", "atomiclime")
+                                              rich"[atomic lime]✓"
                                             else:
-                                              fgColor("✗", "red")])
-  cells.add(@[text("Allowed sections"),
-              if spec.allowedSections.len() == 0:
-                em("None")
-              else:
-                text((spec.allowedSections &
-                  spec.requiredSections).join(", "))])
+                                              rich"[red]✗"])
+  if spec.allowedSections.len() == 0:
+    cells.add(@[rich"Allowed sections", rich"[i]None"])
+  else:
+    let all = (spec.allowedSections & spec.requiredSections).toXList()
+    cells.add(@[rich"Allowed sections", all.string_join(rich", ")])
 
   if spec.requiredSections.len() != 0:
     cells.add(@[text("Required sections"),
-                text(spec.requiredSections.join(", "))])
+                spec.requiredSections.toXList().string_join(rich", ")])
 
-  print quickTable(cells,
-                   verticalHeaders = true).colWidths([(40, true),
-                           (20, true)]).tpad(0).bpad(0)
+  print cells.table(header_rows = 0, header_cols = 1)
 
   let view = spec.fields.items()
 
@@ -35,17 +31,17 @@ proc print_one_section(spec: SectionSpec, n: string) =
     cells = @[@[text("Field"), text("Type"), text("Required"), text("Lock")]]
 
     for (k, fs) in view:
-      cells.add(@[text(k), em(fs.tid.toString()),
+      cells.add(@[k, em(fs.tid.con4m_repr()),
                 if fs.required:
-                  fgColor("✓", "atomiclime")
+                  rich"[atomic lime]✓"
                 else:
-                  fgColor("✗", "red"),
+                  rich"[red]✗",
                 if fs.lockOnWrite:
-                  fgColor("✓", "atomiclime")
+                  rich"[atomic lime]✓"
                 else:
-                  fgColor("✗", "red")])
+                  rich"[red]✗"])
 
-    print quickTable(cells)
+    print table(cells)
   else:
     print(h5("Section has no defined fields."))
 
@@ -57,7 +53,7 @@ proc print_spec*(s: ValidationSpec) =
   print_one_section(s.rootSpec, "Top-level section")
 
   for (name, sec) in s.secSpecs.items(sort=true):
-    print_one_section(sec, name)
+    print_one_section(sec, name.toNimStr())
 
 proc getRootSection*(spec: ValidationSpec): SectionSpec {.exportc, cdecl.} =
   if spec.rootSpec != nil:
@@ -103,7 +99,7 @@ proc getFieldInfo*(spec: ValidationSpec, parts: seq[string]): FieldSpec {.
   while true:
     let
       curName  = parts[i]
-      fieldOpt = curSec.fields.lookup(curName)
+      fieldOpt = curSec.fields.lookup(r(curName))
 
     if fieldOpt.isSome():
       if i != parts.len() - 1: # Can't be a field and a section.
@@ -114,7 +110,7 @@ proc getFieldInfo*(spec: ValidationSpec, parts: seq[string]): FieldSpec {.
         # for actual fields, so no need to check on the contents.
         return fieldOpt.get()
 
-    let secOpt = spec.secSpecs.lookup(curName)
+    let secOpt = spec.secSpecs.lookup(r(curName))
     if secOpt.isNone():
       # Name isn't a field or a section, but check to see if
       # user-defined fields are okay.
@@ -126,7 +122,7 @@ proc getFieldInfo*(spec: ValidationSpec, parts: seq[string]): FieldSpec {.
       else:
         return FieldSpec(fieldKind: FsErrorNoSuchSec, errIx: i)
 
-    if curName notin curSec.allowedSections:
+    if r(curName) notin curSec.allowedSections:
       return FieldSpec(fieldKind: FsErrorSecNotAllowed, errIx: i)
 
     curSec = secOpt.get()
@@ -143,8 +139,8 @@ proc getFieldInfo*(spec: ValidationSpec, parts: seq[string]): FieldSpec {.
         return FieldSpec(fieldKind: FsObjectInstance)
     i = i + 1
 
-proc rangeValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
-                     param: FlexArray[pointer]): Rope {.exportc, cdecl.} =
+proc rangeValidator*(ctx: RuntimeState, path: Rich, t: TypeSpec, val: pointer,
+                     param: FlexArray[pointer]): Rich {.exportc, cdecl.} =
   let
     lowval = cast[int](param[0])
 
@@ -159,48 +155,48 @@ proc rangeValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
     let args = @[$(cast[cstring](path)),$(v), $(lowval), $(hival)]
     return ctx.format_validation_error(path, "BadRange", args)
 
-proc choiceValidator*(ctx: RuntimeState, path: C4Str, t: TypeId, val: pointer,
-                      param: FlexArray[pointer]): Rope {.exportc, cdecl.} =
+proc choiceValidator*(ctx: RuntimeState, path: Rich, t: TypeSpec, val: pointer,
+                      param: FlexArray[pointer]): Rich {.exportc, cdecl.} =
   let
     choices = param.items()
 
   for item in choices:
-    if call_eq(item, val, t) == true:
+    if con4m_eq(t, item, val) == true:
       return nil # Success
 
   var choice_list: seq[string]
 
   for item in choices:
-    choice_list.add($(call_repr(item, t)))
+    choice_list.add(con4m_repr(item, t).toNimStr())
 
   return ctx.format_validation_error(path, "BadChoice",
                                      @[ $(cast[cstring](path)),
-                                        $(call_repr(val, t)),
+                                        con4m_repr(val, t).toNimStr(),
                                         choice_list.join(", ")])
 
-proc userFieldValidator*(ctx: RuntimeState, path: C4Str, t: TypeId,
-                         val: pointer, cb: ptr ZCallback): Rope
+proc userFieldValidator*(ctx: RuntimeState, path: Rich, t: TypeSpec,
+                         val: pointer, cb: ptr ZCallback): Rich
                                                          {.exportc, cdecl.} =
   # 1. Push the value.
   # 2. Push the path.
   # 3. call run_callback_internal()
   ctx.push_call_param(val, t)
-  ctx.push_call_param(cast[pointer](path), TString)
+  ctx.push_call_param(cast[pointer](path), tspec_string())
 
-  let cb_result = cast[C4Str](ctx.run_callback_internal(cb))
+  let cb_result = cast[Rich](ctx.run_callback_internal(cb))
   if cb_result != nil and cb_result.len() != 0:
     result = ctx.custom_validation_error(path, cb_result, cb)
 
-proc userSectionValidator*(ctx: RuntimeState, path: C4Str, f: pointer,
-                           cb: ptr ZCallback): Rope
+proc userSectionValidator*(ctx: RuntimeState, path: Rich, f: pointer,
+                           cb: ptr ZCallback): Rich
                              {.exportc, cdecl.} =
   # 1. Push the list of fields.
   # 2. Push the path.
   # 3. call run_callback_internal()
-  ctx.push_call_param(f, tList(TString))
-  ctx.push_call_param(cast[pointer](path), TString)
+  ctx.push_call_param(f, tspec_list(tspec_string()))
+  ctx.push_call_param(cast[pointer](path), tspec_string())
 
-  let cb_result = cast[C4Str](ctx.run_callback_internal(cb))
+  let cb_result = cast[Rich](ctx.run_callback_internal(cb))
   if cb_result != nil and cb_result.len() != 0:
     result = ctx.custom_validation_error(path, cb_result, cb)
 
@@ -247,7 +243,7 @@ proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
         let val = m.attrSpec.secSpecs[name]
 
         if val != obj:
-          m.irError("DupeSection", @[name])
+          m.irError("DupeSection", @[name.toNimStr()])
 
         continue
     let
@@ -282,11 +278,11 @@ proc mergeStaticSpec*(m: Module) {.cdecl, exportc.} =
     for (fname, fspec) in localRootSec.fields.items():
       let rOpt = globalRootSec.fields.lookup(fname)
       if rOpt.isSome():
-        m.irError("RootOverwrite", @[fname])
+        m.irError("RootOverwrite", @[fname.toNimStr()])
       globalRootSec.fields[fname] = fspec
 
 proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
-                      errs: var seq[Rope]) =
+                      errs: var seq[Rich]) =
   ## To validate a section we must:
   ## 1. Look for sections that are present, but are not allowed.
   ## 2. Look for required subsections that do not exist.
@@ -326,13 +322,14 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
       found_sections.add((i, last))
       found_s_names.add(last)
 
-  for (i, secname) in found_sections:
+  for (i, s) in found_sections:
+    let secname = r(s)
     if secname notin spec.allowedSections and
        secname notin spec.requiredSections:
 
       errs.add(ctx.format_validation_error(tree.path,
                                            "BadSection",
-                                           @[secname]))
+                                           @[s]))
     else:
       let newSpec = ctx.obj.spec.secSpecs[secname]
       if newSpec.maxAllowed == 1:
@@ -342,18 +339,18 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
           ctx.validate_section(item, newSpec, errs)
 
   for requirement in spec.requiredSections:
-    if requirement notin found_s_names:
+    if requirement.toNimStr() notin found_s_names:
       errs.add(ctx.format_validation_error(tree.path, "MissingSection",
-                                           @[requirement]))
+                                           @[requirement.toNimStr()]))
 
   if not spec.userDefOk:
     for name in found_f_names:
-      if spec.fields.lookup(name).isNone():
+      if spec.fields.lookup(r(name)).isNone():
         errs.add(ctx.format_validation_error(tree.path, "BadField",
                                              @[name, spec.name]))
 
   for name in found_f_names:
-    let specOpt = spec.fields.lookup(name)
+    let specOpt = spec.fields.lookup(r(name))
     if specOpt.isSome():
       let fieldSpec = specOpt.get()
       for item in fieldSpec.exclusions:
@@ -363,14 +360,15 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
         else:
           excluded_fields.add(item)
 
-  for (name, field_spec) in spec.fields.items():
+  for (n, field_spec) in spec.fields.items():
+    let name = n.toNimStr()
     if name notin (found_f_names & excluded_fields) and field_spec.required:
       errs.add(ctx.format_validation_error(tree.path, "MissingField",
                                            @[name]))
     else:
       var
-        expected_type = TBottom
-        found_type: TypeId
+        expected_type = tspec_error()
+        found_type: TypeSpec
         full_path:  string
         err:        bool
         value:      pointer
@@ -379,11 +377,11 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
       if field_spec.deferredType != "":
         full_path = ready_to_append & field_spec.deferredType
 
-        expectedType = cast[TypeId](ctx.get(full_path, err, addr foundType))
+        expectedType = cast[TypeSpec](ctx.get(full_path, err, addr foundType))
         if err:
           continue
 
-        if unify(tTypeSpec(), foundType) == TBottom:
+        if unify(tspec_typespec(), foundType).isTypeError():
 
           errs.add(ctx.format_validation_error(full_path, "NotTSpec",
                                                @[ready_to_append, name]))
@@ -410,7 +408,7 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
       for valid_obj in field_spec.validators:
         let
           fn = cast[FieldValidator](valid_obj.fn)
-          r  = fn(ctx, newC4Str(full_path), found_type,
+          r  = fn(ctx, c4str(full_path), found_type,
                     value, valid_obj.params)
 
         if r != nil:
@@ -422,13 +420,13 @@ proc validate_section(ctx: RuntimeState, tree: AttrTree, spec: SectionSpec,
   var fields_to_pass = newArray[pointer](found_f_names.len())
 
   for i, item in found_f_names:
-    fields_to_pass[i] = newC4Str(item)
+    fields_to_pass[i] = c4str(item)
 
   for validator in spec.validators:
       let
         fn   = cast[SecValidator](validator.fn)
         flds = cast[pointer](fields_to_pass)
-        r    = fn(ctx, newC4str(tree.path), flds, validator.params)
+        r    = fn(ctx, c4Str(tree.path), flds, validator.params)
 
       if r != nil:
         errs.add(r)
@@ -439,7 +437,7 @@ proc using_spec*(ctx: RuntimeState): bool {.exportc, cdecl.} =
 proc run_validator*(ctx: RuntimeState, startwith = ""):
                     FlexArray[pointer] {.cdecl, exportc.} =
   var
-    errs: seq[Rope]
+    errs: seq[Rich]
 
   if not ctx.usingSpec():
     return newArrayFromSeq[pointer](cast[seq[pointer]](errs))
@@ -460,7 +458,7 @@ proc run_validator*(ctx: RuntimeState, startwith = ""):
       i     = 0
 
     while i < parts.len():
-      let specOpt = ctx.obj.spec.secSpecs.lookup(parts[i])
+      let specOpt = ctx.obj.spec.secSpecs.lookup(r(parts[i]))
 
       if specOpt.isNone():
         errs.add(ctx.format_validation_error(startwith, "NoSpecForSec",
@@ -503,7 +501,7 @@ proc run_validator*(ctx: RuntimeState, startwith = ""):
       ctx.validate_section(tree, spec, errs)
 
   result          = newArrayFromSeq[pointer](cast[seq[pointer]](errs))
-  result.metadata = cast[pointer](tList(TRich))
+  result.metadata = cast[pointer](tspec_list(tspec_string()))
   GC_ref(result)
 
 

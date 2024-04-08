@@ -38,6 +38,3 @@ proc `$`*(s: StringCursor): string =
   echo s.runes.len()
   echo s.runes
   result = $(s.runes)
-
-proc toRope*(s: StringCursor): Rope =
-  return paragraph(Rope(kind: RopeAtom, length: s.runes.len(), text: s.runes))

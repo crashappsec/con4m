@@ -1,4 +1,4 @@
-use getopt from "modules"
+Use getopt from "modules"
 
 confspec {
      root {
@@ -62,12 +62,12 @@ pulled in.
           "Module to use as the default starting module."
 """
 Note that if the program is being built as part of an invocation of
-<em>run</em>,
+[em]run[/],
 the initial execution's entry point will still be the file provided, but
 subsequent invocations of the object file will use this value.
 
 Otherwise, this will change the current entry point, and if using
-<em>--save</em>, will also change it for subsequent runs.
+[em]--save[/], will also change it for subsequent runs.
 """
           field_to_set: "entry_point"
       }
@@ -95,7 +95,7 @@ The input file must be a `.0c00l` file, which can be generated multiple ways:
 """
 Module name to use as the default starting module in this run.  It
 will become the default in subsequent runs if also applying the
-<em>--save</em> flag.
+[em]--save[/em] flag.
 """
 
           field_to_set: "entry_point"
@@ -139,7 +139,7 @@ of your new entrypoint.
   }
 
   command check {
-      "Parse and validate <em>con4m</em> code"
+      "Parse and validate [em]con4m[/em] code"
       
 """
 ## Validate, but do not generate an object.
@@ -152,7 +152,7 @@ the checked IR tree at the end of the process, where successful. Does
   }
 
   command parse {
-      "Parse <em>con4m</em> code without checking it."
+      "Parse [em]con4m[/em] code without checking it."
 """## Show parse trees
 
 Attempts to parse any con4m files passed at the command line,
@@ -171,7 +171,7 @@ Passes any files given at the command line through the lexer (only).
   }
 
   command objdump {
-      "Output detailed information about a <em>con4m</em> object file."
+      "Output detailed information about a [em]con4m[/em] object file."
 """
 ## The `0c00l` object file format is not cool.
 
@@ -193,7 +193,7 @@ command.
   }
 
   command disassemble {
-      "Disassemble a <em>con4m</em> object file."
+      "Disassemble a [em]con4m[/em] object file."
 """
 ## Dis dis-assembles
 
@@ -207,7 +207,7 @@ pretty-printing of instruction contents.
   }
 
   command pretty {
-      "Pretty-print <em>con4m</em> code on the terminal."
+      "Pretty-print [em]con4m[/em] code on the terminal."
 """
 ## Pretty-prints all arguments, tho pretty unintelligently...
 

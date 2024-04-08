@@ -2,6 +2,7 @@
 ## Ideally, we will keep refining the nodes until we can use them essentially
 ## as fat VM instructions that we can directly marshal.
 
+import "std"/terminal
 import "."/[parse, scope]
 export parse, scope
 
@@ -10,52 +11,62 @@ export parse, scope
 proc foldDown(ctx: Module, newNode: IrNode) {.importc, cdecl.}
 proc parseTreeToIr(ctx: Module): IrNode
 
-proc rangeValidator(ctx: RuntimeState, path: string, t: TypeId, val: pointer,
-                     param: FlexArray[pointer]): Rope {.importc, cdecl.}
+proc rangeValidator(ctx: RuntimeState, path: string, t: TypeSpec, val: pointer,
+                     param: FlexArray[pointer]): Rich {.importc, cdecl.}
 
-proc choiceValidator(ctx: RuntimeState, path: string, t: TypeId, val: pointer,
-                      param: FlexArray[pointer]): Rope {.importc, cdecl.}
-proc userFieldValidator(ctx: RuntimeState, path: string, t: TypeId,
-                        val: pointer, param: ptr ZCallback): Rope
+proc choiceValidator(ctx: RuntimeState, path: string, t: TypeSpec, val: pointer,
+                      param: FlexArray[pointer]): Rich {.importc, cdecl.}
+proc userFieldValidator(ctx: RuntimeState, path: string, t: TypeSpec,
+                        val: pointer, param: ptr ZCallback): Rich
                                                          {.importc, cdecl.}
 proc userSectionValidator(ctx: RuntimeState, path: string,
-                          fields: FlexArray[pointer], cb: ptr ZCallback): Rope
+                          fields: FlexArray[pointer], cb: ptr ZCallback): Rich
                              {.importc, cdecl.}
 
 proc newSpec(): ValidationSpec {.importc, cdecl.}
 
 proc getRootSection(spec: ValidationSpec): SectionSpec {.importc, cdecl.}
 
+proc resultingNumType(m: Module, t1, t2: TypeSpec): TypeSpec =
+  var warn: cint
 
-template getTid*(n: untyped): TypeId =
+  result = get_promotion_type(t1, t2, addr warn)
+
+  if (warn != 0):
+    m.irWarn("UtoSSameSz")
+
+template getTid*(n: untyped): TypeSpec =
   n.tid.followForwards()
 
 proc isConstant*(n: IrNode): bool =
   # Doesn't capture everything that can be constant, just things we
   # are currently folding.
-  return n.getTid() != TBottom and n.haveVal
+  return n.getTid() != tspec_error() and n != nil
 
 proc lockFn*(impl: FuncInfo) =
   impl.frozen = true
-  let to      = impl.tid.idToTypeRef()
-  to.isLocked = true
+  let to      = impl.tid.followForwards()
+  tspec_lock(to)
 
 proc unlockFn*(impl: FuncInfo) =
   impl.frozen = false
-  let to      = impl.tid.idToTypeRef()
-  to.isLocked = true
+  let to      = impl.tid.followForwards()
+  tspec_unlock(to)
 
 template withFnLock(fi: FuncInfo, code: untyped) =
   let
-    tobj = fi.tid.idToTypeRef()
-    lock = tobj.isLocked
+    tobj = fi.tid.followForwards()
+    lock = tspec_is_locked(tobj)
 
-  tobj.isLocked = true
+  tspec_lock(tobj)
 
   try:
     code
   finally:
-    tobj.isLocked = lock
+    if lock:
+      tspec_lock(tobj)
+    else:
+      tspec_unlock(tobj)
 
 proc evalConstExpr(ctx: Module, n: ParseNode, prop: string): IrNode =
   ctx.current = nil
@@ -67,41 +78,49 @@ proc evalConstExpr(ctx: Module, n: ParseNode, prop: string): IrNode =
     ctx.irError("NotConst", @[prop])
     return nil
 
-proc findPromotionType(ctx: Module, t1, t2: TypeId): TypeId =
+proc findPromotionType(ctx: Module, t1, t2: TypeSpec): TypeSpec =
   # Assumes we're trying to promote either type into either type.
   var
     t1  = t1.followForwards()
     t2  = t2.followForwards()
-    to1 = t1.idToTypeRef()
-    to2 = t2.idToTypeRef()
+    to1 = t1.followForwards()
+    to2 = t2.followForwards()
+    k1  = to1.get_type_kind()
+    k2  = to2.get_type_kind()
 
-  if to1.kind != to2.kind:
-    return TBottom
+  if k1 != k2:
+    return tspec_error()
+  case k1
+  of BT_LIST:
+    return tspec_list(ctx.findPromotionType(to1.getParam(0),
+                                            to2.getParam(0)))
+  of BT_DICT:
+    return tspec_dict(ctx.findPromotionType(to1.getParam(0), to2.getParam(0)),
+                      ctx.findPromotionType(to1.getParam(1), to2.getParam(1)))
+  of BT_TUPLE:
+    var pi: seq[TypeSpec]
+    let
+      n1 = to1.num_params()
+      n2 = to1.num_params()
 
-  case to1.kind
-  of C4List:
-    return tList(ctx.findPromotionType(to1.items[0], to2.items[0]))
-  of C4Dict:
-    return tDict(ctx.findPromotionType(to1.items[0], to2.items[0]),
-                 ctx.findPromotionType(to1.items[1], to2.items[1]))
-  of C4Tuple:
-    var pi: seq[TypeId]
-    for i, item in to1.items:
-      pi.add(ctx.findPromotionType(item, to2.items[i]))
-    return tTuple(pi)
-  of C4Primitive:
+    if n1 != n2:
+      return tspec_error()
+
+    for i in 0 ..< n1:
+      let
+        item1 = to1.getParam(i)
+        item2 = to2.getParam(i)
+      pi.add(ctx.findPromotionType(item1, item2))
+    return tspec_tuple(toXList(pi))
+  of BT_PRIMATIVE:
     if t1.isIntType():
       return ctx.resultingNumType(t1, t2)
-    elif t1 == TRich and t2 in [TRich, TString]:
-      return TRich
-    elif t2 == TRich and t1 == TString:
-      return TRich
   else:
     discard
 
   return t1.unify(t2)
 
-proc addCast(node: var IrNode, promoteTo: TypeId) =
+proc addCast(node: var IrNode, promoteTo: TypeSpec) =
   var newNode = IrNode(contents:  IrContents(kind: IrCast, srcData: node),
                        parseNode: node.parseNode,
                        tid:       promoteTo,
@@ -112,13 +131,13 @@ proc addCast(node: var IrNode, promoteTo: TypeId) =
 
 # This version is meant for when there's a fixed type ID we're expecting,
 # such as for things that take a boolean type.
-proc unifyOrCast(ctx: Module, t: TypeId, irNode: var IrNode): TypeId =
+proc unifyOrCast(ctx: Module, t: TypeSpec, irNode: var IrNode): TypeSpec =
   result = t.unify(irNode.tid)
 
-  if result == TBottom:
-    if t.unify(TBool) != TBottom:
+  if result == tspec_error():
+    if t.unify(tspec_bool()) != tspec_error():
       ctx.irWarn("BoolAutoCast", irNode, @[irNode.getTid().toString()])
-      irNode.addCast(TBool)
+      irNode.addCast(tspec_bool())
     else:
       # Checks to see if we can get them to the same type, but
       # generally we called this because the RHS has to promote,
@@ -137,7 +156,7 @@ proc unifyOrCast(ctx: Module, t: TypeId, irNode: var IrNode): TypeId =
 # be the same type.
 proc unifyOrCast(ctx:   Module,
                  nodes: var openarray[IrNode],
-                 errIx: var int): TypeId =
+                 errIx: var int): TypeSpec =
   var
     curTid   = nodes[0].tid.followForwards()
     dontExit = true
@@ -156,15 +175,15 @@ proc unifyOrCast(ctx:   Module,
       let t = item.tid.followForwards()
       if t == curTid:
         continue
-      if t.unify(curTid) != TBottom:
+      if t.unify(curTid) != tspec_error():
         continue
       let newType = ctx.findPromotionType(curTid, t)
       if newType == curTid:
         nodes[i].addCast(curTid)
         continue
-      elif newType == TBottom:
+      elif newType == tspec_error():
         errIx = i
-        return TBottom
+        return tspec_error()
       else:
         curTid = newType
         dontExit = true
@@ -173,7 +192,7 @@ proc unifyOrCast(ctx:   Module,
   return curTid
 
 # For binary ops. The err param is extraneous for them.
-proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
+proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeSpec =
   var errIx: int
   var nodes = [n1, n2]
 
@@ -181,19 +200,10 @@ proc unifyOrCast(ctx: Module, n1, n2: var IrNode): TypeId =
   n1     = nodes[0]
   n2     = nodes[1]
 
-template doc_extract(t: string): Rope =
-  let s = unicode.strip(t)
-  if s != "":
-    if s[0] == '#':
-      markdown(t)
-    elif "</" in s:
-      html(t)
-    else:
-      text(t)
-  else:
-     nil
+template doc_extract(t: string): Rich =
+  r(unicode.strip(t))
 
-proc extractShortDoc(n: ParseNode): Rope =
+proc extractShortDoc(n: ParseNode): Rich =
   if n == nil or n.docNodes == nil:
     return nil
   else:
@@ -205,7 +215,7 @@ proc extractShortDocPlain(n: ParseNode): string =
   else:
     return n.docNodes.children[0].getText()
 
-proc extractLongDoc(n: ParseNode): Rope =
+proc extractLongDoc(n: ParseNode): Rich =
   if n == nil or n.docNodes == nil or len(n.docNodes.children) < 2:
     return nil
   else:
@@ -218,21 +228,21 @@ proc extractLongDocPlain(n: ParseNode): string =
     return n.docNodes.children[1].getText()
 
 
-proc fmt(s: string, x = "", y = "", t = TBottom): Rope =
+proc fmt(s: string, x = "", y = "", t = tspec_error()): Rich =
   result = atom(s).fgColor("atomiclime")
   if x != "":
-    result = result + atom(" " & x).italic()
+    result = result + atom(" " & x).em()
 
   if y != "":
       result = result + atom(" (" & y & ")").fgcolor("fandango")
 
-  if t != TBottom:
-    result = result + atom(" ") + strong(t.toString())
+  if t != tspec_error():
+    result = result + atom(" ") + bold(t.toString())
 
 template reprBasicLiteral(ctx: IrNode): string =
-  if not ctx.haveVal:
+  if ctx.value == nil:
     ""
-  elif ctx.tid.tinfo() == TFunc:
+  elif ctx.tid.get_type_kind() == BT_FUNC:
     # Special cased because I am weary.
     let v = cast[ptr Callback](ctx.value)
     if v == nil:
@@ -240,9 +250,9 @@ template reprBasicLiteral(ctx: IrNode): string =
     else:
       ($(v.name) & v.tid.toString())
   else:
-    $(call_repr(ctx.value, ctx.tid))
+    con4m_repr(ctx.value, ctx.tid).toNimStr()
 
-proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
+proc irWalker(ctx: IrNode): (Rich, seq[IrNode]) =
   var
     descriptor: string
     moreinfo:   string
@@ -302,7 +312,7 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrRet:
     return (fmt("Return", "", "", ctx.getTid()), @[ctx.contents.retVal])
   of IrLit:
-    if ctx.getTid().isBasicType():
+    if ctx.getTid().getTypeKind == BT_PRIMATIVE:
       moreinfo = ctx.reprBasicLiteral()
     return (fmt("Literal", "", moreinfo, ctx.getTid()), ctx.contents.items)
   of IrNil:
@@ -363,10 +373,18 @@ proc irWalker(ctx: IrNode): (Rope, seq[IrNode]) =
   of IrCast:
     return (fmt("Cast"), @[ctx.contents.srcData])
 
-proc toRope*(ctx: IrNode): Rope =
-  if ctx == nil:
-    return em("Null node")
-  return ctx.quickTree(irWalker)
+proc treeDown(t: Tree, kids: seq[IrNode]) =
+  for kid in kids:
+    let (toPrint, subkids) = irWalker(kid)
+    let sub = t.add_node(toPrint)
+    treeDown(sub, subkids)
+
+proc toRich*(ctx: IrNode): Grid =
+  var (toPrint, kids) = irWalker(ctx)
+  var t: Tree = new_tree(toPrint)
+  treeDown(t, kids)
+
+  return grid_tree(t)
 
 proc getLitMod(ctx: Module): string =
   return ctx.pt.token.litType
@@ -506,8 +524,8 @@ proc convertEnum*(ctx: Module) =
         ctx.irError("$assign", w = ctx.parseKid(i, 0))
 
       var
-        symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false, TInt,
-                  declnode = ctx.parseKid(i, 0))
+        symOpt = ctx.scopeDeclare(ctx.moduleScope, itemName, false,
+                                  tspec_i64(), declnode = ctx.parseKid(i, 0))
 
       if symOpt.isSome():
         let sym = symOpt.get()
@@ -524,11 +542,11 @@ proc convertIdentifier(ctx: Module): IrNode =
       name = ctx.curSecPrefix & "." & name
 
     result = ctx.irNode(IrLhsLoad)
-    stOpt  = ctx.addDef(name, result, tVar())
+    stOpt  = ctx.addDef(name, result, tspec_typevar())
 
   else:
     result = ctx.irNode(IrLoad)
-    stOpt  = ctx.addUse(name, result, tVar())
+    stOpt  = ctx.addUse(name, result, tspec_typevar())
 
   result.contents.symbol = stOpt.getOrElse(nil)
 
@@ -578,7 +596,7 @@ proc convertMember(ctx: Module): IrNode =
     if ctx.curSecPrefix != "":
       result.contents.name = ctx.curSecPrefix & "." & result.contents.name
 
-  let sym = ctx.addDef(result.contents.name, result, tVar())
+  let sym = ctx.addDef(result.contents.name, result, tspec_typevar())
 
   if sym.isSome():
     result.contents.attrSym = sym.get()
@@ -589,14 +607,14 @@ proc extractSymInfo(ctx: Module, scope: Scope, isConst = false,
   # Returns the last symbol; useful for convertParamBlock where
   # it only accepts one symbol.
   var
-    toAdd: seq[(string, TypeId, ParseNode)]
+    toAdd: seq[(string, TypeSpec, ParseNode)]
 
   for varNode in ctx.pt.children:
     if varNode.kind in [NodeGlobalStmt, NodeVarStmt, NodeConstStmt]:
       continue
     var
       varNames:  seq[string]
-      foundType: TypeId = TBottom
+      foundType: TypeSpec = tspec_error()
     for kid in varNode.children:
       if kid.kind == NodeIdentifier:
         let name = kid.getText()
@@ -606,10 +624,10 @@ proc extractSymInfo(ctx: Module, scope: Scope, isConst = false,
       else:
         foundType = kid.buildType()
     for i, oneVarName in varNames:
-      if foundType == TBottom:
-        toAdd.add((oneVarName, tVar(), varnode.children[i]))
+      if foundType == tspec_error():
+        toAdd.add((oneVarName, tspec_typevar(), varnode.children[i]))
       else:
-        toAdd.add((oneVarName, foundType.copyType().typeId,
+        toAdd.add((oneVarName, foundType.copyType(),
                    varnode.children[i]))
 
   for i, (name, tid, kid) in toAdd:
@@ -618,7 +636,7 @@ proc extractSymInfo(ctx: Module, scope: Scope, isConst = false,
     if i == toAdd.len() - 1 and symOpt.isSome():
       result = symOpt.get()
 
-proc convertVarStmt(ctx: Module) =
+proc convertspec_typevarStmt(ctx: Module) =
   var
     symbolsAreConst = false
     sym: SymbolInfo
@@ -662,8 +680,8 @@ proc convertConstStmt(ctx: Module) =
 proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
   var
     gotValid, gotDefault, gotInitialize, gotPrivate, isPrivate: bool
-    paramInfo = ParamInfo(shortdoc: ctx.pt.extractShortDocPlain(),
-                          longdoc:  ctx.pt.extractLongDocPlain())
+    paramInfo = ParamInfo(shortdoc: ctx.pt.extractShortDoc(),
+                          longdoc:  ctx.pt.extractLongDoc())
 
   independentSubtree:
     for i in 0 ..< ctx.numKids():
@@ -679,16 +697,17 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
           ctx.irError("DupeParamProp", @["initialize"], ctx.pt.children[i])
         let
           irNode = ctx.downNode(i, 1)
-          to     = irNode.tid.idToTypeRef()
+          to     = irNode.tid.followForwards()
+          kind   = to.get_type_kind()
 
-        if to.kind != C4Func:
+        if to.get_type_kind() != BT_FUNC:
           ctx.irError("ParamType", @["initializor", "callback"],
                       ctx.pt.children[i])
-        elif to.items.len() != 0:
-          if to.items.len() != 1:
+        elif to.num_params() != 0:
+          if to.num_params() != 1:
             ctx.irError("InitArg", @[], ctx.pt.children[i])
           else:
-            if unify(tFunc(@[sym.tid]), irNode.tid) == TBottom:
+            if unify(tspec_varargs_fn(sym.tid, 0), irNode.tid) == tspec_error():
               ctx.irError("InitArg", @[], ctx.pt.children[i])
 
         paramInfo.initializeIr = some(irNode)
@@ -697,22 +716,24 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
       of "validator":
         let
           irNode = ctx.downNode(i, 1)
-          to     = irNode.tid.idToTypeRef()
+          to     = irNode.tid.followForwards()
 
-        if to.kind != C4Func:
+        if to.get_type_kind() != BT_FUNC:
           ctx.irError("ParamType", @["validator", "callback"],
                       ctx.pt.children[i])
-        elif to.items.len() != 0:
-          if to.items.len() != 2:
+        elif to.num_params() != 0:
+          if to.num_params() != 2:
             ctx.irError("ParamValNArgs", @[], ctx.pt.children[i])
           else:
-            if unify(sym.tid, to.items[0]) == TBottom:
+            if unify(sym.tid, to.get_param(0)) == tspec_error():
               ctx.irError("ParamValParTy", @[sym.tid.toString(),
                                              irnode.tid.toString()],
                           w = irNode.parseNode)
 
-            elif unify(irNode.tid, tFunc(@[sym.tid, TString])) == TBottom:
-              ctx.irError("ParamValRetTy")
+            elif unify(irNode.tid,
+                       tspec_fn(tspec_string(), toXList(@[sym.tid]), false)) ==
+                       tspec_error():
+                         ctx.irError("ParamValRetTy")
 
         paramInfo.validatorIr = some(irNode)
         gotValid              = true
@@ -723,7 +744,7 @@ proc convertParamBody(ctx: Module, sym: var SymbolInfo) =
         else:
           gotPrivate = true
           let irNode = ctx.downNode(i, 1)
-          ctx.typeCheck(irNode.tid, TBool, where = irNode.parseNode)
+          ctx.typeCheck(irNode.tid, tspec_bool(), where = irNode.parseNode)
           if irNode.contents.kind != IrLit:
             ctx.irError("LitRequired",
                         @["<em>private</em> field for parameters", "bool"],
@@ -764,13 +785,13 @@ proc convertParamBlock(ctx: Module) =
     independentSubtree:
       ir = ctx.downNode(0)
       sym = ctx.scopeDeclare(ctx.usedAttrs, ir.contents.name, false,
-                             tVar()).getOrElse(nil)
+                             tspec_typevar()).getOrElse(nil)
   else:
     let
       ir   = IrNode()
       n    = ctx.pt.children[0].children[0]
       name = n.getText()
-      opt  = ctx.scopeDeclare(ctx.moduleScope, name, false, tid = tVar(),
+      opt  = ctx.scopeDeclare(ctx.moduleScope, name, false, tid = tspec_typevar(),
                               declNode = n, inparam = true)
 
     if opt.isSome():
@@ -835,7 +856,7 @@ proc convertFormal(info: FuncInfo, n: ParseNode) =
   if n.children.len() == 2:
     formalInfo.tid = n.children[1].buildType()
   else:
-    formalInfo.tid = tVar()
+    formalInfo.tid = tspec_typevar()
 
   info.params.add(formalInfo)
   info.paramNames.add(formalInfo.name) # TODO: redundant w/ formalInfo.name
@@ -845,10 +866,10 @@ proc setupTypeSignature(info: FuncInfo, n: ParseNode) =
     info.retVal     = FormalInfo(name: "result")
     info.retval.tid = n.buildType()
   else:
-    info.retVal = FormalInfo(name: "result", tid: tVar())
+    info.retVal = FormalInfo(name: "result", tid: tspec_typevar())
 
   var
-    actTypes: seq[TypeId]
+    actTypes: seq[TypeSpec]
     va = false
 
   if info.params.len() != 0 and info.params[^1].va:
@@ -857,15 +878,7 @@ proc setupTypeSignature(info: FuncInfo, n: ParseNode) =
   for actual in info.params:
     actTypes.add(actual.getTid())
 
-  actTypes.add(info.retVal.getTid())
-
-  info.tid = tFunc(actTypes, va)
-
-  if va == true:
-    # From the body of the function, the named parameter collects
-    # all arguments of the given type into a list. This sets the
-    # ACTUAL type that we'll add to the function's symbol table.
-    info.params[^1].tid = tList(info.params[^1].getTid())
+  info.tid = tspec_fn(info.retVal.getTid(), toXList(actTypes), va)
 
 proc extractLocalSym(ctx: Module, n: ParseNode, info: FuncInfo) =
   info.name = n.children[0].getText()
@@ -1135,7 +1148,7 @@ template boolPropConvert(guard: untyped, name: string): bool =
     let tree    = ctx.evalConstExpr(n.children[1], name)
     if tree == nil:
       false
-    elif tree.tid.unify(TBool) == TBottom:
+    elif tree.tid.unify(tspec_bool()) == tspec_error():
         ctx.irError("NotBool", @[name, tree.tid.toString()])
         false
     else:
@@ -1157,9 +1170,9 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
 
     exclude:    seq[string]
     def:        pointer
-    tid:        TypeId
-    defType:    TypeId
-    choiceType: TypeId
+    tid:        TypeSpec
+    defType:    TypeSpec
+    choiceType: TypeSpec
 
   result = FieldSpec(name: name, fieldKind: FSField)
   for i in 1 ..< f.children.len():
@@ -1213,7 +1226,7 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
         elif i == 0:
           choiceType = tree.tid
         else:
-          if choiceType.unify(tree.tid) == TBottom:
+          if choiceType.unify(tree.tid) == tspec_error():
             ctx.irError("TyDiffListItem", @[choiceType.toString(),
                                             tree.tid.toString()])
             s = @[]
@@ -1229,7 +1242,7 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
       if s.len() != 0:
         let v = Validator(fn:        choiceValidator,
                           params:    arr,
-                          paramType: tList(choiceType))
+                          paramType: tspec_list(choiceType))
         result.validators.add(v)
     of "range":
       if gotRange:
@@ -1245,32 +1258,26 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
       if startNode != nil and endNode != nil:
         # This isn't yet checking the actual type, which is a bit
         # problematic.
-        if startNode.tid.unify(TInt) == TBottom or
-           endNode.tid.unify(TInt) == TBottom:
+        if startNode.tid.unify(tspec_i64()) == tspec_error() or
+           endNode.tid.unify(tspec_i64()) == tspec_error():
           ctx.irError("RangeInt")
         else:
-          var f = newArray[pointer](2)
-
-          GC_ref(f)
-
           let
             startVal = cast[int](startNode.value)
             endVal   = cast[int](endNode.value)
 
+          var f = new_list[int](@[startVal, endVal])
+
           if startVal >= endVal:
             ctx.irError("BadRangeSpec")
 
-          f[0] = startNode.value
-          f[1] = endNode.value
-
           var
             arr = cast[pointer](f)
-            pt  = tList(TInt)
+            pt  = tspec_list(tspec_i64())
             v   = Validator(fn:        rangeValidator,
                             params:    arr,
                             paramType: pt)
 
-          f.metadata = cast[pointer](pt)
           result.validators.add(v)
 
     of "exclude", "exclusions":
@@ -1285,7 +1292,9 @@ proc convertOneField(ctx: Module, f: ParseNode): FieldSpec =
         ctx.irError("ParamType", @["validator", "callback"], n.children[1])
       let
         irNode = ctx.downNode(n.children[1])
-        paramt = tfunc(@[TString, tVar(), TString])
+        paramt = tspec_fn(tspec_string(),
+                          toXList(@[tspec_string(), tspec_typevar()]),
+                          false)
       ctx.typeCheck(irNode.tid, paramt)
 
       let v = Validator(fn:        userFieldValidator,
@@ -1305,9 +1314,9 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
     hidden      = false
     specLocal   = ctx.declaredSpec
     sectionL:  SectionSpec
-    fields:    Dict[string, FieldSpec]
-    allows:    seq[string]
-    requires:  seq[string]
+    fields:    Dict[Rich, FieldSpec]
+    allows:    seq[Rich]
+    requires:  seq[Rich]
     validator: Validator
     secName:   string
 
@@ -1328,10 +1337,10 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
     let n = sec.children[i]
     if n.kind == NodeFieldSpec:
       let fs = ctx.convertOneField(n)
-      if not fields.add(fs.name, fs):
+      if not fields.add(r(fs.name), fs):
         ctx.irError("DupeSpecField", @[fs.name])
       else:
-        fields[fs.name] = fs
+        fields[r(fs.name)] = fs
     else:
       case n.children[0].getText()
       of "user_def_ok":
@@ -1345,7 +1354,10 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
           ctx.irError("ParamType", @["validator", "callback"], n.children[1])
         let
           irNode = ctx.downNode(n.children[1])
-          paramt = tFunc(@[TString, tList(TString), TString])
+          paramt = tspec_fn(tspec_string(),
+                            toXList(@[tspec_string(),
+                                      tspec_list(tspec_string())]),
+                            false)
 
         ctx.typeCheck(irNode.tid, paramt)
 
@@ -1354,20 +1366,20 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
                           paramType: paramt)
       of "allow", "allowed":
         for i in 1 ..< n.children.len():
-          let secName = n.children[i].getText()
+          let secName = r(n.children[i].getText())
           if secName in allows:
-            ctx.irWarn("DupeAllow", @[secName])
+            ctx.irWarn("DupeAllow", @[secName.toNimStr()])
           elif secName in requires:
-            ctx.irWarn("AllowAndReq", @[secName])
+            ctx.irWarn("AllowAndReq", @[secName.toNimStr()])
           else:
             allows.add(secName)
       of "require", "required":
         for i in 1 ..< n.children.len():
-          let secName = n.children[i].getText()
+          let secName = r(n.children[i].getText())
           if secName in requires:
-            ctx.irWarn("DupeRequire", @[secName])
+            ctx.irWarn("DupeRequire", @[secName.toNimStr()])
           elif secName in allows:
-            ctx.irWarn("AllowAndReq", @[secName])
+            ctx.irWarn("AllowAndReq", @[secName.toNimStr()])
           requires.add(secName)
       else:
         unreachable
@@ -1382,7 +1394,7 @@ proc convertOneSectionSpec(ctx: Module, sec: ParseNode) =
 
   else:
     sectionL = SectionSpec(name: secName, fields: fields)
-    specLocal.secSpecs[secName] = sectionL
+    specLocal.secSpecs[r(secName)] = sectionL
 
   # Fields we dealt w/ differently since we might add to the root section
   # a second time, and the error checking needed to be different.
@@ -1444,7 +1456,7 @@ proc findDeclarations(ctx: Module, n: ParseNode) =
     of NodeFuncDef, NodeParamBlock:
       continue
     of NodeVarStmt:
-      ctx.convertVarStmt()
+      ctx.convertspec_typevarStmt()
     of NodeGlobalStmt:
       ctx.convertGlobalStmt()
     of NodeConstStmt:
@@ -1538,149 +1550,135 @@ proc statementsToIr(ctx: Module): IrNode =
 
 proc convertSimpleLit(ctx: Module, st: SyntaxType): IrNode =
   var
-    err:   string
+    err:   LitError
     val:   pointer
-    byVal: bool
     lmod = ctx.getLitMod()
+    p    = cast[pointer](ctx.getText())
 
   result                 = ctx.irNode(IrLit)
-  result.tid             = getTidForSimpleLit(st, lmod)
   result.contents.litmod = lmod
+  result.value           = con4m_simple_lit(p, cint(st),
+                                            cstring(lmod), addr err)
 
-  if result.tid != TBottom:
-    let
-      s   = ctx.getText()
-      lit = cast[pointer](s)
-
-    val = instantiate_literal(result.tid, lit, st, lmod, byVal, err)
-
-  if err != "":
-    ctx.irError(err)
+  if result.value != nil:
+    result.tid = get_my_type(cast[C4Obj](result.value))
   else:
-    result.value          = val
-    result.haveVal        = true
-    result.contents.byVal = byVal
+    ctx.irError("BadLitTodo")
 
 proc convertOtherLit(ctx: Module): IrNode =
-  let
-    modifier = ctx.getLitMod()
-    parent   = ctx.current
-    symNode  = parent.contents.assignlhs.contents
+  when false:
+    let
+      modifier = ctx.getLitMod()
+      parent   = ctx.current
+      symNode  = parent.contents.assignlhs.contents
 
-  var
-    sym:   SymbolInfo
-    err:   string
-    val:   pointer
-    byVal: bool
-    l:     int
+    var
+      sym:   SymbolInfo
+      err:   string
+      val:   pointer
+      byVal: bool
+      l:     int
 
-  if modifier notin ["", "auto"]:
-    result                 = ctx.convertSimpleLit(STOther)
-    result.contents.litmod = modifier
+    if modifier notin ["", "auto"]:
+      result                 = ctx.convertSimpleLit(STStrQuotes)
+      result.contents.litmod = modifier
 
-  case symNode.kind
-  of IrLhsLoad:
-    sym = symNode.symbol
-  of IrMember:
-    sym = symNode.attrSym
-  else:
-    discard
-
-  let
-    text = ctx.getText()
-    p    = cast[pointer](text)
-
-  if sym != nil and sym.tid.isConcrete():
-    val = instantiate_literal(sym.tid, p, StOther, "", byVal, err)
-
-    result.contents.byVal = byVal
-
-    if err == "":
-      result                = ctx.irNode(IrLit)
-      result.tid            = sym.tid
-      result.value          = val
-      result.haveVal        = true
-      result.contents.sz    = l
-      return
+    case symNode.kind
+    of IrLhsLoad:
+      sym = symNode.symbol
+    of IrMember:
+      sym = symNode.attrSym
     else:
-      ctx.irError(err)
-      return
+      discard
 
-  if text.len() >= 2:
-    if (text[0] == text[^1] and text[0] in ['"', '\'']):
-      ctx.irWarn("OtherQuotes")
-    elif (text[0] == '[' and text[^1] == ']') or
-         (text[0] == '{' and text[^1] == '}') or
-         (text[0] == '(' and text[^1] == ')'):
-      ctx.irWarn("OtherBrak")
+    let
+      text = ctx.getText()
+      p    = cast[pointer](text)
 
-  for (_, dt) in syntaxInfo[int(STOther)].litmods:
-    err = ""
+    if sym != nil and sym.tid.isConcrete():
+      val = instantiate_literal(sym.tid, p, StStrQuotes, "", byVal, err)
 
-    val = instantiate_literal(dt.dtid, p, STOther, "", byVal, err)
-    if err == "":
-      result                = ctx.irNode(IrLit)
-      result.tid            = dt.dtid
-      result.value          = val
-      result.haveVal        = true
       result.contents.byVal = byVal
-      result.contents.sz    = l
-      ctx.irInfo("OtherLit", @[dt.name])
-      return
+
+      if err == "":
+        result                = ctx.irNode(IrLit)
+        result.tid            = sym.tid
+        result.value          = val
+        result.haveVal        = true
+        result.contents.sz    = l
+        return
+      else:
+        ctx.irError(err)
+        return
+
+    if text.len() >= 2:
+      if (text[0] == text[^1] and text[0] in ['"', '\'']):
+        ctx.irWarn("OtherQuotes")
+      elif (text[0] == '[' and text[^1] == ']') or
+           (text[0] == '{' and text[^1] == '}') or
+           (text[0] == '(' and text[^1] == ')'):
+        ctx.irWarn("OtherBrak")
+
+    for (_, dt) in syntaxInfo[int(STOther)].litmods:
+      err = ""
+
+      val = instantiate_literal(dt.dtid, p, STOther, "", byVal, err)
+      if err == "":
+        result                = ctx.irNode(IrLit)
+        result.tid            = dt.dtid
+        result.value          = val
+        result.haveVal        = true
+        result.contents.byVal = byVal
+        result.contents.sz    = l
+        ctx.irInfo("OtherLit", @[dt.name])
+        return
 
   ctx.irError("InvalidOther")
 
 proc convertCharLit(ctx: Module): IrNode =
   var
-    err:   string
+    err:   LitError
     byVal: bool
     l:     int
     lmod = ctx.getLitMod()
+    cp   = cast[pointer](ctx.pt.token.codepoint)
 
   result                 = ctx.irNode(IrLit)
-  result.tid             = getTidForSimpleLit(STChrQuotes, lmod)
   result.contents.litmod = lmod
+  result.value           = con4m_simple_lit(cp, cint(StChrQuotes),
+                                            cstring(lmod), addr err)
 
-  if result.tid != TBottom:
-    let
-      codepoint = cast[pointer](ctx.pt.token.codepoint)
-      val       = instantiate_literal(result.tid, codepoint, StChrQuotes, lmod,
-                                      byVal, err)
-    if err == "":
-        result.value          = val
-        result.haveVal        = true
-        result.contents.byVal = byVal
-        result.contents.sz    = l
-    else:
-      ctx.irError(err)
+  if result.value != nil:
+    result.tid = get_my_type(cast[C4Obj](result.value))
+  else:
+    ctx.irError("BadLitTodo")
 
 proc convertNilLit(ctx: Module): IrNode =
   result = ctx.irNode(IrNil)
 
-  result.tid = tMaybe(tVar())
+  result.tid = tspec_error() #tMaybe(tspec_typevar())
   # We could explicitly add a value, but this node's mere presence implies
   # the value.
 
 proc convertTypeLit(ctx: Module): IrNode =
   # TODO, this should move into a base type.
   var
-    tvars: Dict[string, TypeId]
-    tinfo: TypeId
+    tvars: Dict[string, TypeSpec]
+    tinfo: TypeSpec
 
   tvars.initDict()
   result         = ctx.irNode(IrLit)
-  result.tid     = tTypeSpec()
+  result.tid     = tspec_typespec()
   tinfo          = ctx.pt.buildType(tvars)
   result.value   = cast[pointer](tinfo)
-  result.haveVal = true
 
 proc convertListLit(ctx: Module): IrNode =
   var
     lmod = ctx.getLitMod()
     err:       bool
     errIx:     int
-    itemType:  TypeId
-    itemTypes: seq[TypeId]
+    itemType:  TypeSpec
+    itemTypes: seq[TypeSpec]
 
   result = ctx.irNode(IrLit)
 
@@ -1688,11 +1686,11 @@ proc convertListLit(ctx: Module): IrNode =
     result.contents.items.add(ctx.downNode(i))
 
   if ctx.numKids() == 0:
-    itemType = tVar()
+    itemType = tspec_typevar()
   else:
     itemType = ctx.unifyOrCast(result.contents.items, errIx)
 
-  if itemType == TBottom:
+  if itemType == tspec_error():
     ctx.irError("TyDiffListItem",
                 result.contents.items[errIx],
                 @[result.contents.items[0].getTid().toString(),
@@ -1700,18 +1698,20 @@ proc convertListLit(ctx: Module): IrNode =
     return
 
 
-  result.tid             = getTidForContainerLit(STList, lmod, @[itemType], err)
+  # TODO: literal modifiers.
+  if lmod != "":
+    ctx.irError("BadLitMod", @[lmod, "list"])
+
+  result.tid             = tspec_list(itemType)
   result.contents.litmod = lmod
 
-  if err:
-    ctx.irError("BadLitMod", @[lmod, "list"])
 
 proc convertDictLit(ctx: Module): IrNode =
   var
     err:      bool
     errIx:    int
-    keyType:  TypeId
-    itemType: TypeId
+    keyType:  TypeSpec
+    itemType: TypeSpec
     kNodes:   seq[IrNode]
     iNodes:   seq[IrNode]
     lmod  = ctx.getLitMod()
@@ -1726,10 +1726,10 @@ proc convertDictLit(ctx: Module): IrNode =
   if ctx.numKids() != 0:
     keyType = ctx.unifyOrCast(kNodes, errIx)
   else:
-    keyType = tVar()
+    keyType = tspec_typevar()
 
 
-  if keyType == TBottom:
+  if keyType == tspec_error():
     ctx.irError("TyDiffKey", kNodes[errIx],
                 @[kNodes[0].getTid().toString(),
                   kNodes[errIx].getTid().toString()])
@@ -1738,9 +1738,9 @@ proc convertDictLit(ctx: Module): IrNode =
   if ctx.numKids() != 0:
     itemType = ctx.unifyOrCast(iNodes, errIx)
   else:
-    itemType = tVar()
+    itemType = tspec_typevar()
 
-  if itemType == TBottom:
+  if itemType == tspec_error():
     ctx.irError("TyDiffVal", iNodes[errIx],
                 @[iNodes[0].getTid().toString(),
                   iNodes[errIx].getTid().toString()])
@@ -1750,15 +1750,15 @@ proc convertDictLit(ctx: Module): IrNode =
     result.contents.items.add(kNodes[i])
     result.contents.items.add(iNodes[i])
 
-  result.tid    = getTidForContainerLit(StDict, lmod, @[keyType, itemType], err)
+  result.tid = tspec_dict(keyType, itemType)
 
-  if err:
+  if lmod != "":
     ctx.irError("BadLitMod", @[lmod, "dict"])
 
 proc convertTupleLit(ctx: Module): IrNode =
   var
     err:   bool
-    types: seq[TypeId]
+    types: seq[TypeSpec]
     lmod      = ctx.getLitMod()
     gotBottom = false
 
@@ -1768,14 +1768,14 @@ proc convertTupleLit(ctx: Module): IrNode =
   for i in 0 ..< ctx.numKids():
     let oneItem = ctx.downNode(i)
     types.add(oneItem.getTid())
-    if oneItem.getTid() == TBottom:
+    if oneItem.getTid() == tspec_error():
       gotBottom = true
     result.contents.items.add(oneItem)
 
   if not gotBottom:
-    result.tid = getTidForContainerLit(StTuple, lmod, types, err)
+    result.tid = tspec_tuple(toXList(types))
 
-  if err:
+  if lmod != "":
     ctx.irError("BadLitMod", @[lmod, "tuple"])
 
 proc newCallbackFromFuncInfo(s: FuncInfo): ptr Callback =
@@ -1790,11 +1790,11 @@ proc convertCallbackLit(ctx: Module): IrNode =
   result = ctx.irNode(IrLit)
 
   if ctx.numKids() == 2:
-    var tvars = newDict[string, TypeId]()
+    var tvars = newDict[string, TypeSpec]()
 
     result.tid = ctx.pt.children[1].buildType(tvars)
   else:
-    result.tid = tFunc(@[])
+    ctx.irError("FuncSigMustBeProvidedNow")
 
   ctx.funcsToResolve.add((result, result.tid, ctx.getText(0)))
 
@@ -1845,20 +1845,25 @@ proc convertForStmt(ctx: Module): IrNode =
   if rangeLoop:
     let
       kid = ctx.pt.children[0].children[0]
-      sym = ctx.scopeDeclare(scope, kid.getText(), false, TInt, true).get()
+      sym = ctx.scopeDeclare(scope, kid.getText(), false,
+                             tspec_i64(), true).get()
     result.contents.loopVars.add(sym)
   else:
-    let ixVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
+    let ixVar = ctx.scopeDeclare(scope, "$i", false,
+                                 tspec_i64(), true).get()
 
     result.contents.loopVars.add(ixVar)
 
     for item in ctx.pt.children[0].children:
-      let sym = ctx.scopeDeclare(scope, item.getText(), false, tVar(), true)
+      let sym = ctx.scopeDeclare(scope, item.getText(), false,
+                                 tspec_typevar(), true)
       result.contents.loopVars.add(sym.get())
-    let cVar = ctx.scopeDeclare(scope, "$container", false, tVar(), true)
+    let cVar = ctx.scopeDeclare(scope, "$container", false,
+                                tspec_typevar(), true)
     result.contents.loopVars.add(cvar.get())
 
-  let maxSym = ctx.scopeDeclare(scope, "$len", false, TInt, true)
+  let maxSym = ctx.scopeDeclare(scope, "$len", false,
+                                tspec_i64(), true)
   result.contents.loopVars.add(maxSym.get())
 
   result.contents.condition = ctx.downNode(1)
@@ -1870,11 +1875,11 @@ proc convertForStmt(ctx: Module): IrNode =
 
     if result.contents.loopVars.len() == 5: # It's a dict container.
       ctx.typeCheck(result.contents.condition.tid,
-                    tDict(result.contents.loopVars[1].tid,
+                    tspec_dict(result.contents.loopVars[1].tid,
                           result.contents.loopVars[2].tid))
     else:
       ctx.typeCheck(result.contents.condition.tid,
-                    tList(result.contents.loopVars[1].tid))
+                    tspec_list(result.contents.loopVars[1].tid))
 
   discard ctx.blockScopes.pop()
 
@@ -1896,13 +1901,14 @@ proc convertWhileStmt(ctx: Module): IrNode =
 
   ctx.blockScopes.add(scope)
 
-  let loopVar = ctx.scopeDeclare(scope, "$i", false, TInt, true).get()
+  let loopVar = ctx.scopeDeclare(scope, "$i", false,
+                                 tspec_i64(), true).get()
 
   result.contents.loopVars.add(loopVar)
 
   result.contents.condition = ctx.downNode(0)
 
-  if ctx.unifyOrCast(TBool, result.contents.condition) == TBottom:
+  if ctx.unifyOrCast(tspec_bool(), result.contents.condition) == tspec_error():
     ctx.irError("NoBoolCast",
                 @[result.contents.condition.getTid().toString()],
                 w = ctx.parseKid(0))
@@ -1921,7 +1927,7 @@ proc makeVariant(parent: SymbolInfo): SymbolInfo =
   result.defaultVal   = parent.defaultVal
   result.haveDefault  = parent.haveDefault
   result.declaredType = parent.declaredType
-  result.tid          = tVar()
+  result.tid          = tspec_typevar()
   result.constValue   = parent.constValue
   result.haveConst    = parent.haveConst
   result.module       = parent.module
@@ -1965,24 +1971,26 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
       scope.addParent(ctx.moduleScope)
 
     if ctx.numKids(i) == 2:
-      var branchType: TypeId
+      var branchType: TypeSpec
       actionBranch = 1
 
       # If multiple type options share the same branch, we use a OneOf
       if ctx.numKids(i, 0) > 1:
-        var opts: seq[TypeId]
+        var opts: seq[TypeSpec]
         for j in 0 ..< ctx.numKids(i, 0):
           opts.add(ctx.parseKid(i, 0, j).buildType())
         try:
-          branchType = tOneOf(opts)
+          #branchType = tOneOf(opts)
+          discard
         except:
           ctx.irError("TCaseOverlap", w = ctx.parseKid(i, 0, 0))
+        ctx.irError("Not supported yet")
       else:
         branchType = ctx.parseKid(i, 0, 0).buildType()
 
       symCopy.tid = branchType
     else:
-      symCopy.tid  = tVar()
+      symCopy.tid  = tspec_typevar()
       actionBranch = 0
 
     n.contents.branchSym  = symCopy
@@ -1991,7 +1999,7 @@ proc convertTypeOfStmt(ctx: Module): IrNode =
     ctx.blockScopes       = @[scope] & ctx.blockScopes
     n.tid                 = symCopy.tid
 
-    if unify(symCopy.tid.tCopy(), sym.tid.tCopy()) == TBottom:
+    if tspec_compare(symCopy.tid, sym.tid) == false:
       ctx.irWarn("DeadTypeCase", @[symCopy.tid.toString()])
 
     n.contents.action = ctx.downNode(i, actionBranch)
@@ -2015,7 +2023,7 @@ proc convertValueOfStmt(ctx: Module): IrNode =
         n.contents.conditions.add(branch)
         case branch.contents.kind
         of IrRange:
-          let targetType = tList(result.contents.switchTarget.tid)
+          let targetType = tspec_list(result.contents.switchTarget.tid)
           ctx.typeCheck(branch.tid, targetType)
         else:
           ctx.typeCheck(branch.tid, result.contents.switchTarget.tid)
@@ -2067,7 +2075,7 @@ proc convertConditional(ctx: Module): IrNode =
   if ctx.numKids() == 3:
     result.contents.falseBranch = ctx.downNode(2)
 
-  if ctx.unifyOrCast(TBool, result.contents.predicate) == TBottom:
+  if ctx.unifyOrCast(tspec_bool(), result.contents.predicate) == tspec_error():
     ctx.irError("NoBoolCast",
                 @[result.contents.predicate.getTid().toString()],
                 w = ctx.parseKid(0))
@@ -2076,7 +2084,7 @@ proc convertLock(ctx: Module): IrNode =
   result      = ctx.downNode(0)
   result.lock = true
   if result.contents.kind != IrAssign:
-    result.tid = TVoid
+    result.tid = tspec_void()
 
 proc convertReturn(ctx: Module): IrNode =
   result = ctx.irNode(IrRet)
@@ -2096,7 +2104,7 @@ proc convertUnaryMinus(ctx: Module): IrNode =
 proc convertNotOp(ctx: Module): IrNode =
   result               = ctx.irNode(IrNot)
   result.contents.uRhs = ctx.downNode(0)
-  result.tid           = TBool
+  result.tid           = tspec_bool()
 
 
 proc convertBooleanOp(ctx: Module): IrNode =
@@ -2110,11 +2118,11 @@ proc convertBooleanOp(ctx: Module): IrNode =
 
   var operandType = ctx.unifyOrCast(bLhs, bRhs)
 
-  if operandType == TBottom:
+  if operandType == tspec_error():
     ctx.irError("BinaryOpCompat",
                 @[bLhs.getTid().toString(), bRhs.getTid().toString()])
 
-  result.tid            = TBool
+  result.tid            = tspec_bool()
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
 
@@ -2151,24 +2159,25 @@ proc convertBinaryOp(ctx: Module): IrNode =
 
   result.tid = ctx.unifyOrCast(bLhs, bRhs)
 
-  if result.tid == TBottom and bLhs.getTid().isNumericBuiltin() and
+  if result.tid == tspec_error() and bLhs.getTid().isNumericBuiltin() and
      bRhs.getTid().isNumericBuiltin():
     result.tid = ctx.resultingNumType(bLhs.getTid(), bRhs.getTid())
 
-    if result.getTid() == TFloat and result.contents.bOp in notFloatOps:
-        result.tid = TBottom
+    if result.getTid() == tspec_f64() and result.contents.bOp in notFloatOps:
+        result.tid = tspec_error()
 
-  if result.getTid() == TBottom and bLhs.getTid() != TBottom and
-    bRhs.getTid() != TBottom:
+  if result.getTid() == tspec_error() and bLhs.getTid() != tspec_error() and
+    bRhs.getTid() != tspec_error():
     ctx.irError("BinaryOpCompat", @[bLhs.getTid().toString(),
                                     bRhs.getTid().toString()])
-  elif result.contents.bOp == "/":
-    if bLhs.getTid().intBits() == 128 or bRhs.getTid().intBits() == 128:
-      ctx.irError("128BitLimit", @["Float division"])
-      result.tid = TBottom
-    elif bLhs.getTid() == TUint or bRhs.getTid() == TUint:
+  elif result.contents.bOp == "/" and (bLhs.getTid() == tspec_u64() or
+                                       bRhs.getTid() == tspec_u64()):
       ctx.irError("U64Div")
-      result.tid = TBottom
+      result.tid = tspec_error()
+
+  #if bLhs.getTid().intBits() == 128 or bRhs.getTid().intBits() == 128:
+  #  ctx.irError("128BitLimit", @["Float division"])
+  #  result.tid = tspec_error()
 
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
@@ -2210,19 +2219,19 @@ proc convertLogicOp(ctx: Module): IrNode =
   else:
     result.contents.opId = OpLogicAnd
 
-  if ctx.unifyOrCast(TBool, bLhs) == TBottom:
+  if ctx.unifyOrCast(tspec_bool(), bLhs) == tspec_error():
     ctx.irError("NoBoolCast", @[bLhs.getTid().toString()],
                 w = ctx.parseKid(0))
-    result.tid = TBottom
+    result.tid = tspec_error()
     return
 
-  if ctx.unifyOrCast(TBool, bRhs) == TBottom:
+  if ctx.unifyOrCast(tspec_bool(), bRhs) == tspec_error():
     ctx.irError("NoBoolCast", @[bRhs.getTid().toString()],
                 w = ctx.parseKid(1))
-    result.tid = TBottom
+    result.tid = tspec_error()
     return
   else:
-      result.tid = TBool
+      result.tid = tspec_bool()
 
   result.contents.bLhs  = bLhs
   result.contents.bRhs  = bRhs
@@ -2240,12 +2249,12 @@ proc convertSection(ctx: Module): IrNode =
   ctx.secDefContext  = true
 
   if haveSpec:
-    let specOpt = ctx.attrSpec.secSpecs.lookup(result.contents.sectName)
+    let specOpt = ctx.attrSpec.secSpecs.lookup(r(result.contents.sectName))
     if specOpt.isNone():
       ctx.irError("BadSectionType", @[result.contents.sectName])
     else:
      if savedSecSpec != nil and
-        result.contents.sectName notin savedSecSpec.allowedSections:
+        r(result.contents.sectName) notin savedSecSpec.allowedSections:
         ctx.irError("SecNotAllowed", @[result.contents.sectName])
 
      ctx.curSecSpec = specOpt.get()
@@ -2310,43 +2319,43 @@ proc convertIndex(ctx: Module): IrNode =
   elif toIx.contents.kind in [IrLoad, IrLhsLoad]:
     result.contents.toIxSym = toIx.contents.symbol
 
-  result.tid = tVar()
+  result.tid = tspec_typevar()
 
   if ctx.numKids() == 2:
-    let tobj = toIx.getTid().idToTypeRef()
-    case tobj.kind
-    of C4List:
-      if ctx.unifyOrCast(TInt, ixStart) == TBottom:
+    let tobj = toIx.getTid().followForwards()
+    case tobj.get_type_kind()
+    of BT_LIST:
+      if ctx.unifyOrCast(tspec_i64(), ixStart) == tspec_error():
         if not ixStart.getTid().isIntType():
           ctx.irError("ListIx")
-      ctx.typeCheck(toIx.getTid(), tList(result.tid))
-    of C4Dict:
-      let expected = tDict(ixStart.getTid(), result.tid)
+      ctx.typeCheck(toIx.getTid(), tspec_list(result.tid))
+    of BT_DICT:
+      let expected = tspec_dict(ixStart.getTid(), result.tid)
       ctx.typeCheck(toIx.getTid(), expected)
 
-    of C4Tuple:
+    of BT_TUPLE:
       ctx.foldDown(ixStart)
       if not ixStart.isConstant():
         ctx.irError("TupleConstIx", w = ixStart)
         return
       let v = cast[int64](ixStart.value)
-      if v < 0 or v >= tobj.items.len():
+      if v < 0 or v >= tobj.num_params():
         ctx.irError("TupleIxBound", w = ixStart)
         return
-      let to = toIx.getTid().idToTypeRef().items[v]
+      let to = toIx.getTid().followForwards().get_param(cint(v))
       ctx.typeCheck(result.tid, to)
-    of C4TVar:
+    of BT_TVAR:
       # Currently, we do not try to infer the container type;
       # we instead just error that the type needs to be known
       # to index it.
       ctx.irError("ContainerType", w = toIx)
     else:
-      if tobj.typeId == TBottom:
+      if tobj == tspec_error():
         return
-      ctx.irError("NotIndexible", @[tobj.typeId.toString()])
+      ctx.irError("NotIndexible", @[tobj.toString()])
   else:  # SLICE operator. *must* be a list.
     ixEnd = ctx.downNode(2)
-    result.tid = ctx.typeCheck(tList(tVar()), toIx.getTid())
+    result.tid = ctx.typeCheck(tspec_list(tspec_typevar()), toIx.getTid())
 
   result.contents.toIx       = toIx
   result.contents.indexStart = ixStart
@@ -2358,28 +2367,30 @@ proc convertCall(ctx: Module): IrNode =
   result                = ctx.irNode(IrCall)
   result.contents.fname = ctx.getText(0)
   result.parseNode      = ctx.parseKid(0)
-  result.tid            = tVar()
+  result.tid            = tspec_typevar()
 
   var
-    fArgs: seq[TypeId]
+    fArgs: seq[TypeSpec]
 
   for i in 0 ..< ctx.numKids(1):
     let oneActual = ctx.downNode(1, i)
     result.contents.actuals.add(oneActual)
     fArgs.add(oneActual.tid)
 
-  fArgs.add(result.tid)
+  #fArgs.add(result.tid)
 
-  ctx.funcsToResolve.add((result, tFunc(fArgs), result.contents.fname))
+  ctx.funcsToResolve.add((result,
+                          tspec_fn(result.tid, toXList(fArgs), false),
+                                   result.contents.fname))
 
 proc convertAssert(ctx: Module): IrNode =
   result                    = ctx.irNode(IrAssert)
   result.contents.assertion = ctx.downNode(0)
 
-proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
-                           extra: seq[string] = @[]): seq[seq[Rope]] =
+proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeSpec,
+                           extra: seq[string] = @[]): seq[seq[Rich]] =
   var
-    row:   seq[Rope]
+    row:   seq[Rich]
     cur:   string
 
   result = @[@[text(" "), text("Signature"), text("Location")]]
@@ -2398,10 +2409,10 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
     if item.retval != nil:
       cur &= item.retval.tid.toString()
     else:
-      cur &= tVar().toString()
+      cur &= tspec_typevar().toString()
 
     row.add(text($(num + 1)))
-    row.add(strong(cur))
+    row.add(bold(cur))
 
     if item.defModule != nil:
       cur = item.defModule.modname & ":"
@@ -2416,12 +2427,14 @@ proc fmtImplementationList(fname: string, fns: seq[FuncInfo], t: TypeId,
     result.add(row)
     row = @[]
 
-proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeId): Rope =
-  fmtImplementationList(fname, fns, t).quicktable()
+proc showCallMistakes(fname: string, fns: seq[FuncInfo], t: TypeSpec): Grid =
+  fmtImplementationList(fname, fns, t).table()
 
 proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
   for (n, t, name) in m.funcsToResolve:
-    let retvalType = typeStore[t].items[^1]
+    let ty         = t.followForwards()
+    let l          = ty.num_params()
+    let retvalType = ty.get_param(l)
 
     var
       possibles:    seq[FuncInfo]
@@ -2436,7 +2449,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       sym = symOpt.get()
       if sym.isFunc:
         possibles = sym.fimpls
-      elif sym.tid.tCopy().unify(t.copyType().typeId) != TBottom:
+      elif sym.tid.tspec_compare(t) == false:
         n.contents.cbSymbol = sym
         continue
 
@@ -2450,7 +2463,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
         for item in sym.fimpls:
           if item notin possibles:
             possibles.add(item)
-      elif sym.tid.tCopy().unify(t.copyType().typeId) != TBottom:
+      elif sym.tid.tspec_compare(t) == false:
         n.contents.cbSymbol = sym
         continue
 
@@ -2464,7 +2477,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
 
     for item in possibles:
       withFnLock(item):
-        if item.tid.tCopy().unify(t.copyType().typeId) == TBottom:
+        if item.tid.tspec_compare(t) == false:
           fails.add(item)
         else:
           matches.add(item)
@@ -2474,7 +2487,6 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
         discard matches[0].tid.unify(t)
       if n.contents.kind == IrLit:
         n.value   = cast[pointer](newCallbackFromFuncInfo(matches[0]))
-        n.haveval = true
       else:
         n.contents.toCall = matches[0]
       continue
@@ -2484,17 +2496,17 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       else:
         let info = showCallMistakes(n.contents.fname, fails, t)
         m.irError("BadSig", n, @[n.contents.fname, t.toString(), "call"],
-                  detail = info)
+                  detail = info.grid_to_str(terminalWidth()))
     else:
       if n.contents.kind == IrLit:
-        let info = fmtImplementationList(name, matches, t).quicktable()
+        let info = fmtImplementationList(name, matches, t).table()
         m.irError("CallAmbig", w = n, @[name, t.toString(), "callback"],
-                                 detail = info)
+                                 detail = info.grid_to_str(terminalWidth()))
       else:
         let info = fmtImplementationList(n.contents.fname,
-                                         matches, t).quicktable()
+                                         matches, t).table()
         m.irError("CallAmbig", n, @[n.contents.fname, t.toString(), "call"],
-                  detail = info)
+                  detail = info.grid_to_str(terminalWidth()))
 
   m.funcsToResolve = @[]
 
@@ -2504,7 +2516,7 @@ proc resolveDeferredSymbols*(ctx: CompileCtx, m: Module) =
       for i in 0 ..< (sym.fimpls.len() - 1):
         let oneFuncType = sym.fimpls[i].tid
         for j in i + 1 .. (sym.fimpls.len() - 1):
-          if oneFuncType.unify(sym.fimpls[j].tid) != TBottom and
+          if oneFuncType.unify(sym.fimpls[j].tid) != tspec_error() and
              sym.fimpls[i].implementation != nil:
             let
               t1 = sym.fimpls[i].tid.toString()
@@ -2618,7 +2630,7 @@ proc finishFunctionProcessing(ctx: Module, impl: FuncInfo) =
   # the folding pass, so we ignore any type error for now.
   let resSym = impl.fnScope.table["result"]
   if resSym.defs.len() == 0:
-    discard resSym.tid.unify(TVoid)
+    discard resSym.tid.unify(tspec_void())
 
   # Next, we go ahead and 're-lock' the function, to be safe. This
   # ensures we, from this point forward, won't accidentally modify the

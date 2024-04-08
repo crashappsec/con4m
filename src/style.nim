@@ -4,18 +4,18 @@ import pkg/nimutils
 
 type
   CodeStyle* = object
-    stringLitColor*:   string = "lightskyblue"
+    stringLitColor*:   string = "light sky blue"
     charLitColor*:     string = "jazzberry"
     boolLitColor*:     string = "gainsboro"
     numericLitColor*:  string = "jazzberry"
     otherLitColor*:    string = "jazzberry"
-    litModColor*:      string = "atomiclime"
+    litModColor*:      string = "atomic lime"
     typeNameColor*:    string = "jazzberry"
-    keywordColor*:     string = "atomiclime"
+    keywordColor*:     string = "atomic lime"
     funcNameColor*:    string = "fandango"
     identColor*:       string = "gainsboro"
-    operatorColor*:    string = "lightslategray"
-    commentColor*:     string = "atomiclime"
+    operatorColor*:    string = "light slate gray"
+    commentColor*:     string = "atomic lime"
     otherDelimColor*:  string = "" # Braces, bra
     blockIndent*:      int    = 4
     brB4Bracket*:      bool   = false
@@ -28,7 +28,7 @@ type
     breaksBe4Comment*: int    = 1 # Not for inline comments.
     breaksAfterBlock*: int    = 0
     spaceB4CallArgs*:  bool   = false
-    comma*:            Rope
+    comma*:            Rich
 
 let defaultCodeStyle = CodeStyle()
 

@@ -92,64 +92,9 @@ type
     StNull      = 10,
     StMax       = 11
 
-  DTFunc* = range[0 .. FMax]
-
-  DataType* = ref object
-    name*:          string
-    dtid*:          TypeId
-    concrete*:      bool
-    isBool*:        bool
-    ckind*:         C4TypeKind
-    intW*:          int
-    signed*:        bool
-    signedVariant*: DataType
-    fTy*:           bool        # Float type
-    strTy*:         bool        # A string type.
-    aliases*:       seq[string]
-    byValue*:       bool
-    ops*:           seq[pointer]
-
-  RefValue*[T] = ref object of RootRef
-    refcount*:  int
-    staticVal*: bool
-    dtInfo*:    DataType
-    fullType*:  TypeId
-    item*:      T
-
   StringCursor* = ref object
     runes*: seq[Rune]
     i*:     int
-
-  C4TypeKind* = enum
-    C4None, C4TVar, C4List, C4Dict, C4Tuple, C4TypeSpec, C4Ref, C4Maybe,
-    C4Func, C4Struct, C4OneOf, C4Primitive
-
-  TypeId*   = uint64
-
-  TypeRef*  = ref object
-    typeid*:   TypeId
-    isLocked*: bool
-    items*:    seq[TypeId]
-    case kind*: C4TypeKind
-    of C4TVar:
-      tvarId*:    TypeId
-      localName*: Option[string]
-    of C4Func:
-      va*: bool
-    of C4Struct:
-      name*:  string
-      props*: Dict[string, TypeId]
-    else:
-      discard
-
-  Callback* = object
-    name*:    string
-    tid*:     TypeId
-    impl*:    FuncInfo
-
-  Con4mTuple* = ref object
-    obj*: ptr FlexArrayObj
-    t*:   TypeId
 
   Con4mErrPhase* = enum
     ErrLoad, ErrLex, ErrParse, ErrIrgen, ErrCodeGen, ErrRuntime
@@ -165,7 +110,7 @@ type
     line*:     int
     offset*:   int
     extra*:    seq[string]
-    detail*:   Rope
+    detail*:   Rich
     when not defined(release):
       trace*:  string
       ii*:     InstantiationInfo
@@ -256,15 +201,14 @@ type
 
   IrNode* = ref object
     parseNode*: ParseNode
-    tid*:       TypeId
+    tid*:       TypeSpec
     value*:     pointer
-    haveVal*:   bool
     parent*:    IrNode
     contents*:  IrContents
     scope*:     Scope
     lock*:      bool
-    shortdoc*:  Rope
-    longdoc*:   Rope
+    shortdoc*:  Rich
+    longdoc*:   Rich
 
   IrContents* = ref object
     case kind*: IrNodeType
@@ -351,7 +295,7 @@ type
 
   FormalInfo* = ref object
     name*: string
-    tid*:  TypeId
+    tid*:  TypeSpec
     va*:   bool
     sym*:  SymbolInfo
     loc*:  ParseNode
@@ -379,7 +323,7 @@ type
     externName*:     string   # Somehow the string inside eI is getting lost?
     rawImpl*:        ParseNode
     implementation*: IrNode
-    tid*:            TypeId
+    tid*:            TypeSpec
     params*:         seq[FormalInfo]
     paramNames*:     seq[string] # In prep for future keyword args.
     retval*:         FormalInfo
@@ -389,8 +333,8 @@ type
     cfg*:            CfgNode
     exitNode*:       CfgNode
     pure*:           bool
-    shortdoc*:       Rope
-    longdoc*:        Rope
+    shortdoc*:       Rich
+    longdoc*:        Rich
     maxOffset*:      int
     internalId*:     int
     codeOffset*:     int # Measured in bytes.
@@ -399,8 +343,8 @@ type
   ParamInfo*  = ref object
     ## Module parameters.
     sym*:           SymbolInfo
-    shortdoc*:      string
-    longdoc*:       string
+    shortdoc*:      Rich
+    longdoc*:       Rich
     validatorIr*:   Option[IrNode]
     initializeIr*:  Option[IrNode]
     defaultParse*:  Option[ParseNode]
@@ -411,20 +355,19 @@ type
 
   ZParamInfo* = ref object
     ## What we stick in the obj file.
-    attr*:           string       # Either it's an attribute...
+    attr*:           Rich       # Either it's an attribute...
     offset*:         int          # or in theerr current module.
     default*:        pointer
-    tid*:            TypeId
-    haveDefault*:    bool
+    tid*:            TypeSpec
     private*:        bool
     vFnIx*:          int32
     vNative*:        bool # Whether the validation fn is native.
     iFnIx*:          int32
-    iNative*:        bool # Whether the validation fn is native.
+    iNative*:        bool
     userparam*:      pointer
-    userType*:       TypeId
-    shortdoc*:       string
-    longdoc*:        string
+    userType*:       TypeSpec
+    shortdoc*:       Rich
+    longdoc*:        Rich
 
   ZParamExport* = ref object
     ## What we pass when asked what parameters need to be provided.
@@ -432,20 +375,19 @@ type
     ## runs, but if the modules holding the parameter gets called,
     ## there will be a value set, and we'll report that it's got
     ## a default value.
-    name*:        string
-    modname*:     string
-    shortdoc*:    string
-    longdoc*:     string
+    name*:        Rich
+    modname*:     Rich
+    shortdoc*:    Rich
+    longdoc*:     Rich
     modid*:       int32
     paramid*:     int32
-    tid*:         TypeId
+    tid*:         TypeSpec
     private*:     bool
-    havedefault*: bool
     default*:     pointer
 
   SymbolInfo* = ref object
     name*:         string
-    tid*:          TypeId
+    tid*:          TypeSpec
     module*:       Module # Ignored for non-func global vars and attrs.
     uses*:         seq[IrNode]
     defs*:         seq[IrNode]
@@ -520,16 +462,16 @@ type
 
   AttrDict*      = Dict[string, pointer]
 
-  SecValidator* =    proc(i0: RuntimeState, i1: C4Str, i2: pointer,
-                          i3: pointer): Rope {.cdecl.}
-  FieldValidator* =  proc(i0: RuntimeState, i1: C4Str, i2: TypeId,
-                          i3: pointer, i4: pointer): Rope {.cdecl.}
+  SecValidator* =    proc(i0: RuntimeState, i1: Rich, i2: pointer,
+                          i3: pointer): Rich {.cdecl.}
+  FieldValidator* =  proc(i0: RuntimeState, i1: Rich, i2: TypeSpec,
+                          i3: pointer, i4: pointer): Rich {.cdecl.}
 
   Validator*     = ref object
     fn*:          pointer
     params*:      pointer
     node*:        IrNode # For user-defined validators; fn will be blank in IR.
-    paramType*:   TypeId
+    paramType*:   TypeSpec
 
 
   FsKind* = enum
@@ -539,15 +481,15 @@ type
 
   FieldSpec* = ref object
     name*:                 string
-    tid*:                  TypeId
+    tid*:                  TypeSpec
     lockOnWrite*:          bool   # Enforced at runtime.
     defaultVal*:           pointer
     haveDefault*:          bool
     validators*:           seq[Validator] # Applied on request.
     hidden*:               bool
     required*:             bool
-    doc*:                  Rope
-    shortdoc*:             Rope
+    doc*:                  Rich
+    shortdoc*:             Rich
     fieldKind*:            FsKind
     errIx*:                int
     exclusions*:           seq[string]
@@ -563,19 +505,19 @@ type
     name*:             string
     minAllowed*:       int    # This is useless actually
     maxAllowed*:       int    # And this can be a bool for singleton.
-    fields*:           Dict[string, FieldSpec]
+    fields*:           Dict[Rich, FieldSpec]
     userDefOk*:        bool
     validators*:       seq[Validator]
     hidden*:           bool
-    doc*:              Rope
-    shortdoc*:         Rope
-    allowedSections*:  seq[string]
-    requiredSections*: seq[string]
+    doc*:              Rich
+    shortdoc*:         Rich
+    allowedSections*:  seq[Rich]
+    requiredSections*: seq[Rich]
     cycle*:            bool # Private, used to avoid populating cyclic defs.
 
   ValidationSpec* = ref object
     rootSpec*: SectionSpec
-    secSpecs*: Dict[string, SectionSpec]
+    secSpecs*: Dict[Rich, SectionSpec]
     used*:     bool
     locked*:   bool
 
@@ -672,7 +614,7 @@ type
     inParamCtx*:     bool
     curSym*:         SymbolInfo
     usedModules*:    seq[(string, string)]
-    funcsToResolve*: seq[(IrNode, TypeId, string)]
+    funcsToResolve*: seq[(IrNode, TypeSpec, string)]
     labelNode*:      ParseNode
     curSecPrefix*:   string
     curSecSpec*:     SectionSpec
@@ -941,10 +883,10 @@ type
     lineNo*:    int32   # Line # in the current module this was gen'd at.
     arg*:       int32   # An offset, call number, etc.
     immediate*: int64   # Anything that must be 64-bits.
-    typeInfo*:  TypeId  # TypeID associated w/ a data object in the source
-                        # code. Will not always be concrete, but is there
-                        # to facilitate run-time type info without having
-                        # to do more accounting than needed.
+    typeInfo*:  TypeSpec  # TypeID associated w/ a data object in the source
+                          # code. Will not always be concrete, but is there
+                          # to facilitate run-time type info without having
+                          # to do more accounting than needed.
 
   ZFFiArgInfo* = ref object
     held*:    bool   # Whether passing a pointer to the thing causes it
@@ -960,19 +902,24 @@ type
     nameoffset*: int
     localname*:  int
     mid*:        int32
-    tid*:        TypeId
+    tid*:        TypeSpec
     va*:         bool
     dlls*:       seq[int]
     argInfo*:    seq[ZffiArgInfo]
-    shortdoc*:   Rope
-    longdoc*:    Rope
+    shortdoc*:   Rich
+    longdoc*:    Rich
 
   ZCallback* = object
     impl*:       pointer
     nameoffset*: int
-    tid*:        TypeId
+    tid*:        TypeSpec
     mid*:        int16
     ffi*:        bool
+
+  Callback* = object
+    name*:    string
+    tid*:     TypeSpec
+    impl*:    FuncInfo
 
   ZFnInfo* = ref object
     # This field maps offsets to the name of the field. Frame
@@ -990,22 +937,22 @@ type
     # later.
     #
     # At run-time, the type will always need to be concrete.
-    symTypes*:   seq[(int, TypeId)]
-    tid*:        TypeId
+    symTypes*:   seq[(int, TypeSpec)]
+    tid*:        TypeSpec
     mid*:        int32
     offset*:     int32
     size*:       int32
-    shortdoc*:   Rope
-    longdoc*:    Rope
+    shortdoc*:   Rich
+    longdoc*:    Rich
 
   FuncDocs* = ref object
     funcname*:   string
     paramNames*: seq[string]
-    tid*:        TypeId
+    tid*:        TypeSpec
     mid*:        int32
     extern*:     bool
-    shortdoc*:   Rope
-    longdoc*:    Rope
+    shortdoc*:   Rich
+    longdoc*:    Rich
 
 
   # This is all the data that will be in an "object" file; we'll
@@ -1023,9 +970,8 @@ type
     zeroMagic*:      uint64 = 0x0c001dea0c001dea'u64
     zcObjectVers*:   int16  = 0x01
     staticData*:     string
-    tInfo*:          Dict[TypeId, int]   # Index into static Data for repr
     globals*:        Dict[int, string]
-    symTypes*:       seq[(int, TypeId)]  # address : TypeId
+    symTypes*:       seq[(int, TypeSpec)]  # address : TypeSpec
     globalScopeSz*:  int
     moduleContents*: seq[ZModuleInfo]
     entrypoint*:     int32  # A module ID
@@ -1041,7 +987,7 @@ type
     ext*:            string
     url*:            string
     version*:        string
-    symTypes*:       seq[(int, TypeId)]
+    symTypes*:       seq[(int, TypeSpec)]
     codesyms*:       Dict[int, string]
     datasyms*:       Dict[int, string]
     source*:         string
@@ -1062,7 +1008,7 @@ type
     targetmodule*: ZModuleInfo # If not targetFunc
 
   AttrContents* = ref object
-   tid*:         TypeId
+   tid*:         TypeSpec
    isSet*:       bool
    locked*:      bool
    lockOnWrite*: bool
@@ -1072,17 +1018,17 @@ type
    lastset*:     ptr ZInstruction # (not marhshaled)
 
   DocsContainer* = ref object
-    shortdoc*: Rope
-    longdoc*:  Rope
+    shortdoc*: Rich
+    longdoc*:  Rich
 
   RuntimeState* = ref object
     obj*:               ZObjectFile
     # The following fields represent saved execution state on top of
     # the base object file.
     moduleAllocations*: seq[seq[pointer]]
-    attrs*:             Dict[string, AttrContents]
-    allSections*:       Dict[string, bool]
-    sectionDocs*:       Dict[string, DocsContainer]
+    attrs*:             Dict[Rich, AttrContents]
+    allSections*:       Dict[Rich, bool]
+    sectionDocs*:       Dict[Rich, DocsContainer]
     usingAttrs*:        bool
 
     # The rest of this gets re-initialized every run.
@@ -1096,43 +1042,35 @@ type
     ip*:                int      # Index into instruction array, not bytes.
     returnRegister*:    pointer
     rrType*:            pointer
-    tupleStash*:        Con4mTuple
+    tupleStash*:        CTuple
     stashType*:         pointer
     externCalls*:       seq[CallerInfo]
     externArgs*:        seq[seq[FfiType]]
     externFps*:         seq[pointer]
     running*:           bool
-    memos*:             Memos
+    marshalStream*:     CStream
+    memos*:             Dict[int, pointer]
+    nextMemoId*:        int
     cmdline_info*:      ArgResult
     module_lock_stack*: seq[int32]
-
-  MixedObj* = object
-    t*:     TypeId
-    value*: pointer
-
-  Mixed* = ptr MixedObj
 
   AttrTree* = ref object
     path*:      string
     kids*:      seq[AttrTree]
-    cache*:     Dict[string, AttrContents]
-
-  Memos* = ref object
-    map*:    Dict[pointer, pointer]
-    nextId*: uint64 = 1
+    cache*:     Dict[Rich, AttrContents]
 
   ## This section is for argument parsing / getopts capabilities.
 
   ArgFlagKind*    = enum
     afPair, afChoice, afStrArg, afMultiChoice, afMultiArg
   FlagSpec* = ref object
-    reportingName*:    string
+    reportingName*:    Rich
     clobberOk*:        bool
-    recognizedNames*:  seq[string]
-    sdoc*:             Rope
-    ldoc*:             Rope
+    recognizedNames*:  Xlist[Rich]
+    sdoc*:             Rich
+    ldoc*:             Rich
     callback*:         Option[ptr ZCallback]
-    fieldToSet*:       string
+    fieldToSet*:       Rich
     finalFlagIx*:      int
     noColon*:          bool   # Inherited from the command object.
     noSpace*:          bool   # Also inherited from the command object.
@@ -1141,31 +1079,31 @@ type
     of afPair:
       helpFlag*:       bool
       boolValue*:      Dict[int, bool]
-      positiveNames*:  seq[string]
-      negativeNames*:  seq[string]
+      positiveNames*:  Xlist[Rich]
+      negativeNames*:  Xlist[Rich]
       linkedChoice*:   Option[FlagSpec]
     of afChoice, afMultiChoice:
-      choices*:        seq[string]
-      selected*:       Dict[int, seq[string]]
+      choices*:        Xlist[Rich]
+      selected*:       Dict[int, XList[Rich]]
       linkedYN*:       Option[FlagSpec]
       min*, max*:      int
     of afStrArg:
-      strVal*:         Dict[int, string]
+      strVal*:         Dict[int, Rich]
     of afMultiArg:
-      strArrVal*:      Dict[int, seq[string]]
+      strArrVal*:      Dict[int, XList[Rich]]
 
   CommandSpec* = ref object
-    attrtop*:           string
-    commands*:          Dict[string, CommandSpec]
-    reportingName*:     string
-    allNames*:          seq[string]
-    flags*:             Dict[string, FlagSpec]
+    attrtop*:           Rich
+    commands*:          Dict[Rich, CommandSpec]
+    reportingName*:     Rich
+    allNames*:          XList[Rich]
+    flags*:             Dict[Rich, FlagSpec]
     callback*:          Option[ptr ZCallback]
-    sdoc*:              Rope
-    ldoc*:              Rope
+    sdoc*:              Rich
+    ldoc*:              Rich
     noColon*:           bool # accept --flag= f but not --flag:f.
     noSpace*:           bool # Docker-style if true *:
-    argName*:           string
+    argName*:           Rich
     minArgs*:           int
     maxArgs*:           int
     subOptional*:       bool
@@ -1175,14 +1113,14 @@ type
     autoHelp*:          bool
     finishedComputing*: bool
     parent*:            CommandSpec
-    allPossibleFlags*:  Dict[string, FlagSpec]
+    allPossibleFlags*:  Dict[Rich, FlagSpec]
 
   ArgResult* = ref object
     attrtop*:     string
     command*:     string
-    args*:        Dict[string, seq[string]]
+    args*:        Dict[string, XList[Rich]]
     flags*:       Dict[string, FlagSpec]
-    helpToPrint*: Rope
+    helpToPrint*: Rich
     parseCtx*:    ParseCtx
     topSpec*:     CommandSpec
 
@@ -1200,34 +1138,6 @@ type
 proc memcmp*(a, b: pointer, size: csize_t): cint {.importc,
                                                    header: "<string.h>",
                                                    noSideEffect.}
-
-template debug*(x: string) =
-  print(h1("Debug") + text(x), file = stderr)
-
-template debug*(r: Rope) =
-  print(h1("Debug") + r, file = stderr)
-
-template debug*(s: string, s2: string, moreargs: varargs[string]) =
-  var
-    cells: seq[seq[string]]
-    i = 0
-    args = @[s, s2]
-
-  for item in moreargs:
-    args.add(item)
-
-  while i < args.len():
-    var row: seq[string]
-    row.add(args[i])
-    i += 1
-    row.add(args[i])
-    i += 1
-    cells.add(row)
-
-  cells.add(@["trace", getStackTrace()])
-
-  debug(cells.quickTable(verticalHeaders = true))
-
 # The current runtime, so that builtin functions can access the state.
 # Was having a weird link error so moved this here.
 var

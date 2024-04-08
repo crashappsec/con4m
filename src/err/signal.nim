@@ -15,23 +15,22 @@ proc restoreTerminal() {.noconv.} =
 proc regularTerminationSignal(signal: cint) {.noconv.} =
   let pid = getpid()
 
-  print(h5("pid: " & $(pid) & " - Aborting due to signal: " &
-          sigNameMap[signal] & "(" & $(signal) & ")"), file = stderr)
+  print_err(h5("pid: " & $(pid) & " - Aborting due to signal: " &
+          sigNameMap[signal] & "(" & $(signal) & ")"))
 
   let rt = getCon4mRuntime()
 
   if rt != nil and rt.running:
-    print(getCon4mRuntime().get_stack_trace(), file = stderr)
+    print_err(getCon4mRuntime().get_stack_trace())
   else:
-    print(h2(text("Program was ") + em("NOT") +
-              text(" executing when we crashed.")))
+    print_err(rich"[h2]Program was [i]NOT[/i] executing when we crashed.")
 
   when defined(debug):
-    print(h4("Nim stack trace:"))
+    print(rich"[h4]Nim stack trace:")
     echo getStackTrace()
   else:
-    print(h4(text("Nim stack trace is unavailable " &
-             "(must compile w/ ") + strong("-d:debug") + text(" for traces)")))
+    print(rich"[h4]Nim stack trace is unavailable (must compile " +
+          rich "w/ [b]-d:debug[/] for traces)")
   var sigset:  SigSet
 
   discard sigemptyset(sigset)

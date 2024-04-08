@@ -16,7 +16,7 @@ template con4mLongJmp*(msg = "") =
 proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
                 modname: string, line: int, lineOffset: int,
                 phase: Con4mErrPhase, severity = LlFatal,
-                extraContents: seq[string] = @[], detail: Rope = nil,
+                extraContents: seq[string] = @[], detail: Rich = c4"",
                 trace: string = "", ii: Option[InstantiationInfo] =
                                   none(InstantiationInfo)) =
   if severity < config_log_level:
@@ -43,7 +43,7 @@ proc baseError*(list: var seq[Con4mError], code: string, cursor: StringCursor,
 
 proc baseError*(list: var seq[Con4mError], code: string, tok: Con4mToken,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
-                extra: seq[string] = @[], detail: Rope = nil, trace = "",
+                extra: seq[string] = @[], detail: Rich = c4"", trace = "",
                 ii = none(InstantiationInfo)) =
   list.baseError(code, tok.cursor, modname, tok.lineNo, tok.lineOffset,
                  phase, severity, extra, detail, trace, ii)
@@ -67,7 +67,7 @@ template lexError*(msg: string, t: Con4mToken = nil) =
 
 proc baseError*(list: var seq[Con4mError], code: string, node: ParseNode,
                 modname: string, phase: Con4mErrPhase, severity = LlFatal,
-                extra = seq[string](@[]), detail: Rope = nil, trace = "",
+                extra = seq[string](@[]), detail: Rich = c4"", trace = "",
                 ii = none(InstantiationInfo)) =
   if node == nil:
     list.baseError(code, nil, modname, 0, 0, phase, severity, extra,
@@ -82,13 +82,13 @@ proc baseError*(list: var seq[Con4mError], code: string, node: ParseNode,
                  detail, trace, ii)
 
 template irError*(ctx: Module, msg: string, extra: seq[string] = @[],
-                  w = ParseNode(nil), detail = Rope(nil)) =
+                  w = ParseNode(nil), detail: Rich = c4"") =
   var where = if w == nil: ctx.pt else: w
   ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlFatal,
                                                  extra, detail)
 
 template irError*(ctx: Module, msg: string, w: IrNode,
-                  extra: seq[string] = @[], detail: Rope = nil) =
+                  extra: seq[string] = @[], detail = c4"") =
   var where = if w == nil: ctx.pt else: w.parseNode
   ctx.errors.baseError(msg, where, ctx.modname & ctx.ext, ErrIrGen, LlFatal,
                                                  extra, detail)

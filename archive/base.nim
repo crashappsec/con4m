@@ -5,7 +5,7 @@ export common
 # on smaller word sizes.
 
 type
-  ReprFn*      = proc(p: pointer): C4Str {.cdecl.}
+  ReprFn*      = proc(p: pointer): Rich {.cdecl.}
   GetCastFn*   = proc(dt: DataType, t1, t2: TypeId,
                       err: var string): pointer {.cdecl.}
   CastFn*      = proc(cur: pointer, tfrom, tto: TypeId, err: var string):
@@ -28,7 +28,7 @@ type
   CopyFn*      = proc(a: pointer, t: TypeId): pointer {.cdecl.}
   LenFn*       = proc(a: pointer): int {.cdecl.}
   PlusEqFn*    = proc(l, r: pointer) {.cdecl.}
-  MarshalFn*   = proc(v: pointer, t: TypeId, m: Memos): C4Str {.cdecl.}
+  MarshalFn*   = proc(v: pointer, t: TypeId, m: Memos): Buffer {.cdecl.}
   UnmarshalFn* = proc(s: var cstring, t: TypeId, m: Memos): pointer {.cdecl.}
   FromNimFn*   = proc(v: pointer, t: TypeId): pointer {.cdecl.}
 
@@ -37,11 +37,7 @@ type
     litmods*: seq[(string, DataType)]
 
 var
-  typeStore*:      Dict[TypeId, TypeRef]
-  primitiveTypes*: Dict[string, TypeRef]
-  dtNameMap:       Dict[string, DataType]
-  dataTypeInfo:    seq[DataType]
-  syntaxInfo*:     array[int(StMax), SyntaxInfo]
+  syntaxInfo*: array[int(StMax), SyntaxInfo]
   TList*, TDict*, TTuple*, TTSpec*, TFunc*: TypeId
 
   allBiNames =   @["dict", "tuple", "object", "ref", "set", "maybe", "oneof",
@@ -325,13 +321,13 @@ proc call_repr*(value: pointer, t: TypeId): cstring {.exportc, cdecl.} =
     info = getDataType(t)
 
   if info.ops.len() == 0:
-    return cast[cstring](newC4Str("void"))
+    return cast[cstring](newRich("void"))
 
   let
     op   = cast[ReprFn](info.ops[FRepr])
 
   if op == nil:
-    return cast[cstring](newC4Str("?"))
+    return cast[cstring](newRich("?"))
 
   return cast[cstring](op(value))
 

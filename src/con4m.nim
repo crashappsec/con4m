@@ -21,19 +21,24 @@ const
 
 
 proc cmd_help(helprt: RuntimeState) =
-  print helprt.searchCmdHelp(helprt.cmdline_info, config_args)
+  var args: seq[Rich]
+
+  for item in config_args:
+    args.add(r(item))
+
+  print helprt.searchCmdHelp(helprt.cmdline_info, args)
 
 when isMainModule:
-  useCrashTheme()
+  install_default_styles()
   setupSignalHandlers()
 
   let
     rt    = parse_command_line(flag_spec)
-    ep    = lookup[C4Str](rt, "entry_point").get(nil)
-    ll    = lookup[C4Str](rt, "log_level").get(nil)
+    ep    = lookup[Rich](rt, "entry_point").get(nil)
+    ll    = lookup[Rich](rt, "log_level").get(nil)
 
-  config_cmd           = lookup[C4Str](rt, "command").get().toNimStr()
-  config_args          = lookup[Array](rt, "args").get().strlist()
+  config_cmd           = lookup[Rich](rt, "command").get().toNimStr()
+  config_args          = lookup[List[Rich]](rt, "args").get().items().toSeqStr()
   config_debug         = lookup[bool](rt, "debug").get(false)
   config_format        = lookup[bool](rt, "pretty").get(false)
   config_save_object   = lookup[bool](rt, "save_object").get(false)

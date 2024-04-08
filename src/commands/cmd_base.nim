@@ -4,13 +4,17 @@
 ## A lot of the commands that don't produce object files are just
 ## variations on a theme, and share `cmd_stop_early`.
 
-import ".."/[compile, codegen, vm, specs, pretty, err, rtmarshal]
-export compile, codegen, vm, specs, pretty, err, rtmarshal
+import ".."/[compile, codegen, vm, specs, err, rtmarshal]
+export compile, codegen, vm, specs, err, rtmarshal
 
 proc findAndLoadFromUrl*(ctx: CompileCtx, url: string): Option[Module]
     {.importc, cdecl.}
 
 proc cmd_pretty*(ctx: CompileCtx) =
+
+ print_err(rich"[h1]Pretty printing is currently disabled.")
+
+ when false:
   var
     modules: seq[Module]
     show_header = false
@@ -43,9 +47,9 @@ proc cmd_stop_early*(ctx: CompileCtx) =
 
   for item in config_args:
     if not item.endswith(".c4m"):
-      print(fgColor("error: ", "red") + text("Not a con4m file: ") +
-            em(item.resolvePath()) +
-            text(" (requires a ") + em(".c4m") + text(" extension"))
+      var err = r("[red]error:[/] Not a con4m file: [i]" & item.resolvePath() &
+        "[/] (requires a [i].c4m[/] extension")
+      print_err(err)
       continue
 
     let modOpt = ctx.findAndLoadFromUrl(item)
@@ -59,10 +63,11 @@ proc cmd_stop_early*(ctx: CompileCtx) =
     modules.add(module)
 
   for module in modules:
-    print h1("Module: " & module.key & module.ext)
+    print r("[h1]Module: " & module.key & module.ext)
 
     if config_format:
-      print pretty(module.root)
+      print_err(rich"[h2]Pretty printing is currently disabled.")
+      #print pretty(module.root)
 
     if config_cmd == "lex" or config_debug:
       module.printTokens()
@@ -101,17 +106,16 @@ proc cmd_stop_early*(ctx: CompileCtx) =
 
 proc load_object_file*(fname: string): RuntimeState {.exportc, cdecl.} =
   try:
-    var rawobj = fname.newC4StrFromFile()
-
+    var rawobj = c4Str(readFile(fname.resolvePath()))
 
     if config_debug:
-      print hex_dump(rawobj, uint(rawobj.len()), 0)
+      print c4str(hex_dump(rawobj, uint(rawobj.len()), 0))
 
-    result = rawobj.unmarshal_runtime()
+    result = string_instream(rawobj).unmarshal_runtime()
 
   except:
-    print fgColor("error: ", "red") + text("Could not open ") + em(fname) +
-          text(": ") + italic(getCurrentException().msg)
+    print r("[red]error:[/] Could not open [b]" & fname & ":[/] [i]" &
+          getCurrentException().msg)
     if config_debug:
       echo getCurrentException().getStackTrace()
     quit()

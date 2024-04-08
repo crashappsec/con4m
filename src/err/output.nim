@@ -2,42 +2,43 @@ import "std"/terminal
 import ".."/common
 import "."/[messages, backtrace]
 
+
 proc lookupMsg(code: string): string =
   for (k, v) in errorMsgs:
     if k == code:
       return v
 
-  return "<em>Unknown error code:</em> " & code
+  return "[i]Unknown error code: [/i]" & code
 
 proc performSubs(extra: seq[string], s: var string) =
   for i, item in extra:
     s = s.replace("$" & `$`(i + 1), item)
 
-proc oneErrToRopeList(err: Con4mError, s: string): seq[Rope] =
+proc oneErrToCells(err: Con4mError, s: string): seq[Rich] =
+
   case err.severity
   of LlErr, LlFatal:
-    result.add(fgColor("error:", "red").td().overflow(OTruncate))
+    result.add(rich"[red]error:[/]")
   of LlWarn:
-    result.add(fgColor("warn:", "yellow").td().overflow(OTruncate))
+    result.add(rich"[yellow]warn:[/]")
   of LLInfo:
-    result.add(fgColor("info:", "atomiclime").td().overflow(OTruncate))
+    result.add(rich"[atomic lime]info:[/]")
   of LlNone:
     unreachable
 
   if err.modname.len() != 0:
-    let modname = fgColor(err.modname, "jazzberry") + text(":")
-    result.add(modname.overflow(OTruncate))
+    result.add(r("[jazzberry]" & err.modname & "[/]:"))
+
   else:
-    result.add(text(""))
+    result.add(rich"")
   if err.line >= 1:
-    let offset = td(text(`$`(err.line) & ":" & `$`(err.offset + 1) & ":"))
-    result.add(offset.overflow(OTruncate))
+    result.add(r(`$`(err.line) & ":" & `$`(err.offset + 1) & ":"))
   else:
-    result.add(text(""))
+    result.add(rich"")
 
-  result.add(s.htmlStringToRope(markdown = false, add_div = false))
+  result.add(r(s))
 
-proc getVerboseInfo(err: Con4mError): Rope =
+proc getVerboseInfo(err: Con4mError): Rich =
   var
     noLoc = false
 
@@ -54,10 +55,10 @@ proc getVerboseInfo(err: Con4mError): Rope =
   if lines.len() == 0 or err.line <= 0:
     return nil
 
-  result = text(lines[err.line - 1]) + newBreak()
+  result = r(lines[err.line - 1] & "\n")
 
   if not noLoc:
-    result += em(repeat((' '), err.offset) & "^") + newBreak()
+    result += r(repeat((' '), err.offset) & "^\n")
 
   if err.detail != nil:
     result = result + err.detail
@@ -82,9 +83,23 @@ proc dupeLocationCheck(err: Con4mError, locs: var seq[(int, int)]): bool =
 
   locs.add((err.line, err.offset))
 
-proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
+proc setColWidths(g: Grid, mw, lw: int) =
   var
-    errList: seq[seq[Rope]]
+    col0 = new_render_style()
+    col1 = new_render_style()
+    col2 = new_render_style()
+
+  col0.set_absolute_size(7)
+  col1.set_absolute_size(mw)
+  col2.set_absolute_size(lw)
+
+  g.set_col_props(0, col0)
+  g.set_col_props(1, col1)
+  g.set_col_props(2, col2)
+
+proc formatErrors*(errs: seq[Con4mError]): Grid =
+  var
+    errList: seq[seq[Rich]]
     locs:    seq[(int, int)]
 
   let
@@ -96,27 +111,21 @@ proc formatErrors*(errs: seq[Con4mError], verbose = true): Rope =
       continue
     if i == 30: # TODO; make this a configurable limit.
       break
-    var msg = error.code.lookupMsg() & "<i> (" & error.code & ")</i>"
+    var msg = error.code.lookupMsg() & "[i] (" & error.code & ")[/i]"
     error.extra.performSubs(msg)
-    errList.add(error.oneErrToRopeList(msg))
+    errList.add(error.oneErrToCells(msg))
 
-  if not verbose:
-    let table = quickTable[Rope](errList, noHeaders = true,
-                                 borders = BorderNone)
-    var one: Rope
-    result = table.colWidths([(7, true), (mw, true), (lw, true), (0, false)])
-    result = result.lpad(0, true).rpad(0, true)
-    result = result.bpad(0, true).tpad(0, true)
-  else:
-    for i, item in errlist:
-      var table = quickTable(@[item], noHeaders = true, borders = BorderNone)
-      table = table.colWidths([(7, true), (mw, true), (lw, true), (0, false)])
-      table = table.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
-      var one = table + container(errs[i].getVerboseInfo())
-      result += one
+  var flow_items: seq[Grid]
+  for i, item in errlist:
+    let table = table[Rich](@[item], header_rows = 0, borders = false)
+    table.setColWidths(mw, lw)
+
+    flow_items.add(table)
+
+  return flow(flow_items)
+
 
 proc find_string_at(mem: string, offset: int): string {.importc, cdecl.}
-proc toString(x: TypeId): string {.importc, cdecl.}
 
 proc location_from_instruction*(ctx: RuntimeState,
                                 ins: ptr ZInstruction): (string, int) =
@@ -124,37 +133,37 @@ proc location_from_instruction*(ctx: RuntimeState,
           int(ins.lineno))
 
 proc print_con4m_trace*(ctx: RuntimeState) {.exportc, cdecl.} =
-  print(ctx.get_stack_trace(), file = stderr)
+  print_err(ctx.get_stack_trace())
 
 proc formatLateError(err: string, severity: Con4mSeverity, location: string,
-                     args: seq[string], verbose = true): Rope =
+                     args: seq[string], verbose = true): Grid =
   # `location` should be an indication of the instruction if we are executing,
   # attribute information if we're validating, and whatever is appropriate
   # if it's some other error.
   var
     msg = lookupMsg(err)
-    row: seq[Rope]
+    row: seq[Rich]
 
   performSubs(args, msg)
 
   case severity
   of LlErr, LlFatal:
-    row.add(fgColor("error: ", "red").td().lpad(0))
+    row.add(rich"[red]error:[/] ")
   of LlWarn:
-    row.add(fgColor("warn: ", "yellow").td().overflow(OTruncate))
+    row.add(rich"[yellow]warn:[/] ")
   of LLInfo:
-    row.add(fgColor("info: ", "atomiclime").td().overflow(OTruncate))
+    row.add(rich"[atomic lime]info:[/] ")
   of LlNone:
     unreachable
 
-  row.add(italic(location & ": "))
-  row.add(markdown(msg))
-  row.add(italic("(" & err & ")"))
+  row.add(em(location & ": "))
+  row.add(r(msg))
+  row.add(em("(" & err & ")"))
 
   var
     width_used = 11 + location.len() + err.len()
     remains    = terminalWidth() - width_used
-    msg_width  = row[2].runeLength() + 1
+    msg_width  = row[2].toNimStr().runeLength() + 1
     msg_col: int
 
   if msg_width < remains:
@@ -162,16 +171,14 @@ proc formatLateError(err: string, severity: Con4mSeverity, location: string,
   else:
     msg_col = remains
 
-  result = @[row].quickTable(noheaders = true, borders = BorderNone)
-  result.colWidths([(7, true), (location.len() + 2, true),
-                    (msg_col, true), (err.len() + 2, true)])
-  result.lpad(0, true).rpad(0, true).bpad(0, true).tpad(0, true)
+  result = @[row].table(header_rows = 1, borders = false)
+  result.setColWidths(location.len() + 2, msg_col);
 
-proc assemble_validation_msg(ctx: RuntimeState, path: string, msg: Rope,
-                             code: string, other: Rope = nil): Rope =
+proc assemble_validation_msg(ctx: RuntimeState, path: string, msg: Rich,
+                             code: string, other: Rich = nil): Rich =
     var
       nim_path = path
-      last_touch: Rope
+      last_touch: Rich
 
     if nim_path.len() != 0:
       if nim_path[0] == '.':
@@ -180,53 +187,49 @@ proc assemble_validation_msg(ctx: RuntimeState, path: string, msg: Rope,
       if nim_path[^1] == '.':
         nim_path = nim_path[0 ..< ^1]
 
-      let attrOpt = ctx.attrs.lookup(nim_path)
+      let attrOpt = ctx.attrs.lookup(r(nim_path))
       if attrOpt.isSome():
         let record = attrOpt.get()
         if record.lastset == nil:
-          last_touch = text("Attribute has not been set this execution.")
+          last_touch = rich"Attribute has not been set this execution."
         else:
           let (module, line) = ctx.location_from_instruction(record.lastset)
 
-          last_touch = text("Attribute last set at: ") +
+          last_touch = rich"Attribute last set at: " +
                        em(module & ":" & $line)
 
     if nim_path.len() == 0:
       nim_path = "root attribute section"
 
-    result  = text("Validation for ") + em(nim_path) + text(" failed: ")
-    result += italic(msg)
+    result  = rich"Validation for " + em(nim_path) + rich" failed: "
+    result += em(msg)
     result += last_touch
 
     if other != nil:
-      result += text(" ") + other
+      result += rich" " + other
 
-    result += italic(" (" & code & ")")
-    GC_ref(result)
+    result += em(" (" & code & ")")
 
 proc formatValidationError*(ctx: RuntimeState, attr: string, err: string,
-                            args: seq[string]): Rope =
+                            args: seq[string]): Rich =
   var msg = err.lookupMsg()
   performSubs(args, msg)
 
-  let asRope = htmlStringToRope(msg, markdown = false, add_div = false)
+  return ctx.assemble_validation_msg(attr, r(msg), err)
 
-  return ctx.assemble_validation_msg(attr, asRope, err)
-
-proc formatValidationError*(ctx: RuntimeState, attr: C4Str, err: string,
-                            args: seq[string]): Rope =
+proc formatValidationError*(ctx: RuntimeState, attr: Rich, err: string,
+                            args: seq[string]): Rich =
   return ctx.formatValidationError(attr.toNimStr(), err, args)
 
-proc customValidationError*(ctx: RuntimeState, path: C4Str, usrmsg: C4Str,
-                            cb: ptr ZCallback): Rope =
+proc customValidationError*(ctx: RuntimeState, path: Rich, usrmsg: Rich,
+                            cb: ptr ZCallback): Rich =
   let
-    asRope         = htmlStringToRope(usrmsg.toNimStr(), markdown = false,
-                                      add_div = false)
     cbName         = find_string_at(ctx.obj.staticData, cb.nameOffset)
-    validator_info = text("Validation function: ") +
-                     em(cbname & cb.tid.toString())
+    to_style       = r(cbname) + con4m_repr(cb.tid)
+    validator_info = rich"Validation function: " + em(to_style)
 
-  return ctx.assemble_validation_msg(path.toNimStr(), asRope,
+
+  return ctx.assemble_validation_msg(path.toNimStr(), usrmsg,
                                      "CustomValidator", validator_info)
 
 proc runtimeIssue(ctx: RuntimeState, err: string, args: seq[string],
@@ -240,7 +243,7 @@ proc runtimeIssue(ctx: RuntimeState, err: string, args: seq[string],
     extra   = if l == -1: "" else: ":" & $(l)
     loc     = "When executing " & m & extra
 
-  print(err.formatLateError(severity, loc, args), file = stderr)
+  print_err(err.formatLateError(severity, loc, args))
 
 proc runtimeWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
   if config_debug:
@@ -261,13 +264,12 @@ proc runtimeError*(ctx: RuntimeState, err: string, file: ZModuleInfo, line: int,
   let loc = "When executing " & file.modname & extra
 
   ctx.print_con4m_trace()
-  print(err.formatLateError(LlErr, loc, args), file = stderr)
+  print_err(err.formatLateError(LlErr, loc, args))
   quit(-1)
 
 proc codeGenError*(err: string, args: seq[string] = @[]) =
   # TODO: the module / function info needs to show up here.
-  print(err.formatLateError(LlErr, "When generating code", args),
-        file = stderr)
+  print_err(err.formatLateError(LlErr, "When generating code", args))
   quit(-1)
 
 proc objLoadWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
@@ -275,6 +277,5 @@ proc objLoadWarn*(ctx: RuntimeState, err: string, args: seq[string] = @[]) =
     return
 
   # TODO: the module / function info needs to show up here.
-  print(err.formatLateError(LlWarn, "When loading object file", args),
-        file = stderr)
+  print_err(err.formatLateError(LlWarn, "When loading object file", args))
   quit(-1)

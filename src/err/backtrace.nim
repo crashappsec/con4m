@@ -25,7 +25,17 @@ proc getSourceLoc*(ctx: RuntimeState): string =
   else:
     return ""
 
-proc get_stack_trace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
+proc setColWidths(g: Grid) =
+  var
+    col0 = new_render_style()
+    col1 = new_render_style()
+    col2 = new_render_style()
+
+  col0.set_absolute_size(17)
+  col1.set_flex_size(2)
+  col2.set_flex_size(5)
+
+proc get_stack_trace*(ctx: RuntimeState): Grid {.exportc, cdecl.} =
   var cells: seq[seq[string]] = @[@["Caller module", "Line #",
                                    "Call target"]]
 
@@ -49,11 +59,10 @@ proc get_stack_trace*(ctx: RuntimeState): Rope {.exportc, cdecl.} =
 
   let loc = ctx.getSourceLoc()
   if loc != "":
-    result = cells.quicktable(title =  "Stack trace",
-                              caption = "Source location: " &
+    result = cells.table(title =  "Stack trace",
+                         caption = "Source location: " &
                               ctx.getSourceLoc())
   else:
-    result = cells.quicktable(title =  "Stack trace")
+    result = cells.table(title =  "Stack trace")
 
-  result.colWidths([(17, true), (15, true), (20, true)])
-  result.tpad(0, true).bpad(0, true)
+  result.setColWidths()

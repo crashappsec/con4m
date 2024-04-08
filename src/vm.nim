@@ -1,6 +1,6 @@
 # This is just a basic runtime with no thought to performance; we'll
 # do one more focused on performance later, probably directly in C.
-import "."/[stchecks, attrstore, modparams]
+import "."/[stchecks, attrstore, modparams, vm_func]
 export attrstore
 
 proc load_spec() {.cdecl, importc.}
@@ -156,10 +156,9 @@ proc showAssertionFailure(ctx: RuntimeState, instr: ZInstruction) =
     modname = module.modname
 
   # TODO: we should re-parse and print the entire expression.
-  print(text("Assertion ") + fgcolor("failed", "red") +
-        text(" in module " & modname & " (line " & $(lineno) & ")"),
-        file = stderr)
-  print(strong(line), file = stderr)
+  print_err(r("Assertion [red]failed[/] in module: " & modname &
+            " (line [i]" & $(lineno) & "[/])"))
+  print_err(bold(line))
 
 proc runMainExecutionLoop(ctx: RuntimeState): int =
   result = 0 # Default exit
@@ -249,7 +248,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
 
       var err = false
 
-      let dst = cast[ptr TypeId](addr ctx.stack[ctx.sp + 1])
+      let dst = cast[ptr TypeSpec](addr ctx.stack[ctx.sp + 1])
 
       ctx.stack[ctx.sp] = ctx.get(key, err, dst, byAddr)
 
@@ -274,15 +273,15 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       if not ctx.set(key, value, vType, lock):
         var
           olditem: pointer
-          oldtype: TypeId
+          oldtype: TypeSpec
           err:     bool
 
         olditem = ctx.get(key, err, addr oldType)
 
         ctx.bailHere("LockedAttr",
                      @[$(key),
-                       $(call_repr(olditem, oldtype)),
-                       $(call_repr(value, vtype))])
+                       con4m_repr(olditem).toNimStr(),
+                       con4m_repr(value).toNimStr()])
 
     of ZLockOnWrite:
       let
@@ -296,7 +295,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         newInfo = AttrContents(lockOnWrite: true)
         oldInfo: AttrContents
 
-      let infOpt = ctx.attrs.lookup(key)
+      let infOpt = ctx.attrs.lookup(r(key))
       if infOpt.isSome():
         oldInfo = infOpt.get()
         if oldInfo.locked:
@@ -305,7 +304,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         newInfo.tid      = oldInfo.tid
         newInfo.isSet    = oldInfo.isSet
 
-      ctx.attrs[key] = newInfo
+      ctx.attrs[r(key)] = newInfo
       if oldinfo != nil:
         GC_unref(oldinfo)
     of ZStoreTop:
@@ -351,239 +350,227 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       of FRepr:
         let
           arg   = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
 
-        ctx.stack[ctx.sp + 1] = cast[pointer](TString)
-        # TODO: we're not managing this pointer. Needs to be tracked.
-        # right now we're just leaking it.
-        let s = call_repr(arg, argTy)
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_utf8())
+        let s = con4m_repr(arg)
         ctx.stack[ctx.sp] = cast[pointer](s)
       of FCastFn:
         let
           srcType = instr.typeInfo
-          dstType = cast[TypeId](ctx.stack[ctx.sp])
+          dstType = cast[TypeSpec](ctx.stack[ctx.sp])
           obj     = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = call_cast(obj, srcType, dstType, strerr)
+        ctx.stack[ctx.sp]     = con4m_cast(obj, srcType, dstType)
         ctx.stack[ctx.sp + 1] = cast[pointer](dstType)
 
-        if strErr != "":
-          ctx.bailHere(strErr, @[srcType.toString(), dstType.toString()])
       of FEq:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = cast[pointer](call_eq(arg1, arg2, argTy))
-        ctx.stack[ctx.sp + 1] = cast[pointer](TBool)
+        ctx.stack[ctx.sp]     = cast[pointer](con4m_eq(argTy, arg1, arg2))
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_bool())
       of FLt:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = cast[pointer](call_lt(arg1, arg2, argTy))
-        ctx.stack[ctx.sp + 1] = cast[pointer](TBool)
+        ctx.stack[ctx.sp]     = cast[pointer](con4m_lt(argTy, arg1, arg2))
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_bool())
       of FGt:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = cast[pointer](call_gt(arg1, arg2, argTy))
-        ctx.stack[ctx.sp + 1] = cast[pointer](TBool)
+        ctx.stack[ctx.sp]     = cast[pointer](con4m_gt(argTy, arg1, arg2))
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_bool())
       of FAdd:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_add(arg1, arg2, argTy)
+        if argTy.isIntBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[int](arg1) + cast[int](arg2))
+        if argTy.isFloatBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[float64](arg1) +
+                                            cast[float64](arg2))
+        else:
+          ctx.stack[ctx.sp] = con4m_add(arg1, arg2)
       of FSub:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_sub(arg1, arg2, argTy)
+
+        if argTy.isIntBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[int](arg1) - cast[int](arg2))
+        if argTy.isFloatBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[float64](arg1) -
+                                            cast[float64](arg2))
+        else:
+          ctx.stack[ctx.sp] = con4m_sub(arg1, arg2)
       of FMul:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_mul(arg1, arg2, argTy)
+
+        if argTy.isIntBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[int](arg1) * cast[int](arg2))
+        if argTy.isFloatBuiltin():
+          ctx.stack[ctx.sp] = cast[pointer](cast[float64](arg1) *
+                                            cast[float64](arg2))
+        else:
+          ctx.stack[ctx.sp] = con4m_mul(arg1, arg2)
+
       of FIDiv:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_idiv(arg1, arg2, argTy)
+        if argTy.isIntBuiltin():
+          let
+            res = cast[int](arg1) div cast[int](arg2)
+          ctx.stack[ctx.sp] = cast[pointer](res)
+        if argTy.isFloatBuiltin():
+          let
+            res = cast[float](arg1) / cast[float](arg2)
+          ctx.stack[ctx.sp] = cast[pointer](res)
+        else:
+          ctx.stack[ctx.sp] = con4m_div(arg1, arg2)
+
       of FFDiv:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_fdiv(arg1, arg2, argTy)
-        ctx.stack[ctx.sp + 1] = cast[pointer](TFloat)
+
+        let
+          res = cast[int](arg1) / cast[int](arg2)
+
+        ctx.stack[ctx.sp]     = cast[pointer](res)
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_f64())
       of FMod:
         let
           arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
           arg1  = ctx.stack[ctx.sp + 2]
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_mod(arg1, arg2, argTy)
+
+        let
+          res = cast[int](arg1) mod cast[int](arg2)
+        ctx.stack[ctx.sp] = cast[pointer](res)
 
       of FShl:
         let
-          arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          arg1  = ctx.stack[ctx.sp + 2]
+          arg2  = cast[int](ctx.stack[ctx.sp])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
+          arg1  = cast[int](ctx.stack[ctx.sp + 2])
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_shl(arg1, arg2, argTy)
+        ctx.stack[ctx.sp] = cast[pointer](arg1 shl arg2)
 
       of FShr:
         let
-          arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          arg1  = ctx.stack[ctx.sp + 2]
+          arg2  = cast[int](ctx.stack[ctx.sp])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
+          arg1  = cast[int](ctx.stack[ctx.sp + 2])
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_shr(arg1, arg2, argTy)
+        ctx.stack[ctx.sp] = cast[pointer](arg1 shr arg2)
 
       of FBand:
         let
-          arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          arg1  = ctx.stack[ctx.sp + 2]
+          arg2  = cast[int](ctx.stack[ctx.sp])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
+          arg1  = cast[int](ctx.stack[ctx.sp + 2])
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_band(arg1, arg2, argTy)
+        ctx.stack[ctx.sp] = cast[pointer](arg1 and arg2)
 
       of FBor:
         let
-          arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          arg1  = ctx.stack[ctx.sp + 2]
+          arg2  = cast[int](ctx.stack[ctx.sp])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
+          arg1  = cast[int](ctx.stack[ctx.sp + 2])
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_bor(arg1, arg2, argTy)
+        ctx.stack[ctx.sp] = cast[pointer](arg1 or arg2)
 
       of FBxor:
         let
-          arg2  = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          arg1  = ctx.stack[ctx.sp + 2]
+          arg2  = cast[int](ctx.stack[ctx.sp])
+          argTy = cast[TypeSpec](ctx.stack[ctx.sp + 1])
+          arg1  = cast[int](ctx.stack[ctx.sp + 2])
 
         ctx.sp += 2
-        ctx.stack[ctx.sp] = call_bxor(arg1, arg2, argTy)
+        ctx.stack[ctx.sp] = cast[pointer](arg1 xor arg2)
 
-      of FIndex:
+      of FIndex, FDictIndex:
+        # TODO: wrap the exception handling to catch the error.
+
         let
-          ix = cast[int](ctx.stack[ctx.sp])
+          ix = ctx.stack[ctx.sp]
           c  = ctx.stack[ctx.sp + 2]
-          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
-          to = ty.idToTypeRef()
-          it = to.items[^1]
-
-        var err: bool
+          r  = con4m_index_get(c, ix)
+          t  = get_my_type(cast[C4Obj](c))
 
         ctx.sp += 2
-        ctx.stack[ctx.sp]     = call_index(c, ix, ty, err)
-        ctx.stack[ctx.sp + 1] = cast[pointer](it)
+        ctx.stack[ctx.sp]     = r
+        ctx.stack[ctx.sp + 1] = t.get_param(t.num_params() - 1)
 
-        if err:
-          ctx.bailHere("ArrayIxErr", @[ $(ix) ])
       of FSlice:
         let
           endIx = cast[int](ctx.stack[ctx.sp])
           stIx  = cast[int](ctx.stack[ctx.sp + 2])
           c     = ctx.stack[ctx.sp + 4]
-          ty    = cast[TypeId](ctx.stack[ctx.sp + 5])
-
-        var err: bool
 
         ctx.sp += 4
         # Type is already correct on the stack, since we're writing
         # over the container location and this is a slice.
-        ctx.stack[ctx.sp] = call_slice(c, stIx, endIx, ty, err)
+        ctx.stack[ctx.sp] = con4m_slice_get(c, stIx, endIx)
 
-        # Currently, `err` will never be set.
-      of FAssignIx:
+      of FAssignIx, FAssignDIx:
         let
-          ix = cast[int](ctx.stack[ctx.sp])
+          ix = cast[pointer](ctx.stack[ctx.sp])
           cp = cast[ptr pointer](ctx.stack[ctx.sp + 2])
           c  = cp[]
           ob = ctx.stack[ctx.sp + 4]                 # Data to assign
-          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
-
-        # Do I have to take the address of the container on assign, if
-        # it's an attr? I think so; I think that's what's wrong.
-        var err: bool
 
         ctx.sp += 6
-        call_assign_ix(c, ob, ix, ty, err)
+        con4m_index_set(c, ob, ix)
 
-        if err:
-          ctx.bailHere("ArrayIxErr", @[ $(ix) ])
+        #if err:
+        #  ctx.bailHere("ArrayIxErr", @[ $(ix) ])
       of FassignSlice:
         let
           endix = cast[int](ctx.stack[ctx.sp])
           start = cast[int](ctx.stack[ctx.sp + 2])
           cp    = cast[ptr pointer](ctx.stack[ctx.sp + 4])
           c     = cp[]
-          ty    = cast[TypeId](ctx.stack[ctx.sp + 5])
           ob    = ctx.stack[ctx.sp + 6] # Data to assign
 
-        var err: bool
-
         ctx.sp += 8
-        call_assign_slice(c, ob, start, endix, ty, err)
-
-        # No possible error right now.
-      of FDictIndex:
-        let
-          ix = ctx.stack[ctx.sp]
-          c  = ctx.stack[ctx.sp + 2]
-          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
-          to = ty.idToTypeRef()
-          it = to.items[^1]
-
-        var err: bool
-
-        ctx.sp += 2
-        ctx.stack[ctx.sp]     = call_dict_index(c, ix, ty, err)
-        ctx.stack[ctx.sp + 1] = cast[pointer](it)
-
-        if err:
-          ctx.bailHere("DictKeyErr", @[ $(call_repr(ix, to.items[0])) ])
-
-      of FAssignDIx:
-        let
-          ix = ctx.stack[ctx.sp]
-          cp = cast[ptr pointer](ctx.stack[ctx.sp + 2])
-          c  = cp[]
-          ty = cast[TypeId](ctx.stack[ctx.sp + 3])
-          ob = ctx.stack[ctx.sp + 4]                 # Data to assign
-
-        var err: bool
-
-        ctx.sp += 6
-        call_assign_dict_ix(c, ob, ix, ty, err)
+        con4m_slice_set(c, start, endix, ob)
 
       of FContainerLit:
         var
@@ -597,26 +584,22 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           contents = @[ctx.stack[ctx.sp]] & contents
 
         # TODO: push the litmod in codegen and use it here.
-        ctx.stack[ctx.sp] = instantiate_container(ty, STNone, "", contents, err)
+        ctx.stack[ctx.sp] = instantiate_container(ty, contents)
 
-        if err != "":
-          ctx.bailHere(err)
       of FCopy:
         let
           arg   = ctx.stack[ctx.sp]
-          argTy = cast[TypeId](ctx.stack[ctx.sp + 1])
-          res   = call_copy(arg, argTy)
-        # TODO: need to track this pointer.
+          res   = con4m_copy(arg)
         ctx.stack[ctx.sp] = res
       of FLen:
         let
           arg   = ctx.stack[ctx.sp]
           argTy = instr.typeInfo
 
-        ctx.stack[ctx.sp + 1] = cast[pointer](TInt)
+        ctx.stack[ctx.sp + 1] = cast[pointer](tspec_i64())
         # TODO: we're not managing this pointer. Needs to be tracked.
         # right now we're just leaking it.
-        let s             = cast[pointer](call_len(arg, argTy))
+        let s             = cast[pointer](con4m_len(arg))
         ctx.stack[ctx.sp] = cast[pointer](s)
 
       of FPlusEqRef, FGetFFIAddr, FInitialize, FCleanup, FLoadLit:
@@ -657,17 +640,18 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         for i, param in ctx.curModule.parameters:
           var
             val: pointer
-            t:   TypeId
+            t:   TypeSpec
 
           ## Fill in all parameter values now. If there's a validator,
           ## it will get called after this loop, along w/ a call to
           ## ZParamCheck.
 
-          if param.attr != "":
+          if param.attr.rich_len() != 0:
             let attropt = ctx.attrs.lookup(param.attr)
             if attropt.isNone():
               (val, t) = ctx.get_param_value(param)
-              discard ctx.set(param.attr, val, param.tid, lock = true,
+              discard ctx.set(param.attr.toNimStr(), cast[pointer](val),
+                              param.tid, lock = true,
                               internal = true)
           else:
             let
@@ -690,7 +674,7 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
            ctx.module_lock_stack.add(ctx.module_lock_stack[^1])
 
     of ZParamCheck:
-      let s = cast[C4Str](ctx.stack[ctx.sp])
+      let s = cast[Rich](ctx.stack[ctx.sp])
 
       ctx.sp += 2
 
@@ -701,10 +685,10 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           err     = s.toNimStr()
           name: string
 
-        if param.attr != "":
-          name = param.attr
+        if param.attr.con4m_len() != 0:
+          name = param.attr.toNimStr()
         else:
-          name = ctx.curModule.datasyms[param.offset]
+          name = cast[Rich](ctx.curModule.datasyms[param.offset]).toNimStr()
 
         ctx.runtimeError("ParamNotValid", @[name, modname, err])
 
@@ -739,17 +723,15 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
       ctx.sp           -= 1
       ctx.stack[ctx.sp] = cb
     of ZSObjNew:
-      # TODO: memory management.
       var
-        memos   = Memos()
         address = cast[cstring](addr ctx.obj.staticData[instr.immediate])
-
-      memos.map.initDict()
 
       ctx.sp -= 1
       ctx.stack[ctx.sp] = cast[pointer](instr.typeInfo)
       ctx.sp -= 1
-      ctx.stack[ctx.sp] = unmarshal(address, instr.typeInfo, memos)
+      ctx.stack[ctx.sp] = unmarshal_obj(address, ctx.obj.staticData.len())
+      raise newException(ValueError, "TODO: Fix the need for len()")
+
     of ZAssignToLoc:
       let
         address  = cast[ptr pointer](ctx.stack[ctx.sp])
@@ -767,14 +749,14 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
         ctx.showAssertionFailure(instr)
         return -1
     of ZTupleStash:
-      ctx.tupleStash = cast[Con4mTuple](ctx.stack[ctx.sp])
+      ctx.tupleStash = cast[CTuple](ctx.stack[ctx.sp])
       ctx.stashType  = ctx.stack[ctx.sp + 1]
       ctx.sp += 2
 
     of ZUnpack:
       let
         n  = instr.arg
-        to = instr.typeInfo.idToTypeRef()
+        to = instr.typeInfo.followForwards()
 
       var
         err: bool
@@ -785,13 +767,13 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
           address  = cast[ptr pointer](ctx.stack[ctx.sp])
           typeaddr = cast[ptr pointer](cast[uint](address) +
                                        uint(sizeof(pointer)))
-          itemType = to.items[i]
+          itemType = to.get_param(cint(i))
 
         ctx.sp += 2
         let
-          valaddr = cast[ptr pointer](tup.tup_index(i, instr.typeInfo, err))
+          val = cast[ptr pointer](tup[i])
 
-        address[]  = valaddr
+        address[]  = val
         typeaddr[] = cast[pointer](itemType)
 
     of ZBail:
@@ -802,7 +784,6 @@ proc runMainExecutionLoop(ctx: RuntimeState): int =
     ctx.ip += 1
 
 proc setupArena(ctx:        RuntimeState,
-                typeInfo:   seq[(int, TypeId)],
                 moduleIdSz: int) =
   # 128 bits per item.
   var moduleAllocation = newSeq[pointer](moduleIdSz * 2)
@@ -881,9 +862,9 @@ proc setup_first_execution*(ctx: var RuntimeState) {.exportc, cdecl.} =
 
   # Add module allocations.
   ctx.setupFfi(compiling = true)
-  ctx.setupArena(ctx.obj.symTypes, ctx.obj.globalScopeSz)
+  ctx.setupArena(ctx.obj.globalScopeSz)
   for i, item in ctx.obj.moduleContents:
-    ctx.setupArena(item.symTypes, item.moduleVarSize)
+    ctx.setupArena(item.moduleVarSize)
 
 
 proc execute_object*(ctx: var RuntimeState): int {.exportc, cdecl.} =
