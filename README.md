@@ -52,15 +52,15 @@ Docker took me about two hours, most of which was copying from their
 docs.
 
 Con4m validates configuration files before loading them, even making
-sure the types and values all what YOU need them to be, if your
+sure the types and values all what YOU need them to be, if you
 provide a brief specification defining the schema you want for your
 config files.  That validation can include common constraints, (like
-the value must be from a fixed list, must be in a particular range).
+the value must be from a fixed list or must be in a particular range).
 There are also constraints for field dependencies, and the ability to
-write custom field checkers. You basically just write the spec for
+write custom field validation. Basically, just write the spec for
 what you want to accept in your config file, in Con4m, naturally.
 
-You are in total control-- do you want command-line flags to take
+You are in total control -- do you want command-line flags to take
 prescendence over env variables?  Over the config file?  Do you want
 users to be able to add their own environment variables to suit their
 own needs?  It's all easy.
@@ -103,11 +103,17 @@ host workstation {
 }
 ```
 
-In this example, the conditional runs when the config file is evaluated (if something needs to be evaluated dynamically, you can do that with a callback).
+In this example, the conditional runs when the config file is
+evaluated (if something needs to be evaluated dynamically, you can do
+that with a callback).
 
-Con4m provides a number of builtin functions like env(), which makes it easy for you to check environment variables, but also for your users to customize environment variables to suit their needs.  You can easily provide your own built-in functions.
+Con4m provides a number of builtin functions like env(), which makes
+it easy for you to check environment variables, but also for your
+users to customize environment variables to suit their needs.  You can
+easily provide your own built-in functions.
 
-Let’s say the application writer has loaded this configuration file into the variable s. She may then write the following c42 spec:
+Let’s say the application writer has loaded this configuration file
+into the variable `s`. She may then write the following Con4m spec:
 
 ```python
 object host {
@@ -138,20 +144,39 @@ root {
   }
 }
 ```
-When you load a user configuration file via Con4m, if you also pass it the above spec, the following will happen (in roughly this order):
-- The spec file loads and is validated.
-- The user's configuration is read in, and checked for syntax and type safety.
-- If the user skips attributes where you've provided a default, those values will be loaded from your spec before evaluation. If you didn't provide a value, but the field is required, then the user gets an appropriate error before the configuration is evaluated.
-- The user's config is evaluated.
-- The user's config file is checked against the constraints provided in the spec.  You can also provide additional validation constraints, like forcing strings to be from a particular set of values, or having integers be in a range. Whenever these constraints are violated, the user gets a descriptive error message.
 
-Any doc strings you provide (per section or per field) are programatically available, and can be put into nice tables.
+When you load a user configuration file via Con4m, if you also pass it
+the above spec, the following will happen (in roughly this order):
 
-You then get an easy API for querying and setting these values as your code runs. And, you can call back into the user's config via callback whenever needed.
+1. The spec file loads and is validated.
+1. The user's configuration is read in, and checked for syntax and type
+   safety.
+1. If the user skips attributes where you've provided a default, those
+   values will be loaded from your spec before evaluation. If you
+   didn't provide a value, but the field is required, then the user
+   gets an appropriate error before the configuration is evaluated.
+1. The user's config is evaluated.
+1. The user's config file is checked against the constraints provided
+   in the spec.  You can also provide additional validation
+   constraints, like forcing strings to be from a particular set of
+   values, or having integers be in a range. Whenever these constraints
+   are violated, the user gets a descriptive error message.
+
+Any doc strings you provide (per section or per field) are
+programatically available, and can be put into nice tables.
+
+You then get an easy API for querying and setting these values as your
+code runs. And, you can call back into the user's config via callback
+whenever needed.
 
 ## Command-line example
-If you wanted to provide command-line flags that could be used, and want them to take presidence over the configuration file, you could do add the following:
+If you wanted to provide command-line flags that could be used, and
+want them to take presidence over the configuration file. Bulding on the
+previous example you could do add the following:
+
 ```python
+...
+
 getopts {
   flag_yn color {
     yes_aliases: ["c"]
@@ -186,7 +211,7 @@ This will add top-level flags: `--color, --no-color, -c, -C, --help,
 It will also add a `run` command with its own sub-flags, generate a
 bunch of help docs, etc.
 
-And on the command line, by default, con4m is as forgiving as
+And on the command line, by default, Con4m is as forgiving as
 possible. For example, it doesn't care about spaces around an '=', and
 if args are required, whether you drop it.  Nor does it care if flags
 appear way before or after the command they're attached to (as long as
