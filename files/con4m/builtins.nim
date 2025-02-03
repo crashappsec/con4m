@@ -679,6 +679,9 @@ proc c4mFileLen*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     except:
       result = some(pack(-1))
 
+proc c4mTmpDir*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
+  return some(pack(getTempDir()))
+
 proc c4mTmpWrite*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   # args[0]: contents to write. args[1]: file extension. ret: full path
   let
@@ -2288,6 +2291,14 @@ Returns the number of bytes in the specified file, or -1 if there is an error (e
 Writes the `string` in the first argument to a new temporary file. The second argument specifies an extension; a random value is used in the tmp file name.
 
 This call returns the location that the file was written to.
+""",
+   @["filesystem"]),
+  ("tmp_dir() -> string",
+   BuiltInFn(c4mTmpDir),
+   """
+Return default directory where temp files are going to be created.
+Usually /tmp but could be different depending on environment variable overrides
+via $TMPDIR, $TEMP, $TMP and $TEMPDIR.
 """,
    @["filesystem"]),
 
