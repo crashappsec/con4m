@@ -1123,10 +1123,13 @@ proc c4mDGetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     t    = unpack[OrderedTableRef[Box, Box]](args[0])
     key  = args[1]
 
-  if key notin t:
-    return none(Box)
+  # as the key wont have the ref as the keys in the t,
+  # loop over the table to find the key
+  for k, v in t:
+    if k == key:
+      return some(v)
 
-  return some(t[key])
+  return none(Box)
 
 proc c4mDSetItem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   var
