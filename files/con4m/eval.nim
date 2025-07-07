@@ -671,12 +671,12 @@ proc evalComponent*(s: ConfigState, component: ComponentInfo) =
     let scope = aOrS.get(AttrScope)
 
     if v.value.isSome():
-      scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
+      discard scope.attrSet(fqn[^1], v.value.get(), v.defaultType)
     elif v.default.isSome():
-      scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
+      discard scope.attrSet(fqn[^1], v.default.get(), v.defaultType)
     elif v.defaultCb.isSome():
-      scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
-                    v.defaultType)
+      discard scope.attrSet(fqn[^1], s.scall(v.defaultCb.get(), @[]).get(),
+                            v.defaultType)
     else:
       raise newException(ValueError, "Component not configured")
 
