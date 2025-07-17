@@ -9,7 +9,7 @@ installExt    = @["nim", "c4m", "c42spec", "sh"]
 
 # Dependencies
 requires "nim >= 2.0.0"
-requires "https://github.com/crashappsec/nimutils#2416431c30a5ea452a2cb2211a0c777cd73fdba5"
+requires "https://github.com/crashappsec/nimutils#e4a41aebf8a302fc19178aa5a83193e2b6c5d56d"
 
 #before build:
 #  let script = "files/bin/devmode.sh"
