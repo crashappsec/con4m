@@ -817,7 +817,7 @@ proc getMatchingConfigOptions*(state: ConfigState,
   if headings.len() != 0:
     var row: seq[Rope]
     for item in headings:
-      row.add(th(item))
+      row.add(atom(item))
     cells.add(row)
 
   if section == "":
@@ -972,7 +972,7 @@ in your configuration file.
 
   if len(colNames) != 0:
     for item in colNames:
-      row.add(th(item))
+      row.add(atom(item))
     cells.add(row)
   else:
     nohdr = true
@@ -1069,7 +1069,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
   if not byCategory:
     if len(colnames) != 0:
       for item in colnames:
-        row.add(th(item))
+        row.add(atom(item))
       cells.add(row)
 
   elif title != nil:
@@ -1082,7 +1082,7 @@ proc getBuiltinsTableDoc*(state: ConfigState,
       row   = @[]
       if len(colnames) != 0:
         for item in colnames:
-          row.add(th(item))
+          row.add(atom(item))
         cells.add(row)
 
     for entry in funcs:
@@ -1288,7 +1288,7 @@ proc getInstanceDocs*(state:          ConfigState,
     row = @[]
 
     for item in headings:
-      row.add(th(item))
+      row.add(atom(item))
     cells.add(row)
 
   let allInfo = state.getAllInstanceRawDocs(fqn)
