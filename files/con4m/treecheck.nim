@@ -1038,7 +1038,7 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
     # aren't going to be interpreted in the way they are in any other
     # part of a program.
     const
-      validParamProps = ["doc", "shortdoc", "validator", "default"]
+      validParamProps = ["doc", "shortdoc", "validator", "default", "sensitive"]
     var
       foundProps: seq[string]
 
@@ -1085,6 +1085,10 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
           fatal("Validator properties must point to a function taking " &
             " a single argument to validate and returning either the " &
             " empty string (on success), or an error message.")
+      of "sensitive":
+        if kid.children[1].kind != NodeSimpLit or
+          kid.children[1].getTokenType() notin [TtTrue, TtFalse]:
+          fatal("Parameter's sensitive value must be boolean.")
       else:
         unreachable
   of NodeParameter:
@@ -1156,6 +1160,9 @@ proc checkNode(node: Con4mNode, s: ConfigState) =
             if paramObj.defaultType.unify(defType).isBottom():
               fatal2Type("Default value provided does not match inferred type",
                          assignNode, paramObj.defaultType, defType)
+
+        of "sensitive":
+            paramObj.sensitive = some(unpack[bool](assignNode.children[1].value))
 
         else:
           unreachable

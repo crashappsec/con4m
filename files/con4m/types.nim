@@ -320,6 +320,7 @@ type
     defaultType*:   Con4mType
     defaultCb*:     Option[CallbackObj]
     value*:         Option[Box]
+    sensitive*:     Option[bool]
 
 let
   # These are just shared instances for types that aren't
