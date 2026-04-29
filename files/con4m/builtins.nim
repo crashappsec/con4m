@@ -305,8 +305,11 @@ proc c4mSlice*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
   if endix < 0:
     endix += s.len()
 
+  endix   = min(endix, s.len())
+  startix = min(max(startix, 0), endix)
+
   try:
-    return some(pack(s[startix .. endix]))
+    return some(pack(s[startix ..< endix]))
   except:
     return some(pack(""))
 
@@ -321,16 +324,17 @@ proc c4mSliceToEnd*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
 
   let
     s       = unpack[string](args[0])
-    endix   = s.len() - 1
+    endix   = s.len()
   var
     startix = unpack[int](args[1])
-
 
   if startix < 0:
     startix += s.len()
 
+  startix = min(max(startix, 0), endix)
+
   try:
-    return some(pack(s[startix .. endix]))
+    return some(pack(s[startix ..< endix]))
   except:
     return some(pack(""))
 
