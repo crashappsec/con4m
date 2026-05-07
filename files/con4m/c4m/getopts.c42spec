@@ -314,6 +314,16 @@ Note that, even if this is not set, --foo= --boz will *not* treat --boz as an ar
 Plenty of people do accidentally leave off the '=', or are used to commands that allow the space, so we recommend leaving this off when possible.
 """
   }
+
+  field comma_delimited {
+    type:    bool
+    default: true
+    hidden:  true
+    doc:     """
+Whether multi-values are comma delimited (e.g. `--foo=bar,baz`)
+and should be split when parsed or left as-is how they were passed to argv.
+"""
+  }
 }
 
 object flag_multi_choice {

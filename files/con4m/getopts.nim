@@ -25,6 +25,7 @@ type
     noColon*:          bool   # Inherited from the command object.
     noSpace*:          bool   # Also inherited from the command object.
     argIsOptional*:    bool   # When true, --foo bar is essentially --foo="" bar
+    commaDelimited:    bool   # when true, --foo=bar,baz parses to [bar, baz]
     case kind*:        ArgFlagKind
     of afPair:
       helpFlag*:       bool
@@ -210,6 +211,7 @@ proc newFlag(cmd:             CommandSpec,
              callback:        Option[CallbackObj] = none(CallbackObj),
              toSet:           string = "",
              optArg:          bool = false,
+             commaDelimited:  bool = true,
             ): FlagSpec =
   if cmd.noFlags:
     raise newException(ValueError,
@@ -218,7 +220,7 @@ proc newFlag(cmd:             CommandSpec,
   result = FlagSpec(reportingName: reportingName, kind: kind, clobberOk: clOk,
                     recognizedNames: recognizedNames.toSeq(), doc: doc,
                     callback: callback, fieldToSet: toSet, noColon: cmd.noColon,
-                    noSpace: cmd.noSpace, argIsOptional: optArg)
+                    noSpace: cmd.noSpace, argIsOptional: optArg, commaDelimited: commaDelimited)
   cmd.flags[reportingName] = result
 
 proc addChoiceFlag*(cmd:             CommandSpec,
@@ -302,7 +304,8 @@ proc addFlagWithArg*(cmd:             CommandSpec,
                      doc:             string              = "",
                      callback:        Option[CallbackObj] = none(CallbackObj),
                      toSet:           string              = "",
-                     optArg:          bool                = false):
+                     optArg:          bool                = false,
+                     commaDelimited:  bool                = true):
                        FlagSpec {.discardable.} =
   ## This simply adds a flag that takes a required string argument, or,
   ## in the case of multi-args, an array of string arguments.  The arguments
@@ -310,7 +313,7 @@ proc addFlagWithArg*(cmd:             CommandSpec,
 
   let kind  = if multi: afMultiArg else: afStrArg
   result = newFlag(cmd, kind, reportingName, clobberOk, recognizedNames,
-                   doc, callback, toSet, optArg)
+                   doc, callback, toSet, optArg, commaDelimited)
 
 template argpError(msg: string) =
   var fullError = msg
@@ -401,16 +404,25 @@ proc validateOneFlag(ctx:     var ParseCtx,
   of afStrArg:
     spec.strVal[ctx.parseId] = argCrap.get()
   of afMultiArg:
-    var parts = argCrap.get()
-    if len(parts) != 0 and parts[^1] == ',':
-      while ctx.i != len(ctx.args) and ctx.args[ctx.i][0] != '-':
-        parts = parts & ctx.args[ctx.i].strip()
-        ctx.i = ctx.i + 1
-    if len(parts) != 0 and parts[^1] == ',': parts = parts[0 ..< ^1]
-    if ctx.parseId notin spec.strArrVal:
-      spec.strArrVal[ctx.parseId] = parts.split(",")
+    if spec.commaDelimited:
+      var parts = argCrap.get()
+      if len(parts) != 0 and parts[^1] == ',':
+        while ctx.i != len(ctx.args) and ctx.args[ctx.i][0] != '-':
+          parts = parts & ctx.args[ctx.i].strip()
+          ctx.i = ctx.i + 1
+      if len(parts) != 0 and parts[^1] == ',': parts = parts[0 ..< ^1]
+      if ctx.parseId notin spec.strArrVal:
+        spec.strArrVal[ctx.parseId] = parts.split(",")
+      else:
+        spec.strArrVal[ctx.parseId] &= parts.split(",")
     else:
-      spec.strArrVal[ctx.parseId] &= parts.split(",")
+      if ctx.parseId notin spec.strArrVal:
+        spec.strArrVal[ctx.parseId] = @[argCrap.get()]
+      else:
+        spec.strArrVal[ctx.parseId] &= @[argCrap.get()]
+      while ctx.i != len(ctx.args) and ctx.args[ctx.i][0] != '-':
+        spec.strArrVal[ctx.parseId] &= @[ctx.args[ctx.i]]
+        ctx.i = ctx.i + 1
 
   ctx.res.flags[spec.reportingName] = spec
 
@@ -834,8 +846,16 @@ proc loadFlagArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
 
     var allNames = aliases & @[realName]
 
-    cmdObj.addFlagWithArg(realName, allNames, false, false, doc,
-                          cb, fieldToSet, optArg)
+    cmdObj.addFlagWithArg(
+      reportingName   = realName,
+      recognizedNames = allNames,
+      multi           = false,
+      clobberOk       = false,
+      doc             = doc,
+      callback        = cb,
+      toSet           = fieldToSet,
+      optArg          = optArg,
+    )
 
 proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
   for k, v in all.contents:
@@ -851,11 +871,21 @@ proc loadFlagMArgs(cmdObj: CommandSpec, all: AttrScope, info: LoadInfo) =
       fieldToSet = if ftsOpt.isSome(): unpack[string](ftsOpt.get())
                    else:               ""
       optArg     = unpack[bool](one.attrLookup("optional_arg").get())
+      comma      = unpack[bool](one.attrLookup("comma_delimited").get())
 
     var allNames = aliases & @[realName]
 
-    cmdObj.addFlagWithArg(realName, allNames, true, false, doc,
-                          cb, fieldToSet, optArg)
+    cmdObj.addFlagWithArg(
+      reportingName   = realName,
+      recognizedNames = allNames,
+      multi           = true,
+      clobberOk       = false,
+      doc             = doc,
+      callback        = cb,
+      toSet           = fieldToSet,
+      optArg          = optArg,
+      commaDelimited  = comma,
+    )
 
 proc loadExtraTopics(cmdObj: CommandSpec, all: AttrScope) =
   for k, v in all.contents:
