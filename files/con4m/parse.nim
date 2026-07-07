@@ -7,7 +7,7 @@
 
 import tables, options, streams, types, nimutils, strutils
 import errmsg, lex, typecheck, dollars, strformat
-export fatal, con4mTopic, defaultCon4mHook, Con4mError
+export fatal, con4mTopic, Con4mError
 
 const typeTokens = ["bool", "int", "char", "float", "string", "void",
                     "list", "dict", "tuple", "typespec", "Duration",

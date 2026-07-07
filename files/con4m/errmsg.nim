@@ -11,13 +11,7 @@ type
   C4Verbosity* = enum c4vBasic, c4vShowLoc, c4vTrace, c4vMax
   Con4mError*  = object of CatchableError
 
-let
-  con4mTopic*  = registerTopic("con4m")
-  `hook?`       = configSink(getSinkImplementation("stderr").get(),
-                             "con4m-default",
-                             filters = @[MsgFilter(logLevelFilter),
-                                         MsgFilter(logPrefixFilter)])
-  defaultCon4mHook* = `hook?`.get()
+let con4mTopic* = registerTopic("con4m")
 
 var
   publishParams = { "loglevel" : $(llError) }.newOrderedTable()
