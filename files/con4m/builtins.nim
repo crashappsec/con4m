@@ -1340,8 +1340,8 @@ when defined(posix):
 
     unprivileged:
       logExternalAction("run", cmd)
-      let (output, _) = execCmdEx(cmd)
-      result = some(pack(output))
+      let output = runCmdGetEverything("/bin/sh", @["-c", cmd])
+      result = some(pack(output.getStdout() & output.getStderr()))
 
   proc c4mSystem*(args: seq[Box], unused = ConfigState(nil)): Option[Box] =
     ## Generally exposed as `system(s)`
@@ -1354,9 +1354,9 @@ when defined(posix):
 
     unprivileged:
       logExternalAction("run", cmd)
-      let (output, exitCode) = execCmdEx(cmd)
-      outlist.add(pack(output))
-      outlist.add(pack(exitCode))
+      let output = runCmdGetEverything("/bin/sh", @["-c", cmd])
+      outlist.add(pack(output.getStdout() & output.getStderr()))
+      outlist.add(pack(output.getExit()))
 
     result = some(pack(outlist))
 
