@@ -235,6 +235,33 @@ proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
 proc loadCurrentComponent*(s: ConfigState) =
   s.loadComponent(s.currentComponent)
 
+proc coerceParamBox*(value: Box, t: Con4mType): Box =
+  ## JSON (e.g. `chalk load --params`) has no int/float distinction, so
+  ## whole numbers arrive as ints even for float parameters, including
+  ## nested in lists and tuples.
+  let t = t.resolveTypeVars()
+  case t.kind
+  of TypeFloat:
+    if value.kind == MkInt:
+      return pack(float(unpack[int](value)))
+  of TypeList:
+    if value.kind == MkSeq:
+      var items: seq[Box]
+      for item in unpack[seq[Box]](value):
+        items.add(item.coerceParamBox(t.itemType))
+      return pack(items)
+  of TypeTuple:
+    if value.kind == MkSeq:
+      let items = unpack[seq[Box]](value)
+      if len(items) == len(t.itemTypes):
+        var coerced: seq[Box]
+        for i, item in items:
+          coerced.add(item.coerceParamBox(t.itemTypes[i]))
+        return pack(coerced)
+  else:
+    discard
+  return value
+
 template setParamValue*(s:          ConfigState,
                         component:  ComponentInfo,
                         paramName:  string,
@@ -251,7 +278,12 @@ template setParamValue*(s:          ConfigState,
   if valueType.unify(parameter.defaultType).isBottom():
     raise newException(ValueError, "Incompatable type for: " & paramName)
 
-  parameter.value = some(value)
+  # the type label is checked above; the value itself must match too
+  let coerced = value.coerceParamBox(parameter.defaultType)
+  if not coerced.checkAutoType(parameter.defaultType):
+    raise newException(ValueError, "Incompatable value for: " & paramName)
+
+  parameter.value = some(coerced)
 
 proc setVariableParamValue*(s:         ConfigState,
                             component: ComponentInfo,
