@@ -641,7 +641,9 @@ proc evalComponent*(s: ConfigState, component: ComponentInfo) =
   s.frames = @[globalScope]
 
   for k, v in s.currentComponent.varParams:
-    if v.value.isSome() and k notin globalScope:
+    # a configured value always wins: parameter names are always in
+    # globalScope as it is seeded from the component's own variables
+    if v.value.isSome():
       globalScope[k] = v.value
     elif v.default.isSome():
       globalScope[k] = v.default

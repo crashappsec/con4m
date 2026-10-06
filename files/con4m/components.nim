@@ -235,6 +235,98 @@ proc haveComponentFromUrl*(s: ConfigState, url: string): Option[ComponentInfo] =
 proc loadCurrentComponent*(s: ConfigState) =
   s.loadComponent(s.currentComponent)
 
+proc coerceParamBox*(value: Box, t: Con4mType): Box =
+  ## JSON (e.g. `chalk load --params`) has no int/float distinction, so
+  ## whole numbers arrive as ints even for float parameters, including
+  ## nested in lists, tuples and dictionaries.
+  if value.isNil:
+    return value
+  let t = t.resolveTypeVars()
+  case t.kind
+  of TypeFloat:
+    if value.kind == MkInt:
+      return pack(float(unpack[int](value)))
+  of TypeList:
+    if value.kind == MkSeq:
+      var items: seq[Box]
+      for item in unpack[seq[Box]](value):
+        items.add(item.coerceParamBox(t.itemType))
+      return pack(items)
+  of TypeTuple:
+    if value.kind == MkSeq:
+      let items = unpack[seq[Box]](value)
+      if len(items) == len(t.itemTypes):
+        var coerced: seq[Box]
+        for i, item in items:
+          coerced.add(item.coerceParamBox(t.itemTypes[i]))
+        return pack(coerced)
+  of TypeDict:
+    if value.kind == MkTable:
+      let items = newOrderedTable[Box, Box]()
+      for key, item in value.pairs():
+        items[key.coerceParamBox(t.keyType)] = item.coerceParamBox(t.valType)
+      return pack(items)
+  else:
+    discard
+  return value
+
+proc checkParamBox(value: Box, t: Con4mType): bool =
+  # Box stores durations/sizes/chars as integers and other scalar literals
+  # as strings. Lists and tuples also share a representation. Validate
+  # against the declared type rather than inferring a type from the Box.
+  if value.isNil:
+    return false
+  let t = t.resolveTypeVars()
+  case t.kind
+  of TypeInt, TypeChar, TypeDuration, TypeSize:
+    return value.kind == MkInt
+  of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+    return value.kind == MkStr
+  of TypeBool:
+    return value.kind == MkBool
+  of TypeFloat:
+    return value.kind == MkFloat
+  of TypeList:
+    if value.kind != MkSeq:
+      return false
+    for item in value.items():
+      if not item.checkParamBox(t.itemType):
+        return false
+    return true
+  of TypeTuple:
+    if value.kind != MkSeq or value.len() != t.itemTypes.len():
+      return false
+    for i, item in unpack[seq[Box]](value):
+      if not item.checkParamBox(t.itemTypes[i]):
+        return false
+    return true
+  of TypeDict:
+    if value.kind != MkTable:
+      return false
+    for key, item in value.pairs():
+      if not key.checkParamBox(t.keyType) or not item.checkParamBox(t.valType):
+        return false
+    return true
+  of TypeTVar:
+    if t.components.len() == 0:
+      return true
+    for constraint in t.components:
+      if value.checkParamBox(constraint):
+        return true
+    return false
+  of TypeTypeSpec:
+    if value.kind != MkObj or not (value.o of Con4mType):
+      return false
+    # Unify the typespecs, preserving the special handling of void bindings.
+    let valueType = Con4mType(kind: TypeTypeSpec,
+                             binding: Con4mType(value.o).copyType())
+    return not valueType.unify(t.copyType()).isBottom()
+  of TypeFunc:
+    return value.kind == MkObj and value.o of CallbackObj and
+      not CallbackObj(value.o).tInfo.copyType().unify(t.copyType()).isBottom()
+  of TypeBottom:
+    return false
+
 template setParamValue*(s:          ConfigState,
                         component:  ComponentInfo,
                         paramName:  string,
@@ -251,7 +343,12 @@ template setParamValue*(s:          ConfigState,
   if valueType.unify(parameter.defaultType).isBottom():
     raise newException(ValueError, "Incompatable type for: " & paramName)
 
-  parameter.value = some(value)
+  # the type label is checked above; the value itself must match too
+  let coerced = value.coerceParamBox(parameter.defaultType)
+  if not coerced.checkParamBox(parameter.defaultType):
+    raise newException(ValueError, "Incompatable value for: " & paramName)
+
+  parameter.value = some(coerced)
 
 proc setVariableParamValue*(s:         ConfigState,
                             component: ComponentInfo,
