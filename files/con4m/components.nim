@@ -315,8 +315,12 @@ proc checkParamBox(value: Box, t: Con4mType): bool =
         return true
     return false
   of TypeTypeSpec:
-    return value.kind == MkObj and value.o of Con4mType and
-      not Con4mType(value.o).copyType().unify(t.binding.copyType()).isBottom()
+    if value.kind != MkObj or not (value.o of Con4mType):
+      return false
+    # Unify the typespecs, preserving the special handling of void bindings.
+    let valueType = Con4mType(kind: TypeTypeSpec,
+                             binding: Con4mType(value.o).copyType())
+    return not valueType.unify(t.copyType()).isBottom()
   of TypeFunc:
     return value.kind == MkObj and value.o of CallbackObj and
       not CallbackObj(value.o).tInfo.copyType().unify(t.copyType()).isBottom()

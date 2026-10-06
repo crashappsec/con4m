@@ -50,6 +50,24 @@ suite "component parameter values":
       state.evalComponent(comp)
       check state.attrs.attrLookup("p").get() == param.default.get()
 
+  test "typespec values survive saved-parameter restoration":
+    for literal in ["[void]", "[int]", "([void], (void, int))"]:
+      let state = runtime()
+      let comp = state.component("parameter p { default: " & literal & " }")
+      let param = comp.attrParams["p"]
+      state.setAttributeParamValue(comp, "p", param.default.get(), param.defaultType)
+      state.evalComponent(comp)
+      check state.attrs.attrLookup("p").get() == param.default.get()
+
+  test "incompatible typespec values are rejected":
+    let state = runtime()
+    let comp = state.component("parameter p { default: [int] }")
+    let param = comp.attrParams["p"]
+    for value in [pack(@[pack(bottomType)]), pack(@[pack(stringType)]),
+                  pack(@[pack(1)])]:
+      expect ValueError:
+        state.setAttributeParamValue(comp, "p", value, param.defaultType)
+
   test "homogeneous tuples are validated as tuples":
     let state = runtime()
     let comp = state.component("parameter p { default: (1, 2) }")
