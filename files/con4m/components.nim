@@ -238,7 +238,9 @@ proc loadCurrentComponent*(s: ConfigState) =
 proc coerceParamBox*(value: Box, t: Con4mType): Box =
   ## JSON (e.g. `chalk load --params`) has no int/float distinction, so
   ## whole numbers arrive as ints even for float parameters, including
-  ## nested in lists and tuples.
+  ## nested in lists, tuples and dictionaries.
+  if value.isNil:
+    return value
   let t = t.resolveTypeVars()
   case t.kind
   of TypeFloat:
@@ -258,9 +260,68 @@ proc coerceParamBox*(value: Box, t: Con4mType): Box =
         for i, item in items:
           coerced.add(item.coerceParamBox(t.itemTypes[i]))
         return pack(coerced)
+  of TypeDict:
+    if value.kind == MkTable:
+      let items = newOrderedTable[Box, Box]()
+      for key, item in value.pairs():
+        items[key.coerceParamBox(t.keyType)] = item.coerceParamBox(t.valType)
+      return pack(items)
   else:
     discard
   return value
+
+proc checkParamBox(value: Box, t: Con4mType): bool =
+  # Box stores durations/sizes/chars as integers and other scalar literals
+  # as strings. Lists and tuples also share a representation. Validate
+  # against the declared type rather than inferring a type from the Box.
+  if value.isNil:
+    return false
+  let t = t.resolveTypeVars()
+  case t.kind
+  of TypeInt, TypeChar, TypeDuration, TypeSize:
+    return value.kind == MkInt
+  of TypeString, TypeIPAddr, TypeCIDR, TypeDate, TypeTime, TypeDateTime:
+    return value.kind == MkStr
+  of TypeBool:
+    return value.kind == MkBool
+  of TypeFloat:
+    return value.kind == MkFloat
+  of TypeList:
+    if value.kind != MkSeq:
+      return false
+    for item in value.items():
+      if not item.checkParamBox(t.itemType):
+        return false
+    return true
+  of TypeTuple:
+    if value.kind != MkSeq or value.len() != t.itemTypes.len():
+      return false
+    for i, item in unpack[seq[Box]](value):
+      if not item.checkParamBox(t.itemTypes[i]):
+        return false
+    return true
+  of TypeDict:
+    if value.kind != MkTable:
+      return false
+    for key, item in value.pairs():
+      if not key.checkParamBox(t.keyType) or not item.checkParamBox(t.valType):
+        return false
+    return true
+  of TypeTVar:
+    if t.components.len() == 0:
+      return true
+    for constraint in t.components:
+      if value.checkParamBox(constraint):
+        return true
+    return false
+  of TypeTypeSpec:
+    return value.kind == MkObj and value.o of Con4mType and
+      not Con4mType(value.o).copyType().unify(t.binding.copyType()).isBottom()
+  of TypeFunc:
+    return value.kind == MkObj and value.o of CallbackObj and
+      not CallbackObj(value.o).tInfo.copyType().unify(t.copyType()).isBottom()
+  of TypeBottom:
+    return false
 
 template setParamValue*(s:          ConfigState,
                         component:  ComponentInfo,
@@ -280,7 +341,7 @@ template setParamValue*(s:          ConfigState,
 
   # the type label is checked above; the value itself must match too
   let coerced = value.coerceParamBox(parameter.defaultType)
-  if not coerced.checkAutoType(parameter.defaultType):
+  if not coerced.checkParamBox(parameter.defaultType):
     raise newException(ValueError, "Incompatable value for: " & paramName)
 
   parameter.value = some(coerced)

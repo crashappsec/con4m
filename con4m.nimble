@@ -11,6 +11,9 @@ installExt    = @["nim", "c4m", "c42spec", "sh"]
 requires "nim >= 2.0.0"
 requires "https://github.com/crashappsec/nimutils#29f40c70e702f7d46dbef2293e856bbe81570a36"
 
+task testParams, "Test component parameter values":
+  exec "nim c -r --path:files --out:nimcache/test_params tests/components/test_params.nim"
+
 #before build:
 #  let script = "files/bin/devmode.sh"
 #  # only missing in Dockerfile compile step
